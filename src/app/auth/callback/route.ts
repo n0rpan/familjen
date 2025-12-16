@@ -53,6 +53,7 @@ export async function GET(request: Request) {
             path: '/',
             maxAge: COOKIE_MAX_AGE,
             sameSite: 'lax',
+            secure: process.env.NODE_ENV === 'production',
           })
         }
 

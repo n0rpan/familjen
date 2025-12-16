@@ -32,5 +32,7 @@ export function getLanguageFromCookieClient(): Language {
  */
 export function setLanguageCookie(lang: Language): void {
   if (typeof document === 'undefined') return
-  document.cookie = `${LANGUAGE_COOKIE_NAME}=${lang}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax`
+  const isSecure = window.location.protocol === 'https:'
+  const secureFlag = isSecure ? '; Secure' : ''
+  document.cookie = `${LANGUAGE_COOKIE_NAME}=${lang}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax${secureFlag}`
 }

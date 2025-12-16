@@ -46,16 +46,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Pickup not found' }, { status: 404 })
     }
 
-    // Get calendar tokens
-    const { data: tokens } = await supabase
-      .from('google_calendar_tokens_decrypted')
-      .select('*')
-      .limit(1)
-      .single()
+    // Get calendar tokens via RPC (bypasses admin-only RLS)
+    const { data: tokensArray, error: tokensError } = await supabase
+      .rpc('get_household_calendar_tokens')
 
-    if (!tokens) {
+    if (tokensError || !tokensArray || tokensArray.length === 0) {
       return NextResponse.json({ error: 'Calendar not connected' }, { status: 400 })
     }
+    const tokens = tokensArray[0]
 
     const picker = pickup.picker as { name: string; work_email: string | null } | null
     const child = pickup.child as { name: string; location_name: string | null } | null
