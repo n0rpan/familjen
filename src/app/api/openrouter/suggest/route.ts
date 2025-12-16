@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import type { AIMealSuggestionsRequest, MealSuggestion } from '@/lib/types'
+import type { MealSuggestion } from '@/lib/types'
+import { aiSuggestRequestSchema, validateRequest } from '@/lib/schemas'
+import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 
 // Helper to calculate age from birth date
 function calculateAge(birthDate: string): number {
@@ -33,13 +35,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
     }
 
-    // Get request body
-    const body: Partial<AIMealSuggestionsRequest> = await request.json()
-    const { weekStart, existingMeals = [] } = body
-
-    if (!weekStart) {
-      return NextResponse.json({ error: 'weekStart er påkrevd' }, { status: 400 })
+    // Check rate limit
+    const rateLimitKey = createRateLimitKey(user.id, 'aiSuggest')
+    const rateLimit = checkRateLimit(rateLimitKey, RATE_LIMITS.aiSuggest)
+    if (rateLimit.limited) {
+      return NextResponse.json(
+        { error: `For mange forespørsler. Prøv igjen om ${rateLimit.retryAfter} sekunder.` },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
+      )
     }
+
+    // Validate request body
+    const validation = await validateRequest(request, aiSuggestRequestSchema)
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error }, { status: 400 })
+    }
+    const { weekStart, existingMeals } = validation.data
 
     // Fetch model from app_settings
     const { data: modelSetting } = await supabase

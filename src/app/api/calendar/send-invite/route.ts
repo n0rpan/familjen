@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '@/lib/google-calendar'
+import { sendInviteRequestSchema, validateRequest } from '@/lib/schemas'
+import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 
 // POST /api/calendar/send-invite - Send pickup invite to work calendar
 export async function POST(request: Request) {
@@ -12,12 +14,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await request.json()
-    const { pickupId, syncToWorkCalendar } = body
-
-    if (!pickupId) {
-      return NextResponse.json({ error: 'Missing pickupId' }, { status: 400 })
+    // Check rate limit
+    const rateLimitKey = createRateLimitKey(user.id, 'calendarInvite')
+    const rateLimit = checkRateLimit(rateLimitKey, RATE_LIMITS.calendarInvite)
+    if (rateLimit.limited) {
+      return NextResponse.json(
+        { error: `For mange forespørsler. Prøv igjen om ${rateLimit.retryAfter} sekunder.` },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
+      )
     }
+
+    // Validate request body
+    const validation = await validateRequest(request, sendInviteRequestSchema)
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error }, { status: 400 })
+    }
+    const { pickupId, syncToWorkCalendar } = validation.data
 
     // Get pickup with child and picker details
     const { data: pickup, error: pickupError } = await supabase
