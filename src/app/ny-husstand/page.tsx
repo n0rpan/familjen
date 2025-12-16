@@ -3,10 +3,40 @@
 import { useState, useMemo, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import type { ChildColor } from '@/lib/types'
+import { CHILD_COLORS } from '@/lib/colors'
+
+type WizardStep = 'household' | 'children' | 'partner' | 'done'
+
+interface NewChild {
+  name: string
+  location_name: string
+  location_type: 'school' | 'kindergarten'
+  color: ChildColor
+}
 
 export default function CreateHouseholdPage() {
+  const [step, setStep] = useState<WizardStep>('household')
+  const [householdId, setHouseholdId] = useState<string | null>(null)
+
+  // Step 1: Household info
   const [householdName, setHouseholdName] = useState('')
   const [myName, setMyName] = useState('')
+
+  // Step 2: Children
+  const [children, setChildren] = useState<NewChild[]>([])
+  const [newChild, setNewChild] = useState<NewChild>({
+    name: '',
+    location_name: '',
+    location_type: 'kindergarten',
+    color: 'sky',
+  })
+
+  // Step 3: Partner
+  const [partnerName, setPartnerName] = useState('')
+  const [partnerEmail, setPartnerEmail] = useState('')
+
+  // State
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -35,7 +65,6 @@ export default function CreateHouseholdPage() {
         .single()
 
       if (existingMember) {
-        // Already in a household, redirect home
         router.push('/')
         return
       }
@@ -55,6 +84,7 @@ export default function CreateHouseholdPage() {
     }
   }
 
+  // Step 1: Create household
   const createHousehold = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!householdName.trim() || !myName.trim()) return
@@ -63,33 +93,8 @@ export default function CreateHouseholdPage() {
     setError(null)
 
     try {
-      // Get current user
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        throw new Error('Du må være logget inn')
-      }
-
-      // Double-check permission
-      const { data: allowedEmail } = await supabase
-        .from('allowed_emails')
-        .select('can_create_household')
-        .eq('email', user.email?.toLowerCase())
-        .single()
-
-      if (!allowedEmail?.can_create_household) {
-        throw new Error('Du har ikke tilgang til å opprette husstand')
-      }
-
-      // Check if user already has a household
-      const { data: existingMember } = await supabase
-        .from('household_members')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
-
-      if (existingMember) {
-        throw new Error('Du er allerede med i en husstand')
-      }
+      if (!user) throw new Error('Du må være logget inn')
 
       // Create the household
       const { data: newHousehold, error: householdError } = await supabase
@@ -98,9 +103,7 @@ export default function CreateHouseholdPage() {
         .select()
         .single()
 
-      if (householdError) {
-        throw new Error('Kunne ikke opprette husstand')
-      }
+      if (householdError) throw new Error('Kunne ikke opprette husstand')
 
       // Create the user as household admin
       const { error: memberError } = await supabase
@@ -116,15 +119,108 @@ export default function CreateHouseholdPage() {
         })
 
       if (memberError) {
-        // Rollback household creation
         await supabase.from('households').delete().eq('id', newHousehold.id)
         throw new Error('Kunne ikke legge til deg som medlem')
       }
 
-      // Success - redirect to home
-      router.push('/')
+      setHouseholdId(newHousehold.id)
+      setStep('children')
     } catch (err) {
       console.error('Create household error:', err)
+      setError(err instanceof Error ? err.message : 'En feil oppstod')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Add a child to the list
+  const addChild = () => {
+    if (!newChild.name.trim()) return
+    setChildren([...children, { ...newChild }])
+    setNewChild({
+      name: '',
+      location_name: '',
+      location_type: 'kindergarten',
+      color: CHILD_COLORS[(children.length + 1) % CHILD_COLORS.length].value,
+    })
+  }
+
+  const removeChild = (index: number) => {
+    setChildren(children.filter((_, i) => i !== index))
+  }
+
+  // Step 2: Save children
+  const saveChildren = async () => {
+    if (!householdId || children.length === 0) {
+      setStep('partner')
+      return
+    }
+
+    setSaving(true)
+    setError(null)
+
+    try {
+      const childrenData = children.map(c => ({
+        household_id: householdId,
+        name: c.name.trim(),
+        location_name: c.location_name.trim() || null,
+        location_type: c.location_type,
+        color: c.color,
+      }))
+
+      const { error: childError } = await supabase.from('children').insert(childrenData)
+      if (childError) throw new Error('Kunne ikke legge til barn')
+
+      setStep('partner')
+    } catch (err) {
+      console.error('Save children error:', err)
+      setError(err instanceof Error ? err.message : 'En feil oppstod')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Step 3: Invite partner
+  const savePartner = async () => {
+    if (!householdId) {
+      setStep('done')
+      return
+    }
+
+    // Skip if no partner info
+    if (!partnerName.trim() && !partnerEmail.trim()) {
+      setStep('done')
+      return
+    }
+
+    setSaving(true)
+    setError(null)
+
+    try {
+      // Add partner as household member (without user_id - they'll link on login)
+      const { error: memberError } = await supabase.from('household_members').insert({
+        household_id: householdId,
+        name: partnerName.trim(),
+        short_name: partnerName.trim().substring(0, 3),
+        is_parent: true,
+        is_household_admin: false,
+        email: partnerEmail.trim().toLowerCase() || null,
+      })
+
+      if (memberError) throw new Error('Kunne ikke legge til partner')
+
+      // If email provided, add to allowed_emails so they can log in
+      if (partnerEmail.trim()) {
+        await supabase.from('allowed_emails').upsert({
+          email: partnerEmail.trim().toLowerCase(),
+          can_create_household: false,
+          invited_by_household_id: householdId,
+        }, { onConflict: 'email' })
+      }
+
+      setStep('done')
+    } catch (err) {
+      console.error('Save partner error:', err)
       setError(err instanceof Error ? err.message : 'En feil oppstod')
     } finally {
       setSaving(false)
@@ -142,18 +238,12 @@ export default function CreateHouseholdPage() {
     )
   }
 
-  // User cannot create household - must be invited
+  // User cannot create household
   if (!canCreate) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center animate-fade-in">
-        <div
-          className="w-full max-w-md rounded-2xl p-8 text-center"
-          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-        >
-          <div
-            className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4"
-            style={{ background: 'rgba(126, 182, 196, 0.2)' }}
-          >
+        <div className="w-full max-w-md rounded-2xl p-8 text-center" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4" style={{ background: 'rgba(126, 182, 196, 0.2)' }}>
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--color-sky)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
               <circle cx="9" cy="7" r="4"/>
@@ -166,12 +256,8 @@ export default function CreateHouseholdPage() {
           </h1>
           <p className="mb-6" style={{ color: 'var(--muted)' }}>
             Du må bli invitert til en husstand av noen som allerede bruker appen.
-            Be dem legge deg til som familiemedlem i innstillingene sine.
           </p>
-          <button
-            onClick={() => router.push('/')}
-            className="btn btn-secondary"
-          >
+          <button onClick={() => router.push('/')} className="btn btn-secondary">
             Tilbake til forsiden
           </button>
         </div>
@@ -179,84 +265,276 @@ export default function CreateHouseholdPage() {
     )
   }
 
-  return (
-    <div className="min-h-[60vh] flex items-center justify-center animate-fade-in">
-      <div
-        className="w-full max-w-md rounded-2xl p-8"
-        style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-      >
-        <div className="text-center mb-8">
-          <div
-            className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4"
-            style={{ background: 'rgba(229, 185, 94, 0.2)' }}
-          >
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-              <polyline points="9 22 9 12 15 12 15 22"/>
-            </svg>
-          </div>
-          <h1 className="text-2xl font-semibold font-display mb-2" style={{ color: 'var(--foreground)' }}>
-            Opprett husstand
-          </h1>
-          <p style={{ color: 'var(--muted)' }}>
-            Start med å gi husstanden din et navn
-          </p>
-        </div>
+  // Progress indicator
+  const steps = ['household', 'children', 'partner', 'done'] as const
+  const currentIndex = steps.indexOf(step)
 
-        {error && (
-          <div
-            className="mb-6 p-4 rounded-xl text-sm"
-            style={{ background: 'rgba(232, 120, 109, 0.15)', color: 'var(--color-coral)' }}
-          >
-            {error}
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center animate-fade-in py-8">
+      <div className="w-full max-w-lg">
+        {/* Progress bar */}
+        {step !== 'done' && (
+          <div className="flex items-center justify-center gap-2 mb-8">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="h-1.5 w-16 rounded-full transition-colors"
+                style={{ background: i <= currentIndex ? 'var(--accent)' : 'var(--sand)' }}
+              />
+            ))}
           </div>
         )}
 
-        <form onSubmit={createHousehold} className="space-y-5">
-          <div>
-            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
-              Navn på husstand *
-            </label>
-            <input
-              type="text"
-              value={householdName}
-              onChange={(e) => setHouseholdName(e.target.value)}
-              placeholder="F.eks. Familien Hansen"
-              className="input"
-              required
-              autoFocus
-            />
-          </div>
+        <div className="rounded-2xl p-8" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+          {error && (
+            <div className="mb-6 p-4 rounded-xl text-sm" style={{ background: 'rgba(232, 120, 109, 0.15)', color: 'var(--color-coral)' }}>
+              {error}
+            </div>
+          )}
 
-          <div>
-            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
-              Ditt navn *
-            </label>
-            <input
-              type="text"
-              value={myName}
-              onChange={(e) => setMyName(e.target.value)}
-              placeholder="F.eks. Mor eller Kari"
-              className="input"
-              required
-            />
-            <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
-              Dette vises når du blir tildelt henting
-            </p>
-          </div>
+          {/* Step 1: Household */}
+          {step === 'household' && (
+            <>
+              <div className="text-center mb-8">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4" style={{ background: 'rgba(229, 185, 94, 0.2)' }}>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                    <polyline points="9 22 9 12 15 12 15 22"/>
+                  </svg>
+                </div>
+                <h1 className="text-2xl font-semibold font-display mb-2" style={{ color: 'var(--foreground)' }}>
+                  Velkommen til Familjen!
+                </h1>
+                <p style={{ color: 'var(--muted)' }}>La oss sette opp husstanden din</p>
+              </div>
 
-          <button
-            type="submit"
-            disabled={saving || !householdName.trim() || !myName.trim()}
-            className="btn btn-primary w-full"
-          >
-            {saving ? 'Oppretter...' : 'Opprett husstand'}
-          </button>
-        </form>
+              <form onSubmit={createHousehold} className="space-y-5">
+                <div>
+                  <label className="block text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
+                    Navn på husstand *
+                  </label>
+                  <input
+                    type="text"
+                    value={householdName}
+                    onChange={(e) => setHouseholdName(e.target.value)}
+                    placeholder="F.eks. Familien Hansen"
+                    className="input"
+                    required
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
+                    Ditt navn *
+                  </label>
+                  <input
+                    type="text"
+                    value={myName}
+                    onChange={(e) => setMyName(e.target.value)}
+                    placeholder="F.eks. Mor eller Kari"
+                    className="input"
+                    required
+                  />
+                </div>
+                <button type="submit" disabled={saving || !householdName.trim() || !myName.trim()} className="btn btn-primary w-full">
+                  {saving ? 'Oppretter...' : 'Neste'}
+                </button>
+              </form>
+            </>
+          )}
 
-        <p className="text-xs text-center mt-6" style={{ color: 'var(--muted)' }}>
-          Du blir automatisk administrator og kan invitere andre
-        </p>
+          {/* Step 2: Children */}
+          {step === 'children' && (
+            <>
+              <div className="text-center mb-8">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4" style={{ background: 'rgba(126, 182, 196, 0.2)' }}>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--color-sky)" strokeWidth="2">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                  </svg>
+                </div>
+                <h1 className="text-2xl font-semibold font-display mb-2" style={{ color: 'var(--foreground)' }}>
+                  Legg til barn
+                </h1>
+                <p style={{ color: 'var(--muted)' }}>Hvem skal du planlegge henting for?</p>
+              </div>
+
+              {/* Added children list */}
+              {children.length > 0 && (
+                <div className="space-y-2 mb-6">
+                  {children.map((child, i) => {
+                    const colorConfig = CHILD_COLORS.find(c => c.value === child.color)
+                    return (
+                      <div key={i} className="flex items-center justify-between p-3 rounded-xl" style={{ background: 'var(--sand)' }}>
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium" style={{ background: colorConfig?.bg, color: colorConfig?.text }}>
+                            {child.name.charAt(0)}
+                          </div>
+                          <div>
+                            <div className="font-medium" style={{ color: 'var(--foreground)' }}>{child.name}</div>
+                            {child.location_name && (
+                              <div className="text-xs" style={{ color: 'var(--muted)' }}>
+                                {child.location_type === 'school' ? 'Skole' : 'Barnehage'}: {child.location_name}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <button onClick={() => removeChild(i)} className="p-1 rounded" style={{ color: 'var(--muted)' }} aria-label="Fjern">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                          </svg>
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Add child form */}
+              <div className="space-y-4 mb-6 p-4 rounded-xl" style={{ background: 'var(--sand)' }}>
+                <input
+                  type="text"
+                  value={newChild.name}
+                  onChange={(e) => setNewChild({ ...newChild, name: e.target.value })}
+                  placeholder="Barnets navn"
+                  className="input"
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <select
+                    value={newChild.location_type}
+                    onChange={(e) => setNewChild({ ...newChild, location_type: e.target.value as 'school' | 'kindergarten' })}
+                    className="input"
+                  >
+                    <option value="kindergarten">Barnehage</option>
+                    <option value="school">Skole</option>
+                  </select>
+                  <input
+                    type="text"
+                    value={newChild.location_name}
+                    onChange={(e) => setNewChild({ ...newChild, location_name: e.target.value })}
+                    placeholder="Navn på sted"
+                    className="input"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  {CHILD_COLORS.slice(0, 6).map((color) => (
+                    <button
+                      key={color.value}
+                      type="button"
+                      onClick={() => setNewChild({ ...newChild, color: color.value })}
+                      className="w-8 h-8 rounded-full transition-transform"
+                      style={{
+                        background: color.bg,
+                        border: newChild.color === color.value ? `2px solid ${color.text}` : '2px solid transparent',
+                        transform: newChild.color === color.value ? 'scale(1.1)' : 'scale(1)',
+                      }}
+                      title={color.label}
+                      aria-label={color.label}
+                    />
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={addChild}
+                  disabled={!newChild.name.trim()}
+                  className="btn btn-secondary w-full"
+                >
+                  + Legg til barn
+                </button>
+              </div>
+
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setStep('partner')} className="btn btn-secondary flex-1">
+                  Hopp over
+                </button>
+                <button type="button" onClick={saveChildren} disabled={saving} className="btn btn-primary flex-1">
+                  {saving ? 'Lagrer...' : 'Neste'}
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* Step 3: Partner */}
+          {step === 'partner' && (
+            <>
+              <div className="text-center mb-8">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4" style={{ background: 'rgba(131, 166, 151, 0.2)' }}>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--color-sage)" strokeWidth="2">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <line x1="19" y1="8" x2="19" y2="14"/>
+                    <line x1="22" y1="11" x2="16" y2="11"/>
+                  </svg>
+                </div>
+                <h1 className="text-2xl font-semibold font-display mb-2" style={{ color: 'var(--foreground)' }}>
+                  Inviter partner
+                </h1>
+                <p style={{ color: 'var(--muted)' }}>Legg til partneren din så de også kan bruke appen</p>
+              </div>
+
+              <div className="space-y-4 mb-6">
+                <div>
+                  <label className="block text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
+                    Partnerens navn
+                  </label>
+                  <input
+                    type="text"
+                    value={partnerName}
+                    onChange={(e) => setPartnerName(e.target.value)}
+                    placeholder="F.eks. Far eller Ole"
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
+                    E-postadresse (for innlogging)
+                  </label>
+                  <input
+                    type="email"
+                    value={partnerEmail}
+                    onChange={(e) => setPartnerEmail(e.target.value)}
+                    placeholder="partner@example.com"
+                    className="input"
+                  />
+                  <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
+                    De kan logge inn med denne e-posten
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setStep('done')} className="btn btn-secondary flex-1">
+                  Hopp over
+                </button>
+                <button type="button" onClick={savePartner} disabled={saving} className="btn btn-primary flex-1">
+                  {saving ? 'Lagrer...' : 'Fullfør'}
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* Step 4: Done */}
+          {step === 'done' && (
+            <div className="text-center">
+              <div className="inline-flex items-center justify-center w-20 h-20 rounded-full mb-6" style={{ background: 'rgba(131, 166, 151, 0.2)' }}>
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--color-sage)" strokeWidth="2">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              </div>
+              <h1 className="text-2xl font-semibold font-display mb-2" style={{ color: 'var(--foreground)' }}>
+                Alt klart!
+              </h1>
+              <p className="mb-8" style={{ color: 'var(--muted)' }}>
+                Husstanden din er satt opp. Du kan nå begynne å planlegge uken.
+              </p>
+              <button onClick={() => router.push('/uke')} className="btn btn-primary">
+                Gå til ukeplanen
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

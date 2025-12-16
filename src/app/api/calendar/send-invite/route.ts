@@ -48,7 +48,7 @@ export async function POST(request: Request) {
 
     // Get calendar tokens
     const { data: tokens } = await supabase
-      .from('google_calendar_tokens')
+      .from('google_calendar_tokens_decrypted')
       .select('*')
       .limit(1)
       .single()

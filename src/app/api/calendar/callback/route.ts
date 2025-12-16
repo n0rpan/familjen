@@ -47,19 +47,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(new URL('/admin?calendar_error=no_email', request.url))
     }
 
-    // Store tokens in database (upsert)
-    const { error: dbError } = await supabase
-      .from('google_calendar_tokens')
-      .upsert(
-        {
-          email: googleEmail,
-          access_token: tokens.access_token,
-          refresh_token: tokens.refresh_token,
-          token_type: tokens.token_type || 'Bearer',
-          expiry_date: tokens.expiry_date,
-        },
-        { onConflict: 'email' }
-      )
+    // Store tokens in database using encrypted upsert function
+    const { error: dbError } = await supabase.rpc('upsert_calendar_token', {
+      p_email: googleEmail,
+      p_access_token: tokens.access_token,
+      p_refresh_token: tokens.refresh_token,
+      p_token_type: tokens.token_type || 'Bearer',
+      p_expiry_date: tokens.expiry_date,
+    })
 
     if (dbError) {
       console.error('Database error:', dbError)

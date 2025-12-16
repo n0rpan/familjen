@@ -8,6 +8,7 @@ import {
   mapGoogleEventToMemberEvent,
 } from '@/lib/google-calendar'
 import { formatDateISO, addDays } from '@/lib/utils'
+import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 
 // POST /api/calendar/sync - Sync events from Google Calendar
 export async function POST() {
@@ -23,9 +24,19 @@ export async function POST() {
       )
     }
 
+    // Check rate limit
+    const rateLimitKey = createRateLimitKey(user.id, 'calendarSync')
+    const rateLimit = checkRateLimit(rateLimitKey, RATE_LIMITS.calendarSync)
+    if (rateLimit.limited) {
+      return NextResponse.json(
+        { error: `For mange forespørsler. Prøv igjen om ${rateLimit.retryAfter} sekunder.` },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
+      )
+    }
+
     // Get stored tokens
     const { data: tokenData, error: tokenError } = await supabase
-      .from('google_calendar_tokens')
+      .from('google_calendar_tokens_decrypted')
       .select('*')
       .limit(1)
       .single()
@@ -198,7 +209,7 @@ export async function GET() {
 
     // Get stored tokens
     const { data: tokenData } = await supabase
-      .from('google_calendar_tokens')
+      .from('google_calendar_tokens_decrypted')
       .select('email, created_at, updated_at')
       .limit(1)
       .single()
