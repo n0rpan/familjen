@@ -90,7 +90,7 @@ export async function POST(request: Request) {
       weekContextResult,
     ] = await Promise.all([
       supabase.from('children').select('name, birth_date, allergies').eq('household_id', household.id),
-      supabase.from('household_members').select('name, birth_date, allergies').eq('household_id', household.id),
+      supabase.from('household_members').select('name, birth_date, allergies, is_parent').eq('household_id', household.id).eq('is_parent', true),
       supabase.from('recipes').select('id, name, is_favorite, is_quick, is_kid_friendly').eq('household_id', household.id),
       supabase.from('meals').select('date, custom_meal, recipe:recipes(name)').eq('household_id', household.id).gte('date', twoWeeksAgoStr).lt('date', weekStart).order('date', { ascending: false }),
       supabase.from('calendar_events').select('date, name').or(`household_id.eq.${household.id},household_id.is.null`).gte('date', weekStart).lte('date', weekEndStr).eq('event_type', 'holiday'),
