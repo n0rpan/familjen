@@ -10,6 +10,7 @@ Norwegian family planning app for managing daily pickups, meals, and child tasks
 - **AI Meal Suggestions**: Get dinner ideas based on preferences and allergies
 - **Calendar Integration**: Sync with Google Calendar for work calendar blocking
 - **Multi-household Support**: Invite family members to collaborate
+- **Multi-language Support**: Norwegian (nb), Swedish (sv), and English (en)
 
 ## Tech Stack
 
@@ -99,7 +100,7 @@ src/
 │   ├── uke/            # Week planner
 │   ├── oppskrifter/    # Recipes
 │   ├── handleliste/    # Shopping list
-│   ├── innstillinger/  # Settings
+│   ├── innstillinger/  # Settings (includes language switcher)
 │   └── api/            # API routes
 ├── components/         # React components
 ├── lib/
@@ -107,6 +108,12 @@ src/
 │   ├── utils.ts       # Helper functions
 │   ├── config.ts      # App configuration
 │   ├── supabase/      # Supabase clients
+│   ├── i18n/          # Internationalization
+│   │   ├── types.ts        # Language types, TranslationStrings interface
+│   │   ├── context.tsx     # LanguageProvider, useLanguage hook
+│   │   ├── cookie.ts       # Client-side cookie helpers
+│   │   ├── cookie.server.ts # Server-side cookie + browser detection
+│   │   └── translations/   # nb.ts, sv.ts, en.ts
 │   └── google-calendar.ts
 └── styles/            # Global CSS
 ```

@@ -242,9 +242,80 @@ npm run lint         # TypeScript + ESLint
 npx supabase db push # Push migrations
 ```
 
-## Norwegian UI Text
+## Internationalization (i18n)
 
-The app uses Norwegian (Bokmål). Key terms:
+The app supports Norwegian (nb), Swedish (sv), and English (en).
+
+### Architecture
+
+```
+src/lib/i18n/
+├── types.ts           # Language type, TranslationStrings interface (~150 keys)
+├── context.tsx        # LanguageProvider, useLanguage(), useTranslation()
+├── cookie.ts          # Client: getLanguageFromCookieClient(), setLanguageCookie()
+├── cookie.server.ts   # Server: getLanguageFromCookieOrBrowser()
+└── translations/
+    ├── nb.ts          # Norwegian (default)
+    ├── sv.ts          # Swedish
+    └── en.ts          # English
+```
+
+### Usage Patterns
+
+**Client components:**
+```typescript
+import { useLanguage } from '@/lib/i18n/context'
+
+function MyComponent() {
+  const { t, language, setLanguage } = useLanguage()
+  return <h1>{t.common.save}</h1>
+}
+```
+
+**Server components:**
+```typescript
+import { getLanguageFromCookieOrBrowser } from '@/lib/i18n/cookie.server'
+import { getTranslations } from '@/lib/i18n/translations'
+
+async function Page() {
+  const language = await getLanguageFromCookieOrBrowser()
+  const t = getTranslations(language)
+  return <h1>{t.common.save}</h1>
+}
+```
+
+### Language Persistence
+
+1. **Cookie**: `familjen-language` (7-day expiry)
+2. **Database**: `household_members.language_preference` for logged-in users
+3. **Browser detection**: Falls back to `Accept-Language` header
+
+### Adding New Translations
+
+1. Add key to `TranslationStrings` interface in `types.ts`
+2. Add value to all three translation files (nb.ts, sv.ts, en.ts)
+3. Use via `t.section.key` in components
+
+### Key Translation Sections
+
+| Section | Purpose |
+|---------|---------|
+| `common` | Buttons, labels, states (save, cancel, loading...) |
+| `nav` | Navigation items |
+| `date` | Weekdays, months, week format |
+| `home` | Home page strings |
+| `week` | Week planner, AI modal |
+| `settings` | Settings page |
+| `recipes` | Recipe management |
+| `shopping` | Shopping list |
+| `admin` | Admin panel (~40 keys) |
+| `wizard` | Setup wizard |
+| `errors` | Error messages |
+| `success` | Success messages |
+
+## Norwegian Terms Reference
+
+Key Norwegian terms used in code:
 - Henting = Pickup
 - Middag = Dinner
 - Oppgave = Task
