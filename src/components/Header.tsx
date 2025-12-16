@@ -121,8 +121,8 @@ export function Header() {
   ]
 
   // Primary mobile nav items (shown in bottom bar)
-  // Home is now the Familjen logo at top, so we have 4 main items + More
   const primaryMobileNav = [
+    { name: t.nav.home, href: '/', icon: HomeIcon },
     { name: t.nav.weekPlan, href: '/uke', icon: CalendarIcon },
     { name: t.nav.rememberList, href: '/huskeliste', icon: BellIcon },
     { name: t.nav.shoppingList, href: '/handleliste', icon: ShoppingIcon },
@@ -130,13 +130,12 @@ export function Header() {
 
   // Secondary mobile nav items (shown in "More" menu)
   const secondaryMobileNav = [
-    { name: t.nav.home, href: '/', icon: HomeIcon },
     { name: t.nav.recipes, href: '/oppskrifter', icon: BookIcon },
     { name: t.nav.settings, href: '/innstillinger', icon: SettingsIcon },
   ]
 
-  // Check if current page is a secondary nav item or home (not in primary nav)
-  const isSecondaryActive = secondaryMobileNav.some(item => pathname === item.href) || pathname === '/admin' || pathname === '/'
+  // Check if current page is a secondary nav item (not in primary nav)
+  const isSecondaryActive = secondaryMobileNav.some(item => pathname === item.href) || pathname === '/admin'
 
   useEffect(() => {
     const getUser = async () => {
@@ -173,7 +172,7 @@ export function Header() {
     <>
       {/* Desktop Header */}
       <header
-        className="hidden md:block w-full sticky top-0 z-50 backdrop-blur-md"
+        className="hidden lg:block w-full sticky top-0 z-50 backdrop-blur-md"
         style={{
           background: 'var(--header-bg)',
           borderBottom: '1px solid var(--border)'
@@ -246,7 +245,7 @@ export function Header() {
 
       {/* Mobile Top Header */}
       <header
-        className="md:hidden w-full sticky top-0 z-40 backdrop-blur-md"
+        className="lg:hidden w-full sticky top-0 z-40 backdrop-blur-md"
         style={{
           background: 'var(--header-bg)',
           borderBottom: '1px solid var(--border)'
@@ -272,7 +271,7 @@ export function Header() {
 
       {/* Mobile Bottom Navigation */}
       <nav
-        className="md:hidden fixed bottom-0 left-0 right-0 z-50 backdrop-blur-md safe-area-pb"
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-50 backdrop-blur-md safe-area-pb"
         style={{
           background: 'var(--nav-bg)',
           borderTop: '1px solid var(--border)',
@@ -313,14 +312,14 @@ export function Header() {
       {/* Mobile More Menu Overlay */}
       {moreMenuOpen && (
         <div
-          className="md:hidden fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm"
+          className="lg:hidden fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm"
           onClick={() => setMoreMenuOpen(false)}
         />
       )}
 
       {/* Mobile More Menu Slide-up */}
       <div
-        className={`md:hidden fixed bottom-0 left-0 right-0 z-[70] transform transition-transform duration-300 ease-out ${
+        className={`lg:hidden fixed bottom-0 left-0 right-0 z-[70] transform transition-transform duration-300 ease-out ${
           moreMenuOpen ? 'translate-y-0' : 'translate-y-full'
         }`}
         style={{
