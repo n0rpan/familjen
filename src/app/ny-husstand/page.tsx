@@ -96,34 +96,21 @@ export default function CreateHouseholdPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Du må være logget inn')
 
-      // Create the household
-      const { data: newHousehold, error: householdError } = await supabase
-        .from('households')
-        .insert({ name: householdName.trim() })
-        .select()
-        .single()
-
-      if (householdError) throw new Error('Kunne ikke opprette husstand')
-
-      // Create the user as household admin
-      const { error: memberError } = await supabase
-        .from('household_members')
-        .insert({
-          household_id: newHousehold.id,
-          name: myName.trim(),
-          short_name: myName.trim().substring(0, 3),
-          is_parent: true,
-          is_household_admin: true,
-          user_id: user.id,
-          email: user.email?.toLowerCase(),
+      // Use RPC function to create household and member atomically
+      // This bypasses RLS issues with SELECT after INSERT
+      const { data: newHouseholdId, error: createError } = await supabase
+        .rpc('create_household_with_admin', {
+          p_household_name: householdName.trim(),
+          p_member_name: myName.trim(),
+          p_member_email: user.email?.toLowerCase() || ''
         })
 
-      if (memberError) {
-        await supabase.from('households').delete().eq('id', newHousehold.id)
-        throw new Error('Kunne ikke legge til deg som medlem')
+      if (createError) {
+        console.error('Create household error:', createError)
+        throw new Error('Kunne ikke opprette husstand')
       }
 
-      setHouseholdId(newHousehold.id)
+      setHouseholdId(newHouseholdId)
       setStep('children')
     } catch (err) {
       console.error('Create household error:', err)
