@@ -32,6 +32,8 @@ export const EVENT_TYPE_CONFIG: Record<MemberEventType, { icon: string; bg: stri
 export const TASK_TYPE_CONFIG: Record<ChildTaskType, { icon: string; label: string }> = {
   bring: { icon: '🎒', label: 'Ta med' },
   appointment: { icon: '🩺', label: 'Avtale' },
+  activity: { icon: '⚽', label: 'Aktivitet' },
+  closure: { icon: '🏫', label: 'Stengt' },
   reminder: { icon: '📝', label: 'Påminnelse' },
   other: { icon: '📌', label: 'Annet' },
 }

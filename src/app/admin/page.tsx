@@ -389,20 +389,7 @@ export default function AdminPage() {
     ).map((household) => {
       const members = (membersResult.data || [])
         .filter((m) => m.household_id === household.id)
-        .map((m) => {
-          // Try to find email from allowed_emails via user_id
-          // Note: This is a simplified lookup - in production you might need a join
-          const memberWithEmail: HouseholdMemberWithEmail = {
-            ...m,
-            email:
-              allowedEmails.find(
-                (e) =>
-                  // Match by email if we have a lookup table, for now just show user_id
-                  m.user_id,
-              )?.email || null,
-          };
-          return memberWithEmail;
-        });
+        .map((m): HouseholdMemberWithEmail => m);
       const children = (childrenResult.data || []).filter(
         (c) => c.household_id === household.id,
       );

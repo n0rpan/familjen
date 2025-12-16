@@ -22,6 +22,8 @@ interface RateLimitConfig {
 export const RATE_LIMITS = {
   // AI suggestions - expensive, limit to 10/minute
   aiSuggest: { limit: 10, windowMs: 60 * 1000 },
+  // AI parse reminders - more lenient, 20/minute
+  aiParseReminders: { limit: 20, windowMs: 60 * 1000 },
   // Calendar sync - moderate, 30/minute
   calendarSync: { limit: 30, windowMs: 60 * 1000 },
   // Calendar invites - moderate, 20/minute

@@ -14,6 +14,7 @@ export interface TranslationStrings {
     home: string
     weekPlan: string
     recipes: string
+    rememberList: string
     shoppingList: string
     settings: string
     admin: string
@@ -57,6 +58,7 @@ export interface TranslationStrings {
     creating: string
     finish: string
     items: string
+    confirmDelete: string
     free: string
   }
 
@@ -149,6 +151,8 @@ export interface TranslationStrings {
       bring: string
       appointment: string
       reminder: string
+      activity: string
+      closure: string
       other: string
     }
     taskTime: string
@@ -434,5 +438,140 @@ export interface TranslationStrings {
     childAdded: string
     recipeAdded: string
     calendarSynced: string
+  }
+
+  // Remember page (Huskeliste)
+  remember: {
+    title: string
+    subtitle: string
+    remindersTab: string
+    wishlistsTab: string
+    todayReminders: string
+    weekReminders: string
+    laterReminders: string
+    recurringReminders: string
+    addReminder: string
+    editReminder: string
+    reminderTitle: string
+    reminderDate: string
+    reminderTime: string
+    reminderNotes: string
+    reminderCategory: string
+    reminderPriority: string
+    assignTo: string
+    unassigned: string
+    snooze: string
+    snoozeUntil: string
+    // Categories
+    categories: {
+      bill: string
+      insurance: string
+      car: string
+      home: string
+      health: string
+      subscription: string
+      other: string
+    }
+    // Priority
+    priorities: {
+      low: string
+      normal: string
+      high: string
+    }
+    // Task types (extended)
+    taskTypes: {
+      bring: string
+      appointment: string
+      reminder: string
+      activity: string
+      closure: string
+      other: string
+    }
+    // Recurrence
+    recurring: string
+    recurrencePattern: string
+    daily: string
+    weekly: string
+    biweekly: string
+    monthly: string
+    yearly: string
+    repeatOn: string
+    repeatEvery: string
+    until: string
+    // Status
+    open: string
+    done: string
+    snoozed: string
+    overdue: string
+    upcoming: string
+    today: string
+    thisWeek: string
+    later: string
+    // AI
+    aiInput: string
+    aiInputPlaceholder: string
+    aiParsing: string
+    aiConfirm: string
+    aiEdit: string
+    aiConfidence: string
+    aiConfidenceHigh: string
+    aiConfidenceMedium: string
+    aiConfidenceLow: string
+    useThis: string
+    // Empty states
+    noReminders: string
+    noRemindersDesc: string
+    addFirstReminder: string
+  }
+
+  // Wishlists
+  wishlists: {
+    title: string
+    createWishlist: string
+    editWishlist: string
+    deleteWishlist: string
+    deleteWishlistConfirm: string
+    wishlistName: string
+    occasion: string
+    occasionDate: string
+    makePublic: string
+    makePublicDesc: string
+    // Occasions
+    occasions: {
+      birthday: string
+      christmas: string
+      anniversary: string
+      general: string
+      other: string
+    }
+    // Items
+    addItem: string
+    editItem: string
+    deleteItem: string
+    itemName: string
+    itemDescription: string
+    itemLink: string
+    itemPrice: string
+    itemPriority: string
+    itemQuantity: string
+    buyerNotes: string
+    buyerNotesDesc: string
+    // Status
+    reserve: string
+    unreserve: string
+    markFulfilled: string
+    markDismissed: string
+    reserved: string
+    reservedBy: string
+    fulfilled: string
+    fulfilledBy: string
+    // Empty states
+    noWishlists: string
+    noWishlistsDesc: string
+    noItems: string
+    noItemsDesc: string
+    // Counts
+    items: string
+    item: string
   }
 }

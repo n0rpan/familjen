@@ -1252,6 +1252,8 @@ export default function WeekEditPage() {
                   {[
                     { value: 'bring', icon: '🎒', label: t.week.taskTypes.bring },
                     { value: 'appointment', icon: '🩺', label: t.week.taskTypes.appointment },
+                    { value: 'activity', icon: '⚽', label: t.week.taskTypes.activity },
+                    { value: 'closure', icon: '🏫', label: t.week.taskTypes.closure },
                     { value: 'reminder', icon: '📝', label: t.week.taskTypes.reminder },
                     { value: 'other', icon: '📌', label: t.week.taskTypes.other },
                   ].map((type) => (

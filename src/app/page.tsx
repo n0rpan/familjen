@@ -50,24 +50,16 @@ export default async function HomePage() {
     .eq('user_id', user.id)
     .single()
 
-  // If no membership by user_id, check if there's a member with matching email
-  if (!myMembership && user.email) {
-    const { data: memberByEmail } = await supabase
-      .from('household_members')
-      .select('id, household_id, user_id')
-      .eq('email', user.email.toLowerCase())
-      .is('user_id', null)
-      .single()
+  // If no membership by user_id, try to claim a pending invite via RPC
+  // This uses a SECURITY DEFINER function to bypass RLS for invite claiming
+  if (!myMembership) {
+    const { data: claimedInvite } = await supabase
+      .rpc('claim_invite_for_current_user')
 
-    // If found, link the user to this member record
-    if (memberByEmail) {
-      const { error: linkError } = await supabase
-        .from('household_members')
-        .update({ user_id: user.id })
-        .eq('id', memberByEmail.id)
-
-      if (!linkError) {
-        myMembership = { id: memberByEmail.id, household_id: memberByEmail.household_id }
+    if (claimedInvite && claimedInvite.length > 0) {
+      myMembership = {
+        id: claimedInvite[0].member_id,
+        household_id: claimedInvite[0].household_id
       }
     }
   }
@@ -115,7 +107,7 @@ export default async function HomePage() {
   const weekEndStr = formatDateISO(weekEnd)
 
   // Fetch all data in parallel
-  const [childrenResult, membersResult, pickupsResult, mealsResult, eventsResult, tasksResult] = await Promise.all([
+  const [childrenResult, membersResult, pickupsResult, mealsResult, eventsResult, tasksResult, remindersResult] = await Promise.all([
     supabase.from('children').select('*').order('sort_order'),
     supabase.from('household_members').select('*'),
     supabase.from('pickups').select(`*, child:children(*), picker:household_members(*)`).gte('date', weekStartStr).lte('date', weekEndStr),
@@ -124,6 +116,8 @@ export default async function HomePage() {
     supabase.from('member_events').select('*').lte('date', weekEndStr).or(`end_date.gte.${weekStartStr},end_date.is.null`),
     // Fetch child tasks for this week
     supabase.from('child_tasks').select('*, child:children(*)').gte('date', weekStartStr).lte('date', weekEndStr).order('date').order('time'),
+    // Fetch household reminders for this week
+    supabase.from('household_reminders').select('*, assignee:household_members(*)').gte('date', weekStartStr).lte('date', weekEndStr).eq('status', 'open').order('date').order('time'),
   ])
 
   // Check for errors
@@ -169,17 +163,20 @@ export default async function HomePage() {
   const meals = mealsResult.data
   const memberEvents = eventsResult.data
   const childTasks = tasksResult.data || []
+  const householdReminders = remindersResult.data || []
 
   // Get today's summary
   const todayPickups = pickups?.filter(p => p.date === todayStr) || []
   const todayMeal = meals?.find(m => m.date === todayStr) || null
   const todayTasks = childTasks.filter(t => t.date === todayStr)
+  const todayReminders = householdReminders.filter(r => r.date === todayStr)
 
   const todaySummary = {
     date: todayStr,
     pickups: todayPickups,
     meal: todayMeal,
     tasks: todayTasks,
+    reminders: todayReminders,
   }
 
   // Check if we have any data set up

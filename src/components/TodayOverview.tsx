@@ -1,9 +1,19 @@
 'use client'
 
 import { formatDateLocalized } from '@/lib/utils'
-import type { DaySummary, ChildTaskType } from '@/lib/types'
+import type { DaySummary, ChildTaskType, ReminderCategory } from '@/lib/types'
 import { getChildColor, getTaskConfig } from '@/lib/colors'
 import { useLanguage } from '@/lib/i18n/context'
+
+const REMINDER_CATEGORY_ICONS: Record<ReminderCategory, string> = {
+  bill: '\ud83d\udcb3',
+  insurance: '\ud83d\udee1\ufe0f',
+  car: '\ud83d\ude97',
+  home: '\ud83c\udfe0',
+  health: '\u2764\ufe0f',
+  subscription: '\ud83d\udd04',
+  other: '\ud83d\udd14',
+}
 
 interface TodayOverviewProps {
   summary: DaySummary | null
@@ -63,7 +73,7 @@ export function TodayOverview({ summary, loading }: TodayOverviewProps) {
         </div>
       </div>
 
-      {!summary || (summary.pickups.length === 0 && !summary.meal && summary.tasks.length === 0) ? (
+      {!summary || (summary.pickups.length === 0 && !summary.meal && summary.tasks.length === 0 && (!summary.reminders || summary.reminders.length === 0)) ? (
         <div
           className="text-center py-8 rounded-xl"
           style={{ background: 'var(--background)' }}
@@ -182,6 +192,76 @@ export function TodayOverview({ summary, loading }: TodayOverviewProps) {
                           {task.time && ` • ${task.time.substring(0, 5)}`}
                         </span>
                       </div>
+                      {isDone && (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-sage)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Household reminders section */}
+          {summary.reminders && summary.reminders.length > 0 && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                  {t.remember.remindersTab}
+                </span>
+                <span
+                  className="text-xs px-2 py-0.5 rounded-full"
+                  style={{ background: 'rgba(167, 139, 250, 0.2)', color: '#a78bfa' }}
+                >
+                  {summary.reminders.filter(r => r.status === 'open').length}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {summary.reminders.map((reminder) => {
+                  const categoryIcon = REMINDER_CATEGORY_ICONS[reminder.category as ReminderCategory] || REMINDER_CATEGORY_ICONS.other
+                  const isDone = reminder.status === 'done'
+                  const priorityColor = reminder.priority === 'high' ? 'var(--color-coral)' :
+                    reminder.priority === 'low' ? 'var(--color-sage)' : 'var(--muted)'
+                  return (
+                    <div
+                      key={reminder.id}
+                      className="flex items-center gap-3 p-3 rounded-xl transition-colors"
+                      style={{
+                        background: isDone ? 'transparent' : 'rgba(167, 139, 250, 0.08)',
+                        opacity: isDone ? 0.6 : 1,
+                        borderLeft: reminder.priority === 'high' ? '3px solid var(--color-coral)' :
+                          reminder.priority === 'low' ? '3px solid var(--color-sage)' : 'none',
+                      }}
+                    >
+                      <span className="text-lg flex-shrink-0">{categoryIcon}</span>
+                      <div className="flex-1 min-w-0">
+                        <span
+                          className="font-medium block"
+                          style={{
+                            color: isDone ? 'var(--muted)' : 'var(--foreground)',
+                            textDecoration: isDone ? 'line-through' : 'none',
+                          }}
+                        >
+                          {reminder.title}
+                        </span>
+                        <span className="text-sm" style={{ color: 'var(--muted)' }}>
+                          {reminder.assignee?.name || t.remember.unassigned}
+                          {reminder.time && ` • ${reminder.time.substring(0, 5)}`}
+                        </span>
+                      </div>
+                      {reminder.priority !== 'normal' && (
+                        <span
+                          className="text-xs px-2 py-0.5 rounded-full"
+                          style={{
+                            background: reminder.priority === 'high' ? 'rgba(232, 120, 109, 0.2)' : 'rgba(131, 166, 151, 0.2)',
+                            color: priorityColor,
+                          }}
+                        >
+                          {t.remember.priorities[reminder.priority as keyof typeof t.remember.priorities]}
+                        </span>
+                      )}
                       {isDone && (
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-sage)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                           <polyline points="20 6 9 17 4 12"/>

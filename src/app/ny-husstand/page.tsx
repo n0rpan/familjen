@@ -105,28 +105,19 @@ export default function CreateHouseholdPage() {
       if (!user) throw new Error(t.errors.unauthorized)
 
       // Use RPC function to create household and member atomically
-      // This bypasses RLS issues with SELECT after INSERT
+      // All member data is passed to the RPC to ensure it's set in one SECURITY DEFINER call
       const { data: newHouseholdId, error: createError } = await supabase
         .rpc('create_household_with_admin', {
           p_household_name: householdName.trim(),
           p_member_name: myName.trim(),
-          p_member_email: user.email?.toLowerCase() || ''
+          p_member_email: user.email?.toLowerCase() || '',
+          p_birth_date: myBirthDate || null,
+          p_allergies: myAllergies.trim() || null,
         })
 
       if (createError) {
         console.error('Create household error:', createError)
         throw new Error(t.errors.couldNotCreateHousehold)
-      }
-
-      // Update member with birth date and allergies
-      if (myBirthDate || myAllergies) {
-        await supabase
-          .from('household_members')
-          .update({
-            birth_date: myBirthDate || null,
-            allergies: myAllergies.trim() || null,
-          })
-          .eq('user_id', user.id)
       }
 
       setHouseholdId(newHouseholdId)

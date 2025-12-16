@@ -63,6 +63,15 @@ function ShoppingIcon() {
   )
 }
 
+function BellIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+      <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+    </svg>
+  )
+}
+
 export function Header() {
   const pathname = usePathname()
   const [user, setUser] = useState<User | null>(null)
@@ -76,6 +85,7 @@ export function Header() {
     { name: t.nav.home, href: '/', icon: HomeIcon },
     { name: t.nav.weekPlan, href: '/uke', icon: CalendarIcon },
     { name: t.nav.recipes, href: '/oppskrifter', icon: BookIcon },
+    { name: t.nav.rememberList, href: '/huskeliste', icon: BellIcon },
     { name: t.nav.shoppingList, href: '/handleliste', icon: ShoppingIcon },
     { name: t.nav.settings, href: '/innstillinger', icon: SettingsIcon },
   ]
@@ -85,31 +95,16 @@ export function Header() {
       const { data: { user } } = await supabase.auth.getUser()
       setUser(user)
 
-      // Check if user is admin via database
-      if (user?.email) {
-        const { data } = await supabase
-          .from('allowed_emails')
-          .select('is_admin')
-          .eq('email', user.email.toLowerCase())
-          .single()
-        setIsAdmin(data?.is_admin === true)
-      }
+      // Check admin status from JWT app_metadata (set during login by syncUserAdminStatus)
+      // This avoids RLS-related issues with querying allowed_emails
+      setIsAdmin(user?.app_metadata?.is_admin === true)
     }
     getUser()
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
-      // Re-check admin status on auth change
-      if (session?.user?.email) {
-        const { data } = await supabase
-          .from('allowed_emails')
-          .select('is_admin')
-          .eq('email', session.user.email.toLowerCase())
-          .single()
-        setIsAdmin(data?.is_admin === true)
-      } else {
-        setIsAdmin(false)
-      }
+      // Check admin status from JWT app_metadata
+      setIsAdmin(session?.user?.app_metadata?.is_admin === true)
     })
 
     return () => subscription.unsubscribe()

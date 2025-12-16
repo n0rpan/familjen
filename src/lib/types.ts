@@ -108,6 +108,7 @@ export interface DaySummary {
   pickups: PickupWithDetails[]
   meal: MealWithRecipe | null
   tasks: ChildTaskWithChild[]
+  reminders?: HouseholdReminderWithAssignee[]
 }
 
 // Admin types
@@ -214,9 +215,19 @@ export interface MemberEventWithMember extends MemberEvent {
   member: HouseholdMember
 }
 
-// Child tasks (reminders, appointments, bring items)
-export type ChildTaskType = 'bring' | 'appointment' | 'reminder' | 'other'
+// Child tasks (reminders, appointments, bring items, activities, closures)
+export type ChildTaskType = 'bring' | 'appointment' | 'reminder' | 'activity' | 'closure' | 'other'
 export type ChildTaskStatus = 'open' | 'done'
+export type TaskSource = 'manual' | 'ai_suggested' | 'imported' | 'recurring'
+
+// Recurrence pattern for recurring tasks/reminders
+export interface RecurrencePattern {
+  type: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly'
+  days?: number[]        // For weekly: 0=Sun, 1=Mon, etc.
+  dayOfMonth?: number    // For monthly
+  interval?: number      // Every N days/weeks/months
+  endDate?: string       // When recurrence stops (ISO date)
+}
 
 export interface ChildTask {
   id: string
@@ -228,6 +239,9 @@ export interface ChildTask {
   title: string
   notes: string | null
   status: ChildTaskStatus
+  source: TaskSource
+  recurrence_pattern: RecurrencePattern | null
+  parent_task_id: string | null
   completed_at: string | null
   completed_by: string | null
   created_at: string
@@ -236,6 +250,93 @@ export interface ChildTask {
 
 export interface ChildTaskWithChild extends ChildTask {
   child: Child
+}
+
+// Household reminders (not tied to a specific child)
+export type ReminderCategory = 'bill' | 'insurance' | 'car' | 'home' | 'health' | 'subscription' | 'other'
+export type ReminderStatus = 'open' | 'done' | 'snoozed'
+export type ReminderPriority = 'low' | 'normal' | 'high'
+
+export interface HouseholdReminder {
+  id: string
+  household_id: string
+  date: string  // ISO date YYYY-MM-DD
+  time: string | null
+  title: string
+  notes: string | null
+  category: ReminderCategory
+  status: ReminderStatus
+  priority: ReminderPriority
+  snoozed_until: string | null
+  assigned_to: string | null
+  source: TaskSource
+  recurrence_pattern: RecurrencePattern | null
+  parent_reminder_id: string | null
+  completed_at: string | null
+  completed_by: string | null
+  created_at: string
+  updated_at: string | null
+}
+
+export interface HouseholdReminderWithAssignee extends HouseholdReminder {
+  assignee: HouseholdMember | null
+}
+
+// Wishlists
+export type WishlistOccasion = 'birthday' | 'christmas' | 'anniversary' | 'general' | 'other'
+export type WishlistItemStatus = 'open' | 'reserved' | 'fulfilled' | 'dismissed'
+
+export interface Wishlist {
+  id: string
+  household_id: string
+  member_id: string | null  // For adult wishlists
+  child_id: string | null   // For child wishlists
+  name: string
+  occasion: WishlistOccasion | null
+  occasion_date: string | null
+  description: string | null
+  is_public: boolean
+  sort_order: number
+  created_at: string
+  updated_at: string | null
+}
+
+export interface WishlistItem {
+  id: string
+  wishlist_id: string
+  name: string
+  description: string | null
+  link: string | null
+  price: number | null
+  currency: string
+  image_url: string | null
+  priority: number  // 0-5, higher = more wanted
+  quantity: number
+  status: WishlistItemStatus
+  reserved_by: string | null
+  reserved_at: string | null
+  fulfilled_by: string | null
+  fulfilled_at: string | null
+  notes: string | null
+  buyer_notes: string | null
+  created_at: string
+  updated_at: string | null
+}
+
+export interface WishlistWithItems extends Wishlist {
+  items: WishlistItem[]
+  owner_name: string  // Resolved from member or child
+  owner_color: ChildColor | null  // If child, their color
+}
+
+export interface WishlistWithOwner extends Wishlist {
+  member: HouseholdMember | null
+  child: Child | null
+}
+
+export interface WishlistItemWithReservation extends WishlistItem {
+  reserver: HouseholdMember | null
+  fulfiller: HouseholdMember | null
 }
 
 // Week-specific AI context
