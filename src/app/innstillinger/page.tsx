@@ -985,7 +985,7 @@ export default function SettingsPage() {
               </p>
             </div>
             <div>
-              <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Fødselsdato</label>
+              <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Fødselsdato (valgfritt)</label>
               <input
                 type="date"
                 value={newMember.birth_date}

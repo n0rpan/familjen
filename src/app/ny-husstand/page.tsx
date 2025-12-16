@@ -346,7 +346,7 @@ export default function CreateHouseholdPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
-                    Din fødselsdato
+                    Din fødselsdato <span style={{ color: 'var(--muted)', fontWeight: 'normal' }}>(valgfritt)</span>
                   </label>
                   <input
                     type="date"
@@ -357,7 +357,7 @@ export default function CreateHouseholdPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
-                    Allergier / matpreferanser
+                    Allergier / matpreferanser <span style={{ color: 'var(--muted)', fontWeight: 'normal' }}>(valgfritt)</span>
                   </label>
                   <input
                     type="text"
@@ -441,7 +441,7 @@ export default function CreateHouseholdPage() {
                 />
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Fødselsdato</label>
+                    <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Fødselsdato (valgfritt)</label>
                     <input
                       type="date"
                       value={newChild.birth_date}
@@ -450,7 +450,7 @@ export default function CreateHouseholdPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Allergier</label>
+                    <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Allergier (valgfritt)</label>
                     <input
                       type="text"
                       value={newChild.allergies}
