@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { useTranslation } from '@/lib/i18n/context'
 
 function LoginContent() {
   const [email, setEmail] = useState('')
@@ -10,21 +11,22 @@ function LoginContent() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const searchParams = useSearchParams()
   const supabase = useMemo(() => createClient(), [])
+  const t = useTranslation()
 
   useEffect(() => {
     const error = searchParams.get('error')
     if (error === 'not_allowed') {
       setMessage({
         type: 'error',
-        text: 'Din e-post er ikke godkjent. Kontakt administrator for tilgang.',
+        text: t.login.errorNotAllowed,
       })
     } else if (error === 'auth_failed') {
       setMessage({
         type: 'error',
-        text: 'Innlogging feilet. Prøv igjen.',
+        text: t.login.errorAuthFailed,
       })
     }
-  }, [searchParams])
+  }, [searchParams, t])
 
   const handleGoogleLogin = async () => {
     setLoading(true)
@@ -61,7 +63,7 @@ function LoginContent() {
     } else {
       setMessage({
         type: 'success',
-        text: 'Sjekk e-posten din for en innloggingslenke!',
+        text: t.login.checkEmail,
       })
     }
   }
@@ -101,7 +103,7 @@ function LoginContent() {
               Familjen
             </h1>
             <p style={{ color: 'var(--muted)' }} className="text-lg">
-              Planlegg uken sammen
+              {t.login.subtitle}
             </p>
           </div>
 
@@ -142,7 +144,7 @@ function LoginContent() {
                 />
               </svg>
               <span className="font-medium" style={{ color: 'var(--foreground)' }}>
-                Fortsett med Google
+                {t.login.continueWithGoogle}
               </span>
             </button>
 
@@ -156,7 +158,7 @@ function LoginContent() {
                   className="px-4 text-sm"
                   style={{ background: 'var(--card)', color: 'var(--muted)' }}
                 >
-                  eller bruk e-post
+                  {t.common.or}
                 </span>
               </div>
             </div>
@@ -169,14 +171,14 @@ function LoginContent() {
                   className="block text-sm font-medium mb-2"
                   style={{ color: 'var(--foreground)' }}
                 >
-                  E-postadresse
+                  {t.login.emailLabel}
                 </label>
                 <input
                   type="email"
                   id="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="navn@eksempel.no"
+                  placeholder={t.login.emailPlaceholder}
                   className="input"
                   required
                 />
@@ -192,10 +194,10 @@ function LoginContent() {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
                     </svg>
-                    <span>Sender...</span>
+                    <span>{t.login.sending}</span>
                   </>
                 ) : (
-                  'Send innloggingslenke'
+                  t.login.sendMagicLink
                 )}
               </button>
             </form>

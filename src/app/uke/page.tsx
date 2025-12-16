@@ -3,12 +3,14 @@
 import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { WeekGrid } from '@/components/WeekGrid'
-import { formatDateISO, getWeekStart, addDays, formatWeekHeader } from '@/lib/utils'
+import { formatDateISO, getWeekStart, addDays, formatWeekHeaderLocalized } from '@/lib/utils'
 import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Household, Recipe, MealSuggestion, MemberEvent, MemberEventType, ChildTask, ChildTaskType } from '@/lib/types'
 import Link from 'next/link'
 import { AISuggestionModal } from '@/components/AISuggestionModal'
+import { useLanguage } from '@/lib/i18n/context'
 
 export default function WeekEditPage() {
+  const { language, t } = useLanguage()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -97,15 +99,15 @@ export default function WeekEditPage() {
 
         // Check for critical errors
         if (householdResult.error && householdResult.error.code !== 'PGRST116') {
-          throw new Error('Kunne ikke laste husstand')
+          throw new Error(t.errors.couldNotLoadHousehold)
         }
-        if (childrenResult.error) throw new Error('Kunne ikke laste barn')
-        if (membersResult.error) throw new Error('Kunne ikke laste familiemedlemmer')
-        if (pickupsResult.error) throw new Error('Kunne ikke laste hentinger')
-        if (mealsResult.error) throw new Error('Kunne ikke laste måltider')
-        if (recipesResult.error) throw new Error('Kunne ikke laste oppskrifter')
-        if (eventsResult.error) throw new Error('Kunne ikke laste hendelser')
-        if (tasksResult.error) throw new Error('Kunne ikke laste oppgaver')
+        if (childrenResult.error) throw new Error(t.errors.couldNotLoadChildren)
+        if (membersResult.error) throw new Error(t.errors.couldNotLoadMembers)
+        if (pickupsResult.error) throw new Error(t.errors.couldNotLoadPickups)
+        if (mealsResult.error) throw new Error(t.errors.couldNotLoadMeals)
+        if (recipesResult.error) throw new Error(t.errors.couldNotLoadRecipes)
+        if (eventsResult.error) throw new Error(t.errors.couldNotLoadEvents)
+        if (tasksResult.error) throw new Error(t.errors.couldNotLoadTasks)
 
         setHousehold(householdResult.data)
         setChildren(childrenResult.data || [])
@@ -128,7 +130,7 @@ export default function WeekEditPage() {
         }
       } catch (err) {
         console.error('Week edit page error:', err)
-        setError(err instanceof Error ? err.message : 'En feil oppstod')
+        setError(err instanceof Error ? err.message : t.errors.generic)
       } finally {
         setLoading(false)
       }
@@ -189,14 +191,14 @@ export default function WeekEditPage() {
       const data = await res.json()
       if (!res.ok) {
         console.error('Calendar sync error:', data.error)
-        showMessage('error', data.error || 'Kunne ikke synkronisere til kalender')
+        showMessage('error', data.error || t.errors.calendarSyncFailed)
       } else {
-        showMessage('success', sync ? 'Lagt til i jobbkalender' : 'Fjernet fra jobbkalender')
+        showMessage('success', sync ? t.week.sendToWorkCalendar : t.week.removeFromWorkCalendar)
       }
       triggerReload()
     } catch (error) {
       console.error('Calendar sync error:', error)
-      showMessage('error', 'Noe gikk galt med kalendersync')
+      showMessage('error', t.errors.calendarSyncFailed)
     } finally {
       setSaving(false)
     }
@@ -229,7 +231,7 @@ export default function WeekEditPage() {
   // Copy pickups and meals from last week
   const copyLastWeek = async () => {
     if (!household) return
-    if (!confirm('Kopiere henting og middager fra forrige uke? Eksisterende data for denne uken beholdes.')) return
+    if (!confirm(t.week.copyLastWeekConfirm)) return
 
     setSaving(true)
     try {
@@ -277,11 +279,11 @@ export default function WeekEditPage() {
         await supabase.from('meals').upsert(copyMeals, { onConflict: 'household_id,date' })
       }
 
-      showMessage('success', `Kopiert ${copyPickups.length} hentinger og ${copyMeals.length} middager`)
+      showMessage('success', t.success.copied)
       triggerReload()
     } catch (err) {
       console.error('Error copying last week:', err)
-      showMessage('error', 'Kunne ikke kopiere fra forrige uke')
+      showMessage('error', t.errors.saveFailed)
     } finally {
       setSaving(false)
     }
@@ -290,7 +292,7 @@ export default function WeekEditPage() {
   // Clear all pickups and meals for this week
   const clearWeek = async () => {
     if (!household) return
-    if (!confirm('Slette alle hentinger og middager for denne uken? Dette kan ikke angres.')) return
+    if (!confirm(t.week.clearWeekConfirm)) return
 
     setSaving(true)
     try {
@@ -312,11 +314,11 @@ export default function WeekEditPage() {
           .lte('date', weekEndStr),
       ])
 
-      showMessage('success', 'Uken er tømt')
+      showMessage('success', t.success.cleared)
       triggerReload()
     } catch (err) {
       console.error('Error clearing week:', err)
-      showMessage('error', 'Kunne ikke tømme uken')
+      showMessage('error', t.errors.saveFailed)
     } finally {
       setSaving(false)
     }
@@ -617,23 +619,23 @@ export default function WeekEditPage() {
         const data = await response.json()
         // Provide user-friendly error messages
         if (response.status === 429) {
-          throw new Error('Du har sendt for mange forespørsler. Vent litt før du prøver igjen.')
+          throw new Error(t.errors.generic) // Rate limited
         } else if (response.status === 401) {
-          throw new Error('Du må være logget inn for å bruke AI-forslag.')
+          throw new Error(t.errors.unauthorized)
         } else if (response.status === 503) {
-          throw new Error('AI-tjenesten er midlertidig utilgjengelig. Prøv igjen senere.')
+          throw new Error(t.errors.networkError)
         }
-        throw new Error(data.error || 'Kunne ikke hente forslag fra AI. Sjekk at OpenRouter API-nøkkel er konfigurert.')
+        throw new Error(data.error || t.errors.aiSuggestionFailed)
       }
 
       const data = await response.json()
       if (!data.suggestions || data.suggestions.length === 0) {
-        throw new Error('AI ga ingen forslag. Prøv å legge til mer kontekst for uken.')
+        throw new Error(t.week.noSuggestions)
       }
       setAiSuggestions(data.suggestions)
     } catch (err) {
       console.error('AI suggestion error:', err)
-      const errorMessage = err instanceof Error ? err.message : 'En uventet feil oppstod. Prøv igjen.'
+      const errorMessage = err instanceof Error ? err.message : t.errors.generic
       setAiError(errorMessage)
     } finally {
       setAiLoading(false)
@@ -714,10 +716,10 @@ export default function WeekEditPage() {
             {error}
           </h2>
           <p className="mb-8" style={{ color: 'var(--muted)' }}>
-            Prøv å laste siden på nytt.
+            {t.errors.generic}
           </p>
           <button onClick={triggerReload} className="btn btn-primary">
-            Prøv igjen
+            {t.common.retry}
           </button>
         </div>
       </div>
@@ -742,13 +744,13 @@ export default function WeekEditPage() {
             </svg>
           </div>
           <h2 className="text-2xl font-semibold font-display mb-3" style={{ color: 'var(--foreground)' }}>
-            Ingen barn lagt til
+            {t.errors.couldNotLoadChildren}
           </h2>
           <p className="mb-8 max-w-md mx-auto" style={{ color: 'var(--muted)' }}>
-            Du må legge til barn i innstillingene før du kan planlegge uken.
+            {t.wizard.addChildrenSubtitle}
           </p>
           <Link href="/innstillinger" className="btn btn-primary">
-            Gå til innstillinger
+            {t.nav.settings}
           </Link>
         </div>
       </div>
@@ -774,10 +776,10 @@ export default function WeekEditPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
-            Planlegg uke
+            {t.week.title}
           </h1>
           <p className="mt-1" style={{ color: 'var(--muted)' }}>
-            Tildel henting og middag for hele uken
+            {t.week.editPickup}
           </p>
         </div>
 
@@ -786,7 +788,7 @@ export default function WeekEditPage() {
             onClick={() => setWeekOffset(weekOffset - 1)}
             className="p-2 rounded-xl transition-colors"
             style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--foreground)' }}
-            aria-label="Forrige uke"
+            aria-label={t.common.back}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="15 18 9 12 15 6"/>
@@ -796,13 +798,13 @@ export default function WeekEditPage() {
             className="px-4 py-2 text-sm font-medium rounded-xl"
             style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--foreground)' }}
           >
-            {formatWeekHeader(weekStart)}
+            {formatWeekHeaderLocalized(weekStart, language)}
           </span>
           <button
             onClick={() => setWeekOffset(weekOffset + 1)}
             className="p-2 rounded-xl transition-colors"
             style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--foreground)' }}
-            aria-label="Neste uke"
+            aria-label={t.common.next}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="9 18 15 12 9 6"/>
@@ -814,7 +816,7 @@ export default function WeekEditPage() {
               className="px-3 py-2 text-sm font-medium rounded-xl transition-colors"
               style={{ color: 'var(--accent)' }}
             >
-              I dag
+              {t.common.today}
             </button>
           )}
         </div>
@@ -833,7 +835,7 @@ export default function WeekEditPage() {
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
             </svg>
-            {showWeekContext ? 'Skjul' : 'Legg til'} ukekontekst for AI
+            {showWeekContext ? t.common.close : t.common.add} {t.week.weekContext.toLowerCase()}
             {weekContext && !showWeekContext && (
               <span className="inline-flex items-center justify-center w-2 h-2 rounded-full" style={{ background: 'var(--color-sage)' }} />
             )}
@@ -844,7 +846,7 @@ export default function WeekEditPage() {
               <textarea
                 value={weekContext}
                 onChange={(e) => setWeekContext(e.target.value)}
-                placeholder="F.eks: Vi har besøk på onsdag. Torsdag er det fotballtrening så vi trenger noe raskt."
+                placeholder={t.week.weekContextPlaceholder}
                 rows={2}
                 className="input text-sm resize-none"
               />
@@ -854,10 +856,10 @@ export default function WeekEditPage() {
                   disabled={savingContext}
                   className="btn btn-secondary text-xs py-1.5 px-3"
                 >
-                  {savingContext ? 'Lagrer...' : 'Lagre kontekst'}
+                  {savingContext ? t.common.loading : t.common.save}
                 </button>
                 <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                  Denne konteksten brukes kun for denne uken
+                  {t.week.weekContext}
                 </span>
               </div>
             </div>
@@ -876,14 +878,14 @@ export default function WeekEditPage() {
               border: '1px solid var(--border)',
               color: 'var(--foreground)',
             }}
-            title="Kopier fra forrige uke"
-            aria-label="Kopier fra forrige uke"
+            title={t.week.copyLastWeek}
+            aria-label={t.week.copyLastWeek}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
               <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
             </svg>
-            <span className="hidden sm:inline">Kopier</span>
+            <span className="hidden sm:inline">{t.success.copied}</span>
           </button>
 
           {/* Clear week */}
@@ -896,14 +898,14 @@ export default function WeekEditPage() {
               border: '1px solid var(--border)',
               color: 'var(--muted)',
             }}
-            title="Tøm uken"
-            aria-label="Tøm uken"
+            title={t.week.clearWeek}
+            aria-label={t.week.clearWeek}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="3 6 5 6 21 6"/>
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
             </svg>
-            <span className="hidden sm:inline">Tøm</span>
+            <span className="hidden sm:inline">{t.success.cleared}</span>
           </button>
 
           {/* AI Suggestion button */}
@@ -923,7 +925,7 @@ export default function WeekEditPage() {
               <path d="M10 22h4"/>
               <path d="M10 18h4v4h-4z"/>
             </svg>
-            {aiLoading ? 'Genererer...' : 'Foreslå middager med AI'}
+            {aiLoading ? t.week.generating : t.week.getAiSuggestions}
           </button>
         </div>
       </div>
@@ -937,7 +939,7 @@ export default function WeekEditPage() {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
           </svg>
-          Lagrer...
+          {t.common.loading}
         </div>
       )}
 
@@ -960,11 +962,11 @@ export default function WeekEditPage() {
             <line x1="12" y1="14" x2="12" y2="18"/>
             <line x1="10" y1="16" x2="14" y2="16"/>
           </svg>
-          Legg til hendelse
+          {t.week.addEvent}
         </button>
         {memberEvents.length > 0 && (
           <span className="text-sm" style={{ color: 'var(--muted)' }}>
-            {memberEvents.length} hendelse{memberEvents.length !== 1 && 'r'} denne uken
+            {memberEvents.length} {memberEvents.length === 1 ? t.home.event : t.home.events}
           </span>
         )}
       </div>
@@ -1005,9 +1007,9 @@ export default function WeekEditPage() {
           </svg>
         </div>
         <div>
-          <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Tips</p>
+          <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>{t.week.editPickup}</p>
           <p className="text-sm" style={{ color: 'var(--muted)' }}>
-            Klikk på en celle for å velge hvem som henter, eller bruk AI-forslag for middager.
+            {t.week.selectPicker}
           </p>
         </div>
       </div>
@@ -1041,13 +1043,13 @@ export default function WeekEditPage() {
             {/* Header */}
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
-                {editingEvent ? 'Rediger hendelse' : 'Ny hendelse'}
+                {editingEvent ? t.week.editEvent : t.week.addEvent}
               </h2>
               <button
                 onClick={closeEventModal}
                 className="p-2 rounded-lg transition-colors"
                 style={{ color: 'var(--muted)' }}
-                aria-label="Lukk"
+                aria-label={t.common.close}
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="18" y1="6" x2="6" y2="18"/>
@@ -1061,14 +1063,14 @@ export default function WeekEditPage() {
               {/* Member select */}
               <div>
                 <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                  Hvem gjelder det?
+                  {t.week.selectMember}
                 </label>
                 <select
                   value={eventForm.member_id}
                   onChange={(e) => setEventForm({ ...eventForm, member_id: e.target.value })}
                   className="input"
                 >
-                  <option value="">Velg person</option>
+                  <option value="">{t.week.selectMember}</option>
                   {members.filter(m => m.is_parent).map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.name}
@@ -1080,28 +1082,28 @@ export default function WeekEditPage() {
               {/* Title */}
               <div>
                 <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                  Tittel
+                  {t.week.eventTitle}
                 </label>
                 <input
                   type="text"
                   value={eventForm.title}
                   onChange={(e) => setEventForm({ ...eventForm, title: e.target.value })}
                   className="input"
-                  placeholder="F.eks. Jobbmiddag, Reise til Bergen"
+                  placeholder={t.week.eventTitle}
                 />
               </div>
 
               {/* Event type */}
               <div>
                 <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                  Type
+                  {t.week.eventType}
                 </label>
                 <div className="flex flex-wrap gap-2">
                   {[
-                    { value: 'work', label: '💼 Jobb', bg: 'rgba(126, 182, 196, 0.2)' },
-                    { value: 'travel', label: '✈️ Reise', bg: 'rgba(167, 139, 250, 0.2)' },
-                    { value: 'family', label: '👨‍👩‍👧 Familie', bg: 'rgba(232, 120, 109, 0.2)' },
-                    { value: 'other', label: '📅 Annet', bg: 'rgba(131, 166, 151, 0.2)' },
+                    { value: 'work', label: `💼 ${t.week.eventTypes.work}`, bg: 'rgba(126, 182, 196, 0.2)' },
+                    { value: 'travel', label: `✈️ ${t.week.eventTypes.travel}`, bg: 'rgba(167, 139, 250, 0.2)' },
+                    { value: 'family', label: `👨‍👩‍👧 ${t.week.eventTypes.family}`, bg: 'rgba(232, 120, 109, 0.2)' },
+                    { value: 'other', label: `📅 ${t.week.eventTypes.other}`, bg: 'rgba(131, 166, 151, 0.2)' },
                   ].map((type) => (
                     <button
                       key={type.value}
@@ -1124,7 +1126,7 @@ export default function WeekEditPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                    Fra dato
+                    {t.week.startDate}
                   </label>
                   <input
                     type="date"
@@ -1135,7 +1137,7 @@ export default function WeekEditPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                    Til dato <span style={{ color: 'var(--muted)' }}>(valgfritt)</span>
+                    {t.week.endDate} <span style={{ color: 'var(--muted)' }}>({t.common.optional})</span>
                   </label>
                   <input
                     type="date"
@@ -1158,7 +1160,7 @@ export default function WeekEditPage() {
                     className="px-4 py-2 rounded-xl text-sm font-medium transition-colors"
                     style={{ color: 'var(--color-coral)' }}
                   >
-                    Slett
+                    {t.common.delete}
                   </button>
                 )}
               </div>
@@ -1167,14 +1169,14 @@ export default function WeekEditPage() {
                   onClick={closeEventModal}
                   className="btn btn-secondary"
                 >
-                  Avbryt
+                  {t.common.cancel}
                 </button>
                 <button
                   onClick={saveEvent}
                   disabled={saving || !eventForm.member_id || !eventForm.title || !eventForm.date}
                   className="btn btn-primary"
                 >
-                  {saving ? 'Lagrer...' : editingEvent ? 'Oppdater' : 'Lagre'}
+                  {saving ? t.common.loading : t.common.save}
                 </button>
               </div>
             </div>
@@ -1191,13 +1193,13 @@ export default function WeekEditPage() {
           >
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold" style={{ color: 'var(--foreground)' }}>
-                {editingTask ? 'Rediger oppgave' : 'Ny oppgave'}
+                {editingTask ? t.week.editTask : t.week.addTask}
               </h3>
               <button
                 onClick={closeTaskModal}
                 className="p-2 rounded-lg transition-colors hover:opacity-70"
                 style={{ color: 'var(--muted)' }}
-                aria-label="Lukk"
+                aria-label={t.common.close}
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="18" y1="6" x2="6" y2="18"/>
@@ -1210,14 +1212,14 @@ export default function WeekEditPage() {
               {/* Child selector */}
               <div>
                 <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                  Barn
+                  {t.week.selectChild}
                 </label>
                 <select
                   value={taskForm.child_id}
                   onChange={(e) => setTaskForm({ ...taskForm, child_id: e.target.value })}
                   className="input"
                 >
-                  <option value="">Velg barn...</option>
+                  <option value="">{t.week.selectChild}...</option>
                   {children.map((child) => (
                     <option key={child.id} value={child.id}>
                       {child.name}
@@ -1229,13 +1231,13 @@ export default function WeekEditPage() {
               {/* Title */}
               <div>
                 <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                  Hva skal du huske?
+                  {t.week.taskTitle}
                 </label>
                 <input
                   type="text"
                   value={taskForm.title}
                   onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })}
-                  placeholder="Eks: Ta med bleier"
+                  placeholder={t.week.taskTitle}
                   maxLength={100}
                   className="input"
                 />
@@ -1244,14 +1246,14 @@ export default function WeekEditPage() {
               {/* Task type */}
               <div>
                 <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                  Type
+                  {t.week.taskType}
                 </label>
                 <div className="flex gap-2 flex-wrap">
                   {[
-                    { value: 'bring', icon: '🎒', label: 'Ta med' },
-                    { value: 'appointment', icon: '🩺', label: 'Avtale' },
-                    { value: 'reminder', icon: '📝', label: 'Påminnelse' },
-                    { value: 'other', icon: '📌', label: 'Annet' },
+                    { value: 'bring', icon: '🎒', label: t.week.taskTypes.bring },
+                    { value: 'appointment', icon: '🩺', label: t.week.taskTypes.appointment },
+                    { value: 'reminder', icon: '📝', label: t.week.taskTypes.reminder },
+                    { value: 'other', icon: '📌', label: t.week.taskTypes.other },
                   ].map((type) => (
                     <button
                       key={type.value}
@@ -1275,7 +1277,7 @@ export default function WeekEditPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                    Dato
+                    {t.week.startDate}
                   </label>
                   <input
                     type="date"
@@ -1286,7 +1288,7 @@ export default function WeekEditPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                    Tidspunkt <span style={{ color: 'var(--muted)' }}>(valgfritt)</span>
+                    {t.week.taskTime} <span style={{ color: 'var(--muted)' }}>({t.common.optional})</span>
                   </label>
                   <input
                     type="time"
@@ -1300,12 +1302,12 @@ export default function WeekEditPage() {
               {/* Notes */}
               <div>
                 <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                  Notater <span style={{ color: 'var(--muted)' }}>(valgfritt)</span>
+                  {t.week.taskNotes} <span style={{ color: 'var(--muted)' }}>({t.common.optional})</span>
                 </label>
                 <textarea
                   value={taskForm.notes}
                   onChange={(e) => setTaskForm({ ...taskForm, notes: e.target.value })}
-                  placeholder="Ekstra detaljer..."
+                  placeholder={t.week.taskNotes}
                   className="input"
                   rows={2}
                 />
@@ -1322,7 +1324,7 @@ export default function WeekEditPage() {
                     className="px-4 py-2 rounded-xl text-sm font-medium transition-colors"
                     style={{ color: 'var(--color-coral)' }}
                   >
-                    Slett
+                    {t.common.delete}
                   </button>
                 )}
               </div>
@@ -1331,14 +1333,14 @@ export default function WeekEditPage() {
                   onClick={closeTaskModal}
                   className="btn btn-secondary"
                 >
-                  Avbryt
+                  {t.common.cancel}
                 </button>
                 <button
                   onClick={saveTask}
                   disabled={saving || !taskForm.child_id || !taskForm.title || !taskForm.date}
                   className="btn btn-primary"
                 >
-                  {saving ? 'Lagrer...' : editingTask ? 'Oppdater' : 'Lagre'}
+                  {saving ? t.common.loading : t.common.save}
                 </button>
               </div>
             </div>

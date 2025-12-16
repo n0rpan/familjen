@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { syncUserAdminStatus } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
+import { LANGUAGE_COOKIE_NAME, COOKIE_MAX_AGE } from '@/lib/i18n/cookie.server'
+import { isValidLanguage } from '@/lib/i18n/cookie'
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
@@ -36,6 +38,25 @@ export async function GET(request: Request) {
           // Non-fatal: admin status will be checked via DB as fallback
           console.error('Failed to sync admin status to JWT:', err)
         }
+
+        // Load user's language preference and set cookie
+        const { data: member } = await supabase
+          .from('household_members')
+          .select('language_preference')
+          .eq('user_id', user.id)
+          .single()
+
+        const response = NextResponse.redirect(`${origin}${next}`)
+
+        if (member?.language_preference && isValidLanguage(member.language_preference)) {
+          response.cookies.set(LANGUAGE_COOKIE_NAME, member.language_preference, {
+            path: '/',
+            maxAge: COOKIE_MAX_AGE,
+            sameSite: 'lax',
+          })
+        }
+
+        return response
       }
 
       return NextResponse.redirect(`${origin}${next}`)

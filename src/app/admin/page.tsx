@@ -10,6 +10,7 @@ import type {
   Child,
   AuditLogEntry,
 } from "@/lib/types";
+import { useLanguage } from "@/lib/i18n/context";
 
 // Extended types for admin view
 interface HouseholdWithDetails extends Household {
@@ -259,6 +260,7 @@ function ModelSelector({
 }
 
 export default function AdminPage() {
+  const { t } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -527,10 +529,10 @@ export default function AdminPage() {
           className="text-3xl font-semibold font-display"
           style={{ color: "var(--foreground)" }}
         >
-          Admin
+          {t.admin.title}
         </h1>
         <p className="mt-2" style={{ color: "var(--muted)" }}>
-          Administrer tilgang og innstillinger
+          {t.admin.allowedEmails}
         </p>
       </div>
 
@@ -550,7 +552,7 @@ export default function AdminPage() {
             {totalHouseholds}
           </div>
           <div className="text-sm" style={{ color: "var(--muted)" }}>
-            Husstander
+            {t.admin.households}
           </div>
         </div>
         <div

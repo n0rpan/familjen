@@ -2,18 +2,18 @@
 
 import { useMemo } from 'react'
 import {
-  WEEKDAYS_SHORT_NO,
   getWeekDates,
   getWeekStart,
   formatDateISO,
   isToday,
   isWeekend,
-  formatWeekHeader,
+  formatWeekHeaderLocalized,
   cn,
 } from '@/lib/utils'
 import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Recipe, MemberEvent, ChildTask, MemberEventType, ChildTaskType } from '@/lib/types'
-import { CHILD_COLOR_MAP, EVENT_TYPE_CONFIG, TASK_TYPE_CONFIG, getChildColor, getEventConfig, getTaskConfig } from '@/lib/colors'
+import { getChildColor, getEventConfig, getTaskConfig } from '@/lib/colors'
 import { MealSelector } from './MealSelector'
+import { useLanguage } from '@/lib/i18n/context'
 
 interface WeekGridProps {
   children: Child[]
@@ -54,6 +54,8 @@ export function WeekGrid({
   onTaskClick,
   onAddTask,
 }: WeekGridProps) {
+  const { language, t } = useLanguage()
+
   // Ensure weekStart is a Date object (may be serialized as string from server)
   const weekStart = useMemo(() => {
     if (!providedWeekStart) return getWeekStart(new Date())
@@ -144,7 +146,7 @@ export function WeekGrid({
         style={{ borderBottom: '1px solid var(--border)' }}
       >
         <h3 className="font-semibold" style={{ color: 'var(--foreground)' }}>
-          {formatWeekHeader(weekStart)}
+          {formatWeekHeaderLocalized(weekStart, language)}
         </h3>
       </div>
 
@@ -171,7 +173,7 @@ export function WeekGrid({
                     color: isWeekend(date) ? 'var(--muted)' : 'var(--foreground)',
                   }}
                 >
-                  <div className="font-medium">{WEEKDAYS_SHORT_NO[i]}</div>
+                  <div className="font-medium">{t.date.weekdaysShort[i]}</div>
                   <div
                     className={cn(
                       'text-xs mt-1',
@@ -259,7 +261,7 @@ export function WeekGrid({
                                     : 'var(--muted)',
                                   border: '1px solid var(--border)',
                                 }}
-                                title={pickup.sync_to_work_calendar ? 'Fjern fra jobbkalender' : 'Send til jobbkalender'}
+                                title={pickup.sync_to_work_calendar ? t.week.removeFromWorkCalendar : t.week.sendToWorkCalendar}
                               >
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                   <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
@@ -311,7 +313,7 @@ export function WeekGrid({
                             })}
                             {tasks.length > 2 && (
                               <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                                +{tasks.length - 2} til
+                                {t.week.more.replace('{count}', String(tasks.length - 2))}
                               </span>
                             )}
                           </div>
@@ -323,7 +325,7 @@ export function WeekGrid({
                             onClick={() => onAddTask(child.id, dateStr)}
                             className="w-full flex items-center justify-center gap-1 text-xs py-0.5 px-1 rounded transition-colors opacity-50 hover:opacity-100"
                             style={{ color: 'var(--muted)' }}
-                            title="Legg til oppgave"
+                            title={t.week.addTask}
                           >
                             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                               <line x1="12" y1="5" x2="12" y2="19"/>
@@ -348,7 +350,7 @@ export function WeekGrid({
                     className="px-3 py-2 text-xs font-medium"
                     style={{ color: 'var(--muted)', background: 'var(--background)' }}
                   >
-                    Kalender
+                    {t.week.calendar}
                   </td>
                 </tr>
                 {parentMembers.map((member) => (
@@ -435,7 +437,7 @@ export function WeekGrid({
                     </svg>
                   </div>
                   <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
-                    Middag
+                    {t.home.meal}
                   </span>
                 </div>
               </td>

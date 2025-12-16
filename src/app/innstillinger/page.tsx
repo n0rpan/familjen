@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase/client'
 import type { Child, HouseholdMember, Household, AllowedEmail, ChildColor } from '@/lib/types'
 import { CHILD_COLORS } from '@/lib/colors'
 import { User } from '@supabase/supabase-js'
+import { useLanguage } from '@/lib/i18n/context'
+import { LANGUAGES, type Language } from '@/lib/i18n/types'
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
@@ -65,6 +67,7 @@ export default function SettingsPage() {
 
   const supabase = useMemo(() => createClient(), [])
   const router = useRouter()
+  const { language, setLanguage, t } = useLanguage()
 
   useEffect(() => {
     loadData()
@@ -719,6 +722,66 @@ export default function SettingsPage() {
           )}
         </section>
       )}
+
+      {/* Language Settings */}
+      <section
+        className="rounded-2xl p-6 md:p-8"
+        style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+      >
+        <div className="flex items-center gap-3 mb-6">
+          <div
+            className="w-10 h-10 rounded-xl flex items-center justify-center"
+            style={{ background: 'rgba(178, 154, 198, 0.2)' }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-lavender)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="2" y1="12" x2="22" y2="12"/>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold" style={{ color: 'var(--foreground)' }}>
+              {t.settings.language}
+            </h2>
+            <p className="text-sm" style={{ color: 'var(--muted)' }}>
+              {t.settings.selectLanguage}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          {LANGUAGES.map((lang) => (
+            <button
+              key={lang.code}
+              onClick={async () => {
+                setLanguage(lang.code)
+                // Also save to database if user has a profile
+                if (myProfile?.id) {
+                  await supabase
+                    .from('household_members')
+                    .update({ language_preference: lang.code })
+                    .eq('id', myProfile.id)
+                }
+                showMessage('success', t.success.saved)
+              }}
+              className="flex items-center gap-3 px-5 py-3 rounded-xl transition-all duration-200 hover:scale-[1.02]"
+              style={{
+                background: language === lang.code ? 'var(--accent)' : 'var(--background)',
+                color: language === lang.code ? 'white' : 'var(--foreground)',
+                border: `1px solid ${language === lang.code ? 'var(--accent)' : 'var(--border)'}`,
+              }}
+            >
+              <span className="text-xl">{lang.flag}</span>
+              <span className="font-medium">{lang.name}</span>
+              {language === lang.code && (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                  <polyline points="20,6 9,17 4,12"/>
+                </svg>
+              )}
+            </button>
+          ))}
+        </div>
+      </section>
 
       {/* Household Admin Panel */}
       {myProfile?.is_household_admin && (

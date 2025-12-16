@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import type { ChildColor } from '@/lib/types'
 import { CHILD_COLORS } from '@/lib/colors'
+import { useLanguage } from '@/lib/i18n/context'
 
 type WizardStep = 'household' | 'children' | 'partner' | 'done'
 
@@ -18,6 +19,7 @@ interface NewChild {
 }
 
 export default function CreateHouseholdPage() {
+  const { t } = useLanguage()
   const [step, setStep] = useState<WizardStep>('household')
   const [householdId, setHouseholdId] = useState<string | null>(null)
 

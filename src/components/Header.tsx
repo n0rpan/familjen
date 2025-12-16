@@ -5,14 +5,7 @@ import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useEffect, useState, useMemo } from 'react'
 import { User } from '@supabase/supabase-js'
-
-const navigation = [
-  { name: 'Hjem', href: '/', icon: HomeIcon },
-  { name: 'Ukeplan', href: '/uke', icon: CalendarIcon },
-  { name: 'Oppskrifter', href: '/oppskrifter', icon: BookIcon },
-  { name: 'Handleliste', href: '/handleliste', icon: ShoppingIcon },
-  { name: 'Innstillinger', href: '/innstillinger', icon: SettingsIcon },
-]
+import { useTranslation } from '@/lib/i18n/context'
 
 function ShieldIcon() {
   return (
@@ -76,6 +69,16 @@ export function Header() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const supabase = useMemo(() => createClient(), [])
+  const t = useTranslation()
+
+  // Navigation items with localized names
+  const navigation = [
+    { name: t.nav.home, href: '/', icon: HomeIcon },
+    { name: t.nav.weekPlan, href: '/uke', icon: CalendarIcon },
+    { name: t.nav.recipes, href: '/oppskrifter', icon: BookIcon },
+    { name: t.nav.shoppingList, href: '/handleliste', icon: ShoppingIcon },
+    { name: t.nav.settings, href: '/innstillinger', icon: SettingsIcon },
+  ]
 
   useEffect(() => {
     const getUser = async () => {
@@ -181,7 +184,7 @@ export function Header() {
                   style={{ color: 'var(--muted)' }}
                 >
                   <ShieldIcon />
-                  Admin
+                  {t.nav.admin}
                 </Link>
               )}
               {user && (
@@ -190,7 +193,7 @@ export function Header() {
                   className="px-4 py-2 text-sm font-medium rounded-xl transition-all duration-200 hover:bg-[var(--sand)]"
                   style={{ color: 'var(--muted)' }}
                 >
-                  Logg ut
+                  {t.nav.logout}
                 </button>
               )}
             </div>

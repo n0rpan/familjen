@@ -1,8 +1,9 @@
 'use client'
 
-import { formatDateNorwegian } from '@/lib/utils'
+import { formatDateLocalized } from '@/lib/utils'
 import type { DaySummary, ChildTaskType } from '@/lib/types'
 import { getChildColor, getTaskConfig } from '@/lib/colors'
+import { useLanguage } from '@/lib/i18n/context'
 
 interface TodayOverviewProps {
   summary: DaySummary | null
@@ -11,6 +12,7 @@ interface TodayOverviewProps {
 
 export function TodayOverview({ summary, loading }: TodayOverviewProps) {
   const today = new Date()
+  const { language, t } = useLanguage()
 
   if (loading) {
     return (
@@ -53,10 +55,10 @@ export function TodayOverview({ summary, loading }: TodayOverviewProps) {
         </div>
         <div>
           <h2 className="text-xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
-            I dag
+            {t.common.today}
           </h2>
           <p className="text-sm" style={{ color: 'var(--muted)' }}>
-            {formatDateNorwegian(today)}
+            {formatDateLocalized(today, language)}
           </p>
         </div>
       </div>
@@ -66,7 +68,7 @@ export function TodayOverview({ summary, loading }: TodayOverviewProps) {
           className="text-center py-8 rounded-xl"
           style={{ background: 'var(--background)' }}
         >
-          <p style={{ color: 'var(--muted)' }}>Ingen planer for i dag ennå.</p>
+          <p style={{ color: 'var(--muted)' }}>{t.home.noPickupsToday}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -105,7 +107,7 @@ export function TodayOverview({ summary, loading }: TodayOverviewProps) {
                   className={`font-medium ${pickup.picker ? '' : 'opacity-50'}`}
                   style={{ color: pickup.picker ? 'var(--accent)' : 'var(--muted)' }}
                 >
-                  {pickup.picker ? `${pickup.picker.name} henter` : 'Ikke tildelt'}
+                  {pickup.picker ? t.home.picksUp.replace('{name}', pickup.picker.name) : t.week.noPickup}
                 </span>
               </div>
             </div>
@@ -128,26 +130,26 @@ export function TodayOverview({ summary, loading }: TodayOverviewProps) {
                 </svg>
               </div>
               <div className="flex-1">
-                <span className="text-sm" style={{ color: 'var(--muted)' }}>Middag</span>
+                <span className="text-sm" style={{ color: 'var(--muted)' }}>{t.home.meal}</span>
                 <span className="font-medium block" style={{ color: 'var(--foreground)' }}>
-                  {summary.meal.recipe?.name || summary.meal.custom_meal || 'Ikke planlagt'}
+                  {summary.meal.recipe?.name || summary.meal.custom_meal || t.home.noMealPlanned}
                 </span>
               </div>
             </div>
           )}
 
-          {/* Tasks - "Husk i dag" section */}
+          {/* Tasks section */}
           {summary.tasks.length > 0 && (
             <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
-                  Husk i dag
+                  {t.home.tasks}
                 </span>
                 <span
                   className="text-xs px-2 py-0.5 rounded-full"
                   style={{ background: 'rgba(229, 185, 94, 0.2)', color: 'var(--color-honey)' }}
                 >
-                  {summary.tasks.filter(t => t.status === 'open').length} oppgaver
+                  {summary.tasks.filter(task => task.status === 'open').length} {t.home.tasks}
                 </span>
               </div>
               <div className="space-y-2">

@@ -3,12 +3,14 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { ShoppingList, ShoppingListItem, Household } from '@/lib/types'
+import { useLanguage } from '@/lib/i18n/context'
 
 interface ListWithItems extends ShoppingList {
   items: ShoppingListItem[]
 }
 
 export default function ShoppingListPage() {
+  const { t } = useLanguage()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [household, setHousehold] = useState<Household | null>(null)
@@ -37,7 +39,7 @@ export default function ShoppingListPage() {
         .single()
 
       if (householdError && householdError.code !== 'PGRST116') {
-        throw new Error('Kunne ikke laste husstand')
+        throw new Error(t.errors.couldNotLoadHousehold)
       }
 
       if (!householdData) {
@@ -56,13 +58,13 @@ export default function ShoppingListPage() {
         .eq('household_id', householdData.id)
         .order('sort_order')
 
-      if (listsError) throw new Error('Kunne ikke laste handlelister')
+      if (listsError) throw new Error(t.errors.loadFailed)
 
       // Create default lists if none exist, or clean up duplicates
       if (!listsData || listsData.length === 0) {
         const defaultLists = [
-          { household_id: householdData.id, name: 'Dagligvarer', sort_order: 0 },
-          { household_id: householdData.id, name: 'Andre butikker', sort_order: 1 },
+          { household_id: householdData.id, name: t.shopping.aisles.produce, sort_order: 0 },
+          { household_id: householdData.id, name: t.shopping.aisles.other, sort_order: 1 },
         ]
 
         const { data: newLists, error: createError } = await supabase
@@ -70,7 +72,7 @@ export default function ShoppingListPage() {
           .insert(defaultLists)
           .select()
 
-        if (createError) throw new Error('Kunne ikke opprette handlelister')
+        if (createError) throw new Error(t.errors.saveFailed)
         listsData = newLists
       } else {
         // Check for and clean up duplicates
@@ -114,7 +116,7 @@ export default function ShoppingListPage() {
         .in('list_id', listsData.map(l => l.id))
         .order('created_at', { ascending: false })
 
-      if (itemsError) throw new Error('Kunne ikke laste varer')
+      if (itemsError) throw new Error(t.errors.loadFailed)
 
       // Combine lists with their items
       const listsWithItems: ListWithItems[] = listsData.map(list => ({
@@ -125,7 +127,7 @@ export default function ShoppingListPage() {
       setLists(listsWithItems)
     } catch (err) {
       console.error('Shopping list error:', err)
-      setError(err instanceof Error ? err.message : 'En feil oppstod')
+      setError(err instanceof Error ? err.message : t.errors.generic)
     } finally {
       setLoading(false)
     }
@@ -226,7 +228,7 @@ export default function ShoppingListPage() {
             {error}
           </h2>
           <button onClick={loadData} className="btn btn-primary">
-            Prøv igjen
+            {t.common.retry}
           </button>
         </div>
       </div>
@@ -238,10 +240,10 @@ export default function ShoppingListPage() {
       {/* Header */}
       <div>
         <h1 className="text-3xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
-          Handleliste
+          {t.shopping.title}
         </h1>
         <p className="mt-1" style={{ color: 'var(--muted)' }}>
-          Hold oversikt over hva som må handles
+          {t.shopping.emptyListDesc}
         </p>
       </div>
 
@@ -300,7 +302,7 @@ export default function ShoppingListPage() {
                     className="text-xs font-medium px-2 py-1 rounded-lg transition-colors hover:bg-[var(--sand)]"
                     style={{ color: 'var(--muted)' }}
                   >
-                    Fjern kjøpte
+                    {t.shopping.clearChecked}
                   </button>
                 )}
               </div>
@@ -313,7 +315,7 @@ export default function ShoppingListPage() {
                     value={newItemText[list.id] || ''}
                     onChange={e => setNewItemText(prev => ({ ...prev, [list.id]: e.target.value }))}
                     onKeyDown={e => handleKeyDown(e, list.id)}
-                    placeholder="Legg til vare..."
+                    placeholder={t.shopping.itemPlaceholder}
                     className="input text-sm"
                     style={{ flex: '1 1 auto', minWidth: 0 }}
                   />
@@ -345,7 +347,7 @@ export default function ShoppingListPage() {
                 {unboughtItems.length === 0 && boughtItems.length === 0 ? (
                   <div className="p-8 text-center">
                     <p className="text-sm" style={{ color: 'var(--muted)' }}>
-                      Ingen varer i listen
+                      {t.shopping.emptyList}
                     </p>
                   </div>
                 ) : (
@@ -389,7 +391,7 @@ export default function ShoppingListPage() {
                       <div className="bg-[var(--background)]">
                         <div className="px-3 py-2">
                           <span className="text-xs font-medium" style={{ color: 'var(--muted)' }}>
-                            Kjøpt ({boughtItems.length})
+                            {t.common.done} ({boughtItems.length})
                           </span>
                         </div>
                         {boughtItems.map(item => (

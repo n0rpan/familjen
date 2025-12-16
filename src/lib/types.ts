@@ -1,3 +1,5 @@
+import type { Language } from './i18n/types'
+
 // Audit fields shared by most entities
 interface AuditFields {
   created_at: string
@@ -27,6 +29,7 @@ export interface HouseholdMember extends AuditFields {
   birth_date: string | null  // ISO date string YYYY-MM-DD
   work_email: string | null  // For sending work calendar invites
   allergies: string[]  // List of allergies/dietary restrictions
+  language_preference: Language | null  // User's preferred UI language
 }
 
 export type ChildColor = 'sky' | 'coral' | 'sage' | 'honey' | 'lavender' | 'mint'

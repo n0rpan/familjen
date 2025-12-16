@@ -3,10 +3,14 @@ import { TodayOverview } from '@/components/TodayOverview'
 import { WeekGrid } from '@/components/WeekGrid'
 import { formatDateISO, getWeekStart, addDays } from '@/lib/utils'
 import Link from 'next/link'
+import { getLanguageFromCookieOrBrowser } from '@/lib/i18n/cookie.server'
+import { getTranslations } from '@/lib/i18n/translations'
 
 export default async function HomePage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
+  const language = await getLanguageFromCookieOrBrowser()
+  const t = getTranslations(language)
 
   // If not logged in, show welcome page
   if (!user) {
@@ -23,16 +27,16 @@ export default async function HomePage() {
             </svg>
           </div>
           <h1 className="text-4xl font-semibold font-display mb-4" style={{ color: 'var(--foreground)' }}>
-            Velkommen til Familjen
+            {t.home.welcome}
           </h1>
           <p className="text-lg mb-8" style={{ color: 'var(--muted)' }}>
-            Planlegg ukens henting og middager enkelt. Hold oversikt over hvem som henter barna og hva som er til middag.
+            {t.login.subtitle}
           </p>
           <Link
             href="/login"
             className="btn btn-primary text-lg px-8 py-4"
           >
-            Kom i gang
+            {t.common.next}
           </Link>
         </div>
       </div>
@@ -83,19 +87,19 @@ export default async function HomePage() {
             </svg>
           </div>
           <h1 className="text-3xl font-semibold font-display mb-4" style={{ color: 'var(--foreground)' }}>
-            Velkommen!
+            {t.wizard.waitingForInvite}
           </h1>
           <p className="text-lg mb-8" style={{ color: 'var(--muted)' }}>
-            Du er ikke med i noen husstand ennå. Opprett en ny husstand for å komme i gang.
+            {t.wizard.waitingForInviteDesc}
           </p>
           <Link
             href="/ny-husstand"
             className="btn btn-primary text-lg px-8 py-4"
           >
-            Opprett husstand
+            {t.settings.household}
           </Link>
           <p className="text-sm mt-6" style={{ color: 'var(--muted)' }}>
-            Har noen invitert deg? Vent til de legger deg til i husstanden sin.
+            {t.wizard.waitingForInviteDesc}
           </p>
         </div>
       </div>
@@ -143,16 +147,16 @@ export default async function HomePage() {
             </svg>
           </div>
           <h2 className="text-2xl font-semibold font-display mb-3" style={{ color: 'var(--foreground)' }}>
-            Kunne ikke laste data
+            {t.errors.loadFailed}
           </h2>
           <p className="mb-8 max-w-md mx-auto" style={{ color: 'var(--muted)' }}>
-            Det oppstod en feil ved lasting av data. Prøv å laste siden på nytt.
+            {t.errors.generic}
           </p>
           <Link
             href="/"
             className="btn btn-primary"
           >
-            Last på nytt
+            {t.common.retry}
           </Link>
         </div>
       </div>
@@ -199,16 +203,16 @@ export default async function HomePage() {
             </svg>
           </div>
           <h2 className="text-2xl font-semibold font-display mb-3" style={{ color: 'var(--foreground)' }}>
-            Kom i gang med Familjen
+            {t.wizard.welcome}
           </h2>
           <p className="mb-8 max-w-md mx-auto" style={{ color: 'var(--muted)' }}>
-            For å bruke appen må du først legge til barna og familiemedlemmene dine.
+            {t.wizard.welcomeSubtitle}
           </p>
           <Link
             href="/innstillinger"
             className="btn btn-primary"
           >
-            Gå til innstillinger
+            {t.nav.settings}
           </Link>
         </div>
       </div>
@@ -224,14 +228,14 @@ export default async function HomePage() {
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
-            Denne uken
+            {t.common.week}
           </h2>
           <Link
             href="/uke"
             className="text-sm font-medium transition-colors hover:opacity-80"
             style={{ color: 'var(--accent)' }}
           >
-            Rediger uke →
+            {t.common.edit} →
           </Link>
         </div>
         <WeekGrid

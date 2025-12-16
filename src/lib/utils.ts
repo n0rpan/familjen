@@ -1,4 +1,7 @@
-// Norwegian weekday names
+import type { Language } from './i18n/types'
+import { getTranslations } from './i18n/translations'
+
+// Norwegian weekday names (kept for backwards compatibility)
 export const WEEKDAYS_NO = [
   'Mandag',
   'Tirsdag',
@@ -11,7 +14,7 @@ export const WEEKDAYS_NO = [
 
 export const WEEKDAYS_SHORT_NO = ['Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør', 'Søn'] as const
 
-// Norwegian month names
+// Norwegian month names (kept for backwards compatibility)
 export const MONTHS_NO = [
   'januar',
   'februar',
@@ -28,13 +31,22 @@ export const MONTHS_NO = [
 ] as const
 
 /**
+ * Format a date in localized style: "mandag 16. desember" (nb), "Monday 16. december" (en)
+ */
+export function formatDateLocalized(date: Date, lang: Language): string {
+  const t = getTranslations(lang)
+  const dayOfWeek = t.date.weekdays[getWeekdayIndex(date)]
+  const dayOfMonth = date.getDate()
+  const month = t.date.months[date.getMonth()]
+  return `${dayOfWeek.toLowerCase()} ${dayOfMonth}. ${month}`
+}
+
+/**
  * Format a date in Norwegian style: "mandag 16. desember"
+ * @deprecated Use formatDateLocalized(date, lang) instead
  */
 export function formatDateNorwegian(date: Date): string {
-  const dayOfWeek = WEEKDAYS_NO[getWeekdayIndex(date)]
-  const dayOfMonth = date.getDate()
-  const month = MONTHS_NO[date.getMonth()]
-  return `${dayOfWeek.toLowerCase()} ${dayOfMonth}. ${month}`
+  return formatDateLocalized(date, 'nb')
 }
 
 /**
@@ -125,10 +137,21 @@ export function getWeekNumber(date: Date): number {
 }
 
 /**
+ * Format week header in localized style: "Uke 51, 2024" (nb), "Week 51, 2024" (en)
+ */
+export function formatWeekHeaderLocalized(date: Date, lang: Language): string {
+  const t = getTranslations(lang)
+  return t.date.weekFormat
+    .replace('{week}', String(getWeekNumber(date)))
+    .replace('{year}', String(date.getFullYear()))
+}
+
+/**
  * Format week header: "Uke 51, 2024"
+ * @deprecated Use formatWeekHeaderLocalized(date, lang) instead
  */
 export function formatWeekHeader(date: Date): string {
-  return `Uke ${getWeekNumber(date)}, ${date.getFullYear()}`
+  return formatWeekHeaderLocalized(date, 'nb')
 }
 
 /**
