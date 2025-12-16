@@ -31,11 +31,30 @@ interface OpenRouterModel {
   context_length: number;
 }
 
-function formatPrice(price: string, t: any): string {
+function formatPrice(price: string | undefined | null, t: any): string {
+  // Handle missing or invalid price data
+  if (!price || price === '') return '—';
+
+  // Parse the price - OpenRouter returns price per token as a numeric string
   const num = parseFloat(price);
+
+  // Handle non-numeric strings or NaN
+  if (isNaN(num)) return '—';
+
   if (num === 0) return t.common.free;
-  if (num < 0.000001) return "<$0.001/M";
-  return `$${(num * 1000000).toFixed(2)}/M`;
+  if (num < 0.000001) return '<$0.001/M';
+
+  // Convert per-token price to per-million tokens
+  const perMillion = num * 1000000;
+
+  // Format with appropriate precision
+  if (perMillion >= 100) {
+    return `$${perMillion.toFixed(0)}/M`;
+  } else if (perMillion >= 1) {
+    return `$${perMillion.toFixed(2)}/M`;
+  } else {
+    return `$${perMillion.toFixed(4)}/M`;
+  }
 }
 
 function ModelSelector({

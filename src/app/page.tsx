@@ -121,7 +121,7 @@ export default async function HomePage() {
   ])
 
   // Check for errors
-  const queryError = childrenResult.error || membersResult.error || pickupsResult.error || mealsResult.error || eventsResult.error || tasksResult.error
+  const queryError = childrenResult.error || membersResult.error || pickupsResult.error || mealsResult.error || eventsResult.error || tasksResult.error || remindersResult.error
   if (queryError) {
     console.error('Error loading home page data:', queryError)
     return (

@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     const rateLimit = checkRateLimit(rateLimitKey, RATE_LIMITS.aiParseReminders)
     if (rateLimit.limited) {
       return NextResponse.json(
-        { error: `For mange foresporsler. Prov igjen om ${rateLimit.retryAfter} sekunder.` },
+        { error: `For mange forespørsler. Prøv igjen om ${rateLimit.retryAfter} sekunder.` },
         { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
       )
     }
@@ -75,7 +75,7 @@ export async function POST(request: Request) {
     // Call OpenRouter API
     const apiKey = process.env.OPENROUTER_API_KEY
     if (!apiKey) {
-      return NextResponse.json({ error: 'OpenRouter API-nokkel ikke konfigurert' }, { status: 500 })
+      return NextResponse.json({ error: 'OpenRouter API-nøkkel ikke konfigurert' }, { status: 500 })
     }
 
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -91,36 +91,36 @@ export async function POST(request: Request) {
         messages: [
           {
             role: 'system',
-            content: `Du er en hjelpsom assistent som tolker norske paminnelser for en familieplanleggingsapp.
+            content: `Du er en hjelpsom assistent som tolker norske påminnelser for en familieplanleggingsapp.
 
-Din oppgave er a analysere naturlig norsk tekst og trekke ut strukturert informasjon om paminnelser.
+Din oppgave er å analysere naturlig norsk tekst og trekke ut strukturert informasjon om påminnelser.
 
 TASK TYPES (velg mest passende):
-- "bring": Nar noe skal tas med (gymtoy, matpakke, skift, utstyr)
-- "appointment": Avtaler (lege, tannlege, foreldremote)
-- "activity": Aktiviteter (fotball, svomming, bursdagsfest, kurs)
+- "bring": Når noe skal tas med (gymtøy, matpakke, skift, utstyr)
+- "appointment": Avtaler (lege, tannlege, foreldremøte)
+- "activity": Aktiviteter (fotball, svømming, bursdagsfest, kurs)
 - "closure": Stengt/fri (barnehagen stengt, planleggingsdag, ferie)
-- "reminder": Generelle paminnelser
+- "reminder": Generelle påminnelser
 - "other": Annet som ikke passer kategoriene over
 
 DATOER (i dag er ${today}):
 - "i morgen" = dagen etter i dag
-- "pa mandag/tirsdag/..." = neste forekomst av den ukedagen
+- "på mandag/tirsdag/..." = neste forekomst av den ukedagen
 - "neste uke" = mandag neste uke
 - Relative datoer tolkes fra dagens dato
 
 VIKTIGE REGLER:
-1. Hvis et barnenavn nevnes, koble paminnelsen til det barnet
-2. Sett confidence hoyt (0.8-1.0) for tydelige paminnelser, lavere (0.5-0.7) for uklare
+1. Hvis et barnenavn nevnes, koble påminnelsen til det barnet
+2. Sett confidence høyt (0.8-1.0) for tydelige påminnelser, lavere (0.5-0.7) for uklare
 3. Returner ALLTID gyldig JSON
-4. Dato ma vare pa formatet YYYY-MM-DD
-5. Tid ma vare pa formatet HH:MM (24-timers)
+4. Dato må være på formatet YYYY-MM-DD
+5. Tid må være på formatet HH:MM (24-timers)
 
 Svar ALLTID i dette JSON-formatet:
 {
   "reminders": [
     {
-      "title": "Kort tittel pa paminnelsen",
+      "title": "Kort tittel på påminnelsen",
       "date": "YYYY-MM-DD eller null",
       "time": "HH:MM eller null",
       "task_type": "bring|appointment|activity|closure|reminder|other",
@@ -145,7 +145,7 @@ Svar ALLTID i dette JSON-formatet:
     if (!response.ok) {
       const errorText = await response.text()
       console.error('OpenRouter error:', errorText)
-      return NextResponse.json({ error: 'Kunne ikke tolke paminnelse' }, { status: 500 })
+      return NextResponse.json({ error: 'Kunne ikke tolke påminnelse' }, { status: 500 })
     }
 
     const data = await response.json()
@@ -198,13 +198,13 @@ Svar ALLTID i dette JSON-formatet:
 }
 
 function buildPrompt(input: string, today: string, childContext: string): string {
-  return `Tolk folgende tekst og trekk ut paminnelser:
+  return `Tolk følgende tekst og trekk ut påminnelser:
 
 "${input}"
 
 Dagens dato er: ${today}${childContext}
 
-Trekk ut alle paminnelser du finner. Hvis teksten inneholder flere paminnelser (f.eks. separert med komma eller linjeskift), returner alle.`
+Trekk ut alle påminnelser du finner. Hvis teksten inneholder flere påminnelser (f.eks. separert med komma eller linjeskift), returner alle.`
 }
 
 function validateTaskType(type: string): ChildTaskType {
