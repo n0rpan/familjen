@@ -973,7 +973,7 @@ export default function SettingsPage() {
                       color: 'white',
                     }}
                   >
-                    {member.short_name || member.name.substring(0, 2)}
+                    {(member.short_name || member.name).substring(0, 3)}
                   </div>
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
@@ -1049,12 +1049,37 @@ export default function SettingsPage() {
             </div>
             <div>
               <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Fødselsdato (valgfritt)</label>
-              <input
-                type="date"
-                value={newMember.birth_date}
-                onChange={(e) => setNewMember({ ...newMember, birth_date: e.target.value })}
-                className="input"
-              />
+              {newMember.birth_date ? (
+                <div className="flex gap-2">
+                  <input
+                    type="date"
+                    value={newMember.birth_date}
+                    onChange={(e) => setNewMember({ ...newMember, birth_date: e.target.value })}
+                    className="input flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setNewMember({ ...newMember, birth_date: '' })}
+                    className="px-3 rounded-xl transition-colors hover:bg-[var(--sand)]"
+                    style={{ color: 'var(--muted)' }}
+                    title="Fjern dato"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setNewMember({ ...newMember, birth_date: new Date().toISOString().split('T')[0] })}
+                  className="input text-left w-full"
+                  style={{ color: 'var(--muted)' }}
+                >
+                  + Legg til fødselsdato
+                </button>
+              )}
             </div>
             <div>
               <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Jobb-epost (for kalender)</label>
@@ -1405,12 +1430,37 @@ export default function SettingsPage() {
             />
             <div>
               <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Fødselsdato</label>
-              <input
-                type="date"
-                value={newChild.birth_date}
-                onChange={(e) => setNewChild({ ...newChild, birth_date: e.target.value })}
-                className="input"
-              />
+              {newChild.birth_date ? (
+                <div className="flex gap-2">
+                  <input
+                    type="date"
+                    value={newChild.birth_date}
+                    onChange={(e) => setNewChild({ ...newChild, birth_date: e.target.value })}
+                    className="input flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setNewChild({ ...newChild, birth_date: '' })}
+                    className="px-3 rounded-xl transition-colors hover:bg-[var(--sand)]"
+                    style={{ color: 'var(--muted)' }}
+                    title="Fjern dato"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setNewChild({ ...newChild, birth_date: new Date().toISOString().split('T')[0] })}
+                  className="input text-left w-full"
+                  style={{ color: 'var(--muted)' }}
+                >
+                  + Legg til fødselsdato
+                </button>
+              )}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-4">
