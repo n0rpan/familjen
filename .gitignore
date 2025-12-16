@@ -54,3 +54,6 @@ supabase/config.toml
 # logs
 logs/
 *.log
+
+# Local Claude context
+.claude-context.local
