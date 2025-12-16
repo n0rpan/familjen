@@ -1,8 +1,8 @@
 'use client'
 
 import { useMemo } from 'react'
+import { useLanguage } from '@/lib/i18n/context'
 import {
-  WEEKDAYS_NO,
   formatDateISO,
   isToday,
   cn,
@@ -39,9 +39,10 @@ export function DayView({
   canGoPrevious = true,
   canGoNext = true,
 }: DayViewProps) {
+  const { language, t } = useLanguage()
   const dateStr = formatDateISO(date)
   const dayOfWeek = date.getDay()
-  const dayName = WEEKDAYS_NO[dayOfWeek === 0 ? 6 : dayOfWeek - 1]
+  const dayName = t.date.weekdays[dayOfWeek === 0 ? 6 : dayOfWeek - 1]
   const today = isToday(date)
 
   const pickupMap = useMemo(() => {
@@ -79,7 +80,7 @@ export function DayView({
             canGoPrevious ? 'active:bg-[var(--sand)]' : 'opacity-30'
           )}
           style={{ color: 'var(--foreground)' }}
-          aria-label="Forrige dag"
+          aria-label={t.common.previousDay}
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6"/>
@@ -94,8 +95,8 @@ export function DayView({
             className={cn('text-sm', today && 'font-semibold')}
             style={{ color: today ? 'var(--accent)' : 'var(--muted)' }}
           >
-            {date.getDate()}. {['jan', 'feb', 'mar', 'apr', 'mai', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'des'][date.getMonth()]}
-            {today && ' (i dag)'}
+            {date.getDate()}. {t.date.monthsShort[date.getMonth()]}
+            {today && ` (${t.common.today.toLowerCase()})`}
           </div>
         </div>
 
@@ -107,7 +108,7 @@ export function DayView({
             canGoNext ? 'active:bg-[var(--sand)]' : 'opacity-30'
           )}
           style={{ color: 'var(--foreground)' }}
-          aria-label="Neste dag"
+          aria-label={t.common.nextDay}
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="9 18 15 12 9 6"/>
@@ -154,7 +155,7 @@ export function DayView({
                     color: 'var(--foreground)',
                   }}
                 >
-                  <option value="">Velg hvem som henter...</option>
+                  <option value="">{t.week.selectPickerPrompt}</option>
                   {members.map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.name}
@@ -175,11 +176,11 @@ export function DayView({
                         {pickup.picker.name.charAt(0)}
                       </div>
                       <span className="font-medium" style={{ color: 'var(--foreground)' }}>
-                        {pickup.picker.name} henter
+                        {t.home.picksUp.replace('{name}', pickup.picker.name)}
                       </span>
                     </>
                   ) : (
-                    <span style={{ color: 'var(--muted)' }}>Ikke tildelt</span>
+                    <span style={{ color: 'var(--muted)' }}>{t.week.notAssigned}</span>
                   )}
                 </div>
               )}
@@ -201,7 +202,7 @@ export function DayView({
               </svg>
             </div>
             <div className="font-medium" style={{ color: 'var(--foreground)' }}>
-              Middag
+              {t.home.meal}
             </div>
           </div>
 
@@ -210,7 +211,7 @@ export function DayView({
               type="text"
               value={meal?.recipe?.name || meal?.custom_meal || ''}
               onChange={(e) => onMealChange?.(dateStr, e.target.value || null)}
-              placeholder="Hva skal vi spise?"
+              placeholder={t.week.mealPlaceholder}
               className="w-full text-base p-3 rounded-xl min-h-[48px]"
               style={{
                 background: 'var(--card)',
@@ -229,7 +230,7 @@ export function DayView({
                   fontWeight: meal ? 500 : 400,
                 }}
               >
-                {meal?.recipe?.name || meal?.custom_meal || 'Ikke planlagt'}
+                {meal?.recipe?.name || meal?.custom_meal || t.home.noMealPlanned}
               </span>
             </div>
           )}

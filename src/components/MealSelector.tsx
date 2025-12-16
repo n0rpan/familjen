@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import type { Recipe } from '@/lib/types'
+import { useLanguage } from '@/lib/i18n/context'
 
 interface MealSelectorProps {
   value: string
@@ -20,6 +21,7 @@ export function MealSelector({
   placeholder = '...',
   disabled = false,
 }: MealSelectorProps) {
+  const { t } = useLanguage()
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
@@ -103,8 +105,8 @@ export function MealSelector({
               border: '1px solid var(--border)',
               color: 'var(--color-honey)',
             }}
-            title="Få AI-forslag"
-            aria-label="Få AI-forslag"
+            title={t.week.getAiSuggestions}
+            aria-label={t.week.getAiSuggestions}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 2a4 4 0 0 1 4 4c0 1.5-.8 2.8-2 3.5v1a1.5 1.5 0 0 1-1.5 1.5h-1A1.5 1.5 0 0 1 10 10.5v-1C8.8 8.8 8 7.5 8 6a4 4 0 0 1 4-4z"/>
@@ -127,7 +129,7 @@ export function MealSelector({
         >
           {filteredRecipes.length === 0 ? (
             <div className="p-3 text-sm text-center" style={{ color: 'var(--muted)' }}>
-              Ingen oppskrifter funnet
+              {t.recipes.noRecipesFound}
             </div>
           ) : (
             <>
@@ -135,7 +137,7 @@ export function MealSelector({
               {filteredRecipes.some(r => r.is_favorite) && (
                 <div className="p-2 border-b" style={{ borderColor: 'var(--border)' }}>
                   <div className="text-xs font-medium mb-2 px-2" style={{ color: 'var(--muted)' }}>
-                    Favoritter
+                    {t.recipes.favorites}
                   </div>
                   {filteredRecipes.filter(r => r.is_favorite).map(recipe => (
                     <button
@@ -151,7 +153,7 @@ export function MealSelector({
                       <span className="truncate">{recipe.name}</span>
                       {recipe.is_quick && (
                         <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--color-sage)', color: 'white' }}>
-                          Rask
+                          {t.recipes.quick}
                         </span>
                       )}
                     </button>
@@ -163,7 +165,7 @@ export function MealSelector({
               <div className="p-2">
                 {filteredRecipes.some(r => r.is_favorite) && (
                   <div className="text-xs font-medium mb-2 px-2" style={{ color: 'var(--muted)' }}>
-                    Alle oppskrifter
+                    {t.recipes.allRecipes}
                   </div>
                 )}
                 {filteredRecipes.filter(r => !r.is_favorite).map(recipe => (
@@ -178,12 +180,12 @@ export function MealSelector({
                     <div className="flex gap-1 shrink-0">
                       {recipe.is_quick && (
                         <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--color-sage)', color: 'white' }}>
-                          Rask
+                          {t.recipes.quick}
                         </span>
                       )}
                       {recipe.is_kid_friendly && (
                         <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--color-sky)', color: 'white' }}>
-                          Barn
+                          {t.recipes.kidFriendly}
                         </span>
                       )}
                     </div>

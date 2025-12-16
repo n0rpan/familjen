@@ -31,9 +31,9 @@ interface OpenRouterModel {
   context_length: number;
 }
 
-function formatPrice(price: string): string {
+function formatPrice(price: string, t: any): string {
   const num = parseFloat(price);
-  if (num === 0) return "Gratis";
+  if (num === 0) return t.common.free;
   if (num < 0.000001) return "<$0.001/M";
   return `$${(num * 1000000).toFixed(2)}/M`;
 }
@@ -42,10 +42,12 @@ function ModelSelector({
   value,
   onChange,
   disabled,
+  t,
 }: {
   value: string;
   onChange: (modelId: string) => void;
   disabled: boolean;
+  t: any;
 }) {
   const [models, setModels] = useState<OpenRouterModel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -118,7 +120,7 @@ function ModelSelector({
         className="input animate-pulse"
         style={{ background: "var(--sand)" }}
       >
-        Laster modeller...
+        {t.admin.loadingModels}
       </div>
     );
   }
@@ -141,11 +143,11 @@ function ModelSelector({
                 className="text-xs px-2 py-0.5 rounded-full flex-shrink-0"
                 style={{ background: "var(--sand)", color: "var(--muted)" }}
               >
-                {formatPrice(selectedModel.pricing.prompt)}
+                {formatPrice(selectedModel.pricing.prompt, t)}
               </span>
             </div>
           ) : (
-            <span style={{ color: "var(--muted)" }}>Velg modell...</span>
+            <span style={{ color: "var(--muted)" }}>{t.admin.selectModel}</span>
           )}
         </div>
         <svg
@@ -178,7 +180,7 @@ function ModelSelector({
           >
             <input
               type="text"
-              placeholder="Søk modeller..."
+              placeholder={t.admin.searchModels}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="input"
@@ -231,7 +233,7 @@ function ModelSelector({
                         className="text-xs font-medium"
                         style={{ color: "var(--color-sage)" }}
                       >
-                        {formatPrice(model.pricing.prompt)}
+                        {formatPrice(model.pricing.prompt, t)}
                       </div>
                       <div
                         className="text-xs"
@@ -249,7 +251,7 @@ function ModelSelector({
                 className="px-4 py-8 text-center"
                 style={{ color: "var(--muted)" }}
               >
-                Ingen modeller funnet
+                {t.admin.noModelsFound}
               </div>
             )}
           </div>
@@ -339,13 +341,13 @@ export default function AdminPage() {
       const data = await res.json();
 
       if (res.ok) {
-        showMessage('success', `Synkronisert! ${data.synced} hendelser lagt til, ${data.deleted} slettet`);
+        showMessage('success', t.admin.syncSuccess.replace('{added}', data.synced).replace('{deleted}', data.deleted));
         await loadCalendarStatus();
       } else {
-        showMessage('error', data.error || 'Synkronisering feilet');
+        showMessage('error', data.error || t.errors.calendarSyncFailed);
       }
     } catch (error) {
-      showMessage('error', 'Kunne ikke synkronisere kalender');
+      showMessage('error', t.errors.calendarSyncFailed);
     }
     setSyncing(false);
   };
@@ -436,8 +438,8 @@ export default function AdminPage() {
       showMessage(
         "error",
         error.code === "23505"
-          ? "E-post finnes allerede"
-          : "Kunne ikke legge til e-post",
+          ? t.admin.emailExists
+          : t.errors.loadFailed,
       );
     } else {
       setNewEmail("");
@@ -446,8 +448,8 @@ export default function AdminPage() {
       showMessage(
         "success",
         inviteAsHouseholdAdmin
-          ? "Bruker lagt til - kan opprette husstand"
-          : "Bruker lagt til!",
+          ? t.admin.userAddedCanCreate
+          : t.admin.userAdded,
       );
     }
     setSaving(false);
@@ -455,17 +457,18 @@ export default function AdminPage() {
 
   const deleteEmail = async (id: string, emailItem: AllowedEmail) => {
     if (emailItem.is_admin) {
-      showMessage("error", "Kan ikke slette admin-e-post");
+      showMessage("error", t.admin.cannotDeleteAdmin);
       return;
     }
-    if (!confirm(`Er du sikker på at du vil slette ${emailItem.email}?`)) return;
+    const confirmMsg = `${t.common.confirm}: ${emailItem.email}?`;
+    if (!confirm(confirmMsg)) return;
 
     const { error } = await supabase
       .from("allowed_emails")
       .delete()
       .eq("id", id);
     if (error) {
-      showMessage("error", "Kunne ikke slette e-post");
+      showMessage("error", t.errors.deleteFailed);
     } else {
       loadData();
     }
@@ -478,10 +481,10 @@ export default function AdminPage() {
       .upsert({ key, value, updated_at: new Date().toISOString() });
 
     if (error) {
-      showMessage("error", "Kunne ikke oppdatere innstilling");
+      showMessage("error", t.errors.saveFailed);
     } else {
       setSettings((prev) => ({ ...prev, [key]: value }));
-      showMessage("success", "Modell oppdatert!");
+      showMessage("success", t.admin.modelUpdated);
     }
     setSaving(false);
   };
@@ -569,7 +572,7 @@ export default function AdminPage() {
             {householdAdmins}
           </div>
           <div className="text-sm" style={{ color: "var(--muted)" }}>
-            Husstandsadmins
+            {t.admin.householdAdmin}s
           </div>
         </div>
         <div
@@ -586,7 +589,7 @@ export default function AdminPage() {
             {totalMembers}
           </div>
           <div className="text-sm" style={{ color: "var(--muted)" }}>
-            Medlemmer
+            {t.admin.membersCount}
           </div>
         </div>
         <div
@@ -603,7 +606,7 @@ export default function AdminPage() {
             {totalChildren}
           </div>
           <div className="text-sm" style={{ color: "var(--muted)" }}>
-            Barn
+            {t.admin.childrenCount}
           </div>
         </div>
       </div>
@@ -655,10 +658,10 @@ export default function AdminPage() {
               className="text-xl font-semibold"
               style={{ color: "var(--foreground)" }}
             >
-              Brukertilgang
+              {t.admin.allowedEmails}
             </h2>
             <p className="text-sm" style={{ color: "var(--muted)" }}>
-              Hvem kan logge inn i appen
+              {t.admin.userAccessDesc}
             </p>
           </div>
         </div>
@@ -673,7 +676,7 @@ export default function AdminPage() {
             className="text-sm font-medium mb-3"
             style={{ color: "var(--foreground)" }}
           >
-            Legg til bruker
+            {t.admin.addUser}
           </p>
           <div className="flex gap-3 mb-3">
             <input
@@ -689,7 +692,7 @@ export default function AdminPage() {
               disabled={saving || !newEmail}
               className="btn btn-primary"
             >
-              + Legg til
+              + {t.admin.addUser}
             </button>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
@@ -701,10 +704,10 @@ export default function AdminPage() {
               style={{ accentColor: "var(--color-honey)" }}
             />
             <span className="text-sm" style={{ color: "var(--foreground)" }}>
-              Kan opprette egen husstand
+              {t.admin.canCreateOwn}
             </span>
             <span className="badge badge-honey text-xs">
-              Blir husstandsadmin
+              {t.admin.becomesHouseholdAdmin}
             </span>
           </label>
         </form>
@@ -712,9 +715,9 @@ export default function AdminPage() {
         {/* User overview table */}
         <div className="space-y-2">
           <div className="grid grid-cols-12 gap-2 px-4 py-2 text-xs font-medium" style={{ color: "var(--muted)" }}>
-            <div className="col-span-5">E-post</div>
-            <div className="col-span-4">Husstand</div>
-            <div className="col-span-3 text-right">Handling</div>
+            <div className="col-span-5">{t.admin.email}</div>
+            <div className="col-span-4">{t.settings.household}</div>
+            <div className="col-span-3 text-right">{t.admin.action}</div>
           </div>
           {allowedEmails.map((item) => {
             // Find which household this user belongs to
@@ -757,13 +760,13 @@ export default function AdminPage() {
                     </span>
                     <div className="flex flex-wrap gap-1 mt-0.5">
                       {item.is_admin && (
-                        <span className="badge badge-coral text-xs">App-admin</span>
+                        <span className="badge badge-coral text-xs">{t.admin.appAdmin}</span>
                       )}
                       {item.can_create_household && !userHousehold && (
-                        <span className="badge badge-honey text-xs">Kan opprette</span>
+                        <span className="badge badge-honey text-xs">{t.admin.canCreateOwn}</span>
                       )}
                       {userMember?.is_household_admin && (
-                        <span className="badge badge-sage text-xs">Husstandsadmin</span>
+                        <span className="badge badge-sage text-xs">{t.admin.householdAdmin}</span>
                       )}
                     </div>
                   </div>
@@ -773,7 +776,7 @@ export default function AdminPage() {
                 <div className="col-span-4">
                   {userHousehold ? (
                     <span className="text-sm" style={{ color: "var(--foreground)" }}>
-                      {userHousehold.name || "Uten navn"}
+                      {userHousehold.name || t.admin.unnamed}
                     </span>
                   ) : (
                     <span className="text-sm" style={{ color: "var(--muted)" }}>
@@ -811,7 +814,7 @@ export default function AdminPage() {
         </div>
 
         <p className="text-xs mt-4" style={{ color: "var(--muted)" }}>
-          Brukere legges til i husstander via Innstillinger av husstandsadmin.
+          {t.admin.usersAddedViaSettings}
         </p>
       </section>
 
@@ -844,10 +847,10 @@ export default function AdminPage() {
               className="text-xl font-semibold"
               style={{ color: "var(--foreground)" }}
             >
-              Husstander
+              {t.admin.households}
             </h2>
             <p className="text-sm" style={{ color: "var(--muted)" }}>
-              Oversikt over registrerte husstander
+              {t.admin.householdsDesc}
             </p>
           </div>
         </div>
@@ -856,7 +859,7 @@ export default function AdminPage() {
         <div className="space-y-2">
           {households.length === 0 ? (
             <div className="text-center py-8" style={{ color: "var(--muted)" }}>
-              Ingen husstander registrert ennå
+              {t.admin.noHouseholdsYet}
             </div>
           ) : (
             households.map((household) => (
@@ -880,7 +883,7 @@ export default function AdminPage() {
                       className="font-medium"
                       style={{ color: "var(--foreground)" }}
                     >
-                      {household.name || "Uten navn"}
+                      {household.name || t.admin.unnamed}
                     </div>
                     <div
                       className="text-sm"
@@ -899,7 +902,7 @@ export default function AdminPage() {
         </div>
 
         <p className="text-xs mt-4" style={{ color: "var(--muted)" }}>
-          Husstandsmedlemmer administreres av hver husstand via Innstillinger.
+          {t.admin.householdsManageViaSettings}
         </p>
       </section>
 
@@ -935,10 +938,10 @@ export default function AdminPage() {
                 className="text-xl font-semibold"
                 style={{ color: "var(--foreground)" }}
               >
-                Aktivitetslogg
+                {t.admin.auditLog}
               </h2>
               <p className="text-sm" style={{ color: "var(--muted)" }}>
-                {auditLog.length} siste endringer
+                {auditLog.length} {t.admin.latestChanges}
               </p>
             </div>
           </div>
@@ -963,7 +966,7 @@ export default function AdminPage() {
                 className="text-center py-8"
                 style={{ color: "var(--muted)" }}
               >
-                Ingen aktivitet registrert ennå
+                {t.admin.noActivityYet}
               </div>
             ) : (
               auditLog.map((entry) => {
@@ -973,17 +976,17 @@ export default function AdminPage() {
                   DELETE: "var(--color-coral)",
                 };
                 const actionLabels = {
-                  INSERT: "Opprettet",
-                  UPDATE: "Oppdatert",
-                  DELETE: "Slettet",
+                  INSERT: t.admin.actionCreated,
+                  UPDATE: t.admin.actionUpdated,
+                  DELETE: t.admin.actionDeleted,
                 };
                 const tableLabels: Record<string, string> = {
-                  pickups: "Henting",
-                  meals: "Måltid",
-                  children: "Barn",
-                  household_members: "Medlem",
-                  households: "Husstand",
-                  recipes: "Oppskrift",
+                  pickups: t.admin.entityPickup,
+                  meals: t.admin.entityMeal,
+                  children: t.admin.entityChild,
+                  household_members: t.admin.entityMember,
+                  households: t.admin.entityHousehold,
+                  recipes: t.admin.entityRecipe,
                 };
 
                 return (
@@ -1072,7 +1075,7 @@ export default function AdminPage() {
                           if (data.date) parts.push(`Dato: ${data.date}`);
                           if (data.custom_meal)
                             parts.push(String(data.custom_meal));
-                          return parts.join(" • ") || "Ny oppføring";
+                          return parts.join(" • ") || t.admin.newEntry;
                         })()}
                       </div>
                     )}
@@ -1094,7 +1097,7 @@ export default function AdminPage() {
                           const parts: string[] = [];
                           if (data.name) parts.push(`Slettet: ${data.name}`);
                           if (data.date) parts.push(`Dato: ${data.date}`);
-                          return parts.join(" • ") || "Slettet oppføring";
+                          return parts.join(" • ") || t.admin.deletedEntry;
                         })()}
                       </div>
                     )}
@@ -1135,10 +1138,10 @@ export default function AdminPage() {
               className="text-xl font-semibold"
               style={{ color: "var(--foreground)" }}
             >
-              AI-innstillinger
+              {t.admin.aiSettings}
             </h2>
             <p className="text-sm" style={{ color: "var(--muted)" }}>
-              Velg AI-modell for middagsforslag
+              {t.admin.aiSettingsDesc}
             </p>
           </div>
         </div>
@@ -1150,16 +1153,16 @@ export default function AdminPage() {
               className="block text-sm font-medium mb-2"
               style={{ color: "var(--foreground)" }}
             >
-              OpenRouter-modell
+              {t.admin.openrouterModel}
             </label>
             <ModelSelector
               value={settings.openrouter_model || "anthropic/claude-3.5-sonnet"}
               onChange={(modelId) => updateSetting("openrouter_model", modelId)}
               disabled={saving}
+              t={t}
             />
             <p className="text-xs mt-2" style={{ color: "var(--muted)" }}>
-              Priser er per million tokens. Anbefaler Claude eller GPT-4o for
-              best kvalitet.
+              {t.admin.priceNote}
             </p>
           </div>
         </div>
@@ -1196,10 +1199,10 @@ export default function AdminPage() {
               className="text-xl font-semibold"
               style={{ color: "var(--foreground)" }}
             >
-              Google Kalender
+              {t.admin.calendar}
             </h2>
             <p className="text-sm" style={{ color: "var(--muted)" }}>
-              Delt kalender-konto for alle husstander i appen
+              {t.admin.calendarDesc}
             </p>
           </div>
         </div>
@@ -1226,8 +1229,8 @@ export default function AdminPage() {
                     style={{ color: "var(--foreground)" }}
                   >
                     {calendarStatus?.connected
-                      ? "Tilkoblet"
-                      : "Ikke tilkoblet"}
+                      ? t.admin.connected
+                      : t.admin.notConnected}
                   </div>
                   {calendarStatus?.email && (
                     <div className="text-sm" style={{ color: "var(--muted)" }}>
@@ -1245,7 +1248,7 @@ export default function AdminPage() {
                     {calendarStatus.syncedEvents}
                   </div>
                   <div className="text-xs" style={{ color: "var(--muted)" }}>
-                    synkroniserte hendelser
+                    {t.admin.syncedEventsCount}
                   </div>
                 </div>
               )}
@@ -1273,7 +1276,7 @@ export default function AdminPage() {
                   <polyline points="10 17 15 12 10 7" />
                   <line x1="15" y1="12" x2="3" y2="12" />
                 </svg>
-                Koble til Google Kalender
+                {t.admin.connectGoogleCalendar}
               </a>
             ) : (
               <>
@@ -1300,7 +1303,7 @@ export default function AdminPage() {
                           d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
                         />
                       </svg>
-                      Synkroniserer...
+                      {t.admin.syncing}
                     </>
                   ) : (
                     <>
@@ -1316,7 +1319,7 @@ export default function AdminPage() {
                       >
                         <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2" />
                       </svg>
-                      Synkroniser nå
+                      {t.admin.syncNow}
                     </>
                   )}
                 </button>
@@ -1324,7 +1327,7 @@ export default function AdminPage() {
                   href="/api/calendar/auth"
                   className="btn btn-secondary flex items-center gap-2"
                 >
-                  Koble til på nytt
+                  {t.admin.reconnect}
                 </a>
               </>
             )}
@@ -1332,9 +1335,7 @@ export default function AdminPage() {
 
           {/* Info */}
           <p className="text-xs" style={{ color: "var(--muted)" }}>
-            Når noen sender en kalenderinvitasjon til denne Gmail-kontoen,
-            kobles den automatisk til riktig person basert på avsenderens
-            e-postadresse (privat eller jobb). Fungerer for alle husstander.
+            {t.admin.calendarAutoMatchDesc}
           </p>
         </div>
       </section>
@@ -1366,11 +1367,10 @@ export default function AdminPage() {
             className="text-sm font-medium"
             style={{ color: "var(--foreground)" }}
           >
-            Sikkerhet
+            {t.admin.security}
           </p>
           <p className="text-sm" style={{ color: "var(--muted)" }}>
-            Bare brukere med e-post i listen over kan logge inn. AI-kostnader
-            belastes din OpenRouter-konto.
+            {t.admin.securityDesc}
           </p>
         </div>
       </div>

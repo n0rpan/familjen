@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import type { MealSuggestion, RecipeIngredient } from '@/lib/types'
+import { useLanguage } from '@/lib/i18n/context'
 
 interface AISuggestionModalProps {
   isOpen: boolean
@@ -22,6 +23,7 @@ export function AISuggestionModal({
   onAccept,
   onRetry,
 }: AISuggestionModalProps) {
+  const { t } = useLanguage()
   const [expandedDay, setExpandedDay] = useState<string | null>(null)
   const [editingRecipe, setEditingRecipe] = useState<MealSuggestion | null>(null)
   const [editedName, setEditedName] = useState('')
@@ -32,8 +34,11 @@ export function AISuggestionModal({
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr)
-    const days = ['Søndag', 'Mandag', 'Tirsdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lørdag']
-    return `${days[date.getDay()]} ${date.getDate()}.${date.getMonth() + 1}`
+    const dayIndex = date.getDay()
+    const weekdaysArray = t.date.weekdays
+    // weekdays[0] is Monday, so we need to map Sunday (0) to weekdays[6]
+    const adjustedIndex = dayIndex === 0 ? 6 : dayIndex - 1
+    return `${weekdaysArray[adjustedIndex]} ${date.getDate()}.${date.getMonth() + 1}`
   }
 
   const handleStartEdit = (suggestion: MealSuggestion) => {
@@ -104,10 +109,10 @@ export function AISuggestionModal({
             </div>
             <div>
               <h2 className="text-xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
-                AI Middagsforslag
+                {t.week.aiModalTitle}
               </h2>
               <p className="text-sm" style={{ color: 'var(--muted)' }}>
-                {suggestions.length > 0 ? `${suggestions.length} forslag` : 'Genererer forslag...'}
+                {suggestions.length > 0 ? `${suggestions.length} ${t.week.suggestions}` : t.week.generatingSuggestions}
               </p>
             </div>
           </div>
@@ -115,7 +120,7 @@ export function AISuggestionModal({
             onClick={onClose}
             className="p-2 rounded-lg transition-colors hover:bg-[var(--sand)]"
             style={{ color: 'var(--muted)' }}
-            aria-label="Lukk"
+            aria-label={t.common.close}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="18" y1="6" x2="6" y2="18"/>
@@ -129,9 +134,9 @@ export function AISuggestionModal({
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-12">
               <div className="w-12 h-12 rounded-full border-4 border-[var(--sand)] border-t-[var(--color-honey)] animate-spin mb-4" />
-              <p style={{ color: 'var(--muted)' }}>Genererer middagsforslag...</p>
+              <p style={{ color: 'var(--muted)' }}>{t.week.generatingSuggestions}</p>
               <p className="text-sm mt-2" style={{ color: 'var(--muted)' }}>
-                Dette kan ta noen sekunder
+                {t.week.takesAFewSeconds}
               </p>
             </div>
           ) : error ? (
@@ -147,11 +152,11 @@ export function AISuggestionModal({
                 </svg>
               </div>
               <p className="text-lg font-medium mb-2" style={{ color: 'var(--foreground)' }}>
-                Kunne ikke generere forslag
+                {t.week.couldNotGenerate}
               </p>
               <p className="mb-6" style={{ color: 'var(--muted)' }}>{error}</p>
               <button onClick={onRetry} className="btn btn-primary">
-                Prøv igjen
+                {t.common.retry}
               </button>
             </div>
           ) : editingRecipe ? (
@@ -159,7 +164,7 @@ export function AISuggestionModal({
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
-                  Navn på rett
+                  {t.week.dishName}
                 </label>
                 <input
                   type="text"
@@ -172,14 +177,14 @@ export function AISuggestionModal({
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
-                    Ingredienser
+                    {t.recipes.ingredients}
                   </label>
                   <button
                     onClick={addIngredient}
                     className="text-sm font-medium"
                     style={{ color: 'var(--accent)' }}
                   >
-                    + Legg til
+                    + {t.week.addIngredient}
                   </button>
                 </div>
                 <div className="space-y-2">
@@ -189,14 +194,14 @@ export function AISuggestionModal({
                         type="text"
                         value={ing.item}
                         onChange={(e) => updateIngredient(index, 'item', e.target.value)}
-                        placeholder="Ingrediens"
+                        placeholder={t.week.ingredient}
                         className="input flex-1"
                       />
                       <input
                         type="text"
                         value={ing.amount}
                         onChange={(e) => updateIngredient(index, 'amount', e.target.value)}
-                        placeholder="Mengde"
+                        placeholder={t.week.amount}
                         className="input w-24"
                       />
                       <button
@@ -223,7 +228,7 @@ export function AISuggestionModal({
                   style={{ accentColor: 'var(--accent)' }}
                 />
                 <span className="text-sm" style={{ color: 'var(--foreground)' }}>
-                  Lagre som oppskrift i samlingen
+                  {t.week.saveAsRecipe}
                 </span>
               </label>
 
@@ -233,17 +238,17 @@ export function AISuggestionModal({
                   className="btn flex-1"
                   style={{ background: 'var(--sand)', color: 'var(--foreground)' }}
                 >
-                  Avbryt
+                  {t.common.cancel}
                 </button>
                 <button onClick={handleSaveEdit} className="btn btn-primary flex-1">
-                  Bruk denne
+                  {t.week.useThis}
                 </button>
               </div>
             </div>
           ) : suggestions.length === 0 ? (
             <div className="text-center py-12">
               <p style={{ color: 'var(--muted)' }}>
-                Ingen dager trenger forslag - alle er allerede planlagt!
+                {t.week.noDaysNeedSuggestions}
               </p>
             </div>
           ) : (
@@ -279,10 +284,10 @@ export function AISuggestionModal({
                     <div className="flex items-center gap-2">
                       <div className="flex gap-1">
                         {suggestion.is_quick && (
-                          <span className="badge badge-sage text-xs">Rask</span>
+                          <span className="badge badge-sage text-xs">{t.recipes.quick}</span>
                         )}
                         {suggestion.is_kid_friendly && (
-                          <span className="badge badge-sky text-xs">Barn</span>
+                          <span className="badge badge-sky text-xs">{t.recipes.kidFriendly}</span>
                         )}
                       </div>
                       <svg
@@ -309,7 +314,7 @@ export function AISuggestionModal({
                       {suggestion.ingredients && suggestion.ingredients.length > 0 && (
                         <div className="mb-4">
                           <p className="text-xs font-medium mb-2" style={{ color: 'var(--muted)' }}>
-                            INGREDIENSER
+                            {t.recipes.ingredientsHeader}
                           </p>
                           <div className="flex flex-wrap gap-2">
                             {suggestion.ingredients.map((ing, i) => (
@@ -330,14 +335,14 @@ export function AISuggestionModal({
                           onClick={() => handleQuickAccept(suggestion)}
                           className="btn btn-primary flex-1 text-sm"
                         >
-                          Bruk
+                          {t.week.use}
                         </button>
                         <button
                           onClick={() => handleStartEdit(suggestion)}
                           className="btn flex-1 text-sm"
                           style={{ background: 'var(--sand)', color: 'var(--foreground)' }}
                         >
-                          Rediger & lagre
+                          {t.week.editAndSave}
                         </button>
                       </div>
                     </div>

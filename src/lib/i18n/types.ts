@@ -50,6 +50,14 @@ export interface TranslationStrings {
     week: string
     month: string
     year: string
+    previousDay: string
+    nextDay: string
+    remove: string
+    saving: string
+    creating: string
+    finish: string
+    items: string
+    free: string
   }
 
   // Date/Time
@@ -151,6 +159,25 @@ export interface TranslationStrings {
     removeFromWorkCalendar: string
     more: string // "+{count} more"
     calendar: string
+    // AI Modal
+    aiModalTitle: string
+    suggestions: string
+    generatingSuggestions: string
+    takesAFewSeconds: string
+    couldNotGenerate: string
+    dishName: string
+    addIngredient: string
+    ingredient: string
+    amount: string
+    saveAsRecipe: string
+    useThis: string
+    editAndSave: string
+    noDaysNeedSuggestions: string
+    use: string
+    // DayView
+    selectPickerPrompt: string
+    notAssigned: string
+    mealPlaceholder: string
   }
 
   // Settings page
@@ -214,6 +241,13 @@ export interface TranslationStrings {
     portions: string
     cookingTime: string
     minutes: string
+    // Section headers and badges
+    favorites: string
+    allRecipes: string
+    quick: string // Short badge
+    kidFriendly: string // Short badge
+    noRecipesFound: string
+    ingredientsHeader: string // Uppercase section header
   }
 
   // Shopping list page
@@ -226,6 +260,9 @@ export interface TranslationStrings {
     clearChecked: string
     clearAll: string
     clearAllConfirm: string
+    quantity: string // Short "Qty"
+    groceries: string // List name
+    otherStores: string // List name
     aisles: {
       produce: string
       dairy: string
@@ -263,6 +300,60 @@ export interface TranslationStrings {
     syncedEvents: string
     deleteEmail: string
     deleteEmailConfirm: string
+    // Extended admin
+    userAccessDesc: string
+    addUser: string
+    canCreateOwn: string
+    becomesHouseholdAdmin: string
+    email: string
+    action: string
+    unnamed: string
+    usersAddedViaSettings: string
+    householdsOverview: string
+    householdsDesc: string
+    noHouseholdsYet: string
+    membersCount: string
+    childrenCount: string
+    householdsManageViaSettings: string
+    latestChanges: string
+    noActivityYet: string
+    actionCreated: string
+    actionUpdated: string
+    actionDeleted: string
+    entityPickup: string
+    entityMeal: string
+    entityChild: string
+    entityMember: string
+    entityHousehold: string
+    entityRecipe: string
+    newEntry: string
+    deletedEntry: string
+    aiSettings: string
+    aiSettingsDesc: string
+    openrouterModel: string
+    priceNote: string
+    calendarDesc: string
+    connected: string
+    notConnected: string
+    syncedEventsCount: string
+    connectGoogleCalendar: string
+    syncNow: string
+    reconnect: string
+    calendarAutoMatchDesc: string
+    security: string
+    securityDesc: string
+    loadingModels: string
+    selectModel: string
+    searchModels: string
+    noModelsFound: string
+    syncSuccess: string
+    emailExists: string
+    userAddedCanCreate: string
+    userAdded: string
+    cannotDeleteAdmin: string
+    modelUpdated: string
+    appAdmin: string
+    householdAdmin: string
   }
 
   // New household wizard
@@ -293,6 +384,12 @@ export interface TranslationStrings {
     waitingForInvite: string
     waitingForInviteDesc: string
     backToHome: string
+    // Extended wizard
+    yearsOld: string
+    locationName: string
+    locationNamePlaceholder: string
+    loginEmail: string
+    loginEmailHint: string
   }
 
   // Errors

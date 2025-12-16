@@ -292,7 +292,7 @@ export default function ShoppingListPage() {
                       {list.name}
                     </h2>
                     <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                      {unboughtItems.length} varer
+                      {unboughtItems.length} {t.common.items}
                     </p>
                   </div>
                 </div>
@@ -324,7 +324,7 @@ export default function ShoppingListPage() {
                     value={newItemQuantity[list.id] || ''}
                     onChange={e => setNewItemQuantity(prev => ({ ...prev, [list.id]: e.target.value }))}
                     onKeyDown={e => handleKeyDown(e, list.id)}
-                    placeholder="Ant."
+                    placeholder={t.shopping.quantity}
                     className="input text-sm text-center"
                     style={{ flex: '0 0 60px', width: '60px' }}
                   />

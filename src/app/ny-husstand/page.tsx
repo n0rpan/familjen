@@ -102,7 +102,7 @@ export default function CreateHouseholdPage() {
 
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Du må være logget inn')
+      if (!user) throw new Error(t.errors.unauthorized)
 
       // Use RPC function to create household and member atomically
       // This bypasses RLS issues with SELECT after INSERT
@@ -115,7 +115,7 @@ export default function CreateHouseholdPage() {
 
       if (createError) {
         console.error('Create household error:', createError)
-        throw new Error('Kunne ikke opprette husstand')
+        throw new Error(t.errors.couldNotCreateHousehold)
       }
 
       // Update member with birth date and allergies
@@ -133,7 +133,7 @@ export default function CreateHouseholdPage() {
       setStep('children')
     } catch (err) {
       console.error('Create household error:', err)
-      setError(err instanceof Error ? err.message : 'En feil oppstod')
+      setError(err instanceof Error ? err.message : t.errors.generic)
     } finally {
       setSaving(false)
     }
@@ -179,7 +179,7 @@ export default function CreateHouseholdPage() {
       }))
 
       const { error: childError } = await supabase.from('children').insert(childrenData)
-      if (childError) throw new Error('Kunne ikke legge til barn')
+      if (childError) throw new Error(t.errors.couldNotAddChild)
 
       setStep('partner')
     } catch (err) {
@@ -217,7 +217,7 @@ export default function CreateHouseholdPage() {
         email: partnerEmail.trim().toLowerCase() || null,
       })
 
-      if (memberError) throw new Error('Kunne ikke legge til partner')
+      if (memberError) throw new Error(t.errors.couldNotAddMember)
 
       // If email provided, add to allowed_emails so they can log in
       if (partnerEmail.trim()) {
@@ -262,13 +262,13 @@ export default function CreateHouseholdPage() {
             </svg>
           </div>
           <h1 className="text-2xl font-semibold font-display mb-2" style={{ color: 'var(--foreground)' }}>
-            Venter på invitasjon
+            {t.wizard.waitingForInvite}
           </h1>
           <p className="mb-6" style={{ color: 'var(--muted)' }}>
-            Du må bli invitert til en husstand av noen som allerede bruker appen.
+            {t.wizard.waitingForInviteDesc}
           </p>
           <button onClick={() => router.push('/')} className="btn btn-secondary">
-            Tilbake til forsiden
+            {t.wizard.backToHome}
           </button>
         </div>
       </div>
@@ -313,21 +313,21 @@ export default function CreateHouseholdPage() {
                   </svg>
                 </div>
                 <h1 className="text-2xl font-semibold font-display mb-2" style={{ color: 'var(--foreground)' }}>
-                  Velkommen til Familjen!
+                  {t.wizard.welcome}
                 </h1>
-                <p style={{ color: 'var(--muted)' }}>La oss sette opp husstanden din</p>
+                <p style={{ color: 'var(--muted)' }}>{t.wizard.welcomeSubtitle}</p>
               </div>
 
               <form onSubmit={createHousehold} className="space-y-5">
                 <div>
                   <label className="block text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
-                    Navn på husstand *
+                    {t.wizard.householdName} *
                   </label>
                   <input
                     type="text"
                     value={householdName}
                     onChange={(e) => setHouseholdName(e.target.value)}
-                    placeholder="F.eks. Familien Hansen"
+                    placeholder={t.wizard.householdNamePlaceholder}
                     className="input"
                     required
                     autoFocus
@@ -335,7 +335,7 @@ export default function CreateHouseholdPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
-                    Ditt navn *
+                    {t.wizard.yourName} *
                   </label>
                   <input
                     type="text"
@@ -348,7 +348,7 @@ export default function CreateHouseholdPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
-                    Din fødselsdato <span style={{ color: 'var(--muted)', fontWeight: 'normal' }}>(valgfritt)</span>
+                    {t.wizard.yourBirthDate} <span style={{ color: 'var(--muted)', fontWeight: 'normal' }}>({t.common.optional})</span>
                   </label>
                   <input
                     type="date"
@@ -359,21 +359,21 @@ export default function CreateHouseholdPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
-                    Allergier / matpreferanser <span style={{ color: 'var(--muted)', fontWeight: 'normal' }}>(valgfritt)</span>
+                    {t.wizard.yourAllergies} <span style={{ color: 'var(--muted)', fontWeight: 'normal' }}>({t.common.optional})</span>
                   </label>
                   <input
                     type="text"
                     value={myAllergies}
                     onChange={(e) => setMyAllergies(e.target.value)}
-                    placeholder="F.eks. gluten, nøtter, vegetar"
+                    placeholder={t.wizard.allergiesPlaceholder}
                     className="input"
                   />
                   <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
-                    Brukes for AI-forslag til middager
+                    {t.wizard.allergiesHint}
                   </p>
                 </div>
                 <button type="submit" disabled={saving || !householdName.trim() || !myName.trim()} className="btn btn-primary w-full">
-                  {saving ? 'Oppretter...' : 'Neste'}
+                  {saving ? t.common.creating : t.common.next}
                 </button>
               </form>
             </>
@@ -392,9 +392,9 @@ export default function CreateHouseholdPage() {
                   </svg>
                 </div>
                 <h1 className="text-2xl font-semibold font-display mb-2" style={{ color: 'var(--foreground)' }}>
-                  Legg til barn
+                  {t.wizard.addChildren}
                 </h1>
-                <p style={{ color: 'var(--muted)' }}>Hvem skal du planlegge henting for?</p>
+                <p style={{ color: 'var(--muted)' }}>{t.wizard.addChildrenSubtitle}</p>
               </div>
 
               {/* Added children list */}
@@ -412,10 +412,10 @@ export default function CreateHouseholdPage() {
                           <div>
                             <div className="font-medium" style={{ color: 'var(--foreground)' }}>
                               {child.name}
-                              {age !== null && <span className="text-xs ml-1" style={{ color: 'var(--muted)' }}>({age} år)</span>}
+                              {age !== null && <span className="text-xs ml-1" style={{ color: 'var(--muted)' }}>({age} {t.wizard.yearsOld})</span>}
                             </div>
                             <div className="text-xs" style={{ color: 'var(--muted)' }}>
-                              {child.location_name && `${child.location_type === 'school' ? 'Skole' : 'Barnehage'}: ${child.location_name}`}
+                              {child.location_name && `${child.location_type === 'school' ? t.settings.childLocationTypes.school : t.settings.childLocationTypes.kindergarten}: ${child.location_name}`}
                               {child.location_name && child.allergies && ' · '}
                               {child.allergies && `Allergier: ${child.allergies}`}
                             </div>
@@ -468,14 +468,14 @@ export default function CreateHouseholdPage() {
                     onChange={(e) => setNewChild({ ...newChild, location_type: e.target.value as 'school' | 'kindergarten' })}
                     className="input"
                   >
-                    <option value="kindergarten">Barnehage</option>
-                    <option value="school">Skole</option>
+                    <option value="kindergarten">{t.settings.childLocationTypes.kindergarten}</option>
+                    <option value="school">{t.settings.childLocationTypes.school}</option>
                   </select>
                   <input
                     type="text"
                     value={newChild.location_name}
                     onChange={(e) => setNewChild({ ...newChild, location_name: e.target.value })}
-                    placeholder="Navn på sted"
+                    placeholder={t.wizard.locationNamePlaceholder}
                     className="input"
                   />
                 </div>
@@ -502,16 +502,16 @@ export default function CreateHouseholdPage() {
                   disabled={!newChild.name.trim()}
                   className="btn btn-secondary w-full"
                 >
-                  + Legg til barn
+                  + {t.settings.addChild}
                 </button>
               </div>
 
               <div className="flex gap-3">
                 <button type="button" onClick={() => setStep('partner')} className="btn btn-secondary flex-1">
-                  Hopp over
+                  {t.common.skip}
                 </button>
                 <button type="button" onClick={saveChildren} disabled={saving} className="btn btn-primary flex-1">
-                  {saving ? 'Lagrer...' : 'Neste'}
+                  {saving ? t.common.saving : t.common.next}
                 </button>
               </div>
             </>
@@ -530,47 +530,47 @@ export default function CreateHouseholdPage() {
                   </svg>
                 </div>
                 <h1 className="text-2xl font-semibold font-display mb-2" style={{ color: 'var(--foreground)' }}>
-                  Inviter partner
+                  {t.wizard.invitePartner}
                 </h1>
-                <p style={{ color: 'var(--muted)' }}>Legg til partneren din så de også kan bruke appen</p>
+                <p style={{ color: 'var(--muted)' }}>{t.wizard.invitePartnerSubtitle}</p>
               </div>
 
               <div className="space-y-4 mb-6">
                 <div>
                   <label className="block text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
-                    Partnerens navn
+                    {t.wizard.partnerName}
                   </label>
                   <input
                     type="text"
                     value={partnerName}
                     onChange={(e) => setPartnerName(e.target.value)}
-                    placeholder="F.eks. Far eller Ole"
+                    placeholder={t.wizard.partnerNamePlaceholder}
                     className="input"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
-                    E-postadresse (for innlogging)
+                    {t.wizard.partnerEmail}
                   </label>
                   <input
                     type="email"
                     value={partnerEmail}
                     onChange={(e) => setPartnerEmail(e.target.value)}
-                    placeholder="partner@example.com"
+                    placeholder={t.wizard.partnerEmailPlaceholder}
                     className="input"
                   />
                   <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
-                    De kan logge inn med denne e-posten
+                    {t.wizard.partnerEmailHint}
                   </p>
                 </div>
               </div>
 
               <div className="flex gap-3">
                 <button type="button" onClick={() => setStep('done')} className="btn btn-secondary flex-1">
-                  Hopp over
+                  {t.common.skip}
                 </button>
                 <button type="button" onClick={savePartner} disabled={saving} className="btn btn-primary flex-1">
-                  {saving ? 'Lagrer...' : 'Fullfør'}
+                  {saving ? t.common.saving : t.common.finish}
                 </button>
               </div>
             </>
@@ -585,13 +585,13 @@ export default function CreateHouseholdPage() {
                 </svg>
               </div>
               <h1 className="text-2xl font-semibold font-display mb-2" style={{ color: 'var(--foreground)' }}>
-                Alt klart!
+                {t.wizard.allDone}
               </h1>
               <p className="mb-8" style={{ color: 'var(--muted)' }}>
-                Husstanden din er satt opp. Du kan nå begynne å planlegge uken.
+                {t.wizard.allDoneSubtitle}
               </p>
               <button onClick={() => router.push('/uke')} className="btn btn-primary">
-                Gå til ukeplanen
+                {t.wizard.goToWeekPlan}
               </button>
             </div>
           )}
