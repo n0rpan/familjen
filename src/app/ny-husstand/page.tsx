@@ -10,9 +10,11 @@ type WizardStep = 'household' | 'children' | 'partner' | 'done'
 
 interface NewChild {
   name: string
+  birth_date: string
   location_name: string
   location_type: 'school' | 'kindergarten'
   color: ChildColor
+  allergies: string
 }
 
 export default function CreateHouseholdPage() {
@@ -22,14 +24,18 @@ export default function CreateHouseholdPage() {
   // Step 1: Household info
   const [householdName, setHouseholdName] = useState('')
   const [myName, setMyName] = useState('')
+  const [myBirthDate, setMyBirthDate] = useState('')
+  const [myAllergies, setMyAllergies] = useState('')
 
   // Step 2: Children
   const [children, setChildren] = useState<NewChild[]>([])
   const [newChild, setNewChild] = useState<NewChild>({
     name: '',
+    birth_date: '',
     location_name: '',
     location_type: 'kindergarten',
     color: 'sky',
+    allergies: '',
   })
 
   // Step 3: Partner
@@ -110,6 +116,17 @@ export default function CreateHouseholdPage() {
         throw new Error('Kunne ikke opprette husstand')
       }
 
+      // Update member with birth date and allergies
+      if (myBirthDate || myAllergies) {
+        await supabase
+          .from('household_members')
+          .update({
+            birth_date: myBirthDate || null,
+            allergies: myAllergies.trim() || null,
+          })
+          .eq('user_id', user.id)
+      }
+
       setHouseholdId(newHouseholdId)
       setStep('children')
     } catch (err) {
@@ -126,9 +143,11 @@ export default function CreateHouseholdPage() {
     setChildren([...children, { ...newChild }])
     setNewChild({
       name: '',
+      birth_date: '',
       location_name: '',
       location_type: 'kindergarten',
       color: CHILD_COLORS[(children.length + 1) % CHILD_COLORS.length].value,
+      allergies: '',
     })
   }
 
@@ -150,9 +169,11 @@ export default function CreateHouseholdPage() {
       const childrenData = children.map(c => ({
         household_id: householdId,
         name: c.name.trim(),
+        birth_date: c.birth_date || null,
         location_name: c.location_name.trim() || null,
         location_type: c.location_type,
         color: c.color,
+        allergies: c.allergies.trim() || null,
       }))
 
       const { error: childError } = await supabase.from('children').insert(childrenData)
@@ -323,6 +344,32 @@ export default function CreateHouseholdPage() {
                     required
                   />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
+                    Din fødselsdato
+                  </label>
+                  <input
+                    type="date"
+                    value={myBirthDate}
+                    onChange={(e) => setMyBirthDate(e.target.value)}
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
+                    Allergier / matpreferanser
+                  </label>
+                  <input
+                    type="text"
+                    value={myAllergies}
+                    onChange={(e) => setMyAllergies(e.target.value)}
+                    placeholder="F.eks. gluten, nøtter, vegetar"
+                    className="input"
+                  />
+                  <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
+                    Brukes for AI-forslag til middager
+                  </p>
+                </div>
                 <button type="submit" disabled={saving || !householdName.trim() || !myName.trim()} className="btn btn-primary w-full">
                   {saving ? 'Oppretter...' : 'Neste'}
                 </button>
@@ -353,6 +400,7 @@ export default function CreateHouseholdPage() {
                 <div className="space-y-2 mb-6">
                   {children.map((child, i) => {
                     const colorConfig = CHILD_COLORS.find(c => c.value === child.color)
+                    const age = child.birth_date ? Math.floor((Date.now() - new Date(child.birth_date).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null
                     return (
                       <div key={i} className="flex items-center justify-between p-3 rounded-xl" style={{ background: 'var(--sand)' }}>
                         <div className="flex items-center gap-3">
@@ -360,12 +408,15 @@ export default function CreateHouseholdPage() {
                             {child.name.charAt(0)}
                           </div>
                           <div>
-                            <div className="font-medium" style={{ color: 'var(--foreground)' }}>{child.name}</div>
-                            {child.location_name && (
-                              <div className="text-xs" style={{ color: 'var(--muted)' }}>
-                                {child.location_type === 'school' ? 'Skole' : 'Barnehage'}: {child.location_name}
-                              </div>
-                            )}
+                            <div className="font-medium" style={{ color: 'var(--foreground)' }}>
+                              {child.name}
+                              {age !== null && <span className="text-xs ml-1" style={{ color: 'var(--muted)' }}>({age} år)</span>}
+                            </div>
+                            <div className="text-xs" style={{ color: 'var(--muted)' }}>
+                              {child.location_name && `${child.location_type === 'school' ? 'Skole' : 'Barnehage'}: ${child.location_name}`}
+                              {child.location_name && child.allergies && ' · '}
+                              {child.allergies && `Allergier: ${child.allergies}`}
+                            </div>
                           </div>
                         </div>
                         <button onClick={() => removeChild(i)} className="p-1 rounded" style={{ color: 'var(--muted)' }} aria-label="Fjern">
@@ -388,6 +439,27 @@ export default function CreateHouseholdPage() {
                   placeholder="Barnets navn"
                   className="input"
                 />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Fødselsdato</label>
+                    <input
+                      type="date"
+                      value={newChild.birth_date}
+                      onChange={(e) => setNewChild({ ...newChild, birth_date: e.target.value })}
+                      className="input"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Allergier</label>
+                    <input
+                      type="text"
+                      value={newChild.allergies}
+                      onChange={(e) => setNewChild({ ...newChild, allergies: e.target.value })}
+                      placeholder="F.eks. melk, egg"
+                      className="input"
+                    />
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <select
                     value={newChild.location_type}
