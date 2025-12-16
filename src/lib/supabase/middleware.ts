@@ -1,6 +1,13 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-import { isAdminEmail } from '@/lib/config'
+
+/**
+ * Check if user is admin via JWT app_metadata
+ * This is set during login by syncUserAdminStatus()
+ */
+function isUserAdmin(user: { app_metadata?: Record<string, unknown> } | null): boolean {
+  return user?.app_metadata?.is_admin === true
+}
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -46,12 +53,13 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Admin-only routes - redirect non-admin users to home
+  // Uses JWT app_metadata.is_admin (set during login from allowed_emails table)
   const adminOnlyPaths = ['/admin', '/api/openrouter']
   const isAdminPath = adminOnlyPaths.some(path =>
     pathname.startsWith(path)
   )
 
-  if (isAdminPath && !isAdminEmail(user?.email)) {
+  if (isAdminPath && !isUserAdmin(user)) {
     const url = request.nextUrl.clone()
     url.pathname = '/'
     return NextResponse.redirect(url)

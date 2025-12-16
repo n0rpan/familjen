@@ -10,7 +10,6 @@ import type {
   Child,
   AuditLogEntry,
 } from "@/lib/types";
-import { APP_CONFIG } from "@/lib/config";
 
 // Extended types for admin view
 interface HouseholdWithDetails extends Household {
@@ -262,6 +261,7 @@ function ModelSelector({
 export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [allowedEmails, setAllowedEmails] = useState<AllowedEmail[]>([]);
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [households, setHouseholds] = useState<HouseholdWithDetails[]>([]);
@@ -312,6 +312,7 @@ export default function AdminPage() {
       return;
     }
 
+    setCurrentUserId(user.id);
     setIsAdmin(true);
     await loadData();
     await loadCalendarStatus();
@@ -425,7 +426,7 @@ export default function AdminPage() {
     setSaving(true);
     const { error } = await supabase.from("allowed_emails").insert({
       email: newEmail.toLowerCase().trim(),
-      added_by: APP_CONFIG.ADMIN_EMAIL,
+      added_by: currentUserId,
       can_create_household: inviteAsHouseholdAdmin,
     });
 

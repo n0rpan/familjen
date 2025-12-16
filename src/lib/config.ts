@@ -4,10 +4,6 @@
  */
 
 export const APP_CONFIG = {
-  // Admin email - server-only, NOT exposed to client bundle
-  // Client components should query allowed_emails.is_admin instead
-  ADMIN_EMAIL: process.env.ADMIN_EMAIL || '',
-
   // App metadata
   APP_NAME: 'Familjen',
 
@@ -16,11 +12,10 @@ export const APP_CONFIG = {
 } as const
 
 /**
- * Server-side admin check - uses ADMIN_EMAIL env var
- * Only use in: middleware, API routes, server components
- * For client components: query allowed_emails table with is_admin = true
+ * Check if user is admin via JWT app_metadata
+ * This is set during login from allowed_emails.is_admin
+ * Works in API routes and server components
  */
-export function isAdminEmail(email: string | null | undefined): boolean {
-  if (!APP_CONFIG.ADMIN_EMAIL) return false
-  return email?.toLowerCase() === APP_CONFIG.ADMIN_EMAIL.toLowerCase()
+export function isUserAdmin(user: { app_metadata?: Record<string, unknown> } | null): boolean {
+  return user?.app_metadata?.is_admin === true
 }

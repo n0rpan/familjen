@@ -1,16 +1,16 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getAuthUrl } from '@/lib/google-calendar'
-import { isAdminEmail } from '@/lib/config'
+import { isUserAdmin } from '@/lib/config'
 
 // GET /api/calendar/auth - Start OAuth flow
 export async function GET() {
   try {
-    // Check if user is admin
+    // Check if user is admin via JWT claims
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
 
-    if (!user || !isAdminEmail(user.email)) {
+    if (!user || !isUserAdmin(user)) {
       return NextResponse.json(
         { error: 'Unauthorized - Admin access required' },
         { status: 403 }

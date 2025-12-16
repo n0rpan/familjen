@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { isAdminEmail } from '@/lib/config'
+import { isUserAdmin } from '@/lib/config'
 import {
   fetchCalendarEvents,
   getEventSenderEmail,
@@ -15,9 +15,9 @@ export async function POST() {
   try {
     const supabase = await createClient()
 
-    // Check if user is admin
+    // Check if user is admin via JWT claims
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user || !isAdminEmail(user.email)) {
+    if (!user || !isUserAdmin(user)) {
       return NextResponse.json(
         { error: 'Unauthorized - Admin access required' },
         { status: 403 }
@@ -198,9 +198,9 @@ export async function GET() {
   try {
     const supabase = await createClient()
 
-    // Check if user is admin
+    // Check if user is admin via JWT claims
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user || !isAdminEmail(user.email)) {
+    if (!user || !isUserAdmin(user)) {
       return NextResponse.json(
         { error: 'Unauthorized - Admin access required' },
         { status: 403 }

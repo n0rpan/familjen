@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getTokensFromCode, getOAuth2Client } from '@/lib/google-calendar'
-import { isAdminEmail } from '@/lib/config'
+import { isUserAdmin } from '@/lib/config'
 import { google } from 'googleapis'
 
 // GET /api/calendar/callback - OAuth callback from Google
@@ -20,11 +20,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(new URL('/admin?calendar_error=no_code', request.url))
     }
 
-    // Check if user is admin
+    // Check if user is admin via JWT claims
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
 
-    if (!user || !isAdminEmail(user.email)) {
+    if (!user || !isUserAdmin(user)) {
       return NextResponse.redirect(new URL('/admin?calendar_error=unauthorized', request.url))
     }
 
