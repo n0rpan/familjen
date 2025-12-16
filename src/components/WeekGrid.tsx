@@ -1,0 +1,516 @@
+'use client'
+
+import { useMemo } from 'react'
+import {
+  WEEKDAYS_SHORT_NO,
+  getWeekDates,
+  getWeekStart,
+  formatDateISO,
+  isToday,
+  isWeekend,
+  formatWeekHeader,
+  cn,
+} from '@/lib/utils'
+import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Recipe, ChildColor, MemberEvent, MemberEventType, ChildTask, ChildTaskType } from '@/lib/types'
+import { MealSelector } from './MealSelector'
+
+// Map child color names to CSS values
+const CHILD_COLOR_MAP: Record<ChildColor, { bg: string; text: string }> = {
+  sky: { bg: 'rgba(126, 182, 196, 0.3)', text: 'var(--color-sky)' },
+  coral: { bg: 'rgba(232, 120, 109, 0.3)', text: 'var(--color-coral)' },
+  sage: { bg: 'rgba(131, 166, 151, 0.3)', text: 'var(--color-sage)' },
+  honey: { bg: 'rgba(229, 185, 94, 0.3)', text: 'var(--color-honey)' },
+  lavender: { bg: 'rgba(167, 139, 250, 0.3)', text: '#a78bfa' },
+  mint: { bg: 'rgba(52, 211, 153, 0.3)', text: '#34d399' },
+}
+
+// Event type icons and colors
+const EVENT_TYPE_CONFIG: Record<MemberEventType, { icon: string; bg: string; text: string }> = {
+  work: { icon: '💼', bg: 'rgba(126, 182, 196, 0.2)', text: 'var(--color-sky)' },
+  travel: { icon: '✈️', bg: 'rgba(167, 139, 250, 0.2)', text: '#a78bfa' },
+  family: { icon: '👨‍👩‍👧', bg: 'rgba(232, 120, 109, 0.2)', text: 'var(--color-coral)' },
+  other: { icon: '📅', bg: 'rgba(131, 166, 151, 0.2)', text: 'var(--color-sage)' },
+}
+
+// Child task type icons
+const TASK_TYPE_CONFIG: Record<ChildTaskType, { icon: string; label: string }> = {
+  bring: { icon: '🎒', label: 'Ta med' },
+  appointment: { icon: '🩺', label: 'Avtale' },
+  reminder: { icon: '📝', label: 'Påminnelse' },
+  other: { icon: '📌', label: 'Annet' },
+}
+
+interface WeekGridProps {
+  children: Child[]
+  members: HouseholdMember[]
+  pickups: PickupWithDetails[]
+  meals: MealWithRecipe[]
+  memberEvents?: MemberEvent[]  // Parent events (work trips, dinners, etc.)
+  childTasks?: ChildTask[]  // Kid tasks (bring items, appointments, reminders)
+  recipes?: Recipe[]  // For meal selector dropdown
+  weekStart?: Date | string  // May be serialized as string from server
+  editable?: boolean
+  onPickupChange?: (childId: string, date: string, pickerId: string | null) => void
+  onMealChange?: (date: string, mealName: string | null, recipeId?: string) => void
+  onRequestAISuggestion?: (date: string) => void  // Per-day AI suggestion
+  onEventClick?: (event: MemberEvent) => void  // Click to edit event
+  onWorkCalendarSync?: (pickupId: string, sync: boolean) => void  // Toggle work calendar invite
+  onTaskToggle?: (taskId: string, done: boolean) => void  // Mark task done/undone
+  onTaskClick?: (task: ChildTask) => void  // Click to edit task
+  onAddTask?: (childId: string, date: string) => void  // Quick add task
+}
+
+export function WeekGrid({
+  children,
+  members,
+  pickups,
+  meals,
+  memberEvents = [],
+  childTasks = [],
+  recipes = [],
+  weekStart: providedWeekStart,
+  editable = false,
+  onPickupChange,
+  onMealChange,
+  onRequestAISuggestion,
+  onEventClick,
+  onWorkCalendarSync,
+  onTaskToggle,
+  onTaskClick,
+  onAddTask,
+}: WeekGridProps) {
+  // Ensure weekStart is a Date object (may be serialized as string from server)
+  const weekStart = useMemo(() => {
+    if (!providedWeekStart) return getWeekStart(new Date())
+    return providedWeekStart instanceof Date ? providedWeekStart : new Date(providedWeekStart)
+  }, [providedWeekStart])
+
+  const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart])
+
+  // Create lookup maps for quick access
+  const pickupMap = useMemo(() => {
+    const map = new Map<string, PickupWithDetails>()
+    pickups.forEach((p) => {
+      map.set(`${p.child_id}-${p.date}`, p)
+    })
+    return map
+  }, [pickups])
+
+  const mealMap = useMemo(() => {
+    const map = new Map<string, MealWithRecipe>()
+    meals.forEach((m) => {
+      map.set(m.date, m)
+    })
+    return map
+  }, [meals])
+
+  // Group events by member and date (for multi-day events, add to each day)
+  const eventsByMemberDate = useMemo(() => {
+    const map = new Map<string, MemberEvent[]>()
+    memberEvents.forEach((event) => {
+      const startDate = new Date(event.date)
+      const endDate = event.end_date ? new Date(event.end_date) : startDate
+
+      // Add event to each day it spans
+      const current = new Date(startDate)
+      while (current <= endDate) {
+        const key = `${event.member_id}-${formatDateISO(current)}`
+        const existing = map.get(key) || []
+        existing.push(event)
+        map.set(key, existing)
+        current.setDate(current.getDate() + 1)
+      }
+    })
+    return map
+  }, [memberEvents])
+
+  // Get parent members who might have events (is_parent = true or has events)
+  const parentMembers = useMemo(() => {
+    const memberIds = new Set(memberEvents.map(e => e.member_id))
+    return members.filter(m => m.is_parent || memberIds.has(m.id))
+  }, [members, memberEvents])
+
+  // Group tasks by child and date
+  const tasksByChildDate = useMemo(() => {
+    const map = new Map<string, ChildTask[]>()
+    childTasks.forEach((task) => {
+      const key = `${task.child_id}-${task.date}`
+      const existing = map.get(key) || []
+      existing.push(task)
+      map.set(key, existing)
+    })
+    return map
+  }, [childTasks])
+
+  const getPickup = (childId: string, date: Date) => {
+    return pickupMap.get(`${childId}-${formatDateISO(date)}`)
+  }
+
+  const getMeal = (date: Date) => {
+    return mealMap.get(formatDateISO(date))
+  }
+
+  const getEventsForMemberDate = (memberId: string, date: Date) => {
+    return eventsByMemberDate.get(`${memberId}-${formatDateISO(date)}`) || []
+  }
+
+  const getTasksForChildDate = (childId: string, date: Date) => {
+    return tasksByChildDate.get(`${childId}-${formatDateISO(date)}`) || []
+  }
+
+  // Helper to get child color config
+  const getChildColor = (child: Child) => CHILD_COLOR_MAP[child.color] || CHILD_COLOR_MAP.sky
+
+  // Helper to get event config
+  const getEventConfig = (eventType: MemberEventType) => EVENT_TYPE_CONFIG[eventType] || EVENT_TYPE_CONFIG.other
+
+  // Helper to get task config
+  const getTaskConfig = (taskType: ChildTaskType) => TASK_TYPE_CONFIG[taskType] || TASK_TYPE_CONFIG.other
+
+  return (
+    <div
+      className="rounded-2xl overflow-hidden"
+      style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+    >
+      {/* Header */}
+      <div
+        className="flex items-center justify-between px-4 md:px-6 py-4"
+        style={{ borderBottom: '1px solid var(--border)' }}
+      >
+        <h3 className="font-semibold" style={{ color: 'var(--foreground)' }}>
+          {formatWeekHeader(weekStart)}
+        </h3>
+      </div>
+
+      {/* Grid */}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[600px]">
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--border)' }}>
+              <th
+                className="p-3 text-left text-sm font-medium w-24"
+                style={{ color: 'var(--muted)' }}
+              >
+                {/* Empty cell for row labels */}
+              </th>
+              {weekDates.map((date, i) => (
+                <th
+                  key={i}
+                  className={cn(
+                    'p-3 text-center text-sm font-medium min-w-[80px]',
+                    isToday(date) && 'relative'
+                  )}
+                  style={{
+                    background: isToday(date) ? 'rgba(232, 120, 109, 0.08)' : undefined,
+                    color: isWeekend(date) ? 'var(--muted)' : 'var(--foreground)',
+                  }}
+                >
+                  <div className="font-medium">{WEEKDAYS_SHORT_NO[i]}</div>
+                  <div
+                    className={cn(
+                      'text-xs mt-1',
+                      isToday(date) ? 'font-semibold' : ''
+                    )}
+                    style={{ color: isToday(date) ? 'var(--accent)' : 'var(--muted)' }}
+                  >
+                    {date.getDate()}.
+                  </div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {/* Child rows */}
+            {children.map((child, childIndex) => (
+              <tr key={child.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                <td className="p-3">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold"
+                      style={{
+                        background: getChildColor(child).bg,
+                        color: getChildColor(child).text
+                      }}
+                    >
+                      {child.name.charAt(0)}
+                    </div>
+                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                      {child.name}
+                    </span>
+                  </div>
+                </td>
+                {weekDates.map((date, i) => {
+                  const pickup = getPickup(child.id, date)
+                  const tasks = getTasksForChildDate(child.id, date)
+                  const dateStr = formatDateISO(date)
+
+                  return (
+                    <td
+                      key={i}
+                      className="p-2 align-top"
+                      style={{
+                        background: isToday(date)
+                          ? 'rgba(232, 120, 109, 0.08)'
+                          : isWeekend(date)
+                          ? 'var(--background)'
+                          : undefined,
+                      }}
+                    >
+                      <div className="space-y-1">
+                        {/* Pickup selector / display */}
+                        {editable ? (
+                          <>
+                            <select
+                              value={pickup?.picker_id || ''}
+                              onChange={(e) =>
+                                onPickupChange?.(child.id, dateStr, e.target.value || null)
+                              }
+                              className="w-full text-sm p-2 rounded-lg transition-colors"
+                              style={{
+                                background: 'var(--background)',
+                                border: '1px solid var(--border)',
+                                color: 'var(--foreground)',
+                              }}
+                            >
+                              <option value="">-</option>
+                              {members.map((m) => (
+                                <option key={m.id} value={m.id}>
+                                  {m.short_name || m.name}
+                                </option>
+                              ))}
+                            </select>
+                            {/* Work calendar sync button */}
+                            {pickup?.picker?.work_email && onWorkCalendarSync && (
+                              <button
+                                onClick={() => onWorkCalendarSync(pickup.id, !pickup.sync_to_work_calendar)}
+                                className="w-full flex items-center justify-center gap-1 text-xs py-1 px-2 rounded transition-colors"
+                                style={{
+                                  background: pickup.sync_to_work_calendar
+                                    ? 'rgba(131, 166, 151, 0.2)'
+                                    : 'var(--background)',
+                                  color: pickup.sync_to_work_calendar
+                                    ? 'var(--color-sage)'
+                                    : 'var(--muted)',
+                                  border: '1px solid var(--border)',
+                                }}
+                                title={pickup.sync_to_work_calendar ? 'Fjern fra jobbkalender' : 'Send til jobbkalender'}
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                                  <line x1="16" y1="2" x2="16" y2="6"/>
+                                  <line x1="8" y1="2" x2="8" y2="6"/>
+                                  <line x1="3" y1="10" x2="21" y2="10"/>
+                                </svg>
+                                {pickup.sync_to_work_calendar ? '✓' : ''}
+                              </button>
+                            )}
+                          </>
+                        ) : (
+                          <div className="text-center">
+                            <span
+                              className="text-sm font-medium"
+                              style={{
+                                color: pickup?.picker ? 'var(--foreground)' : 'var(--muted)',
+                                opacity: pickup?.picker ? 1 : 0.5,
+                              }}
+                            >
+                              {pickup?.picker?.short_name || pickup?.picker?.name || '-'}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Child tasks */}
+                        {tasks.length > 0 && (
+                          <div className="space-y-0.5 pt-1 border-t border-dashed" style={{ borderColor: 'var(--border)' }}>
+                            {tasks.slice(0, 2).map((task) => {
+                              const config = getTaskConfig(task.task_type as ChildTaskType)
+                              const isDone = task.status === 'done'
+                              return (
+                                <button
+                                  key={task.id}
+                                  onClick={() => editable && onTaskToggle ? onTaskToggle(task.id, !isDone) : onTaskClick?.(task)}
+                                  className="w-full flex items-center gap-1 text-xs py-0.5 px-1 rounded transition-colors text-left"
+                                  style={{
+                                    background: isDone ? 'transparent' : 'rgba(229, 185, 94, 0.15)',
+                                    color: isDone ? 'var(--muted)' : 'var(--foreground)',
+                                    textDecoration: isDone ? 'line-through' : 'none',
+                                    opacity: isDone ? 0.6 : 1,
+                                  }}
+                                  title={task.notes || task.title}
+                                >
+                                  <span className="flex-shrink-0">{config.icon}</span>
+                                  <span className="truncate">{task.title}</span>
+                                </button>
+                              )
+                            })}
+                            {tasks.length > 2 && (
+                              <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                                +{tasks.length - 2} til
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Add task button (editable mode) */}
+                        {editable && onAddTask && (
+                          <button
+                            onClick={() => onAddTask(child.id, dateStr)}
+                            className="w-full flex items-center justify-center gap-1 text-xs py-0.5 px-1 rounded transition-colors opacity-50 hover:opacity-100"
+                            style={{ color: 'var(--muted)' }}
+                            title="Legg til oppgave"
+                          >
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <line x1="12" y1="5" x2="12" y2="19"/>
+                              <line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+
+            {/* Parent events rows */}
+            {parentMembers.length > 0 && (
+              <>
+                {/* Separator row */}
+                <tr>
+                  <td
+                    colSpan={8}
+                    className="px-3 py-2 text-xs font-medium"
+                    style={{ color: 'var(--muted)', background: 'var(--background)' }}
+                  >
+                    Kalender
+                  </td>
+                </tr>
+                {parentMembers.map((member) => (
+                  <tr key={`event-${member.id}`} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td className="p-3">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold"
+                          style={{
+                            background: 'rgba(167, 139, 250, 0.2)',
+                            color: '#a78bfa'
+                          }}
+                        >
+                          {member.short_name?.charAt(0) || member.name.charAt(0)}
+                        </div>
+                        <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                          {member.short_name || member.name}
+                        </span>
+                      </div>
+                    </td>
+                    {weekDates.map((date, i) => {
+                      const events = getEventsForMemberDate(member.id, date)
+
+                      return (
+                        <td
+                          key={i}
+                          className="p-2 text-center"
+                          style={{
+                            background: isToday(date)
+                              ? 'rgba(167, 139, 250, 0.08)'
+                              : isWeekend(date)
+                              ? 'var(--background)'
+                              : undefined,
+                          }}
+                        >
+                          {events.length > 0 ? (
+                            <div className="flex flex-col gap-1">
+                              {events.map((event) => {
+                                const config = getEventConfig(event.event_type as MemberEventType)
+                                return (
+                                  <button
+                                    key={event.id}
+                                    onClick={() => onEventClick?.(event)}
+                                    className="group flex items-center justify-center gap-1 px-2 py-1 rounded-lg text-xs transition-all hover:scale-105"
+                                    style={{ background: config.bg }}
+                                    title={event.title}
+                                  >
+                                    <span>{config.icon}</span>
+                                    <span
+                                      className="truncate max-w-[60px] hidden sm:inline"
+                                      style={{ color: config.text }}
+                                    >
+                                      {event.title}
+                                    </span>
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          ) : (
+                            <span className="text-sm" style={{ color: 'var(--muted)', opacity: 0.3 }}>
+                              -
+                            </span>
+                          )}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </>
+            )}
+
+            {/* Meal row */}
+            <tr style={{ background: 'rgba(229, 185, 94, 0.08)' }}>
+              <td className="p-3">
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-7 h-7 rounded-full flex items-center justify-center"
+                    style={{ background: 'var(--color-honey)', color: 'white' }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/>
+                      <path d="M7 2v20"/>
+                      <path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3zm0 0v7"/>
+                    </svg>
+                  </div>
+                  <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                    Middag
+                  </span>
+                </div>
+              </td>
+              {weekDates.map((date, i) => {
+                const meal = getMeal(date)
+                const dateStr = formatDateISO(date)
+
+                return (
+                  <td
+                    key={i}
+                    className="p-2 text-center"
+                    style={{
+                      background: isToday(date) ? 'rgba(229, 185, 94, 0.15)' : undefined,
+                    }}
+                  >
+                    {editable ? (
+                      <MealSelector
+                        value={meal?.recipe?.name || meal?.custom_meal || ''}
+                        recipes={recipes}
+                        onChange={(value, recipeId) => onMealChange?.(dateStr, value || null, recipeId)}
+                        onRequestAISuggestion={onRequestAISuggestion ? () => onRequestAISuggestion(dateStr) : undefined}
+                        placeholder="..."
+                      />
+                    ) : (
+                      <span
+                        className="text-sm"
+                        style={{
+                          color: meal ? 'var(--foreground)' : 'var(--muted)',
+                          opacity: meal ? 1 : 0.5,
+                        }}
+                      >
+                        {meal?.recipe?.name || meal?.custom_meal || '-'}
+                      </span>
+                    )}
+                  </td>
+                )
+              })}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
