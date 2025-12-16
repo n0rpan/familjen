@@ -1,8 +1,8 @@
 -- Migration: Encrypt Google Calendar Tokens
 -- Uses pgcrypto to encrypt sensitive OAuth tokens at rest
 
--- Enable pgcrypto extension
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- Enable pgcrypto extension (Supabase has this pre-installed in extensions schema)
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
 
 -- Create a function to get the encryption key from app settings
 -- The key should be set via: INSERT INTO app_settings (key, value) VALUES ('encryption_key', 'your-32-char-key');
@@ -14,7 +14,7 @@ RETURNS TEXT AS $$
   );
 $$ LANGUAGE SQL SECURITY DEFINER STABLE;
 
--- Encrypt function using AES-256
+-- Encrypt function using AES-256 (using extensions schema for pgcrypto)
 CREATE OR REPLACE FUNCTION encrypt_token(plaintext TEXT)
 RETURNS TEXT AS $$
 BEGIN
@@ -22,20 +22,20 @@ BEGIN
     RETURN NULL;
   END IF;
   RETURN encode(
-    pgp_sym_encrypt(plaintext, get_encryption_key()),
+    extensions.pgp_sym_encrypt(plaintext, get_encryption_key()),
     'base64'
   );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Decrypt function
+-- Decrypt function (using extensions schema for pgcrypto)
 CREATE OR REPLACE FUNCTION decrypt_token(ciphertext TEXT)
 RETURNS TEXT AS $$
 BEGIN
   IF ciphertext IS NULL OR ciphertext = '' THEN
     RETURN NULL;
   END IF;
-  RETURN pgp_sym_decrypt(
+  RETURN extensions.pgp_sym_decrypt(
     decode(ciphertext, 'base64'),
     get_encryption_key()
   );
