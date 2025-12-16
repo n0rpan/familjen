@@ -50,8 +50,8 @@ INSERT INTO app_settings (key, value) VALUES
 ON CONFLICT (key) DO NOTHING;
 
 -- Insert your email as first allowed email
-INSERT INTO allowed_emails (email, added_by) VALUES 
-  ('oscar.nordstrom@gmail.com', 'system')
+INSERT INTO allowed_emails (email, is_admin, can_create_household) VALUES
+  ('oscar.nordstrom@gmail.com', true, true)
 ON CONFLICT (email) DO NOTHING;
 
 -- Function to check if email is allowed (for auth hook)
