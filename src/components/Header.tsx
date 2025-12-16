@@ -112,7 +112,8 @@ export function Header() {
     return () => subscription.unsubscribe()
   }, [supabase])
 
-  const handleLogout = async () => {
+  const handleLogout = async (e: React.MouseEvent) => {
+    e.preventDefault()
     await supabase.auth.signOut()
     window.location.href = '/login'
   }
