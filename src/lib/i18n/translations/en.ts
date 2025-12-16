@@ -11,6 +11,7 @@ export const en: TranslationStrings = {
     settings: 'Settings',
     admin: 'Admin',
     logout: 'Log out',
+    more: 'More',
   },
 
   // Common

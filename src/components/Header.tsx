@@ -72,15 +72,45 @@ function BellIcon() {
   )
 }
 
+function MoreIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="1"/>
+      <circle cx="12" cy="5" r="1"/>
+      <circle cx="12" cy="19" r="1"/>
+    </svg>
+  )
+}
+
+function LogoutIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+      <polyline points="16 17 21 12 16 7"/>
+      <line x1="21" y1="12" x2="9" y2="12"/>
+    </svg>
+  )
+}
+
+function CloseIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18"/>
+      <line x1="6" y1="6" x2="18" y2="18"/>
+    </svg>
+  )
+}
+
 export function Header() {
   const pathname = usePathname()
   const [user, setUser] = useState<User | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   const supabase = useMemo(() => createClient(), [])
   const t = useTranslation()
 
-  // Navigation items with localized names
+  // All navigation items for desktop
   const navigation = [
     { name: t.nav.home, href: '/', icon: HomeIcon },
     { name: t.nav.weekPlan, href: '/uke', icon: CalendarIcon },
@@ -89,6 +119,24 @@ export function Header() {
     { name: t.nav.shoppingList, href: '/handleliste', icon: ShoppingIcon },
     { name: t.nav.settings, href: '/innstillinger', icon: SettingsIcon },
   ]
+
+  // Primary mobile nav items (shown in bottom bar)
+  // Home is now the Familjen logo at top, so we have 4 main items + More
+  const primaryMobileNav = [
+    { name: t.nav.weekPlan, href: '/uke', icon: CalendarIcon },
+    { name: t.nav.rememberList, href: '/huskeliste', icon: BellIcon },
+    { name: t.nav.shoppingList, href: '/handleliste', icon: ShoppingIcon },
+  ]
+
+  // Secondary mobile nav items (shown in "More" menu)
+  const secondaryMobileNav = [
+    { name: t.nav.home, href: '/', icon: HomeIcon },
+    { name: t.nav.recipes, href: '/oppskrifter', icon: BookIcon },
+    { name: t.nav.settings, href: '/innstillinger', icon: SettingsIcon },
+  ]
+
+  // Check if current page is a secondary nav item or home (not in primary nav)
+  const isSecondaryActive = secondaryMobileNav.some(item => pathname === item.href) || pathname === '/admin' || pathname === '/'
 
   useEffect(() => {
     const getUser = async () => {
@@ -196,6 +244,32 @@ export function Header() {
         </div>
       </header>
 
+      {/* Mobile Top Header */}
+      <header
+        className="md:hidden w-full sticky top-0 z-40 backdrop-blur-md"
+        style={{
+          background: 'var(--header-bg)',
+          borderBottom: '1px solid var(--border)'
+        }}
+      >
+        <div className="flex justify-center items-center h-14 px-4">
+          <Link href="/" className="flex items-center gap-2 group">
+            <div
+              className="w-8 h-8 rounded-xl flex items-center justify-center transition-transform group-hover:scale-105"
+              style={{ background: 'var(--accent)' }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                <polyline points="9,22 9,12 15,12 15,22"/>
+              </svg>
+            </div>
+            <span className="text-lg font-semibold font-display" style={{ color: 'var(--foreground)' }}>
+              Familjen
+            </span>
+          </Link>
+        </div>
+      </header>
+
       {/* Mobile Bottom Navigation */}
       <nav
         className="md:hidden fixed bottom-0 left-0 right-0 z-50 backdrop-blur-md safe-area-pb"
@@ -206,7 +280,7 @@ export function Header() {
         }}
       >
         <div className="flex justify-around items-center h-16 px-2">
-          {navigation.map((item) => {
+          {primaryMobileNav.map((item) => {
             const isActive = pathname === item.href
             return (
               <Link
@@ -222,8 +296,113 @@ export function Header() {
               </Link>
             )
           })}
+          {/* More button */}
+          <button
+            onClick={() => setMoreMenuOpen(true)}
+            className="flex flex-col items-center gap-1 py-2 px-3 rounded-xl transition-all duration-200"
+            style={{
+              color: isSecondaryActive ? 'var(--accent)' : 'var(--muted)',
+            }}
+          >
+            <MoreIcon />
+            <span className="text-xs font-medium">{t.nav.more}</span>
+          </button>
         </div>
       </nav>
+
+      {/* Mobile More Menu Overlay */}
+      {moreMenuOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm"
+          onClick={() => setMoreMenuOpen(false)}
+        />
+      )}
+
+      {/* Mobile More Menu Slide-up */}
+      <div
+        className={`md:hidden fixed bottom-0 left-0 right-0 z-[70] transform transition-transform duration-300 ease-out ${
+          moreMenuOpen ? 'translate-y-0' : 'translate-y-full'
+        }`}
+        style={{
+          background: 'var(--card)',
+          borderTopLeftRadius: '20px',
+          borderTopRightRadius: '20px',
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.15)'
+        }}
+      >
+        {/* Handle bar */}
+        <div className="flex justify-center pt-3 pb-2">
+          <div className="w-10 h-1 rounded-full bg-[var(--muted)] opacity-40" />
+        </div>
+
+        {/* Close button */}
+        <div className="flex justify-between items-center px-5 pb-2">
+          <span className="text-sm font-medium" style={{ color: 'var(--muted)' }}>
+            {t.nav.more}
+          </span>
+          <button
+            onClick={() => setMoreMenuOpen(false)}
+            className="p-2 rounded-full hover:bg-[var(--sand)] transition-colors"
+            style={{ color: 'var(--muted)' }}
+          >
+            <CloseIcon />
+          </button>
+        </div>
+
+        {/* Menu items */}
+        <div className="px-4 pb-6 space-y-1">
+          {secondaryMobileNav.map((item) => {
+            const isActive = pathname === item.href
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setMoreMenuOpen(false)}
+                className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200"
+                style={{
+                  background: isActive ? 'var(--accent)' : 'transparent',
+                  color: isActive ? 'white' : 'var(--foreground)',
+                }}
+              >
+                <item.icon />
+                <span className="text-base font-medium">{item.name}</span>
+              </Link>
+            )
+          })}
+
+          {/* Admin link (only for admins) */}
+          {isAdmin && (
+            <Link
+              href="/admin"
+              onClick={() => setMoreMenuOpen(false)}
+              className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200"
+              style={{
+                background: pathname === '/admin' ? 'var(--accent)' : 'transparent',
+                color: pathname === '/admin' ? 'white' : 'var(--foreground)',
+              }}
+            >
+              <ShieldIcon />
+              <span className="text-base font-medium">{t.nav.admin}</span>
+            </Link>
+          )}
+
+          {/* Logout button */}
+          {user && (
+            <button
+              onClick={(e) => {
+                setMoreMenuOpen(false)
+                handleLogout(e)
+              }}
+              className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 w-full text-left hover:bg-[var(--sand)]"
+              style={{ color: 'var(--muted)' }}
+            >
+              <LogoutIcon />
+              <span className="text-base font-medium">{t.nav.logout}</span>
+            </button>
+          )}
+        </div>
+      </div>
     </>
   )
 }

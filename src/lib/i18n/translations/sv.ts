@@ -11,6 +11,7 @@ export const sv: TranslationStrings = {
     settings: 'Inställningar',
     admin: 'Admin',
     logout: 'Logga ut',
+    more: 'Mer',
   },
 
   // Common

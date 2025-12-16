@@ -11,6 +11,7 @@ export const nb: TranslationStrings = {
     settings: 'Innstillinger',
     admin: 'Admin',
     logout: 'Logg ut',
+    more: 'Mer',
   },
 
   // Common

@@ -19,6 +19,7 @@ export interface TranslationStrings {
     settings: string
     admin: string
     logout: string
+    more: string
   }
 
   // Common
