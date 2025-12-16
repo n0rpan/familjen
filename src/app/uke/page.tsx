@@ -226,6 +226,102 @@ export default function WeekEditPage() {
     setSavingContext(false)
   }
 
+  // Copy pickups and meals from last week
+  const copyLastWeek = async () => {
+    if (!household) return
+    if (!confirm('Kopiere henting og middager fra forrige uke? Eksisterende data for denne uken beholdes.')) return
+
+    setSaving(true)
+    try {
+      const lastWeekStart = addDays(weekStart, -7)
+      const lastWeekEnd = addDays(weekEnd, -7)
+      const lastWeekStartStr = formatDateISO(lastWeekStart)
+      const lastWeekEndStr = formatDateISO(lastWeekEnd)
+
+      // Fetch last week's pickups and meals
+      const [lastPickups, lastMeals] = await Promise.all([
+        supabase
+          .from('pickups')
+          .select('child_id, date, picker_id')
+          .eq('household_id', household.id)
+          .gte('date', lastWeekStartStr)
+          .lte('date', lastWeekEndStr),
+        supabase
+          .from('meals')
+          .select('date, name, recipe_id')
+          .eq('household_id', household.id)
+          .gte('date', lastWeekStartStr)
+          .lte('date', lastWeekEndStr),
+      ])
+
+      // Calculate date offset (7 days)
+      const copyPickups = (lastPickups.data || []).map(p => ({
+        household_id: household.id,
+        child_id: p.child_id,
+        date: formatDateISO(addDays(new Date(p.date), 7)),
+        picker_id: p.picker_id,
+      }))
+
+      const copyMeals = (lastMeals.data || []).map(m => ({
+        household_id: household.id,
+        date: formatDateISO(addDays(new Date(m.date), 7)),
+        name: m.name,
+        recipe_id: m.recipe_id,
+      }))
+
+      // Upsert to avoid duplicates
+      if (copyPickups.length > 0) {
+        await supabase.from('pickups').upsert(copyPickups, { onConflict: 'household_id,child_id,date' })
+      }
+      if (copyMeals.length > 0) {
+        await supabase.from('meals').upsert(copyMeals, { onConflict: 'household_id,date' })
+      }
+
+      showMessage('success', `Kopiert ${copyPickups.length} hentinger og ${copyMeals.length} middager`)
+      triggerReload()
+    } catch (err) {
+      console.error('Error copying last week:', err)
+      showMessage('error', 'Kunne ikke kopiere fra forrige uke')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Clear all pickups and meals for this week
+  const clearWeek = async () => {
+    if (!household) return
+    if (!confirm('Slette alle hentinger og middager for denne uken? Dette kan ikke angres.')) return
+
+    setSaving(true)
+    try {
+      const weekStartStr = formatDateISO(weekStart)
+      const weekEndStr = formatDateISO(weekEnd)
+
+      await Promise.all([
+        supabase
+          .from('pickups')
+          .delete()
+          .eq('household_id', household.id)
+          .gte('date', weekStartStr)
+          .lte('date', weekEndStr),
+        supabase
+          .from('meals')
+          .delete()
+          .eq('household_id', household.id)
+          .gte('date', weekStartStr)
+          .lte('date', weekEndStr),
+      ])
+
+      showMessage('success', 'Uken er tømt')
+      triggerReload()
+    } catch (err) {
+      console.error('Error clearing week:', err)
+      showMessage('error', 'Kunne ikke tømme uken')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   // Event handlers
   const openEventModal = (event?: MemberEvent) => {
     if (event) {
@@ -519,14 +615,26 @@ export default function WeekEditPage() {
 
       if (!response.ok) {
         const data = await response.json()
-        throw new Error(data.error || 'Kunne ikke hente forslag')
+        // Provide user-friendly error messages
+        if (response.status === 429) {
+          throw new Error('Du har sendt for mange forespørsler. Vent litt før du prøver igjen.')
+        } else if (response.status === 401) {
+          throw new Error('Du må være logget inn for å bruke AI-forslag.')
+        } else if (response.status === 503) {
+          throw new Error('AI-tjenesten er midlertidig utilgjengelig. Prøv igjen senere.')
+        }
+        throw new Error(data.error || 'Kunne ikke hente forslag fra AI. Sjekk at OpenRouter API-nøkkel er konfigurert.')
       }
 
       const data = await response.json()
-      setAiSuggestions(data.suggestions || [])
+      if (!data.suggestions || data.suggestions.length === 0) {
+        throw new Error('AI ga ingen forslag. Prøv å legge til mer kontekst for uken.')
+      }
+      setAiSuggestions(data.suggestions)
     } catch (err) {
       console.error('AI suggestion error:', err)
-      setAiError(err instanceof Error ? err.message : 'En feil oppstod')
+      const errorMessage = err instanceof Error ? err.message : 'En uventet feil oppstod. Prøv igjen.'
+      setAiError(errorMessage)
     } finally {
       setAiLoading(false)
     }
@@ -756,25 +864,68 @@ export default function WeekEditPage() {
           )}
         </div>
 
-        {/* AI Suggestion button */}
-        <button
-          onClick={fetchAISuggestions}
-          disabled={aiLoading}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all hover:scale-[1.02] shrink-0"
-          style={{
-            background: 'linear-gradient(135deg, var(--color-honey) 0%, #D4A84B 100%)',
-            color: 'white',
-            boxShadow: '0 2px 8px rgba(229, 185, 94, 0.3)',
-          }}
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 2a4 4 0 0 1 4 4c0 1.5-.8 2.8-2 3.5v1a1.5 1.5 0 0 1-1.5 1.5h-1A1.5 1.5 0 0 1 10 10.5v-1C8.8 8.8 8 7.5 8 6a4 4 0 0 1 4-4z"/>
-            <path d="M12 12v2"/>
-            <path d="M10 22h4"/>
-            <path d="M10 18h4v4h-4z"/>
-          </svg>
-          {aiLoading ? 'Genererer...' : 'Foreslå middager med AI'}
-        </button>
+        {/* Action buttons */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Copy last week */}
+          <button
+            onClick={copyLastWeek}
+            disabled={saving}
+            className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors"
+            style={{
+              background: 'var(--card)',
+              border: '1px solid var(--border)',
+              color: 'var(--foreground)',
+            }}
+            title="Kopier fra forrige uke"
+            aria-label="Kopier fra forrige uke"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+            <span className="hidden sm:inline">Kopier</span>
+          </button>
+
+          {/* Clear week */}
+          <button
+            onClick={clearWeek}
+            disabled={saving}
+            className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors"
+            style={{
+              background: 'var(--card)',
+              border: '1px solid var(--border)',
+              color: 'var(--muted)',
+            }}
+            title="Tøm uken"
+            aria-label="Tøm uken"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            </svg>
+            <span className="hidden sm:inline">Tøm</span>
+          </button>
+
+          {/* AI Suggestion button */}
+          <button
+            onClick={fetchAISuggestions}
+            disabled={aiLoading}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all hover:scale-[1.02]"
+            style={{
+              background: 'linear-gradient(135deg, var(--color-honey) 0%, #D4A84B 100%)',
+              color: 'white',
+              boxShadow: '0 2px 8px rgba(229, 185, 94, 0.3)',
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2a4 4 0 0 1 4 4c0 1.5-.8 2.8-2 3.5v1a1.5 1.5 0 0 1-1.5 1.5h-1A1.5 1.5 0 0 1 10 10.5v-1C8.8 8.8 8 7.5 8 6a4 4 0 0 1 4-4z"/>
+              <path d="M12 12v2"/>
+              <path d="M10 22h4"/>
+              <path d="M10 18h4v4h-4z"/>
+            </svg>
+            {aiLoading ? 'Genererer...' : 'Foreslå middager med AI'}
+          </button>
+        </div>
       </div>
 
       {saving && (
