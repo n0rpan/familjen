@@ -10,7 +10,7 @@ import type {
   Child,
   AuditLogEntry,
 } from "@/lib/types";
-import { APP_CONFIG, isAdminEmail } from "@/lib/config";
+import { APP_CONFIG } from "@/lib/config";
 
 // Extended types for admin view
 interface HouseholdWithDetails extends Household {
@@ -295,7 +295,19 @@ export default function AdminPage() {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user || !isAdminEmail(user.email)) {
+    if (!user?.email) {
+      router.push("/");
+      return;
+    }
+
+    // Check admin status via database
+    const { data: adminCheck } = await supabase
+      .from("allowed_emails")
+      .select("is_admin")
+      .eq("email", user.email.toLowerCase())
+      .single();
+
+    if (!adminCheck?.is_admin) {
       router.push("/");
       return;
     }
@@ -438,12 +450,12 @@ export default function AdminPage() {
     setSaving(false);
   };
 
-  const deleteEmail = async (id: string, email: string) => {
-    if (isAdminEmail(email)) {
+  const deleteEmail = async (id: string, emailItem: AllowedEmail) => {
+    if (emailItem.is_admin) {
       showMessage("error", "Kan ikke slette admin-e-post");
       return;
     }
-    if (!confirm(`Er du sikker på at du vil slette ${email}?`)) return;
+    if (!confirm(`Er du sikker på at du vil slette ${emailItem.email}?`)) return;
 
     const { error } = await supabase
       .from("allowed_emails")
@@ -769,9 +781,9 @@ export default function AdminPage() {
 
                 {/* Actions */}
                 <div className="col-span-3 flex justify-end gap-1">
-                  {!isAdminEmail(item.email) && (
+                  {!item.is_admin && (
                     <button
-                      onClick={() => deleteEmail(item.id, item.email)}
+                      onClick={() => deleteEmail(item.id, item)}
                       className="p-2 rounded-lg transition-colors hover:bg-red-50"
                       style={{ color: "var(--muted)" }}
                       title="Slett bruker"

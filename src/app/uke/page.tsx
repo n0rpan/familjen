@@ -57,6 +57,13 @@ export default function WeekEditPage() {
     notes: '',
   })
 
+  // Toast message state
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const showMessage = (type: 'success' | 'error', text: string) => {
+    setMessage({ type, text })
+    setTimeout(() => setMessage(null), 4000)
+  }
+
   const supabase = useMemo(() => createClient(), [])
 
   const { weekStart, weekEnd } = useMemo(() => {
@@ -182,11 +189,14 @@ export default function WeekEditPage() {
       const data = await res.json()
       if (!res.ok) {
         console.error('Calendar sync error:', data.error)
-        alert(data.error || 'Kunne ikke synkronisere til kalender')
+        showMessage('error', data.error || 'Kunne ikke synkronisere til kalender')
+      } else {
+        showMessage('success', sync ? 'Lagt til i jobbkalender' : 'Fjernet fra jobbkalender')
       }
       triggerReload()
     } catch (error) {
       console.error('Calendar sync error:', error)
+      showMessage('error', 'Noe gikk galt med kalendersync')
     } finally {
       setSaving(false)
     }
@@ -639,6 +649,19 @@ export default function WeekEditPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Toast message */}
+      {message && (
+        <div
+          className="fixed top-4 right-4 z-50 px-4 py-3 rounded-xl shadow-lg animate-fade-in"
+          style={{
+            background: message.type === 'success' ? 'var(--color-sage)' : 'var(--color-coral)',
+            color: 'white',
+          }}
+        >
+          {message.text}
+        </div>
+      )}
+
       {/* Header with week navigation */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -655,6 +678,7 @@ export default function WeekEditPage() {
             onClick={() => setWeekOffset(weekOffset - 1)}
             className="p-2 rounded-xl transition-colors"
             style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--foreground)' }}
+            aria-label="Forrige uke"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="15 18 9 12 15 6"/>
@@ -670,6 +694,7 @@ export default function WeekEditPage() {
             onClick={() => setWeekOffset(weekOffset + 1)}
             className="p-2 rounded-xl transition-colors"
             style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--foreground)' }}
+            aria-label="Neste uke"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="9 18 15 12 9 6"/>
@@ -871,6 +896,7 @@ export default function WeekEditPage() {
                 onClick={closeEventModal}
                 className="p-2 rounded-lg transition-colors"
                 style={{ color: 'var(--muted)' }}
+                aria-label="Lukk"
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="18" y1="6" x2="6" y2="18"/>
@@ -1020,6 +1046,7 @@ export default function WeekEditPage() {
                 onClick={closeTaskModal}
                 className="p-2 rounded-lg transition-colors hover:opacity-70"
                 style={{ color: 'var(--muted)' }}
+                aria-label="Lukk"
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="18" y1="6" x2="6" y2="18"/>

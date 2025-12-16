@@ -7,19 +7,8 @@ import {
   isToday,
   cn,
 } from '@/lib/utils'
-import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, ChildColor } from '@/lib/types'
-
-// Map child color names to CSS values
-const CHILD_COLOR_MAP: Record<ChildColor, { bg: string; text: string }> = {
-  sky: { bg: 'rgba(126, 182, 196, 0.3)', text: 'var(--color-sky)' },
-  coral: { bg: 'rgba(232, 120, 109, 0.3)', text: 'var(--color-coral)' },
-  sage: { bg: 'rgba(131, 166, 151, 0.3)', text: 'var(--color-sage)' },
-  honey: { bg: 'rgba(229, 185, 94, 0.3)', text: 'var(--color-honey)' },
-  lavender: { bg: 'rgba(167, 139, 250, 0.3)', text: '#a78bfa' },
-  mint: { bg: 'rgba(52, 211, 153, 0.3)', text: '#34d399' },
-}
-
-const getChildColor = (color: ChildColor) => CHILD_COLOR_MAP[color] || CHILD_COLOR_MAP.sky
+import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe } from '@/lib/types'
+import { getChildColor } from '@/lib/colors'
 
 interface DayViewProps {
   date: Date

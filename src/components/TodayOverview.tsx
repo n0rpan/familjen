@@ -1,28 +1,8 @@
 'use client'
 
 import { formatDateNorwegian } from '@/lib/utils'
-import type { DaySummary, ChildColor, ChildTaskType } from '@/lib/types'
-
-// Map child color names to CSS values
-const CHILD_COLOR_MAP: Record<ChildColor, { bg: string; text: string }> = {
-  sky: { bg: 'rgba(126, 182, 196, 0.3)', text: 'var(--color-sky)' },
-  coral: { bg: 'rgba(232, 120, 109, 0.3)', text: 'var(--color-coral)' },
-  sage: { bg: 'rgba(131, 166, 151, 0.3)', text: 'var(--color-sage)' },
-  honey: { bg: 'rgba(229, 185, 94, 0.3)', text: 'var(--color-honey)' },
-  lavender: { bg: 'rgba(167, 139, 250, 0.3)', text: '#a78bfa' },
-  mint: { bg: 'rgba(52, 211, 153, 0.3)', text: '#34d399' },
-}
-
-// Task type icons
-const TASK_TYPE_CONFIG: Record<ChildTaskType, { icon: string; label: string }> = {
-  bring: { icon: '🎒', label: 'Ta med' },
-  appointment: { icon: '🩺', label: 'Avtale' },
-  reminder: { icon: '📝', label: 'Påminnelse' },
-  other: { icon: '📌', label: 'Annet' },
-}
-
-const getChildColor = (color: ChildColor) => CHILD_COLOR_MAP[color] || CHILD_COLOR_MAP.sky
-const getTaskConfig = (taskType: ChildTaskType) => TASK_TYPE_CONFIG[taskType] || TASK_TYPE_CONFIG.other
+import type { DaySummary, ChildTaskType } from '@/lib/types'
+import { getChildColor, getTaskConfig } from '@/lib/colors'
 
 interface TodayOverviewProps {
   summary: DaySummary | null

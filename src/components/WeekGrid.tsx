@@ -11,34 +11,9 @@ import {
   formatWeekHeader,
   cn,
 } from '@/lib/utils'
-import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Recipe, ChildColor, MemberEvent, MemberEventType, ChildTask, ChildTaskType } from '@/lib/types'
+import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Recipe, MemberEvent, ChildTask, MemberEventType, ChildTaskType } from '@/lib/types'
+import { CHILD_COLOR_MAP, EVENT_TYPE_CONFIG, TASK_TYPE_CONFIG, getChildColor, getEventConfig, getTaskConfig } from '@/lib/colors'
 import { MealSelector } from './MealSelector'
-
-// Map child color names to CSS values
-const CHILD_COLOR_MAP: Record<ChildColor, { bg: string; text: string }> = {
-  sky: { bg: 'rgba(126, 182, 196, 0.3)', text: 'var(--color-sky)' },
-  coral: { bg: 'rgba(232, 120, 109, 0.3)', text: 'var(--color-coral)' },
-  sage: { bg: 'rgba(131, 166, 151, 0.3)', text: 'var(--color-sage)' },
-  honey: { bg: 'rgba(229, 185, 94, 0.3)', text: 'var(--color-honey)' },
-  lavender: { bg: 'rgba(167, 139, 250, 0.3)', text: '#a78bfa' },
-  mint: { bg: 'rgba(52, 211, 153, 0.3)', text: '#34d399' },
-}
-
-// Event type icons and colors
-const EVENT_TYPE_CONFIG: Record<MemberEventType, { icon: string; bg: string; text: string }> = {
-  work: { icon: '💼', bg: 'rgba(126, 182, 196, 0.2)', text: 'var(--color-sky)' },
-  travel: { icon: '✈️', bg: 'rgba(167, 139, 250, 0.2)', text: '#a78bfa' },
-  family: { icon: '👨‍👩‍👧', bg: 'rgba(232, 120, 109, 0.2)', text: 'var(--color-coral)' },
-  other: { icon: '📅', bg: 'rgba(131, 166, 151, 0.2)', text: 'var(--color-sage)' },
-}
-
-// Child task type icons
-const TASK_TYPE_CONFIG: Record<ChildTaskType, { icon: string; label: string }> = {
-  bring: { icon: '🎒', label: 'Ta med' },
-  appointment: { icon: '🩺', label: 'Avtale' },
-  reminder: { icon: '📝', label: 'Påminnelse' },
-  other: { icon: '📌', label: 'Annet' },
-}
 
 interface WeekGridProps {
   children: Child[]
@@ -158,15 +133,6 @@ export function WeekGrid({
     return tasksByChildDate.get(`${childId}-${formatDateISO(date)}`) || []
   }
 
-  // Helper to get child color config
-  const getChildColor = (child: Child) => CHILD_COLOR_MAP[child.color] || CHILD_COLOR_MAP.sky
-
-  // Helper to get event config
-  const getEventConfig = (eventType: MemberEventType) => EVENT_TYPE_CONFIG[eventType] || EVENT_TYPE_CONFIG.other
-
-  // Helper to get task config
-  const getTaskConfig = (taskType: ChildTaskType) => TASK_TYPE_CONFIG[taskType] || TASK_TYPE_CONFIG.other
-
   return (
     <div
       className="rounded-2xl overflow-hidden"
@@ -228,8 +194,8 @@ export function WeekGrid({
                     <div
                       className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold"
                       style={{
-                        background: getChildColor(child).bg,
-                        color: getChildColor(child).text
+                        background: getChildColor(child.color).bg,
+                        color: getChildColor(child.color).text
                       }}
                     >
                       {child.name.charAt(0)}

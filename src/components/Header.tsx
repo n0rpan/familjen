@@ -5,7 +5,6 @@ import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useEffect, useState, useMemo } from 'react'
 import { User } from '@supabase/supabase-js'
-import { isAdminEmail } from '@/lib/config'
 
 const navigation = [
   { name: 'Hjem', href: '/', icon: HomeIcon },
@@ -74,6 +73,7 @@ function ShoppingIcon() {
 export function Header() {
   const pathname = usePathname()
   const [user, setUser] = useState<User | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const supabase = useMemo(() => createClient(), [])
 
@@ -81,15 +81,36 @@ export function Header() {
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       setUser(user)
+
+      // Check if user is admin via database
+      if (user?.email) {
+        const { data } = await supabase
+          .from('allowed_emails')
+          .select('is_admin')
+          .eq('email', user.email.toLowerCase())
+          .single()
+        setIsAdmin(data?.is_admin === true)
+      }
     }
     getUser()
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setUser(session?.user ?? null)
+      // Re-check admin status on auth change
+      if (session?.user?.email) {
+        const { data } = await supabase
+          .from('allowed_emails')
+          .select('is_admin')
+          .eq('email', session.user.email.toLowerCase())
+          .single()
+        setIsAdmin(data?.is_admin === true)
+      } else {
+        setIsAdmin(false)
+      }
     })
 
     return () => subscription.unsubscribe()
-  }, [supabase.auth])
+  }, [supabase])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -152,7 +173,7 @@ export function Header() {
 
             {/* User menu */}
             <div className="flex items-center gap-3">
-              {isAdminEmail(user?.email) && (
+              {isAdmin && (
                 <Link
                   href="/admin"
                   className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl transition-all duration-200 hover:bg-[var(--sand)]"

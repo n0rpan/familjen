@@ -4,8 +4,9 @@
  */
 
 export const APP_CONFIG = {
-  // Admin email - the user with full admin access (from env or fallback)
-  ADMIN_EMAIL: process.env.NEXT_PUBLIC_ADMIN_EMAIL || '',
+  // Admin email - server-only, NOT exposed to client bundle
+  // Client components should query allowed_emails.is_admin instead
+  ADMIN_EMAIL: process.env.ADMIN_EMAIL || '',
 
   // App metadata
   APP_NAME: 'Familjen',
@@ -14,7 +15,11 @@ export const APP_CONFIG = {
   ENABLE_AI_SUGGESTIONS: true,
 } as const
 
-// Type-safe admin check helper
+/**
+ * Server-side admin check - uses ADMIN_EMAIL env var
+ * Only use in: middleware, API routes, server components
+ * For client components: query allowed_emails table with is_admin = true
+ */
 export function isAdminEmail(email: string | null | undefined): boolean {
   if (!APP_CONFIG.ADMIN_EMAIL) return false
   return email?.toLowerCase() === APP_CONFIG.ADMIN_EMAIL.toLowerCase()

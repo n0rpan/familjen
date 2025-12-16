@@ -4,15 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Child, HouseholdMember, Household, AllowedEmail, ChildColor } from '@/lib/types'
-
-const CHILD_COLORS: { value: ChildColor; label: string; bg: string; text: string }[] = [
-  { value: 'sky', label: 'Himmel', bg: 'rgba(126, 182, 196, 0.3)', text: 'var(--color-sky)' },
-  { value: 'coral', label: 'Korall', bg: 'rgba(232, 120, 109, 0.3)', text: 'var(--color-coral)' },
-  { value: 'sage', label: 'Salvie', bg: 'rgba(131, 166, 151, 0.3)', text: 'var(--color-sage)' },
-  { value: 'honey', label: 'Honning', bg: 'rgba(229, 185, 94, 0.3)', text: 'var(--color-honey)' },
-  { value: 'lavender', label: 'Lavendel', bg: 'rgba(167, 139, 250, 0.3)', text: '#a78bfa' },
-  { value: 'mint', label: 'Mynte', bg: 'rgba(52, 211, 153, 0.3)', text: '#34d399' },
-]
+import { CHILD_COLORS } from '@/lib/colors'
 import { User } from '@supabase/supabase-js'
 
 export default function SettingsPage() {
