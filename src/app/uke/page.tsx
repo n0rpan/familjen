@@ -123,7 +123,7 @@ export default function WeekEditPage() {
             .select('context')
             .eq('household_id', householdResult.data.id)
             .eq('week_start', weekStartStr)
-            .single()
+            .maybeSingle()
           setWeekContext(contextData?.context || '')
         }
       } catch (err) {

@@ -94,7 +94,7 @@ export async function POST(request: Request) {
       supabase.from('recipes').select('id, name, is_favorite, is_quick, is_kid_friendly').eq('household_id', household.id),
       supabase.from('meals').select('date, custom_meal, recipe:recipes(name)').eq('household_id', household.id).gte('date', twoWeeksAgoStr).lt('date', weekStart).order('date', { ascending: false }),
       supabase.from('calendar_events').select('date, name').or(`household_id.eq.${household.id},household_id.is.null`).gte('date', weekStart).lte('date', weekEndStr).eq('event_type', 'holiday'),
-      supabase.from('week_contexts').select('context').eq('household_id', household.id).eq('week_start', weekStart).single(),
+      supabase.from('week_contexts').select('context').eq('household_id', household.id).eq('week_start', weekStart).maybeSingle(),
     ])
 
     // Process children's ages and allergies
