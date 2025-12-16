@@ -216,20 +216,22 @@ GRANT EXECUTE ON FUNCTION create_household_with_admin(TEXT, TEXT, TEXT) TO authe
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
-ADMIN_EMAIL=your@email.com
+SUPABASE_SERVICE_ROLE_KEY=eyJ... (from Legacy API keys)
 OPENROUTER_API_KEY=sk-or-...
 GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=xxx
-CALENDAR_ENCRYPTION_KEY=32-char-random-string
+GOOGLE_REDIRECT_URI=https://your-domain.com/api/calendar/callback
 ```
 
 ### Admin Setup
-Add yourself to `allowed_emails`:
+1. Add yourself to `allowed_emails`:
 ```sql
 INSERT INTO allowed_emails (email, is_admin, can_create_household)
 VALUES ('your@email.com', true, true)
 ON CONFLICT (email) DO UPDATE SET is_admin = true, can_create_household = true;
 ```
+
+2. **Important:** After deployment, log out and log back in to get the JWT with `is_admin` claim. Admin status is synced from DB to JWT on login.
 
 ## Development Commands
 
