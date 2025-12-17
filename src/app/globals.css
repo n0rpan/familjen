@@ -409,3 +409,14 @@ input:focus, select:focus, textarea:focus {
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
+
+/* Mobile header spacing - accounts for fixed header + safe area */
+.pt-mobile-header {
+  padding-top: calc(3.5rem + env(safe-area-inset-top, 0px));
+}
+
+@media (min-width: 1024px) {
+  .pt-mobile-header {
+    padding-top: 1.5rem;
+  }
+}
