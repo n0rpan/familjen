@@ -50,7 +50,7 @@ export default async function RootLayout({
           <OfflineIndicator />
           <Header />
           <AppShell>
-            <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-24 md:pb-6 pt-mobile-header">
+            <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-24 md:pb-6 pt-mobile-header relative z-0">
               {children}
             </main>
           </AppShell>
