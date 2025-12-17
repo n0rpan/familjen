@@ -300,25 +300,6 @@ input:focus, select:focus, textarea:focus {
   animation: shimmer 1.8s ease-in-out infinite;
 }
 
-/* Skeleton to content transition */
-@keyframes skeleton-fade-out {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-
-@keyframes content-fade-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.skeleton-exit {
-  animation: skeleton-fade-out 0.2s ease-out forwards;
-}
-
-.content-enter {
-  animation: content-fade-in 0.25s ease-out forwards;
-}
-
 /* Pull to refresh */
 .pull-to-refresh {
   position: fixed;
