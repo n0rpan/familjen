@@ -1,8 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import type { MealSuggestion, RecipeIngredient } from '@/lib/types'
 import { useLanguage } from '@/lib/i18n/context'
+
+// Internal type for editable ingredients with stable IDs
+type EditableIngredient = RecipeIngredient & { _id: string }
 
 interface AISuggestionModalProps {
   isOpen: boolean
@@ -32,8 +35,12 @@ export function AISuggestionModal({
   const [addingToList, setAddingToList] = useState<string | null>(null)
   const [editingRecipe, setEditingRecipe] = useState<MealSuggestion | null>(null)
   const [editedName, setEditedName] = useState('')
-  const [editedIngredients, setEditedIngredients] = useState<RecipeIngredient[]>([])
+  const [editedIngredients, setEditedIngredients] = useState<EditableIngredient[]>([])
   const [saveAsRecipe, setSaveAsRecipe] = useState(false)
+  const idCounterRef = useRef(0)
+
+  // Generate unique IDs for ingredients
+  const generateId = () => `ing-${++idCounterRef.current}`
 
   if (!isOpen) return null
 
@@ -49,17 +56,20 @@ export function AISuggestionModal({
   const handleStartEdit = (suggestion: MealSuggestion) => {
     setEditingRecipe(suggestion)
     setEditedName(suggestion.name)
-    setEditedIngredients(suggestion.ingredients || [])
+    // Add IDs to incoming ingredients
+    setEditedIngredients((suggestion.ingredients || []).map(ing => ({ ...ing, _id: generateId() })))
     setSaveAsRecipe(true)
   }
 
   const handleSaveEdit = () => {
     if (!editingRecipe) return
 
+    // Strip _id when saving
+    const cleanIngredients: RecipeIngredient[] = editedIngredients.map(({ item, amount }) => ({ item, amount }))
     const updatedSuggestion: MealSuggestion = {
       ...editingRecipe,
       name: editedName,
-      ingredients: editedIngredients,
+      ingredients: cleanIngredients,
     }
 
     onAccept(updatedSuggestion, saveAsRecipe)
@@ -81,17 +91,17 @@ export function AISuggestionModal({
   }
 
   const addIngredient = () => {
-    setEditedIngredients([...editedIngredients, { item: '', amount: '' }])
+    setEditedIngredients([...editedIngredients, { item: '', amount: '', _id: generateId() }])
   }
 
-  const updateIngredient = (index: number, field: 'item' | 'amount', value: string) => {
-    const updated = [...editedIngredients]
-    updated[index] = { ...updated[index], [field]: value }
-    setEditedIngredients(updated)
+  const updateIngredient = (id: string, field: 'item' | 'amount', value: string) => {
+    setEditedIngredients(editedIngredients.map(ing =>
+      ing._id === id ? { ...ing, [field]: value } : ing
+    ))
   }
 
-  const removeIngredient = (index: number) => {
-    setEditedIngredients(editedIngredients.filter((_, i) => i !== index))
+  const removeIngredient = (id: string) => {
+    setEditedIngredients(editedIngredients.filter(ing => ing._id !== id))
   }
 
   return (
@@ -214,24 +224,24 @@ export function AISuggestionModal({
                   </button>
                 </div>
                 <div className="space-y-2">
-                  {editedIngredients.map((ing, index) => (
-                    <div key={index} className="flex gap-2">
+                  {editedIngredients.map((ing) => (
+                    <div key={ing._id} className="flex gap-2">
                       <input
                         type="text"
                         value={ing.item}
-                        onChange={(e) => updateIngredient(index, 'item', e.target.value)}
+                        onChange={(e) => updateIngredient(ing._id, 'item', e.target.value)}
                         placeholder={t.week.ingredient}
                         className="input flex-1"
                       />
                       <input
                         type="text"
                         value={ing.amount}
-                        onChange={(e) => updateIngredient(index, 'amount', e.target.value)}
+                        onChange={(e) => updateIngredient(ing._id, 'amount', e.target.value)}
                         placeholder={t.week.amount}
                         className="input w-24"
                       />
                       <button
-                        onClick={() => removeIngredient(index)}
+                        onClick={() => removeIngredient(ing._id)}
                         className="p-2 rounded-lg hover:bg-red-50"
                         style={{ color: 'var(--muted)' }}
                       >
@@ -280,9 +290,9 @@ export function AISuggestionModal({
           ) : (
             /* Suggestions list */
             <div className="space-y-3">
-              {suggestions.map((suggestion, index) => (
+              {suggestions.map((suggestion) => (
                 <div
-                  key={index}
+                  key={suggestion.day}
                   className="rounded-xl overflow-hidden"
                   style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
                 >
@@ -345,7 +355,7 @@ export function AISuggestionModal({
                           <div className="flex flex-wrap gap-2">
                             {suggestion.ingredients.map((ing, i) => (
                               <span
-                                key={i}
+                                key={`${ing.item}-${ing.amount}-${i}`}
                                 className="text-xs px-2 py-1 rounded-lg"
                                 style={{ background: 'var(--sand)', color: 'var(--foreground)' }}
                               >

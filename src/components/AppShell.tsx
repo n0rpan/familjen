@@ -13,6 +13,7 @@ export function AppShell({ children }: AppShellProps) {
   const [isPulling, setIsPulling] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [pullDistance, setPullDistance] = useState(0)
+  const pullDistanceRef = useRef(0) // Ref for event handlers to avoid stale closures
   const startY = useRef(0)
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLElement | null>(null)
@@ -50,6 +51,7 @@ export function AppShell({ children }: AppShellProps) {
     const handleTouchMove = (e: TouchEvent) => {
       if (isRefreshing) return
       if (getScrollTop() > 5) {
+        pullDistanceRef.current = 0
         setPullDistance(0)
         setIsPulling(false)
         return
@@ -62,6 +64,7 @@ export function AppShell({ children }: AppShellProps) {
         // Apply resistance
         const resistance = 0.4
         const actualDistance = Math.min(distance * resistance, threshold * 1.5)
+        pullDistanceRef.current = actualDistance
         setPullDistance(actualDistance)
         setIsPulling(actualDistance > 10)
 
@@ -74,10 +77,12 @@ export function AppShell({ children }: AppShellProps) {
     const handleTouchEnd = async () => {
       if (isRefreshing) return
 
-      if (pullDistance >= threshold) {
+      // Use ref to avoid stale closure
+      if (pullDistanceRef.current >= threshold) {
         await handleRefresh()
       }
 
+      pullDistanceRef.current = 0
       setIsPulling(false)
       setPullDistance(0)
     }
@@ -91,12 +96,13 @@ export function AppShell({ children }: AppShellProps) {
       document.removeEventListener('touchmove', handleTouchMove)
       document.removeEventListener('touchend', handleTouchEnd)
     }
-  }, [isRefreshing, pullDistance, threshold, handleRefresh, getScrollTop])
+  }, [isRefreshing, threshold, handleRefresh, getScrollTop])
 
   // Reset on navigation
   useEffect(() => {
     setIsPulling(false)
     setPullDistance(0)
+    pullDistanceRef.current = 0
     setIsRefreshing(false)
   }, [pathname])
 

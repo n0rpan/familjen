@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useEffect, useState, useMemo, useCallback } from 'react'
@@ -115,32 +116,35 @@ export function Header() {
   // Proactively prefetch key routes for instant navigation
   usePrefetchRoutes(KEY_ROUTES)
 
-  // All navigation items for desktop
-  const navigation = [
+  // All navigation items for desktop (memoized to prevent re-renders)
+  const navigation = useMemo(() => [
     { name: t.nav.home, href: '/', icon: HomeIcon },
     { name: t.nav.weekPlan, href: '/uke', icon: CalendarIcon },
     { name: t.nav.recipes, href: '/oppskrifter', icon: BookIcon },
     { name: t.nav.rememberList, href: '/huskeliste', icon: BellIcon },
     { name: t.nav.shoppingList, href: '/handleliste', icon: ShoppingIcon },
     { name: t.nav.settings, href: '/innstillinger', icon: SettingsIcon },
-  ]
+  ], [t.nav])
 
   // Primary mobile nav items (shown in bottom bar)
-  const primaryMobileNav = [
+  const primaryMobileNav = useMemo(() => [
     { name: t.nav.home, href: '/', icon: HomeIcon },
     { name: t.nav.weekPlan, href: '/uke', icon: CalendarIcon },
     { name: t.nav.rememberList, href: '/huskeliste', icon: BellIcon },
     { name: t.nav.shoppingList, href: '/handleliste', icon: ShoppingIcon },
-  ]
+  ], [t.nav])
 
   // Secondary mobile nav items (shown in "More" menu)
-  const secondaryMobileNav = [
+  const secondaryMobileNav = useMemo(() => [
     { name: t.nav.recipes, href: '/oppskrifter', icon: BookIcon },
     { name: t.nav.settings, href: '/innstillinger', icon: SettingsIcon },
-  ]
+  ], [t.nav])
 
   // Check if current page is a secondary nav item (not in primary nav)
-  const isSecondaryActive = secondaryMobileNav.some(item => pathname === item.href) || pathname === '/admin'
+  const isSecondaryActive = useMemo(() =>
+    secondaryMobileNav.some(item => pathname === item.href) || pathname === '/admin',
+    [secondaryMobileNav, pathname]
+  )
 
   useEffect(() => {
     const getUser = async () => {
@@ -162,11 +166,11 @@ export function Header() {
     return () => subscription.unsubscribe()
   }, [supabase])
 
-  const handleLogout = async (e: React.MouseEvent) => {
+  const handleLogout = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault()
     await supabase.auth.signOut()
     window.location.href = '/login'
-  }
+  }, [supabase])
 
   // Don't show header on login page
   if (pathname === '/login') {
@@ -187,7 +191,7 @@ export function Header() {
           <div className="flex justify-between items-center h-16">
             {/* Logo */}
             <Link href="/" className="flex items-center gap-3 group">
-              <img
+              <Image
                 src="/icons/icon.svg"
                 alt="Familjen"
                 width={36}
@@ -259,7 +263,7 @@ export function Header() {
       >
         <div className="flex justify-center items-center h-14 px-4">
           <Link href="/" className="flex items-center gap-2 group">
-            <img
+            <Image
               src="/icons/icon.svg"
               alt="Familjen"
               width={32}

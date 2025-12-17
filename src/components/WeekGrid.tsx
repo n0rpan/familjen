@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, memo } from 'react'
 import {
   getWeekDates,
   getWeekStart,
@@ -36,7 +36,7 @@ interface WeekGridProps {
   onAddTask?: (childId: string, date: string) => void  // Quick add task
 }
 
-export function WeekGrid({
+export const WeekGrid = memo(function WeekGrid({
   children,
   members,
   pickups,
@@ -484,4 +484,4 @@ export function WeekGrid({
       </div>
     </div>
   )
-}
+})

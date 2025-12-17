@@ -6,14 +6,24 @@ import { WeekGrid } from '@/components/WeekGrid'
 import { formatDateISO, getWeekStart, addDays, formatWeekHeaderLocalized } from '@/lib/utils'
 import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Household, Recipe, MealSuggestion, MemberEvent, MemberEventType, ChildTask, ChildTaskType, RecipeIngredient } from '@/lib/types'
 import Link from 'next/link'
-import { AISuggestionModal } from '@/components/AISuggestionModal'
+import dynamic from 'next/dynamic'
 import { RecentChanges } from '@/components/RecentChanges'
 import { useLanguage } from '@/lib/i18n/context'
 import { notifyPickupAssigned, notifyMealChanged, notifyTaskAdded, notifyEventAdded } from '@/lib/notify'
-import { DayPicker } from 'react-day-picker'
 import { nb, sv } from 'react-day-picker/locale'
 import 'react-day-picker/style.css'
 import { WeekPageSkeleton } from '@/components/Skeleton'
+
+// Dynamic imports for code splitting
+const DayPicker = dynamic(
+  () => import('react-day-picker').then(mod => mod.DayPicker),
+  { ssr: false, loading: () => <div className="p-4 text-center text-sm" style={{ color: 'var(--muted)' }}>...</div> }
+)
+
+const AISuggestionModal = dynamic(
+  () => import('@/components/AISuggestionModal').then(mod => mod.AISuggestionModal),
+  { ssr: false }
+)
 
 export default function WeekEditPage() {
   const { language, t } = useLanguage()

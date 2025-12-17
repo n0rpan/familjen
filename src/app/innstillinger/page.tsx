@@ -173,9 +173,26 @@ export default function SettingsPage() {
     setTimeout(() => setMessage(null), 3000)
   }
 
-  // Profile editing
+  // Profile editing (optimistic update)
   const saveProfile = async () => {
     if (!myProfile) return
+
+    const previousProfile = myProfile
+    const previousMembers = members
+    const updatedProfile = {
+      ...myProfile,
+      name: profileForm.name,
+      short_name: profileForm.short_name || null,
+      birth_date: profileForm.birth_date || null,
+      work_email: profileForm.work_email || null,
+      allergies: profileForm.allergies,
+    }
+
+    // Optimistic update
+    setMyProfile(updatedProfile)
+    setMembers(members.map(m => m.id === myProfile.id ? updatedProfile : m))
+    setEditingProfile(false)
+    setNewProfileAllergy('')
 
     setSavingProfile(true)
     const { error } = await supabase
@@ -190,13 +207,14 @@ export default function SettingsPage() {
       .eq('id', myProfile.id)
 
     if (error) {
+      // Rollback on error
+      setMyProfile(previousProfile)
+      setMembers(previousMembers)
+      setEditingProfile(true)
       console.error('Error saving profile:', error)
       showMessage('error', t.errors.saveFailed + ': ' + error.message)
     } else {
       showMessage('success', t.success.saved)
-      setEditingProfile(false)
-      setNewProfileAllergy('')
-      loadData()
     }
     setSavingProfile(false)
   }
@@ -222,18 +240,20 @@ export default function SettingsPage() {
     })
   }
 
-  // Invite user to household
+  // Invite user to household (avoid full reload)
   const inviteUser = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!inviteEmail.trim() || !household) return
 
     setSavingInvite(true)
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('allowed_emails')
       .insert({
         email: inviteEmail.toLowerCase().trim(),
         invited_by_household_id: household.id,
       })
+      .select()
+      .single()
 
     if (error) {
       if (error.code === '23505') {
@@ -241,17 +261,20 @@ export default function SettingsPage() {
       } else {
         showMessage('error', t.errors.saveFailed)
       }
-    } else {
+    } else if (data) {
+      setInvitedEmails([data, ...invitedEmails])
       showMessage('success', t.success.emailAdded)
       setInviteEmail('')
-      loadData()
     }
     setSavingInvite(false)
   }
 
-  // Remove invite
+  // Remove invite (optimistic update)
   const removeInvite = async (emailId: string) => {
     if (!confirm(t.common.confirmDelete)) return
+
+    const previousEmails = invitedEmails
+    setInvitedEmails(invitedEmails.filter(e => e.id !== emailId))
 
     const { error } = await supabase
       .from('allowed_emails')
@@ -259,9 +282,8 @@ export default function SettingsPage() {
       .eq('id', emailId)
 
     if (error) {
+      setInvitedEmails(previousEmails)
       showMessage('error', t.errors.deleteFailed)
-    } else {
-      loadData()
     }
   }
 
@@ -290,7 +312,7 @@ export default function SettingsPage() {
     const emailToAdd = newMember.email?.toLowerCase().trim() || null
 
     // Create the member
-    const { error } = await supabase.from('household_members').insert({
+    const { data, error } = await supabase.from('household_members').insert({
       household_id: household.id,
       name: newMember.name,
       short_name: newMember.short_name || newMember.name.substring(0, 3),
@@ -298,7 +320,7 @@ export default function SettingsPage() {
       email: emailToAdd,
       birth_date: newMember.birth_date || null,
       work_email: newMember.work_email || null,
-    })
+    }).select().single()
 
     if (error) {
       if (error.code === '23505' && error.message.includes('email')) {
@@ -323,8 +345,10 @@ export default function SettingsPage() {
       }
     }
 
+    if (data) {
+      setMembers([...members, data])
+    }
     setNewMember({ name: '', short_name: '', is_parent: false, email: '', birth_date: '', work_email: '' })
-    loadData()
     showMessage('success', t.success.memberAdded)
     setSaving(false)
   }
@@ -332,11 +356,13 @@ export default function SettingsPage() {
   const deleteMember = async (id: string) => {
     if (!confirm(t.common.confirmDelete)) return
 
+    const previousMembers = members
+    setMembers(members.filter(m => m.id !== id))
+
     const { error } = await supabase.from('household_members').delete().eq('id', id)
     if (error) {
+      setMembers(previousMembers)
       showMessage('error', t.errors.deleteFailed)
-    } else {
-      loadData()
     }
   }
 
@@ -345,7 +371,7 @@ export default function SettingsPage() {
     if (!newChild.name || !household) return
 
     setSaving(true)
-    const { error } = await supabase.from('children').insert({
+    const { data, error } = await supabase.from('children').insert({
       household_id: household.id,
       name: newChild.name,
       location_name: newChild.location_name || null,
@@ -353,28 +379,30 @@ export default function SettingsPage() {
       sort_order: children.length,
       birth_date: newChild.birth_date || null,
       color: newChild.color,
-    })
+    }).select().single()
 
     if (error) {
       showMessage('error', t.errors.couldNotAddChild)
-    } else {
+    } else if (data) {
+      setChildren([...children, data])
       setNewChild({ name: '', location_name: '', location_type: 'kindergarten', birth_date: '', color: 'sky' })
-      loadData()
       showMessage('success', t.success.childAdded)
     }
     setSaving(false)
   }
 
   const updateChildColor = async (childId: string, color: ChildColor) => {
+    const previousChildren = children
+    setChildren(children.map(c => c.id === childId ? { ...c, color } : c))
+
     const { error } = await supabase
       .from('children')
       .update({ color })
       .eq('id', childId)
 
     if (error) {
+      setChildren(previousChildren)
       showMessage('error', t.errors.saveFailed)
-    } else {
-      loadData()
     }
   }
 
@@ -399,6 +427,22 @@ export default function SettingsPage() {
   const saveEditingChild = async () => {
     if (!editingChildId || !editingChildForm.name) return
 
+    const previousChildren = children
+    const updatedChild = children.find(c => c.id === editingChildId)
+    if (!updatedChild) return
+
+    // Optimistic update
+    setChildren(children.map(c => c.id === editingChildId ? {
+      ...c,
+      name: editingChildForm.name,
+      location_name: editingChildForm.location_name || null,
+      location_type: editingChildForm.location_type,
+      birth_date: editingChildForm.birth_date || null,
+      color: editingChildForm.color,
+      allergies: editingChildForm.allergies,
+    } : c))
+    setEditingChildId(null)
+
     setSaving(true)
     const { error } = await supabase
       .from('children')
@@ -413,12 +457,13 @@ export default function SettingsPage() {
       .eq('id', editingChildId)
 
     if (error) {
+      // Rollback on error
+      setChildren(previousChildren)
+      setEditingChildId(editingChildId)
       console.error('Error updating child:', error)
       showMessage('error', t.errors.saveFailed + ': ' + error.message)
     } else {
       showMessage('success', t.success.saved)
-      setEditingChildId(null)
-      loadData()
     }
     setSaving(false)
   }
@@ -463,11 +508,13 @@ export default function SettingsPage() {
   const deleteChild = async (id: string) => {
     if (!confirm(t.common.confirmDelete)) return
 
+    const previousChildren = children
+    setChildren(children.filter(c => c.id !== id))
+
     const { error } = await supabase.from('children').delete().eq('id', id)
     if (error) {
+      setChildren(previousChildren)
       showMessage('error', t.errors.deleteFailed)
-    } else {
-      loadData()
     }
   }
 

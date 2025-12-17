@@ -4,6 +4,7 @@ import { WeekGrid } from '@/components/WeekGrid'
 import { UniversalAIInput } from '@/components/ai'
 import { formatDateISO, addDays } from '@/lib/utils'
 import Link from 'next/link'
+import Image from 'next/image'
 import { getLanguageFromCookieOrBrowser } from '@/lib/i18n/cookie.server'
 import { getTranslations } from '@/lib/i18n/translations'
 
@@ -18,12 +19,13 @@ export default async function HomePage() {
     return (
       <div className="min-h-[70vh] flex items-center justify-center">
         <div className="text-center max-w-md mx-auto animate-fade-in">
-          <img
+          <Image
             src="/icons/icon.svg"
             alt="Familjen"
             width={80}
             height={80}
             className="rounded-2xl mb-8 shadow-lg mx-auto"
+            priority
           />
           <h1 className="text-4xl font-semibold font-display mb-4" style={{ color: 'var(--foreground)' }}>
             {t.home.welcome}

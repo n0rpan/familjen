@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react'
 import type { Recipe } from '@/lib/types'
 import { useLanguage } from '@/lib/i18n/context'
 
@@ -13,7 +13,7 @@ interface MealSelectorProps {
   disabled?: boolean
 }
 
-export function MealSelector({
+export const MealSelector = memo(function MealSelector({
   value,
   recipes,
   onChange,
@@ -38,34 +38,34 @@ export function MealSelector({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Filter and sort recipes
-  const filteredRecipes = recipes
+  // Filter and sort recipes - memoized to avoid recalculation on every render
+  const filteredRecipes = useMemo(() => recipes
     .filter(r => r.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
       // Favorites first
       if (a.is_favorite && !b.is_favorite) return -1
       if (!a.is_favorite && b.is_favorite) return 1
       return a.name.localeCompare(b.name, 'nb')
-    })
+    }), [recipes, search])
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value
     setSearch(newValue)
     onChange(newValue)
-  }
+  }, [onChange])
 
-  const handleInputFocus = () => {
+  const handleInputFocus = useCallback(() => {
     setIsOpen(true)
     setSearch(value)
-  }
+  }, [value])
 
-  const selectRecipe = (recipe: Recipe) => {
+  const selectRecipe = useCallback((recipe: Recipe) => {
     onChange(recipe.name, recipe.id)
     setIsOpen(false)
     setSearch('')
-  }
+  }, [onChange])
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       setIsOpen(false)
       inputRef.current?.blur()
@@ -73,7 +73,7 @@ export function MealSelector({
     if (e.key === 'Enter' && filteredRecipes.length > 0) {
       selectRecipe(filteredRecipes[0])
     }
-  }
+  }, [filteredRecipes, selectRecipe])
 
   return (
     <div ref={containerRef} className="relative">
@@ -198,4 +198,4 @@ export function MealSelector({
       )}
     </div>
   )
-}
+})

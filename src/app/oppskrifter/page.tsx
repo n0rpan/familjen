@@ -59,7 +59,7 @@ export default function RecipesPage() {
       // Now fetch household by ID and recipes in parallel
       const [householdResult, recipesResult] = await Promise.all([
         supabase.from('households').select('*').eq('id', membership.household_id).single(),
-        supabase.from('recipes').select('*').order('name'),
+        supabase.from('recipes').select('*').eq('household_id', membership.household_id).order('name'),
       ])
 
       if (householdResult.error) {
