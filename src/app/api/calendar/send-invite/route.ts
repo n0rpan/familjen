@@ -3,10 +3,16 @@ import { createClient } from '@/lib/supabase/server'
 import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '@/lib/google-calendar'
 import { sendInviteRequestSchema, validateRequest } from '@/lib/schemas'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
+import { validateOrigin } from '@/lib/config'
 
 // POST /api/calendar/send-invite - Send pickup invite to work calendar
 export async function POST(request: Request) {
   try {
+    // CSRF protection - validate same-origin request
+    if (!validateOrigin(request)) {
+      return NextResponse.json({ error: 'Invalid request origin' }, { status: 403 })
+    }
+
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
 

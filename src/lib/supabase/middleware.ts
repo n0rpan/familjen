@@ -1,13 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-
-/**
- * Check if user is admin via JWT app_metadata
- * This is set during login by syncUserAdminStatus()
- */
-function isUserAdmin(user: { app_metadata?: Record<string, unknown> } | null): boolean {
-  return user?.app_metadata?.is_admin === true
-}
+import { isUserAdmin } from '@/lib/config'
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({

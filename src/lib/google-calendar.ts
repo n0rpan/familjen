@@ -256,14 +256,17 @@ export async function fetchCalendarInvitesFromGmail(
   const gmail = getGmailClient(tokens)
 
   // Search for emails with calendar invites
-  // Include multiple patterns to catch Outlook/Microsoft invites
-  let query = 'filename:ics OR subject:(invitation OR meeting OR "accepted" OR "declined" OR "tentative")'
+  // has:invite is Gmail's operator for finding calendar invites
+  // Also search for .ics attachments and common invite subject patterns
+  let query = 'has:invite OR filename:ics OR subject:(invitation OR "calendar invitation")'
   if (options.afterDate) {
     const afterDateFormatted = options.afterDate.replace(/-/g, '/')
     query += ` after:${afterDateFormatted}`
   }
 
-  console.log('Gmail search query:', query)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Gmail search query:', query)
+  }
 
   const response = await gmail.users.messages.list({
     userId: 'me',
@@ -272,7 +275,9 @@ export async function fetchCalendarInvitesFromGmail(
   })
 
   const messages = response.data.messages || []
-  console.log(`Found ${messages.length} potential calendar emails`)
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`Found ${messages.length} potential calendar emails`)
+  }
 
   const invites: ParsedCalendarInvite[] = []
 
@@ -282,7 +287,9 @@ export async function fetchCalendarInvitesFromGmail(
     try {
       const invite = await extractCalendarInviteFromMessage(gmail, message.id)
       if (invite) {
-        console.log(`Parsed invite: ${invite.summary} from ${invite.organizerEmail}`)
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`Parsed invite: ${invite.summary} from ${invite.organizerEmail}`)
+        }
         invites.push(invite)
       }
     } catch (error) {
@@ -290,7 +297,9 @@ export async function fetchCalendarInvitesFromGmail(
     }
   }
 
-  console.log(`Total parsed invites: ${invites.length}`)
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`Total parsed invites: ${invites.length}`)
+  }
   return invites
 }
 
@@ -308,7 +317,9 @@ async function extractCalendarInviteFromMessage(
   const payload = message.data.payload
   if (!payload) return null
 
-  console.log(`Processing message ${messageId}...`)
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`Processing message ${messageId}...`)
+  }
 
   // Try to find .ics content inline first
   let icsContent = findIcsContent(payload)
@@ -317,7 +328,9 @@ async function extractCalendarInviteFromMessage(
   if (!icsContent) {
     const attachmentInfo = findCalendarAttachment(payload)
     if (attachmentInfo) {
-      console.log(`Fetching attachment ${attachmentInfo.attachmentId}...`)
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`Fetching attachment ${attachmentInfo.attachmentId}...`)
+      }
       try {
         const attachment = await gmail.users.messages.attachments.get({
           userId: 'me',
@@ -326,7 +339,9 @@ async function extractCalendarInviteFromMessage(
         })
         if (attachment.data.data) {
           icsContent = Buffer.from(attachment.data.data, 'base64').toString('utf-8')
-          console.log(`Fetched attachment (${icsContent.length} chars)`)
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`Fetched attachment (${icsContent.length} chars)`)
+          }
         }
       } catch (err) {
         console.error('Failed to fetch attachment:', err)
@@ -335,7 +350,9 @@ async function extractCalendarInviteFromMessage(
   }
 
   if (!icsContent) {
-    console.log(`No calendar content found in message ${messageId}`)
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`No calendar content found in message ${messageId}`)
+    }
     return null
   }
 
@@ -363,24 +380,34 @@ function findCalendarAttachment(payload: gmail_v1.Schema$MessagePart): { attachm
 
 // Recursively find .ics content in message payload
 function findIcsContent(payload: gmail_v1.Schema$MessagePart, depth = 0): string | null {
+  const isDev = process.env.NODE_ENV === 'development'
   const indent = '  '.repeat(depth)
-  console.log(`${indent}Checking part: mimeType=${payload.mimeType}, filename=${payload.filename || 'none'}`)
+
+  if (isDev) {
+    console.log(`${indent}Checking part: mimeType=${payload.mimeType}, filename=${payload.filename || 'none'}`)
+  }
 
   // Check if this part is an .ics attachment or calendar data
   if (payload.mimeType === 'text/calendar' || payload.filename?.endsWith('.ics')) {
     if (payload.body?.data) {
       const content = Buffer.from(payload.body.data, 'base64').toString('utf-8')
-      console.log(`${indent}Found calendar data (${content.length} chars)`)
+      if (isDev) {
+        console.log(`${indent}Found calendar data (${content.length} chars)`)
+      }
       return content
     } else if (payload.body?.attachmentId) {
       // Attachment data needs separate fetch - log this case
-      console.log(`${indent}Calendar attachment needs separate fetch: ${payload.body.attachmentId}`)
+      if (isDev) {
+        console.log(`${indent}Calendar attachment needs separate fetch: ${payload.body.attachmentId}`)
+      }
     }
   }
 
   // Check nested parts
   if (payload.parts) {
-    console.log(`${indent}Checking ${payload.parts.length} nested parts...`)
+    if (isDev) {
+      console.log(`${indent}Checking ${payload.parts.length} nested parts...`)
+    }
     for (const part of payload.parts) {
       const icsContent = findIcsContent(part, depth + 1)
       if (icsContent) return icsContent
