@@ -7,6 +7,7 @@ import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistratio
 import { UpdatePrompt } from "@/components/UpdatePrompt";
 import { AppShell } from "@/components/AppShell";
 import { OfflineIndicator } from "@/components/OfflineIndicator";
+import { RealtimeWrapper } from "@/components/RealtimeWrapper";
 
 export const metadata: Metadata = {
   title: "Familjen",
@@ -47,16 +48,18 @@ export default async function RootLayout({
     <html lang={language}>
       <body className="antialiased grain app-shell" style={{ background: 'var(--background)' }}>
         <LanguageProvider initialLanguage={language}>
-          <OfflineIndicator />
-          <Header />
-          <div className="app-shell-content pt-mobile-header">
-            <AppShell>
-              <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-24 md:pb-6 relative z-0">
-                {children}
-              </main>
-            </AppShell>
-          </div>
-          <UpdatePrompt />
+          <RealtimeWrapper>
+            <OfflineIndicator />
+            <Header />
+            <div className="app-shell-content pt-mobile-header">
+              <AppShell>
+                <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-24 md:pb-6 relative z-0">
+                  {children}
+                </main>
+              </AppShell>
+            </div>
+            <UpdatePrompt />
+          </RealtimeWrapper>
         </LanguageProvider>
         <ServiceWorkerRegistration />
       </body>

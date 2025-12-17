@@ -1,11 +1,13 @@
 'use client'
 
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { ShoppingList, ShoppingListItem, Household } from '@/lib/types'
 import { useLanguage } from '@/lib/i18n/context'
 import { ListPageSkeleton } from '@/components/Skeleton'
 import { useMicroFeedback } from '@/hooks/useMicroFeedback'
+import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealtimeSubscription'
+import { useRealtimeOptional } from '@/lib/realtime/context'
 
 interface ListWithItems extends ShoppingList {
   items: ShoppingListItem[]
@@ -25,6 +27,10 @@ export default function ShoppingListPage() {
   const { markChanged, isRecentlyChanged } = useMicroFeedback(800)
 
   const supabase = useMemo(() => createClient(), [])
+  const realtime = useRealtimeOptional()
+
+  // Track items we're currently modifying to prevent double-updates
+  const pendingChanges = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     if (hasInitialized.current) return
@@ -151,24 +157,170 @@ export default function ShoppingListPage() {
     }
   }
 
+  // Get list IDs for filtering realtime events
+  const listIds = useMemo(() => lists.map(l => l.id), [lists])
+
+  // Realtime handlers for shopping list items
+  const handleItemInsert = useCallback((record: ShoppingListItem) => {
+    // Only process items for our lists
+    if (!listIds.includes(record.list_id)) return
+
+    // Skip if this is our own change
+    if (pendingChanges.current.has(record.id)) {
+      pendingChanges.current.delete(record.id)
+      return
+    }
+
+    // Add item to the appropriate list
+    setLists(prev => prev.map(list =>
+      list.id === record.list_id
+        ? { ...list, items: [record, ...list.items] }
+        : list
+    ))
+
+    // Show toast if from another user
+    const updatedBy = (record as unknown as { updated_by?: string }).updated_by
+    if (realtime && !realtime.isOwnChange(updatedBy)) {
+      realtime.showToast(
+        `${realtime.getMemberName(updatedBy)} la til ${record.name}`,
+        'info'
+      )
+    }
+  }, [realtime, listIds])
+
+  const handleItemUpdate = useCallback((record: ShoppingListItem, oldRecord: ShoppingListItem | null) => {
+    // Only process items for our lists
+    if (!listIds.includes(record.list_id)) return
+
+    // Skip if this is our own change
+    if (pendingChanges.current.has(record.id)) {
+      pendingChanges.current.delete(record.id)
+      return
+    }
+
+    // Update item in state
+    setLists(prev => prev.map(list => ({
+      ...list,
+      items: list.items.map(item =>
+        item.id === record.id ? record : item
+      ),
+    })))
+
+    // Mark as changed for visual feedback
+    markChanged(record.id)
+
+    // Show toast for is_bought changes from other users
+    const updatedBy = (record as unknown as { updated_by?: string }).updated_by
+    if (realtime && !realtime.isOwnChange(updatedBy)) {
+      if (oldRecord && record.is_bought !== oldRecord.is_bought) {
+        const action = record.is_bought ? 'krysset av' : 'fjernet kryss fra'
+        realtime.showToast(
+          `${realtime.getMemberName(updatedBy)} ${action} ${record.name}`,
+          'info'
+        )
+      }
+    }
+  }, [realtime, markChanged, listIds])
+
+  const handleItemDelete = useCallback((oldRecord: ShoppingListItem) => {
+    // Only process items for our lists
+    if (!listIds.includes(oldRecord.list_id)) return
+
+    // Skip if this is our own change
+    if (pendingChanges.current.has(oldRecord.id)) {
+      pendingChanges.current.delete(oldRecord.id)
+      return
+    }
+
+    // Remove item from state
+    setLists(prev => prev.map(list => ({
+      ...list,
+      items: list.items.filter(item => item.id !== oldRecord.id),
+    })))
+
+    // Show toast if from another user
+    const updatedBy = (oldRecord as unknown as { updated_by?: string }).updated_by
+    if (realtime && !realtime.isOwnChange(updatedBy)) {
+      realtime.showToast(
+        `${realtime.getMemberName(updatedBy)} fjernet ${oldRecord.name}`,
+        'info'
+      )
+    }
+  }, [realtime, listIds])
+
+  // Subscribe to shopping list item changes
+  useRealtimeSubscription<ShoppingListItem>({
+    table: 'shopping_list_items',
+    filter: household?.id ? undefined : undefined, // Will use list_id filtering instead
+    onInsert: handleItemInsert,
+    onUpdate: handleItemUpdate,
+    onDelete: handleItemDelete,
+    enabled: !loading && lists.length > 0,
+  })
+
   const addItem = async (listId: string) => {
     const text = newItemText[listId]?.trim()
     if (!text) return
 
     const quantity = newItemQuantity[listId]?.trim() || null
 
-    await supabase.from('shopping_list_items').insert({
+    // Create a temporary ID for optimistic update
+    const tempId = `temp-${Date.now()}`
+    const newItem: ShoppingListItem = {
+      id: tempId,
       list_id: listId,
       name: text,
       quantity,
-    })
+      is_bought: false,
+      source_recipe_id: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+
+    // Optimistic update
+    setLists(prev => prev.map(list =>
+      list.id === listId
+        ? { ...list, items: [newItem, ...list.items] }
+        : list
+    ))
 
     setNewItemText(prev => ({ ...prev, [listId]: '' }))
     setNewItemQuantity(prev => ({ ...prev, [listId]: '' }))
-    loadData()
+
+    // Insert and get the real ID
+    const { data, error } = await supabase
+      .from('shopping_list_items')
+      .insert({
+        list_id: listId,
+        name: text,
+        quantity,
+      })
+      .select()
+      .single()
+
+    if (data) {
+      // Mark as pending to prevent duplicate handling from realtime
+      pendingChanges.current.add(data.id)
+      // Replace temp item with real one
+      setLists(prev => prev.map(list =>
+        list.id === listId
+          ? { ...list, items: list.items.map(item => item.id === tempId ? data : item) }
+          : list
+      ))
+    } else if (error) {
+      // Remove optimistic item on error
+      setLists(prev => prev.map(list =>
+        list.id === listId
+          ? { ...list, items: list.items.filter(item => item.id !== tempId) }
+          : list
+      ))
+    }
   }
 
   const toggleBought = async (itemId: string, currentValue: boolean) => {
+    // Mark as pending to prevent duplicate handling from realtime
+    pendingChanges.current.add(itemId)
+
     // Optimistic update with micro-feedback
     markChanged(itemId)
     setLists(prev =>
@@ -188,7 +340,8 @@ export default function ShoppingListPage() {
   }
 
   const deleteItem = async (itemId: string) => {
-    await supabase.from('shopping_list_items').delete().eq('id', itemId)
+    // Mark as pending to prevent duplicate handling from realtime
+    pendingChanges.current.add(itemId)
 
     // Optimistic update
     setLists(prev =>
@@ -197,6 +350,9 @@ export default function ShoppingListPage() {
         items: list.items.filter(item => item.id !== itemId),
       }))
     )
+
+    // Persist to database
+    await supabase.from('shopping_list_items').delete().eq('id', itemId)
   }
 
   const clearBoughtItems = async (listId: string) => {
@@ -206,8 +362,18 @@ export default function ShoppingListPage() {
     const boughtIds = list.items.filter(i => i.is_bought).map(i => i.id)
     if (boughtIds.length === 0) return
 
+    // Mark all as pending
+    boughtIds.forEach(id => pendingChanges.current.add(id))
+
+    // Optimistic update
+    setLists(prev => prev.map(l =>
+      l.id === listId
+        ? { ...l, items: l.items.filter(item => !item.is_bought) }
+        : l
+    ))
+
+    // Persist to database
     await supabase.from('shopping_list_items').delete().in('id', boughtIds)
-    loadData()
   }
 
   const handleKeyDown = (e: React.KeyboardEvent, listId: string) => {

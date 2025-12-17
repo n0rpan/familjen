@@ -474,6 +474,22 @@ input:focus, select:focus, textarea:focus {
   }
 }
 
+/* Toast slide-in animation */
+@keyframes toast-slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-toast-in {
+  animation: toast-slide-in 0.3s ease-out forwards;
+}
+
 /* Safe area insets for PWA */
 @supports (padding-top: env(safe-area-inset-top)) {
   .safe-area-top {

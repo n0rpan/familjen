@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { WeekGrid } from '@/components/WeekGrid'
 import { formatDateISO, getWeekStart, addDays, formatWeekHeaderLocalized } from '@/lib/utils'
-import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Household, Recipe, MealSuggestion, MemberEvent, MemberEventType, ChildTask, ChildTaskType, RecipeIngredient } from '@/lib/types'
+import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Household, Recipe, MealSuggestion, MemberEvent, MemberEventType, ChildTask, ChildTaskType, RecipeIngredient, Pickup, Meal } from '@/lib/types'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { RecentChanges } from '@/components/RecentChanges'
@@ -13,6 +13,8 @@ import { notifyPickupAssigned, notifyMealChanged, notifyTaskAdded, notifyEventAd
 import { nb, sv } from 'react-day-picker/locale'
 import 'react-day-picker/style.css'
 import { WeekPageSkeleton } from '@/components/Skeleton'
+import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealtimeSubscription'
+import { useRealtimeOptional } from '@/lib/realtime/context'
 
 // Dynamic imports for code splitting
 const DayPicker = dynamic(
@@ -90,6 +92,10 @@ export default function WeekEditPage() {
   const [showQuickPickupModal, setShowQuickPickupModal] = useState(false)
 
   const supabase = useMemo(() => createClient(), [])
+  const realtime = useRealtimeOptional()
+
+  // Track pending changes to prevent duplicate handling
+  const pendingChanges = useRef<Set<string>>(new Set())
 
   const { weekStart, weekEnd } = useMemo(() => {
     const start = addDays(getWeekStart(new Date()), weekOffset * 7)
@@ -205,6 +211,183 @@ export default function WeekEditPage() {
   }, [supabase, weekStart, weekEnd, reloadTrigger])
 
   const triggerReload = () => setReloadTrigger(prev => prev + 1)
+
+  // Date range strings for filtering realtime events
+  const weekStartStr = formatDateISO(weekStart)
+  const weekEndStr = formatDateISO(weekEnd)
+
+  // Realtime handlers for pickups
+  const handlePickupRealtime = useCallback((
+    eventType: 'INSERT' | 'UPDATE' | 'DELETE',
+    newRecord: Pickup | null,
+    oldRecord: Pickup | null
+  ) => {
+    const record = newRecord || oldRecord
+    if (!record) return
+
+    // Skip if this is our own change
+    if (pendingChanges.current.has(record.id)) {
+      pendingChanges.current.delete(record.id)
+      return
+    }
+
+    // Only process changes for current week
+    const recordDate = record.date
+    if (recordDate < weekStartStr || recordDate > weekEndStr) return
+
+    // Show toast for changes from other users
+    const updatedBy = (newRecord as unknown as { updated_by?: string })?.updated_by
+    if (realtime && newRecord && !realtime.isOwnChange(updatedBy)) {
+      const child = children.find(c => c.id === newRecord.child_id)
+      const picker = members.find(m => m.id === newRecord.picker_id)
+      if (child && picker) {
+        const dateObj = new Date(newRecord.date)
+        const dayName = t.date.weekdays[dateObj.getDay()]
+        realtime.showToast(
+          `${realtime.getMemberName(updatedBy)} satt ${picker.short_name || picker.name} til henting av ${child.name} ${dayName}`,
+          'info'
+        )
+      }
+    }
+
+    // Reload data to get full pickup details with relations
+    triggerReload()
+  }, [weekStartStr, weekEndStr, realtime, children, members, t.date.weekdays])
+
+  // Realtime handlers for meals
+  const handleMealRealtime = useCallback((
+    eventType: 'INSERT' | 'UPDATE' | 'DELETE',
+    newRecord: Meal | null,
+    oldRecord: Meal | null
+  ) => {
+    const record = newRecord || oldRecord
+    if (!record) return
+
+    // Skip if this is our own change
+    if (pendingChanges.current.has(record.id)) {
+      pendingChanges.current.delete(record.id)
+      return
+    }
+
+    // Only process changes for current week
+    const recordDate = record.date
+    if (recordDate < weekStartStr || recordDate > weekEndStr) return
+
+    // Show toast for changes from other users
+    const updatedBy = (newRecord as unknown as { updated_by?: string })?.updated_by
+    if (realtime && newRecord && !realtime.isOwnChange(updatedBy)) {
+      const mealName = newRecord.custom_meal || 'middag'
+      const dateObj = new Date(newRecord.date)
+      const dayName = t.date.weekdays[dateObj.getDay()]
+      realtime.showToast(
+        `${realtime.getMemberName(updatedBy)} endret ${dayName} til ${mealName}`,
+        'info'
+      )
+    }
+
+    // Reload data to get full meal details with recipe
+    triggerReload()
+  }, [weekStartStr, weekEndStr, realtime, t.date.weekdays])
+
+  // Realtime handlers for child tasks
+  const handleTaskRealtime = useCallback((
+    eventType: 'INSERT' | 'UPDATE' | 'DELETE',
+    newRecord: ChildTask | null,
+    oldRecord: ChildTask | null
+  ) => {
+    const record = newRecord || oldRecord
+    if (!record) return
+
+    // Skip if this is our own change
+    if (pendingChanges.current.has(record.id)) {
+      pendingChanges.current.delete(record.id)
+      return
+    }
+
+    // Only process changes for current week
+    const recordDate = record.date
+    if (recordDate < weekStartStr || recordDate > weekEndStr) return
+
+    // Show toast for changes from other users
+    const updatedBy = (record as unknown as { updated_by?: string }).updated_by
+    if (realtime && !realtime.isOwnChange(updatedBy)) {
+      const child = children.find(c => c.id === record.child_id)
+      if (eventType === 'INSERT' && child) {
+        realtime.showToast(
+          `${realtime.getMemberName(updatedBy)} la til oppgave for ${child.name}`,
+          'info'
+        )
+      } else if (eventType === 'UPDATE' && record.status === 'done' && child) {
+        realtime.showToast(
+          `${realtime.getMemberName(updatedBy)} fullførte ${record.title}`,
+          'success'
+        )
+      }
+    }
+
+    // Reload data
+    triggerReload()
+  }, [weekStartStr, weekEndStr, realtime, children])
+
+  // Realtime handlers for member events
+  const handleEventRealtime = useCallback((
+    eventType: 'INSERT' | 'UPDATE' | 'DELETE',
+    newRecord: MemberEvent | null,
+    oldRecord: MemberEvent | null
+  ) => {
+    const record = newRecord || oldRecord
+    if (!record) return
+
+    // Skip if this is our own change
+    if (pendingChanges.current.has(record.id)) {
+      pendingChanges.current.delete(record.id)
+      return
+    }
+
+    // Show toast for new events from other users
+    const updatedBy = (newRecord as unknown as { updated_by?: string })?.updated_by
+    if (realtime && eventType === 'INSERT' && newRecord && !realtime.isOwnChange(updatedBy)) {
+      const member = members.find(m => m.id === newRecord.member_id)
+      if (member) {
+        realtime.showToast(
+          `${realtime.getMemberName(updatedBy)} la til ${newRecord.title} for ${member.short_name || member.name}`,
+          'info'
+        )
+      }
+    }
+
+    // Reload data
+    triggerReload()
+  }, [realtime, members])
+
+  // Subscribe to realtime changes
+  useRealtimeSubscription<Pickup>({
+    table: 'pickups',
+    filter: household?.id ? createHouseholdFilter(household.id) : undefined,
+    onAny: (event) => handlePickupRealtime(event.eventType, event.new as Pickup | null, event.old as Pickup | null),
+    enabled: !loading && !!household?.id,
+  })
+
+  useRealtimeSubscription<Meal>({
+    table: 'meals',
+    filter: household?.id ? createHouseholdFilter(household.id) : undefined,
+    onAny: (event) => handleMealRealtime(event.eventType, event.new as Meal | null, event.old as Meal | null),
+    enabled: !loading && !!household?.id,
+  })
+
+  useRealtimeSubscription<ChildTask>({
+    table: 'child_tasks',
+    filter: household?.id ? createHouseholdFilter(household.id) : undefined,
+    onAny: (event) => handleTaskRealtime(event.eventType, event.new as ChildTask | null, event.old as ChildTask | null),
+    enabled: !loading && !!household?.id,
+  })
+
+  useRealtimeSubscription<MemberEvent>({
+    table: 'member_events',
+    filter: household?.id ? createHouseholdFilter(household.id) : undefined,
+    onAny: (event) => handleEventRealtime(event.eventType, event.new as MemberEvent | null, event.old as MemberEvent | null),
+    enabled: !loading && !!household?.id,
+  })
 
   const handlePickupChange = async (childId: string, date: string, pickerId: string | null) => {
     if (!household) return
