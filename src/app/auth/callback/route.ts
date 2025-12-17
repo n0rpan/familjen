@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { syncUserAdminStatus } from '@/lib/supabase/admin'
+import { syncUserAdminStatus, createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 import { LANGUAGE_COOKIE_NAME, COOKIE_MAX_AGE } from '@/lib/i18n/cookie.server'
 import { isValidLanguage } from '@/lib/i18n/cookie'
@@ -18,7 +18,9 @@ export async function GET(request: Request) {
       const { data: { user } } = await supabase.auth.getUser()
 
       if (user?.email) {
-        const { data: allowed } = await supabase
+        // Use admin client to bypass RLS for allowlist check
+        const adminClient = createAdminClient()
+        const { data: allowed } = await adminClient
           .from('allowed_emails')
           .select('id, is_admin')
           .eq('email', user.email.toLowerCase())

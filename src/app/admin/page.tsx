@@ -323,14 +323,9 @@ export default function AdminPage() {
       return;
     }
 
-    // Check admin status via database
-    const { data: adminCheck } = await supabase
-      .from("allowed_emails")
-      .select("is_admin")
-      .eq("email", user.email.toLowerCase())
-      .single();
-
-    if (!adminCheck?.is_admin) {
+    // Check admin status via JWT app_metadata (set during login)
+    // This avoids RLS issues with querying allowed_emails
+    if (user.app_metadata?.is_admin !== true) {
       router.push("/");
       return;
     }
