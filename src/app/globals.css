@@ -62,6 +62,7 @@
 html {
   scroll-behavior: smooth;
   height: 100%;
+  background: var(--background);
 }
 
 body {
@@ -427,9 +428,9 @@ input:focus, select:focus, textarea:focus {
   }
 }
 
-/* Mobile header spacing - accounts for fixed header + safe area */
+/* Mobile header spacing - accounts for fixed header + safe area + content spacing */
 .pt-mobile-header {
-  padding-top: calc(3.5rem + env(safe-area-inset-top, 0px));
+  padding-top: calc(4.5rem + env(safe-area-inset-top, 0px));
 }
 
 @media (min-width: 1024px) {
