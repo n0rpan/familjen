@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { validateOrigin } from '@/lib/config'
+import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 import {
   sendPushNotification,
   getNotificationContent,
@@ -21,6 +22,16 @@ export async function POST(request: Request) {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
+    }
+
+    // Rate limit push notifications
+    const rateLimitKey = createRateLimitKey(user.id, 'pushNotify')
+    const rateLimit = checkRateLimit(rateLimitKey, RATE_LIMITS.pushNotify)
+    if (rateLimit.limited) {
+      return NextResponse.json(
+        { error: `For mange forespørsler. Prøv igjen om ${rateLimit.retryAfter} sekunder.` },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
+      )
     }
 
     const body = await request.json()

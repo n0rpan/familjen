@@ -196,6 +196,7 @@ export async function POST(request: Request) {
       weekContext,
       season,
       allAllergies,
+      shareNamesWithAi: household.share_names_with_ai ?? true,
     })
 
     // Call OpenRouter API
@@ -289,6 +290,7 @@ interface PromptContext {
   weekContext: string | null
   season: string
   allAllergies: string[]  // Combined list of all allergies
+  shareNamesWithAi: boolean  // When false, anonymize children names
 }
 
 function buildPrompt(context: PromptContext): string {
@@ -303,6 +305,7 @@ function buildPrompt(context: PromptContext): string {
     weekContext,
     season,
     allAllergies,
+    shareNamesWithAi,
   } = context
 
   let prompt = `Foreslå middager for følgende dager:\n\n`
@@ -327,16 +330,17 @@ function buildPrompt(context: PromptContext): string {
     prompt += allAllergies.join(', ') + '\n'
   }
 
-  // Children info
+  // Children info (anonymize if shareNamesWithAi is false)
   if (childrenAges.length > 0) {
     prompt += `\n**Barn i familien:**\n`
-    for (const child of childrenAges) {
-      let childInfo = `- ${child.name}: ${child.age} år`
+    childrenAges.forEach((child, index) => {
+      const displayName = shareNamesWithAi ? child.name : `Barn ${index + 1}`
+      let childInfo = `- ${displayName}: ${child.age} år`
       if (child.allergies.length > 0) {
         childInfo += ` (allergisk mot: ${child.allergies.join(', ')})`
       }
       prompt += childInfo + '\n'
-    }
+    })
   }
 
   // Favorite recipes

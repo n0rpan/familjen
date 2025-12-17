@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 
 export interface OpenRouterModel {
   id: string
@@ -15,9 +17,33 @@ export interface OpenRouterModel {
 
 export async function GET() {
   try {
+    const supabase = await createClient()
+
+    // Check authentication
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
+    }
+
+    // Rate limit
+    const rateLimitKey = createRateLimitKey(user.id, 'aiModels')
+    const rateLimit = checkRateLimit(rateLimitKey, RATE_LIMITS.aiModels)
+    if (rateLimit.limited) {
+      return NextResponse.json(
+        { error: `For mange forespørsler. Prøv igjen om ${rateLimit.retryAfter} sekunder.` },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
+      )
+    }
+
+    const apiKey = process.env.OPENROUTER_API_KEY
+    if (!apiKey) {
+      return NextResponse.json({ error: 'OpenRouter API-nøkkel ikke konfigurert' }, { status: 500 })
+    }
+
     const response = await fetch('https://openrouter.ai/api/v1/models', {
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
       },
       next: { revalidate: 3600 }, // Cache for 1 hour
     })

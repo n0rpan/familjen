@@ -67,6 +67,8 @@ export default function SettingsPage() {
 
   const [aiMealContext, setAiMealContext] = useState('')
   const [savingAiContext, setSavingAiContext] = useState(false)
+  const [shareNamesWithAi, setShareNamesWithAi] = useState(true)
+  const [savingPrivacy, setSavingPrivacy] = useState(false)
   const [connectedCalendarEmail, setConnectedCalendarEmail] = useState<string | null>(null)
 
   const supabase = useMemo(() => createClient(), [])
@@ -116,6 +118,7 @@ export default function SettingsPage() {
 
       setHousehold(householdData)
       setAiMealContext(householdData?.ai_meal_context || '')
+      setShareNamesWithAi(householdData?.share_names_with_ai ?? true)
 
       // Load members and children - explicitly filter by household_id for admins who can see all
       const [membersResult, childrenResult] = await Promise.all([
@@ -503,6 +506,29 @@ export default function SettingsPage() {
       showMessage('success', t.success.saved)
     }
     setSavingAiContext(false)
+  }
+
+  const toggleShareNamesWithAi = async () => {
+    if (!household) return
+
+    const newValue = !shareNamesWithAi
+    // Optimistic update
+    setShareNamesWithAi(newValue)
+
+    setSavingPrivacy(true)
+    const { error } = await supabase
+      .from('households')
+      .update({ share_names_with_ai: newValue })
+      .eq('id', household.id)
+
+    if (error) {
+      // Rollback on error
+      setShareNamesWithAi(!newValue)
+      showMessage('error', t.errors.saveFailed)
+    } else {
+      showMessage('success', t.success.saved)
+    }
+    setSavingPrivacy(false)
   }
 
   const deleteChild = async (id: string) => {
@@ -1699,7 +1725,47 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-6">
+          {/* Privacy toggle */}
+          <div
+            className="p-4 rounded-xl"
+            style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
+          >
+            <label className="flex items-start gap-4 cursor-pointer">
+              <div className="relative flex-shrink-0 mt-0.5">
+                <input
+                  type="checkbox"
+                  checked={shareNamesWithAi}
+                  onChange={toggleShareNamesWithAi}
+                  disabled={savingPrivacy}
+                  className="sr-only peer"
+                />
+                <div
+                  className="w-11 h-6 rounded-full transition-colors peer-focus:ring-2 peer-focus:ring-offset-2"
+                  style={{
+                    background: shareNamesWithAi ? 'var(--color-sage)' : 'var(--muted)',
+                  }}
+                />
+                <div
+                  className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow-sm"
+                  style={{
+                    transform: shareNamesWithAi ? 'translateX(20px)' : 'translateX(0)',
+                  }}
+                />
+              </div>
+              <div className="flex-1">
+                <span className="block font-medium text-sm" style={{ color: 'var(--foreground)' }}>
+                  {t.settings?.shareNamesWithAi || 'Del barnas navn med AI'}
+                </span>
+                <span className="block text-xs mt-1" style={{ color: 'var(--muted)' }}>
+                  {shareNamesWithAi
+                    ? (t.settings?.shareNamesEnabled || 'AI får se barnas navn for personlige forslag (f.eks. "Emma liker...")')
+                    : (t.settings?.shareNamesDisabled || 'AI ser kun "Barn 1", "Barn 2" osv. med alder og allergier')}
+                </span>
+              </div>
+            </label>
+          </div>
+
           <div>
             <label className="block text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
               {t.week.weekContext}

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { isUserAdmin } from '@/lib/config'
+import { isUserAdmin, validateOrigin } from '@/lib/config'
 import {
   fetchCalendarInvitesFromGmail,
   mapGmailInviteToMemberEvent,
@@ -12,8 +12,13 @@ import { maskEmail } from '@/lib/email-mask'
 import type { UnmatchedCalendarInvite } from '@/lib/types'
 
 // POST /api/calendar/sync - Sync events from Gmail calendar invites
-export async function POST() {
+export async function POST(request: Request) {
   try {
+    // CSRF protection
+    if (!validateOrigin(request)) {
+      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+    }
+
     const supabase = await createClient()
 
     // Check if user is admin via JWT claims

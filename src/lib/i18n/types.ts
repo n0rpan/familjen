@@ -260,6 +260,10 @@ export interface TranslationStrings {
     shortNamePlaceholder: string
     workEmailPlaceholder: string
     tryReloadPage: string
+    // AI privacy settings
+    shareNamesWithAi: string
+    shareNamesEnabled: string
+    shareNamesDisabled: string
   }
 
   // Recipes page

@@ -252,6 +252,10 @@ export const sv: TranslationStrings = {
     shortNamePlaceholder: 'T.ex. Pappa',
     workEmailPlaceholder: 'jobb@foretag.se',
     tryReloadPage: 'Försök ladda om sidan.',
+    // AI privacy settings
+    shareNamesWithAi: 'Dela barnens namn med AI',
+    shareNamesEnabled: 'AI kan se barnens namn för personliga förslag (t.ex. "Emma gillar...")',
+    shareNamesDisabled: 'AI ser endast "Barn 1", "Barn 2" osv. med ålder och allergier',
   },
 
   // Recipes page

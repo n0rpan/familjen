@@ -252,6 +252,10 @@ export const nb: TranslationStrings = {
     shortNamePlaceholder: 'F.eks. Far',
     workEmailPlaceholder: 'jobb@firma.no',
     tryReloadPage: 'Prøv å laste siden på nytt.',
+    // AI privacy settings
+    shareNamesWithAi: 'Del barnas navn med AI',
+    shareNamesEnabled: 'AI får se barnas navn for personlige forslag (f.eks. "Emma liker...")',
+    shareNamesDisabled: 'AI ser kun "Barn 1", "Barn 2" osv. med alder og allergier',
   },
 
   // Recipes page

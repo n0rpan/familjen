@@ -24,10 +24,14 @@ export const RATE_LIMITS = {
   aiSuggest: { limit: 10, windowMs: 60 * 1000 },
   // AI parse reminders - more lenient, 20/minute
   aiParseReminders: { limit: 20, windowMs: 60 * 1000 },
+  // AI models list - moderate, 30/minute
+  aiModels: { limit: 30, windowMs: 60 * 1000 },
   // Calendar sync - moderate, 30/minute
   calendarSync: { limit: 30, windowMs: 60 * 1000 },
   // Calendar invites - moderate, 20/minute
   calendarInvite: { limit: 20, windowMs: 60 * 1000 },
+  // Push notifications - moderate, 30/minute per user
+  pushNotify: { limit: 30, windowMs: 60 * 1000 },
 } as const
 
 /**

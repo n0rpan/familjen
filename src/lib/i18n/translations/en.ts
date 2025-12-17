@@ -252,6 +252,10 @@ export const en: TranslationStrings = {
     shortNamePlaceholder: 'E.g. Dad',
     workEmailPlaceholder: 'work@company.com',
     tryReloadPage: 'Try reloading the page.',
+    // AI privacy settings
+    shareNamesWithAi: 'Share children names with AI',
+    shareNamesEnabled: 'AI can see children names for personalized suggestions (e.g. "Emma likes...")',
+    shareNamesDisabled: 'AI only sees "Child 1", "Child 2" etc. with age and allergies',
   },
 
   // Recipes page

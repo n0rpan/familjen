@@ -15,6 +15,7 @@ export interface Household extends AuditFields {
   ical_password_encrypted: string | null
   openrouter_api_key_encrypted: string | null
   ai_meal_context: string | null  // Default AI preferences for meal suggestions
+  share_names_with_ai: boolean  // When false, anonymize children names in AI prompts
 }
 
 export interface HouseholdMember extends AuditFields {
