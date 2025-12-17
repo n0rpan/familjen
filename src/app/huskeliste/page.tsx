@@ -24,6 +24,7 @@ import {
 import type { ChildTaskFormData, HouseholdReminderFormData, WishlistFormData, WishlistItemFormData } from '@/components/remember'
 import type { ParsedReminder } from '@/lib/schemas'
 import { RemindersPageSkeleton } from '@/components/Skeleton'
+import { useMicroFeedback } from '@/hooks/useMicroFeedback'
 
 type TabType = 'reminders' | 'wishlists'
 
@@ -55,6 +56,9 @@ export default function HusklistePage() {
 
   const hasInitialized = useRef(false)
   const supabase = useMemo(() => createClient(), [])
+
+  // Micro-feedback for recently toggled items
+  const { markChanged, isRecentlyChanged } = useMicroFeedback(800)
 
   useEffect(() => {
     if (hasInitialized.current) return
@@ -227,18 +231,29 @@ export default function HusklistePage() {
 
   // Handle toggle done
   const handleToggleDone = useCallback(async (id: string, done: boolean, type: 'child' | 'household') => {
-    if (type === 'child') {
-      await supabase
-        .from('child_tasks')
-        .update({ status: done ? 'done' : 'open' })
-        .eq('id', id)
+    // Mark for visual feedback
+    markChanged(id)
 
+    if (type === 'child') {
+      // Optimistic update
       setChildTasks(prev =>
         prev.map(task =>
           task.id === id ? { ...task, status: done ? 'done' : 'open' } : task
         )
       )
+
+      await supabase
+        .from('child_tasks')
+        .update({ status: done ? 'done' : 'open' })
+        .eq('id', id)
     } else {
+      // Optimistic update
+      setHouseholdReminders(prev =>
+        prev.map(rem =>
+          rem.id === id ? { ...rem, status: done ? 'done' : 'open' } : rem
+        )
+      )
+
       await supabase
         .from('household_reminders')
         .update({
@@ -246,14 +261,8 @@ export default function HusklistePage() {
           completed_at: done ? new Date().toISOString() : null,
         })
         .eq('id', id)
-
-      setHouseholdReminders(prev =>
-        prev.map(rem =>
-          rem.id === id ? { ...rem, status: done ? 'done' : 'open' } : rem
-        )
-      )
     }
-  }, [supabase])
+  }, [supabase, markChanged])
 
   // Handle save reminder
   const handleSaveReminder = useCallback(async (data: ChildTaskFormData | HouseholdReminderFormData) => {
@@ -648,6 +657,7 @@ export default function HusklistePage() {
                 setShowReminderModal(true)
               }}
               onDelete={handleDeleteReminder}
+              isRecentlyChanged={isRecentlyChanged}
               t={t}
             />
           )}
@@ -690,6 +700,7 @@ export default function HusklistePage() {
                 setShowReminderModal(true)
               }}
               onDelete={handleDeleteReminder}
+              isRecentlyChanged={isRecentlyChanged}
               t={t}
             />
           )}
@@ -732,6 +743,7 @@ export default function HusklistePage() {
                 setShowReminderModal(true)
               }}
               onDelete={handleDeleteReminder}
+              isRecentlyChanged={isRecentlyChanged}
               t={t}
             />
           )}
@@ -774,6 +786,7 @@ export default function HusklistePage() {
                 setShowReminderModal(true)
               }}
               onDelete={handleDeleteReminder}
+              isRecentlyChanged={isRecentlyChanged}
               t={t}
             />
           )}
@@ -947,10 +960,11 @@ interface ReminderSectionProps {
   onToggle: (id: string, done: boolean, type: 'child' | 'household') => void
   onEdit: (reminder: (ChildTaskWithChild | HouseholdReminderWithAssignee) & { reminderType: 'child' | 'household' }) => void
   onDelete: (id: string, type: 'child' | 'household') => void
+  isRecentlyChanged: (id: string) => boolean
   t: ReturnType<typeof useLanguage>['t']
 }
 
-function ReminderSection({ title, reminders, onToggle, onEdit, onDelete, t }: ReminderSectionProps) {
+function ReminderSection({ title, reminders, onToggle, onEdit, onDelete, isRecentlyChanged, t }: ReminderSectionProps) {
   return (
     <div
       className="rounded-2xl overflow-hidden"
@@ -970,6 +984,7 @@ function ReminderSection({ title, reminders, onToggle, onEdit, onDelete, t }: Re
             onToggle={(id, done) => onToggle(id, done, reminder.reminderType)}
             onEdit={() => onEdit(reminder)}
             onDelete={() => onDelete(reminder.id, reminder.reminderType)}
+            isRecentlyChanged={isRecentlyChanged(reminder.id)}
           />
         ))}
       </div>

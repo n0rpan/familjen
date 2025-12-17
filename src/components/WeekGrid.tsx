@@ -300,7 +300,7 @@ export function WeekGrid({
                                 <button
                                   key={task.id}
                                   onClick={() => editable && onTaskToggle ? onTaskToggle(task.id, !isDone) : onTaskClick?.(task)}
-                                  className="w-full flex items-center gap-1 text-xs py-0.5 px-1 rounded transition-colors text-left"
+                                  className="w-full flex items-center gap-1 text-xs py-0.5 px-1 rounded transition-colors text-left touch-feedback"
                                   style={{
                                     background: isDone ? 'transparent' : 'rgba(229, 185, 94, 0.15)',
                                     color: isDone ? 'var(--muted)' : 'var(--foreground)',

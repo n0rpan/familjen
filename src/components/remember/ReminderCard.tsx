@@ -10,9 +10,10 @@ interface ReminderCardProps {
   onToggle: (id: string, done: boolean) => void
   onEdit: () => void
   onDelete: () => void
+  isRecentlyChanged?: boolean
 }
 
-export function ReminderCard({ reminder, type, onToggle, onEdit, onDelete }: ReminderCardProps) {
+export function ReminderCard({ reminder, type, onToggle, onEdit, onDelete, isRecentlyChanged }: ReminderCardProps) {
   const { t } = useLanguage()
 
   const isChildTask = type === 'child'
@@ -87,7 +88,7 @@ export function ReminderCard({ reminder, type, onToggle, onEdit, onDelete }: Rem
 
   return (
     <div
-      className="flex items-start gap-3 p-4 rounded-xl transition-all"
+      className={`flex items-start gap-3 p-4 rounded-xl transition-all touch-feedback ${isRecentlyChanged ? 'highlight-save' : ''}`}
       style={{
         background: isDone ? 'transparent' : isSnoozed ? 'rgba(167, 139, 250, 0.08)' : 'var(--background)',
         opacity: isDone ? 0.6 : 1,
@@ -97,7 +98,7 @@ export function ReminderCard({ reminder, type, onToggle, onEdit, onDelete }: Rem
       {/* Toggle checkbox */}
       <button
         onClick={() => onToggle(reminder.id, !isDone)}
-        className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors"
+        className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${isRecentlyChanged && isDone ? 'just-checked' : ''}`}
         style={{
           borderColor: isDone ? 'var(--color-sage)' : 'var(--border)',
           background: isDone ? 'var(--color-sage)' : 'transparent',

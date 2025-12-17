@@ -383,7 +383,7 @@ export default function ShoppingListPage() {
                     {unboughtItems.map(item => (
                       <div
                         key={item.id}
-                        className={`flex items-center gap-3 p-3 group ${isRecentlyChanged(item.id) ? 'highlight-save' : ''}`}
+                        className={`flex items-center gap-3 p-3 group touch-feedback ${isRecentlyChanged(item.id) ? 'highlight-save' : ''}`}
                       >
                         <button
                           onClick={() => toggleBought(item.id, item.is_bought)}
@@ -424,7 +424,7 @@ export default function ShoppingListPage() {
                         {boughtItems.map(item => (
                           <div
                             key={item.id}
-                            className={`flex items-center gap-3 px-3 py-2 group ${isRecentlyChanged(item.id) ? 'highlight-save' : ''}`}
+                            className={`flex items-center gap-3 px-3 py-2 group touch-feedback ${isRecentlyChanged(item.id) ? 'highlight-save' : ''}`}
                           >
                             <button
                               onClick={() => toggleBought(item.id, item.is_bought)}
