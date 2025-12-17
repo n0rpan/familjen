@@ -78,17 +78,11 @@ export default function CreateHouseholdPage() {
       }
 
       // Check if user's email allows creating household
-      console.log('[ny-husstand] Checking permission for:', user.email.toLowerCase())
-      const { data: allowedEmail, error: allowedError } = await supabase
+      const { data: allowedEmail } = await supabase
         .from('allowed_emails')
         .select('can_create_household')
         .eq('email', user.email.toLowerCase())
         .maybeSingle()
-
-      if (allowedError) {
-        console.error('[ny-husstand] Error fetching allowed_emails:', allowedError)
-      }
-      console.log('[ny-husstand] Result:', allowedEmail, 'can_create:', allowedEmail?.can_create_household)
 
       setCanCreate(allowedEmail?.can_create_household === true)
     } catch (err) {
