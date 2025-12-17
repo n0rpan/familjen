@@ -8,6 +8,7 @@ import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Househo
 import Link from 'next/link'
 import { AISuggestionModal } from '@/components/AISuggestionModal'
 import { useLanguage } from '@/lib/i18n/context'
+import { notifyPickupAssigned, notifyMealChanged, notifyTaskAdded, notifyEventAdded } from '@/lib/notify'
 import { DayPicker } from 'react-day-picker'
 import { nb, sv } from 'react-day-picker/locale'
 import 'react-day-picker/style.css'
@@ -206,6 +207,17 @@ export default function WeekEditPage() {
         })
     }
 
+    // Send notification if pickup was assigned to someone
+    if (pickerId) {
+      const child = children.find(c => c.id === childId)
+      const picker = members.find(m => m.id === pickerId)
+      if (child && picker) {
+        const dateObj = new Date(date)
+        const dayName = t.date.weekdays[dateObj.getDay()]
+        notifyPickupAssigned(child.name, dayName, pickerId)
+      }
+    }
+
     // Reload data
     triggerReload()
     setSaving(false)
@@ -397,6 +409,8 @@ export default function WeekEditPage() {
     setSaving(true)
 
     try {
+      let eventId: string | undefined
+
       if (editingEvent) {
         // Update existing
         await supabase
@@ -411,7 +425,7 @@ export default function WeekEditPage() {
           .eq('id', editingEvent.id)
       } else {
         // Insert new
-        await supabase
+        const { data } = await supabase
           .from('member_events')
           .insert({
             household_id: household.id,
@@ -422,6 +436,21 @@ export default function WeekEditPage() {
             end_date: eventForm.end_date || null,
             source: 'manual',
           })
+          .select('id')
+          .single()
+        eventId = data?.id
+
+        // Send notification for new events to other household members
+        const eventMember = members.find(m => m.id === eventForm.member_id)
+        if (eventMember && eventId) {
+          const dateObj = new Date(eventForm.date)
+          const dayName = t.date.weekdays[dateObj.getDay()]
+          // Notify all members except the one the event is about
+          const otherMemberIds = members
+            .filter(m => m.id !== eventForm.member_id)
+            .map(m => m.id)
+          notifyEventAdded(eventMember.name, eventForm.title, dayName, eventId, otherMemberIds)
+        }
       }
 
       closeEventModal()
@@ -498,6 +527,8 @@ export default function WeekEditPage() {
     setSaving(true)
 
     try {
+      let taskId: string | undefined
+
       if (editingTask) {
         await supabase
           .from('child_tasks')
@@ -511,7 +542,7 @@ export default function WeekEditPage() {
           })
           .eq('id', editingTask.id)
       } else {
-        await supabase
+        const { data } = await supabase
           .from('child_tasks')
           .insert({
             household_id: household.id,
@@ -523,6 +554,15 @@ export default function WeekEditPage() {
             notes: taskForm.notes || null,
             status: 'open',
           })
+          .select('id')
+          .single()
+        taskId = data?.id
+
+        // Send notification for new tasks
+        const child = children.find(c => c.id === taskForm.child_id)
+        if (child && taskId) {
+          notifyTaskAdded(child.name, taskForm.title, taskId)
+        }
       }
 
       closeTaskModal()
@@ -617,6 +657,17 @@ export default function WeekEditPage() {
           recipe_id: recipeId || null,
           custom_meal: recipeId ? null : mealName,
         })
+    }
+
+    // Send notification for meal changes (today or tomorrow only)
+    if (mealName) {
+      const today = formatDateISO(new Date())
+      const tomorrow = formatDateISO(addDays(new Date(), 1))
+      if (date === today || date === tomorrow) {
+        const dateObj = new Date(date)
+        const dayName = date === today ? t.common.today : t.common.tomorrow
+        notifyMealChanged(mealName, dayName)
+      }
     }
 
     // Reload data

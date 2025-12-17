@@ -8,6 +8,7 @@ import { CHILD_COLORS } from '@/lib/colors'
 import { User } from '@supabase/supabase-js'
 import { useLanguage } from '@/lib/i18n/context'
 import { LANGUAGES, type Language } from '@/lib/i18n/types'
+import { NotificationSettings } from '@/components/NotificationSettings'
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
@@ -763,6 +764,30 @@ export default function SettingsPage() {
           </div>
         </section>
       )}
+
+      {/* Notification Settings */}
+      <section
+        className="rounded-2xl p-6 md:p-8"
+        style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+      >
+        <div className="flex items-center gap-3 mb-6">
+          <div
+            className="w-10 h-10 rounded-xl flex items-center justify-center"
+            style={{ background: 'rgba(232, 120, 109, 0.2)' }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold" style={{ color: 'var(--foreground)' }}>
+              {t.notifications?.title || 'Varsler'}
+            </h2>
+          </div>
+        </div>
+        <NotificationSettings />
+      </section>
 
       {/* Language Settings */}
       <section

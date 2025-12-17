@@ -589,4 +589,30 @@ export interface TranslationStrings {
     undo: string
     parsing: string
   }
+
+  // Push Notifications
+  notifications: {
+    title: string
+    description: string
+    enable: string
+    disable: string
+    enabled: string
+    disabled: string
+    unsupported: string
+    unsupportedDesc: string
+    denied: string
+    deniedDesc: string
+    preferences: string
+    preferencesDesc: string
+    pickupAssigned: string
+    pickupAssignedDesc: string
+    mealChanged: string
+    mealChangedDesc: string
+    taskAdded: string
+    taskAddedDesc: string
+    eventAffectsMe: string
+    eventAffectsMeDesc: string
+    testNotification: string
+    testSent: string
+  }
 }

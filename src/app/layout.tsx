@@ -3,10 +3,26 @@ import "./globals.css";
 import { Header } from "@/components/Header";
 import { LanguageProvider } from "@/lib/i18n/context";
 import { getLanguageFromCookieOrBrowser } from "@/lib/i18n/cookie.server";
+import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
 
 export const metadata: Metadata = {
   title: "Familjen",
   description: "Familieplanlegging for hverdagen",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Familjen",
+  },
+  icons: {
+    icon: [
+      { url: "/icons/icon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/icon-192x192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+  },
 };
 
 export const viewport: Viewport = {
@@ -14,6 +30,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   viewportFit: 'cover',
+  themeColor: '#E8786D',
 };
 
 export default async function RootLayout({
@@ -32,6 +49,7 @@ export default async function RootLayout({
             {children}
           </main>
         </LanguageProvider>
+        <ServiceWorkerRegistration />
       </body>
     </html>
   );
