@@ -1,11 +1,27 @@
 // Familjen Service Worker
-// Handles PWA installation and push notifications
+// Handles PWA installation, push notifications, and asset caching
 
-const CACHE_NAME = 'familjen-v1'
+const CACHE_NAME = 'familjen-v2'
+const STATIC_CACHE = 'familjen-static-v1'
+
+// Static assets to cache immediately on install
+const STATIC_ASSETS = [
+  '/',
+  '/icons/icon.svg',
+  '/icons/icon-192x192.png',
+  '/icons/icon-512x512.png',
+  '/manifest.json',
+]
 
 // Install event - cache essential files
 self.addEventListener('install', (event) => {
   console.log('[SW] Installing service worker...')
+  event.waitUntil(
+    caches.open(STATIC_CACHE).then((cache) => {
+      console.log('[SW] Caching static assets')
+      return cache.addAll(STATIC_ASSETS)
+    })
+  )
   // Skip waiting to activate immediately
   self.skipWaiting()
 })
@@ -17,13 +33,82 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames
-          .filter((name) => name !== CACHE_NAME)
-          .map((name) => caches.delete(name))
+          .filter((name) => name !== CACHE_NAME && name !== STATIC_CACHE)
+          .map((name) => {
+            console.log('[SW] Deleting old cache:', name)
+            return caches.delete(name)
+          })
       )
     })
   )
   // Take control of all pages immediately
   self.clients.claim()
+})
+
+// Fetch event - cache-first for static assets, network-first for API
+self.addEventListener('fetch', (event) => {
+  const { request } = event
+  const url = new URL(request.url)
+
+  // Skip non-GET requests
+  if (request.method !== 'GET') return
+
+  // Skip API calls and auth - always go to network
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/')) {
+    return
+  }
+
+  // For static assets (JS, CSS, images, fonts) - stale-while-revalidate
+  if (
+    url.pathname.startsWith('/_next/static/') ||
+    url.pathname.startsWith('/icons/') ||
+    url.pathname.endsWith('.woff2') ||
+    url.pathname.endsWith('.woff') ||
+    url.pathname.endsWith('.png') ||
+    url.pathname.endsWith('.svg') ||
+    url.pathname.endsWith('.ico')
+  ) {
+    event.respondWith(
+      caches.open(STATIC_CACHE).then((cache) => {
+        return cache.match(request).then((cachedResponse) => {
+          const fetchPromise = fetch(request).then((networkResponse) => {
+            if (networkResponse.ok) {
+              cache.put(request, networkResponse.clone())
+            }
+            return networkResponse
+          }).catch(() => cachedResponse)
+
+          // Return cached response immediately, update cache in background
+          return cachedResponse || fetchPromise
+        })
+      })
+    )
+    return
+  }
+
+  // For navigation requests - network first with cache fallback
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          // Cache successful navigation responses
+          if (response.ok) {
+            const responseClone = response.clone()
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(request, responseClone)
+            })
+          }
+          return response
+        })
+        .catch(() => {
+          // If offline, try to serve from cache
+          return caches.match(request).then((cachedResponse) => {
+            return cachedResponse || caches.match('/')
+          })
+        })
+    )
+    return
+  }
 })
 
 // Push notification event

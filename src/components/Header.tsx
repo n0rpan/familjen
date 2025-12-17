@@ -1,11 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import { User } from '@supabase/supabase-js'
 import { useTranslation } from '@/lib/i18n/context'
+import { TransitionLink } from './TransitionLink'
 
 function ShieldIcon() {
   return (
@@ -199,7 +200,7 @@ export function Header() {
               {navigation.map((item) => {
                 const isActive = pathname === item.href
                 return (
-                  <Link
+                  <TransitionLink
                     key={item.href}
                     href={item.href}
                     className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200"
@@ -210,7 +211,7 @@ export function Header() {
                   >
                     <item.icon />
                     <span>{item.name}</span>
-                  </Link>
+                  </TransitionLink>
                 )
               })}
             </nav>
@@ -278,23 +279,23 @@ export function Header() {
           {primaryMobileNav.map((item) => {
             const isActive = pathname === item.href
             return (
-              <Link
+              <TransitionLink
                 key={item.href}
                 href={item.href}
-                className="flex flex-col items-center gap-1 py-2 px-3 rounded-xl transition-all duration-200"
+                className="flex flex-col items-center gap-1 py-2 px-3 rounded-xl transition-all duration-200 touch-feedback"
                 style={{
                   color: isActive ? 'var(--accent)' : 'var(--muted)',
                 }}
               >
                 <item.icon />
                 <span className="text-xs font-medium">{item.name}</span>
-              </Link>
+              </TransitionLink>
             )
           })}
           {/* More button */}
           <button
             onClick={() => setMoreMenuOpen(true)}
-            className="flex flex-col items-center gap-1 py-2 px-3 rounded-xl transition-all duration-200"
+            className="flex flex-col items-center gap-1 py-2 px-3 rounded-xl transition-all duration-200 touch-feedback"
             style={{
               color: isSecondaryActive ? 'var(--accent)' : 'var(--muted)',
             }}
@@ -350,11 +351,11 @@ export function Header() {
           {secondaryMobileNav.map((item) => {
             const isActive = pathname === item.href
             return (
-              <Link
+              <TransitionLink
                 key={item.href}
                 href={item.href}
                 onClick={() => setMoreMenuOpen(false)}
-                className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200"
+                className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 touch-feedback"
                 style={{
                   background: isActive ? 'var(--accent)' : 'transparent',
                   color: isActive ? 'white' : 'var(--foreground)',
@@ -362,16 +363,16 @@ export function Header() {
               >
                 <item.icon />
                 <span className="text-base font-medium">{item.name}</span>
-              </Link>
+              </TransitionLink>
             )
           })}
 
           {/* Admin link (only for admins) */}
           {isAdmin && (
-            <Link
+            <TransitionLink
               href="/admin"
               onClick={() => setMoreMenuOpen(false)}
-              className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200"
+              className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 touch-feedback"
               style={{
                 background: pathname === '/admin' ? 'var(--accent)' : 'transparent',
                 color: pathname === '/admin' ? 'white' : 'var(--foreground)',
@@ -379,7 +380,7 @@ export function Header() {
             >
               <ShieldIcon />
               <span className="text-base font-medium">{t.nav.admin}</span>
-            </Link>
+            </TransitionLink>
           )}
 
           {/* Logout button */}

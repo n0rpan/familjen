@@ -260,3 +260,152 @@ input:focus, select:focus, textarea:focus {
   background: rgba(229, 185, 94, 0.2);
   color: #A68A3A;
 }
+
+/* Skeleton loading animation */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--sand) 25%,
+    var(--border) 50%,
+    var(--sand) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* Pull to refresh */
+.pull-to-refresh {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-100%);
+  transition: transform 0.3s ease;
+  z-index: 100;
+  background: var(--background);
+}
+
+.pull-to-refresh.pulling {
+  transform: translateY(0);
+}
+
+.pull-to-refresh .spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* View transition animations */
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root) {
+  animation: fade-out 0.2s ease-out forwards;
+}
+
+::view-transition-new(root) {
+  animation: fade-in 0.2s ease-out forwards;
+}
+
+@keyframes fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Page-specific view transitions */
+::view-transition-old(page-content) {
+  animation: slide-out-left 0.25s ease-out forwards;
+}
+
+::view-transition-new(page-content) {
+  animation: slide-in-right 0.25s ease-out forwards;
+}
+
+@keyframes slide-out-left {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(-20px); opacity: 0; }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* Card alt background for skeleton items */
+:root {
+  --card-alt: rgba(240, 235, 227, 0.5);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --card-alt: rgba(61, 58, 54, 0.5);
+  }
+
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--border) 25%,
+      #4a4745 50%,
+      var(--border) 75%
+    );
+    background-size: 200% 100%;
+  }
+}
+
+/* Optimistic UI transitions */
+.optimistic-update {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.optimistic-update.pending {
+  opacity: 0.7;
+}
+
+/* Touch feedback for native feel */
+@media (hover: none) {
+  .touch-feedback {
+    transition: transform 0.1s ease, background-color 0.1s ease;
+  }
+
+  .touch-feedback:active {
+    transform: scale(0.98);
+    background-color: var(--card-alt) !important;
+  }
+}
+
+/* Safe area insets for PWA */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
