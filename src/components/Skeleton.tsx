@@ -240,6 +240,75 @@ export function RecipesPageSkeleton() {
   )
 }
 
+// Admin page skeleton
+export function AdminPageSkeleton() {
+  return (
+    <div className="space-y-6 animate-fade-in">
+      {/* Header */}
+      <div>
+        <Skeleton height={32} width={200} borderRadius={12} className="mb-2" />
+        <Skeleton height={20} width={280} borderRadius={8} />
+      </div>
+
+      {/* Stats cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {[1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="rounded-xl p-4"
+            style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+          >
+            <Skeleton height={14} width="50%" borderRadius={6} className="mb-2" />
+            <Skeleton height={28} width="40%" borderRadius={8} />
+          </div>
+        ))}
+      </div>
+
+      {/* Sections */}
+      {[1, 2, 3].map((i) => (
+        <SkeletonCard key={i} />
+      ))}
+    </div>
+  )
+}
+
+// Reminders page skeleton
+export function RemindersPageSkeleton() {
+  return (
+    <div className="space-y-6 animate-fade-in">
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <Skeleton height={32} width={180} borderRadius={12} />
+        <Skeleton height={40} width={120} borderRadius={12} />
+      </div>
+
+      {/* Tabs */}
+      <Skeleton height={44} borderRadius={12} />
+
+      {/* Sections */}
+      {[1, 2, 3].map((i) => (
+        <div
+          key={i}
+          className="rounded-xl p-4"
+          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+        >
+          <Skeleton height={18} width={100} borderRadius={8} className="mb-3" />
+          <div className="space-y-2">
+            {[1, 2].map((j) => (
+              <div key={j} className="flex items-center gap-3 p-3 rounded-lg" style={{ background: 'var(--card-alt)' }}>
+                <Skeleton height={20} width={20} borderRadius={6} />
+                <div className="flex-1">
+                  <Skeleton height={16} width="60%" borderRadius={8} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // List skeleton (for shopping list, etc.)
 export function ListPageSkeleton() {
   return (

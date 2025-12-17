@@ -227,6 +227,16 @@ export const sv: TranslationStrings = {
     deleteMemberConfirm: 'Är du säker på att du vill radera {name}? Detta kan inte ångras.',
     calendarSyncHint: 'Automatisk kalendersynk',
     calendarSyncDesc: 'Skicka kalenderinbjudningar till denna adress för att automatiskt lägga till dem i familjeplanen:',
+    // Additional profile strings
+    subtitle: 'Hantera din profil och ditt hushåll',
+    noAllergies: 'Inga allergier registrerade',
+    addAllergy: '+ Lägg till',
+    noRegistered: 'Ej registrerad',
+    householdAdminBadge: 'Hushållsadmin',
+    allergyPlaceholder: 'T.ex. nötter, mjölk, gluten...',
+    shortNamePlaceholder: 'T.ex. Pappa',
+    workEmailPlaceholder: 'jobb@foretag.se',
+    tryReloadPage: 'Försök ladda om sidan.',
   },
 
   // Recipes page

@@ -140,6 +140,7 @@ export function WishlistModal({
           <button
             onClick={onClose}
             className="p-2 rounded-lg transition-colors hover:bg-[var(--sand)]"
+            aria-label={t.common.close}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2">
               <line x1="18" y1="6" x2="6" y2="18" />

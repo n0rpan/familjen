@@ -13,6 +13,7 @@ import { notifyPickupAssigned, notifyMealChanged, notifyTaskAdded, notifyEventAd
 import { DayPicker } from 'react-day-picker'
 import { nb, sv } from 'react-day-picker/locale'
 import 'react-day-picker/style.css'
+import { WeekPageSkeleton } from '@/components/Skeleton'
 
 export default function WeekEditPage() {
   const { language, t } = useLanguage()
@@ -915,12 +916,7 @@ export default function WeekEditPage() {
   }
 
   if (loading) {
-    return (
-      <div className="space-y-6 animate-pulse">
-        <div className="h-10 rounded-xl w-48" style={{ background: 'var(--sand)' }} />
-        <div className="h-80 rounded-2xl" style={{ background: 'var(--sand)' }} />
-      </div>
-    )
+    return <WeekPageSkeleton />
   }
 
   if (error) {

@@ -10,6 +10,7 @@ import { useLanguage } from '@/lib/i18n/context'
 import { LANGUAGES, type Language } from '@/lib/i18n/types'
 import { NotificationSettings } from '@/components/NotificationSettings'
 import { InstallPrompt } from '@/components/InstallPrompt'
+import { SettingsPageSkeleton } from '@/components/Skeleton'
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
@@ -110,20 +111,20 @@ export default function SettingsPage() {
         .single()
 
       if (householdError || !householdData) {
-        throw new Error('Kunne ikke laste husstand')
+        throw new Error(t.errors.couldNotLoadHousehold)
       }
 
       setHousehold(householdData)
       setAiMealContext(householdData?.ai_meal_context || '')
 
-      // Load members and children
+      // Load members and children - explicitly filter by household_id for admins who can see all
       const [membersResult, childrenResult] = await Promise.all([
-        supabase.from('household_members').select('*').order('is_parent', { ascending: false }).order('name'),
-        supabase.from('children').select('*').order('sort_order'),
+        supabase.from('household_members').select('*').eq('household_id', myMembership.household_id).order('is_parent', { ascending: false }).order('name'),
+        supabase.from('children').select('*').eq('household_id', myMembership.household_id).order('sort_order'),
       ])
 
-      if (membersResult.error) throw new Error('Kunne ikke laste familiemedlemmer')
-      if (childrenResult.error) throw new Error('Kunne ikke laste barn')
+      if (membersResult.error) throw new Error(t.errors.couldNotLoadMembers)
+      if (childrenResult.error) throw new Error(t.errors.couldNotLoadChildren)
 
       setMembers(membersResult.data || [])
       setChildren(childrenResult.data || [])
@@ -161,7 +162,7 @@ export default function SettingsPage() {
       }
     } catch (err) {
       console.error('Settings page error:', err)
-      setError(err instanceof Error ? err.message : 'En feil oppstod')
+      setError(err instanceof Error ? err.message : t.errors.generic)
     } finally {
       setLoading(false)
     }
@@ -190,9 +191,9 @@ export default function SettingsPage() {
 
     if (error) {
       console.error('Error saving profile:', error)
-      showMessage('error', 'Kunne ikke lagre profil: ' + error.message)
+      showMessage('error', t.errors.saveFailed + ': ' + error.message)
     } else {
-      showMessage('success', 'Profil lagret!')
+      showMessage('success', t.success.saved)
       setEditingProfile(false)
       setNewProfileAllergy('')
       loadData()
@@ -204,7 +205,7 @@ export default function SettingsPage() {
   const addProfileAllergy = () => {
     if (!newProfileAllergy.trim()) return
     if (profileForm.allergies.includes(newProfileAllergy.trim())) {
-      showMessage('error', 'Allergien er allerede lagt til')
+      showMessage('error', t.errors.invalidInput)
       return
     }
     setProfileForm({
@@ -236,12 +237,12 @@ export default function SettingsPage() {
 
     if (error) {
       if (error.code === '23505') {
-        showMessage('error', 'Denne e-posten er allerede invitert')
+        showMessage('error', t.admin.emailExists)
       } else {
-        showMessage('error', 'Kunne ikke invitere bruker')
+        showMessage('error', t.errors.saveFailed)
       }
     } else {
-      showMessage('success', 'Invitasjon sendt!')
+      showMessage('success', t.success.emailAdded)
       setInviteEmail('')
       loadData()
     }
@@ -250,7 +251,7 @@ export default function SettingsPage() {
 
   // Remove invite
   const removeInvite = async (emailId: string) => {
-    if (!confirm('Er du sikker på at du vil fjerne denne invitasjonen?')) return
+    if (!confirm(t.common.confirmDelete)) return
 
     const { error } = await supabase
       .from('allowed_emails')
@@ -258,7 +259,7 @@ export default function SettingsPage() {
       .eq('id', emailId)
 
     if (error) {
-      showMessage('error', 'Kunne ikke fjerne invitasjon')
+      showMessage('error', t.errors.deleteFailed)
     } else {
       loadData()
     }
@@ -274,7 +275,7 @@ export default function SettingsPage() {
       .eq('id', household.id)
 
     if (error) {
-      showMessage('error', 'Kunne ikke slette husstand')
+      showMessage('error', t.errors.deleteFailed)
     } else {
       // Redirect to home after deletion
       window.location.href = '/'
@@ -301,9 +302,9 @@ export default function SettingsPage() {
 
     if (error) {
       if (error.code === '23505' && error.message.includes('email')) {
-        showMessage('error', 'Denne e-posten er allerede i bruk')
+        showMessage('error', t.admin.emailExists)
       } else {
-        showMessage('error', 'Kunne ikke legge til medlem')
+        showMessage('error', t.errors.couldNotAddMember)
       }
       setSaving(false)
       return
@@ -324,16 +325,16 @@ export default function SettingsPage() {
 
     setNewMember({ name: '', short_name: '', is_parent: false, email: '', birth_date: '', work_email: '' })
     loadData()
-    showMessage('success', emailToAdd ? `${newMember.name} lagt til og invitert!` : 'Medlem lagt til!')
+    showMessage('success', t.success.memberAdded)
     setSaving(false)
   }
 
   const deleteMember = async (id: string) => {
-    if (!confirm('Er du sikker på at du vil slette dette medlemmet?')) return
+    if (!confirm(t.common.confirmDelete)) return
 
     const { error } = await supabase.from('household_members').delete().eq('id', id)
     if (error) {
-      showMessage('error', 'Kunne ikke slette medlem')
+      showMessage('error', t.errors.deleteFailed)
     } else {
       loadData()
     }
@@ -355,11 +356,11 @@ export default function SettingsPage() {
     })
 
     if (error) {
-      showMessage('error', 'Kunne ikke legge til barn')
+      showMessage('error', t.errors.couldNotAddChild)
     } else {
       setNewChild({ name: '', location_name: '', location_type: 'kindergarten', birth_date: '', color: 'sky' })
       loadData()
-      showMessage('success', 'Barn lagt til!')
+      showMessage('success', t.success.childAdded)
     }
     setSaving(false)
   }
@@ -371,7 +372,7 @@ export default function SettingsPage() {
       .eq('id', childId)
 
     if (error) {
-      showMessage('error', 'Kunne ikke oppdatere farge')
+      showMessage('error', t.errors.saveFailed)
     } else {
       loadData()
     }
@@ -413,9 +414,9 @@ export default function SettingsPage() {
 
     if (error) {
       console.error('Error updating child:', error)
-      showMessage('error', 'Kunne ikke oppdatere barn: ' + error.message)
+      showMessage('error', t.errors.saveFailed + ': ' + error.message)
     } else {
-      showMessage('success', 'Barn oppdatert!')
+      showMessage('success', t.success.saved)
       setEditingChildId(null)
       loadData()
     }
@@ -425,7 +426,7 @@ export default function SettingsPage() {
   const addAllergyToForm = () => {
     if (!newAllergy.trim()) return
     if (editingChildForm.allergies.includes(newAllergy.trim())) {
-      showMessage('error', 'Allergien er allerede lagt til')
+      showMessage('error', t.errors.invalidInput)
       return
     }
     setEditingChildForm({
@@ -452,32 +453,26 @@ export default function SettingsPage() {
       .eq('id', household.id)
 
     if (error) {
-      showMessage('error', 'Kunne ikke lagre AI-preferanser')
+      showMessage('error', t.errors.saveFailed)
     } else {
-      showMessage('success', 'AI-preferanser lagret!')
+      showMessage('success', t.success.saved)
     }
     setSavingAiContext(false)
   }
 
   const deleteChild = async (id: string) => {
-    if (!confirm('Er du sikker på at du vil slette dette barnet?')) return
+    if (!confirm(t.common.confirmDelete)) return
 
     const { error } = await supabase.from('children').delete().eq('id', id)
     if (error) {
-      showMessage('error', 'Kunne ikke slette barn')
+      showMessage('error', t.errors.deleteFailed)
     } else {
       loadData()
     }
   }
 
   if (loading) {
-    return (
-      <div className="space-y-6 animate-pulse">
-        <div className="h-10 rounded-xl w-48" style={{ background: 'var(--sand)' }} />
-        <div className="h-64 rounded-2xl" style={{ background: 'var(--sand)' }} />
-        <div className="h-64 rounded-2xl" style={{ background: 'var(--sand)' }} />
-      </div>
-    )
+    return <SettingsPageSkeleton />
   }
 
   if (error) {
@@ -501,10 +496,10 @@ export default function SettingsPage() {
             {error}
           </h2>
           <p className="mb-8" style={{ color: 'var(--muted)' }}>
-            Prøv å laste siden på nytt.
+            {t.settings.tryReloadPage}
           </p>
           <button onClick={loadData} className="btn btn-primary">
-            Prøv igjen
+            {t.common.retry}
           </button>
         </div>
       </div>
@@ -516,10 +511,10 @@ export default function SettingsPage() {
       {/* Header */}
       <div>
         <h1 className="text-3xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
-          Innstillinger
+          {t.settings.title}
         </h1>
         <p className="mt-2" style={{ color: 'var(--muted)' }}>
-          Administrer familien din
+          {t.settings.subtitle}
         </p>
       </div>
 
@@ -555,7 +550,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <h2 className="text-xl font-semibold" style={{ color: 'var(--foreground)' }}>
-                  Min profil
+                  {t.settings.profile}
                 </h2>
                 <p className="text-sm" style={{ color: 'var(--muted)' }}>
                   {user?.email}
@@ -567,7 +562,7 @@ export default function SettingsPage() {
                 onClick={() => setEditingProfile(true)}
                 className="btn btn-secondary text-sm"
               >
-                Rediger
+                {t.common.edit}
               </button>
             )}
           </div>
@@ -576,7 +571,7 @@ export default function SettingsPage() {
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Navn</label>
+                  <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>{t.settings.memberName}</label>
                   <input
                     type="text"
                     value={profileForm.name}
@@ -586,17 +581,17 @@ export default function SettingsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Kortnavn</label>
+                  <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>{t.settings.memberShortName}</label>
                   <input
                     type="text"
                     value={profileForm.short_name}
                     onChange={(e) => setProfileForm({ ...profileForm, short_name: e.target.value })}
                     className="input"
-                    placeholder="F.eks. Far"
+                    placeholder={t.settings.shortNamePlaceholder}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Fødselsdato</label>
+                  <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>{t.settings.memberBirthDate}</label>
                   <input
                     type="date"
                     value={profileForm.birth_date}
@@ -605,20 +600,20 @@ export default function SettingsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Jobb-epost (for kalender)</label>
+                  <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>{t.settings.memberWorkEmail}</label>
                   <input
                     type="email"
                     value={profileForm.work_email}
                     onChange={(e) => setProfileForm({ ...profileForm, work_email: e.target.value })}
                     className="input"
-                    placeholder="jobb@firma.no"
+                    placeholder={t.settings.workEmailPlaceholder}
                   />
                 </div>
               </div>
 
               {/* Allergies section */}
               <div>
-                <label className="block text-xs mb-2" style={{ color: 'var(--muted)' }}>Allergier / Diettrestriksjoner</label>
+                <label className="block text-xs mb-2" style={{ color: 'var(--muted)' }}>{t.settings.memberAllergies}</label>
                 <div className="flex flex-wrap gap-2 mb-2">
                   {profileForm.allergies.map((allergy) => (
                     <span
@@ -631,6 +626,7 @@ export default function SettingsPage() {
                         type="button"
                         onClick={() => removeProfileAllergy(allergy)}
                         className="hover:bg-red-100 rounded-full p-0.5"
+                        aria-label={t.common.remove}
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <line x1="18" y1="6" x2="6" y2="18"/>
@@ -640,13 +636,13 @@ export default function SettingsPage() {
                     </span>
                   ))}
                   {profileForm.allergies.length === 0 && (
-                    <span className="text-sm" style={{ color: 'var(--muted)' }}>Ingen allergier registrert</span>
+                    <span className="text-sm" style={{ color: 'var(--muted)' }}>{t.settings.noAllergies}</span>
                   )}
                 </div>
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="F.eks. nøtter, melk, gluten..."
+                    placeholder={t.settings.allergyPlaceholder}
                     value={newProfileAllergy}
                     onChange={(e) => setNewProfileAllergy(e.target.value)}
                     onKeyDown={(e) => {
@@ -664,7 +660,7 @@ export default function SettingsPage() {
                     disabled={!newProfileAllergy.trim()}
                     className="btn btn-secondary"
                   >
-                    + Legg til
+                    {t.settings.addAllergy}
                   </button>
                 </div>
               </div>
@@ -675,7 +671,7 @@ export default function SettingsPage() {
                   disabled={savingProfile || !profileForm.name}
                   className="btn btn-primary"
                 >
-                  {savingProfile ? 'Lagrer...' : 'Lagre'}
+                  {savingProfile ? t.common.saving : t.common.save}
                 </button>
                 <button
                   onClick={() => {
@@ -691,7 +687,7 @@ export default function SettingsPage() {
                   }}
                   className="btn btn-secondary"
                 >
-                  Avbryt
+                  {t.common.cancel}
                 </button>
               </div>
             </div>
@@ -699,26 +695,26 @@ export default function SettingsPage() {
             <>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div>
-                  <p className="text-xs" style={{ color: 'var(--muted)' }}>Navn</p>
+                  <p className="text-xs" style={{ color: 'var(--muted)' }}>{t.settings.memberName}</p>
                   <p className="font-medium" style={{ color: 'var(--foreground)' }}>{myProfile.name}</p>
                 </div>
                 <div>
-                  <p className="text-xs" style={{ color: 'var(--muted)' }}>Kortnavn</p>
+                  <p className="text-xs" style={{ color: 'var(--muted)' }}>{t.settings.memberShortName}</p>
                   <p className="font-medium" style={{ color: 'var(--foreground)' }}>{myProfile.short_name || '-'}</p>
                 </div>
                 <div>
-                  <p className="text-xs" style={{ color: 'var(--muted)' }}>Fødselsdato</p>
+                  <p className="text-xs" style={{ color: 'var(--muted)' }}>{t.settings.memberBirthDate}</p>
                   <p className="font-medium" style={{ color: 'var(--foreground)' }}>{myProfile.birth_date || '-'}</p>
                 </div>
                 <div>
-                  <p className="text-xs" style={{ color: 'var(--muted)' }}>Jobb-epost</p>
+                  <p className="text-xs" style={{ color: 'var(--muted)' }}>{t.settings.memberWorkEmail}</p>
                   <p className="font-medium truncate" style={{ color: 'var(--foreground)' }}>{myProfile.work_email || '-'}</p>
                 </div>
               </div>
 
               {/* Allergies display */}
               <div className="mt-4">
-                <p className="text-xs mb-2" style={{ color: 'var(--muted)' }}>Allergier</p>
+                <p className="text-xs mb-2" style={{ color: 'var(--muted)' }}>{t.settings.memberAllergies}</p>
                 {myProfile.allergies && myProfile.allergies.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
                     {myProfile.allergies.map((allergy) => (
@@ -732,7 +728,7 @@ export default function SettingsPage() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm" style={{ color: 'var(--muted)' }}>Ingen registrert</p>
+                  <p className="text-sm" style={{ color: 'var(--muted)' }}>{t.settings.noRegistered}</p>
                 )}
               </div>
             </>
@@ -740,7 +736,7 @@ export default function SettingsPage() {
 
           {myProfile.is_household_admin && (
             <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
-              <span className="badge badge-honey">Husstandsadmin</span>
+              <span className="badge badge-honey">{t.settings.householdAdminBadge}</span>
             </div>
           )}
         </section>
@@ -908,10 +904,10 @@ export default function SettingsPage() {
             </div>
             <div>
               <h2 className="text-xl font-semibold" style={{ color: 'var(--foreground)' }}>
-                Administrer husstand
+                {t.settings.household}
               </h2>
               <p className="text-sm" style={{ color: 'var(--muted)' }}>
-                Inviter medlemmer og administrer husstanden
+                {t.admin.userAccessDesc}
               </p>
             </div>
           </div>
@@ -919,14 +915,14 @@ export default function SettingsPage() {
           {/* Invite form */}
           <form onSubmit={inviteUser} className="mb-6">
             <label className="block text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
-              Inviter ny bruker
+              {t.admin.addUser}
             </label>
             <div className="flex gap-2">
               <input
                 type="email"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="epost@eksempel.no"
+                placeholder={t.admin.emailPlaceholder}
                 className="input"
                 style={{ flex: '1 1 auto', minWidth: 0 }}
                 required
@@ -936,11 +932,11 @@ export default function SettingsPage() {
                 disabled={savingInvite || !inviteEmail.trim()}
                 className="btn btn-primary"
               >
-                {savingInvite ? 'Sender...' : 'Inviter'}
+                {savingInvite ? t.common.saving : t.common.add}
               </button>
             </div>
             <p className="text-xs mt-2" style={{ color: 'var(--muted)' }}>
-              Personen vil kunne logge inn og bli med i husstanden din
+              {t.admin.usersAddedViaSettings}
             </p>
           </form>
 
@@ -980,7 +976,7 @@ export default function SettingsPage() {
           {/* Delete household */}
           <div className="pt-6" style={{ borderTop: '1px solid var(--border)' }}>
             <p className="text-sm font-medium mb-2" style={{ color: 'var(--color-coral)' }}>
-              Faresone
+              {t.settings.dangerZone}
             </p>
             {!showDeleteConfirm ? (
               <button
@@ -988,15 +984,15 @@ export default function SettingsPage() {
                 className="btn text-sm"
                 style={{ background: 'rgba(232, 120, 109, 0.15)', color: 'var(--color-coral)' }}
               >
-                Slett husstand
+                {t.common.delete} {t.settings.household.toLowerCase()}
               </button>
             ) : (
               <div className="p-4 rounded-xl" style={{ background: 'rgba(232, 120, 109, 0.1)', border: '1px solid var(--color-coral)' }}>
                 <p className="text-sm mb-3" style={{ color: 'var(--foreground)' }}>
-                  <strong>Advarsel:</strong> Dette vil slette hele husstanden, inkludert alle medlemmer, barn, oppskrifter, og data. Denne handlingen kan ikke angres.
+                  {t.common.confirmDelete}
                 </p>
                 <p className="text-sm mb-3" style={{ color: 'var(--foreground)' }}>
-                  Skriv &quot;<strong>{household?.name}</strong>&quot; for å bekrefte:
+                  &quot;<strong>{household?.name}</strong>&quot;
                 </p>
                 <input
                   type="text"
@@ -1015,7 +1011,7 @@ export default function SettingsPage() {
                       color: 'white',
                     }}
                   >
-                    Slett permanent
+                    {t.common.delete}
                   </button>
                   <button
                     onClick={() => {
@@ -1024,7 +1020,7 @@ export default function SettingsPage() {
                     }}
                     className="btn btn-secondary"
                   >
-                    Avbryt
+                    {t.common.cancel}
                   </button>
                 </div>
               </div>
@@ -1052,10 +1048,10 @@ export default function SettingsPage() {
           </div>
           <div>
             <h2 className="text-xl font-semibold" style={{ color: 'var(--foreground)' }}>
-              Familiemedlemmer
+              {t.settings.members}
             </h2>
             <p className="text-sm" style={{ color: 'var(--muted)' }}>
-              Personer som kan hente barna
+              {t.week.selectPicker}
             </p>
           </div>
         </div>
@@ -1064,7 +1060,7 @@ export default function SettingsPage() {
         <div className="space-y-2 mb-6">
           {members.length === 0 ? (
             <p className="text-center py-8" style={{ color: 'var(--muted)' }}>
-              Ingen medlemmer ennå
+              {t.common.noResults}
             </p>
           ) : (
             members.map((member) => (
@@ -1089,12 +1085,12 @@ export default function SettingsPage() {
                         {member.name}
                       </span>
                       {member.is_parent && (
-                        <span className="badge badge-coral">Forelder</span>
+                        <span className="badge badge-coral">{t.settings.isParent}</span>
                       )}
                       {member.user_id ? (
-                        <span className="badge badge-sage">Aktiv</span>
+                        <span className="badge badge-sage">{t.admin.connected}</span>
                       ) : member.email ? (
-                        <span className="badge badge-honey">Invitert</span>
+                        <span className="badge badge-honey">{t.common.pending}</span>
                       ) : null}
                     </div>
                     {member.email && (
@@ -1122,12 +1118,12 @@ export default function SettingsPage() {
         {/* Add new member form */}
         <form onSubmit={addMember} className="pt-6" style={{ borderTop: '1px solid var(--border)' }}>
           <p className="text-sm font-medium mb-4" style={{ color: 'var(--foreground)' }}>
-            Legg til nytt medlem
+            {t.settings.addMember}
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
             <input
               type="text"
-              placeholder="Navn (f.eks. Bestemor)"
+              placeholder={t.settings.memberName}
               value={newMember.name}
               onChange={(e) => setNewMember({ ...newMember, name: e.target.value })}
               className="input"
@@ -1135,28 +1131,28 @@ export default function SettingsPage() {
             />
             <input
               type="text"
-              placeholder="Kortnavn (f.eks. B.mor)"
+              placeholder={t.settings.shortNamePlaceholder}
               value={newMember.short_name}
               onChange={(e) => setNewMember({ ...newMember, short_name: e.target.value })}
               className="input"
             />
             <div>
               <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>
-                Privat e-post (for innlogging)
+                {t.settings.memberEmail}
               </label>
               <input
                 type="email"
-                placeholder="navn@gmail.com"
+                placeholder={t.admin.emailPlaceholder}
                 value={newMember.email}
                 onChange={(e) => setNewMember({ ...newMember, email: e.target.value })}
                 className="input"
               />
               <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
-                Gir tilgang til husstanden
+                {t.admin.becomesHouseholdAdmin}
               </p>
             </div>
             <div>
-              <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Fødselsdato (valgfritt)</label>
+              <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>{t.settings.memberBirthDate} ({t.common.optional})</label>
               {newMember.birth_date ? (
                 <div className="flex gap-2">
                   <input
@@ -1170,7 +1166,7 @@ export default function SettingsPage() {
                     onClick={() => setNewMember({ ...newMember, birth_date: '' })}
                     className="px-3 rounded-xl transition-colors hover:bg-[var(--sand)]"
                     style={{ color: 'var(--muted)' }}
-                    title="Fjern dato"
+                    title={t.common.remove}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <line x1="18" y1="6" x2="6" y2="18" />
@@ -1185,15 +1181,15 @@ export default function SettingsPage() {
                   className="input text-left w-full"
                   style={{ color: 'var(--muted)' }}
                 >
-                  + Legg til fødselsdato
+                  + {t.settings.memberBirthDate}
                 </button>
               )}
             </div>
             <div>
-              <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Jobb-epost (for kalender)</label>
+              <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>{t.settings.memberWorkEmail}</label>
               <input
                 type="email"
-                placeholder="navn@firma.no"
+                placeholder={t.settings.workEmailPlaceholder}
                 value={newMember.work_email}
                 onChange={(e) => setNewMember({ ...newMember, work_email: e.target.value })}
                 className="input"
@@ -1209,9 +1205,9 @@ export default function SettingsPage() {
                 className="w-5 h-5 rounded"
                 style={{ accentColor: 'var(--accent)' }}
               />
-              <span className="text-sm" style={{ color: 'var(--foreground)' }}>Er forelder</span>
+              <span className="text-sm" style={{ color: 'var(--foreground)' }}>{t.settings.isParent}</span>
               <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--sand)', color: 'var(--muted)' }}>
-                Vises som hovedkontakt
+                {t.settings.isParentDesc}
               </span>
             </label>
             <button
@@ -1219,7 +1215,7 @@ export default function SettingsPage() {
               disabled={saving || !newMember.name}
               className="btn btn-primary ml-auto"
             >
-              + Legg til
+              + {t.common.add}
             </button>
           </div>
         </form>
@@ -1242,10 +1238,10 @@ export default function SettingsPage() {
           </div>
           <div>
             <h2 className="text-xl font-semibold" style={{ color: 'var(--foreground)' }}>
-              Barn
+              {t.settings.children}
             </h2>
             <p className="text-sm" style={{ color: 'var(--muted)' }}>
-              Legg til barna med barnehage/skole
+              {t.settings.childLocation}
             </p>
           </div>
         </div>
@@ -1254,7 +1250,7 @@ export default function SettingsPage() {
         <div className="space-y-3 mb-6">
           {children.length === 0 ? (
             <p className="text-center py-8" style={{ color: 'var(--muted)' }}>
-              Ingen barn lagt til ennå
+              {t.common.noResults}
             </p>
           ) : (
             children.map((child) => {
@@ -1278,14 +1274,14 @@ export default function SettingsPage() {
                         {editingChildForm.name.charAt(0) || '?'}
                       </div>
                       <span className="font-medium" style={{ color: 'var(--foreground)' }}>
-                        Rediger {child.name}
+                        {t.settings.editChild}
                       </span>
                     </div>
 
                     {/* Edit form */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Navn *</label>
+                        <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>{t.settings.childName} *</label>
                         <input
                           type="text"
                           value={editingChildForm.name}
@@ -1295,17 +1291,17 @@ export default function SettingsPage() {
                         />
                       </div>
                       <div>
-                        <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Sted</label>
+                        <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>{t.settings.childLocation}</label>
                         <input
                           type="text"
-                          placeholder="Barnehage/skole navn"
+                          placeholder={t.wizard.locationNamePlaceholder}
                           value={editingChildForm.location_name}
                           onChange={(e) => setEditingChildForm({ ...editingChildForm, location_name: e.target.value })}
                           className="input"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Fødselsdato</label>
+                        <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>{t.settings.childBirthDate}</label>
                         <input
                           type="date"
                           value={editingChildForm.birth_date}
@@ -1314,7 +1310,7 @@ export default function SettingsPage() {
                         />
                       </div>
                       <div>
-                        <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Type</label>
+                        <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>{t.settings.childLocationType}</label>
                         <div className="flex rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
                           <button
                             type="button"
@@ -1325,7 +1321,7 @@ export default function SettingsPage() {
                               color: editingChildForm.location_type === 'kindergarten' ? 'white' : 'var(--muted)',
                             }}
                           >
-                            Barnehage
+                            {t.settings.childLocationTypes.kindergarten}
                           </button>
                           <button
                             type="button"
@@ -1336,7 +1332,7 @@ export default function SettingsPage() {
                               color: editingChildForm.location_type === 'school' ? 'white' : 'var(--muted)',
                             }}
                           >
-                            Skole
+                            {t.settings.childLocationTypes.school}
                           </button>
                         </div>
                       </div>
@@ -1344,7 +1340,7 @@ export default function SettingsPage() {
 
                     {/* Color picker */}
                     <div>
-                      <label className="block text-xs mb-2" style={{ color: 'var(--muted)' }}>Farge</label>
+                      <label className="block text-xs mb-2" style={{ color: 'var(--muted)' }}>{t.settings.childColor}</label>
                       <div className="flex gap-2">
                         {CHILD_COLORS.map((color) => (
                           <button
@@ -1365,7 +1361,7 @@ export default function SettingsPage() {
 
                     {/* Allergies */}
                     <div>
-                      <label className="block text-xs mb-2" style={{ color: 'var(--muted)' }}>Allergier / Diettrestriksjoner</label>
+                      <label className="block text-xs mb-2" style={{ color: 'var(--muted)' }}>{t.settings.childAllergies}</label>
                       <div className="flex flex-wrap gap-2 mb-2">
                         {editingChildForm.allergies.map((allergy) => (
                           <span
@@ -1378,6 +1374,7 @@ export default function SettingsPage() {
                               type="button"
                               onClick={() => removeAllergyFromForm(allergy)}
                               className="hover:bg-red-100 rounded-full p-0.5"
+                              aria-label={t.common.remove}
                             >
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                 <line x1="18" y1="6" x2="6" y2="18"/>
@@ -1387,13 +1384,13 @@ export default function SettingsPage() {
                           </span>
                         ))}
                         {editingChildForm.allergies.length === 0 && (
-                          <span className="text-sm" style={{ color: 'var(--muted)' }}>Ingen allergier registrert</span>
+                          <span className="text-sm" style={{ color: 'var(--muted)' }}>{t.settings.noAllergies}</span>
                         )}
                       </div>
                       <div className="flex gap-2">
                         <input
                           type="text"
-                          placeholder="F.eks. nøtter, melk, gluten..."
+                          placeholder={t.settings.allergyPlaceholder}
                           value={newAllergy}
                           onChange={(e) => setNewAllergy(e.target.value)}
                           onKeyDown={(e) => {
@@ -1411,7 +1408,7 @@ export default function SettingsPage() {
                           disabled={!newAllergy.trim()}
                           className="btn btn-secondary"
                         >
-                          + Legg til
+                          {t.settings.addAllergy}
                         </button>
                       </div>
                     </div>
@@ -1423,13 +1420,13 @@ export default function SettingsPage() {
                         disabled={saving || !editingChildForm.name}
                         className="btn btn-primary"
                       >
-                        {saving ? 'Lagrer...' : 'Lagre'}
+                        {saving ? t.common.saving : t.common.save}
                       </button>
                       <button
                         onClick={cancelEditChild}
                         className="btn btn-secondary"
                       >
-                        Avbryt
+                        {t.common.cancel}
                       </button>
                       <button
                         onClick={() => {
@@ -1439,7 +1436,7 @@ export default function SettingsPage() {
                         className="btn ml-auto"
                         style={{ background: 'rgba(232, 120, 109, 0.15)', color: 'var(--color-coral)' }}
                       >
-                        Slett
+                        {t.common.delete}
                       </button>
                     </div>
                   </div>
@@ -1479,7 +1476,7 @@ export default function SettingsPage() {
                               color: child.location_type === 'school' ? 'var(--color-sky)' : 'var(--color-sage)',
                             }}
                           >
-                            {child.location_type === 'school' ? 'Skole' : 'Barnehage'}
+                            {child.location_type === 'school' ? t.settings.childLocationTypes.school : t.settings.childLocationTypes.kindergarten}
                           </span>
                         </div>
                         {child.location_name && (
@@ -1518,12 +1515,12 @@ export default function SettingsPage() {
         {/* Add new child form */}
         <form onSubmit={addChild} className="pt-6" style={{ borderTop: '1px solid var(--border)' }}>
           <p className="text-sm font-medium mb-4" style={{ color: 'var(--foreground)' }}>
-            Legg til nytt barn
+            {t.settings.addChild}
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
             <input
               type="text"
-              placeholder="Navn"
+              placeholder={t.settings.childName}
               value={newChild.name}
               onChange={(e) => setNewChild({ ...newChild, name: e.target.value })}
               className="input"
@@ -1531,13 +1528,13 @@ export default function SettingsPage() {
             />
             <input
               type="text"
-              placeholder="Barnehage/skole navn"
+              placeholder={t.wizard.locationNamePlaceholder}
               value={newChild.location_name}
               onChange={(e) => setNewChild({ ...newChild, location_name: e.target.value })}
               className="input"
             />
             <div>
-              <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>Fødselsdato</label>
+              <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>{t.settings.childBirthDate}</label>
               {newChild.birth_date ? (
                 <div className="flex gap-2">
                   <input
@@ -1551,7 +1548,7 @@ export default function SettingsPage() {
                     onClick={() => setNewChild({ ...newChild, birth_date: '' })}
                     className="px-3 rounded-xl transition-colors hover:bg-[var(--sand)]"
                     style={{ color: 'var(--muted)' }}
-                    title="Fjern dato"
+                    title={t.common.remove}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <line x1="18" y1="6" x2="6" y2="18" />
@@ -1566,7 +1563,7 @@ export default function SettingsPage() {
                   className="input text-left w-full"
                   style={{ color: 'var(--muted)' }}
                 >
-                  + Legg til fødselsdato
+                  + {t.settings.childBirthDate}
                 </button>
               )}
             </div>
@@ -1583,7 +1580,7 @@ export default function SettingsPage() {
                   color: newChild.location_type === 'kindergarten' ? 'white' : 'var(--muted)',
                 }}
               >
-                Barnehage
+                {t.settings.childLocationTypes.kindergarten}
               </button>
               <button
                 type="button"
@@ -1594,12 +1591,12 @@ export default function SettingsPage() {
                   color: newChild.location_type === 'school' ? 'white' : 'var(--muted)',
                 }}
               >
-                Skole
+                {t.settings.childLocationTypes.school}
               </button>
             </div>
             {/* Color picker */}
             <div className="flex items-center gap-2">
-              <span className="text-xs" style={{ color: 'var(--muted)' }}>Farge:</span>
+              <span className="text-xs" style={{ color: 'var(--muted)' }}>{t.settings.childColor}:</span>
               <div className="flex gap-1">
                 {CHILD_COLORS.map((color) => (
                   <button
@@ -1622,7 +1619,7 @@ export default function SettingsPage() {
               disabled={saving || !newChild.name}
               className="btn btn-primary ml-auto"
             >
-              + Legg til
+              + {t.common.add}
             </button>
           </div>
         </form>
@@ -1647,10 +1644,10 @@ export default function SettingsPage() {
           </div>
           <div>
             <h2 className="text-xl font-semibold" style={{ color: 'var(--foreground)' }}>
-              AI Middagsforslag
+              {t.week.aiSuggestions}
             </h2>
             <p className="text-sm" style={{ color: 'var(--muted)' }}>
-              Gi AI kontekst om familiens preferanser
+              {t.week.weekContext}
             </p>
           </div>
         </div>
@@ -1658,17 +1655,17 @@ export default function SettingsPage() {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
-              Standard preferanser
+              {t.week.weekContext}
             </label>
             <textarea
               value={aiMealContext}
               onChange={(e) => setAiMealContext(e.target.value)}
-              placeholder="F.eks: Vi foretrekker enkle retter med få ingredienser. Barna liker ikke sterk mat. Vi prøver å spise fisk 2x i uken. Far er allergisk mot nøtter."
+              placeholder={t.week.weekContextPlaceholder}
               rows={4}
               className="input resize-none"
             />
             <p className="text-xs mt-2" style={{ color: 'var(--muted)' }}>
-              Denne informasjonen brukes når AI foreslår middager for uken.
+              {t.admin.aiSettingsDesc}
             </p>
           </div>
 
@@ -1677,7 +1674,7 @@ export default function SettingsPage() {
             disabled={savingAiContext}
             className="btn btn-primary"
           >
-            {savingAiContext ? 'Lagrer...' : 'Lagre preferanser'}
+            {savingAiContext ? t.common.saving : t.common.save}
           </button>
         </div>
       </section>

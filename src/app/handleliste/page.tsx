@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { ShoppingList, ShoppingListItem, Household } from '@/lib/types'
 import { useLanguage } from '@/lib/i18n/context'
+import { ListPageSkeleton } from '@/components/Skeleton'
 
 interface ListWithItems extends ShoppingList {
   items: ShoppingListItem[]
@@ -211,13 +212,7 @@ export default function ShoppingListPage() {
   }
 
   if (loading) {
-    return (
-      <div className="space-y-6 animate-pulse">
-        <div className="h-10 rounded-xl w-48" style={{ background: 'var(--sand)' }} />
-        <div className="h-64 rounded-2xl" style={{ background: 'var(--sand)' }} />
-        <div className="h-64 rounded-2xl" style={{ background: 'var(--sand)' }} />
-      </div>
-    )
+    return <ListPageSkeleton />
   }
 
   if (error) {

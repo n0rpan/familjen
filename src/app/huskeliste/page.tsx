@@ -23,6 +23,7 @@ import {
 } from '@/components/remember'
 import type { ChildTaskFormData, HouseholdReminderFormData, WishlistFormData, WishlistItemFormData } from '@/components/remember'
 import type { ParsedReminder } from '@/lib/schemas'
+import { RemindersPageSkeleton } from '@/components/Skeleton'
 
 type TabType = 'reminders' | 'wishlists'
 
@@ -497,13 +498,7 @@ export default function HusklistePage() {
   }, [supabase])
 
   if (loading) {
-    return (
-      <div className="space-y-6 animate-pulse">
-        <div className="h-10 rounded-xl w-48" style={{ background: 'var(--sand)' }} />
-        <div className="h-12 rounded-xl w-64" style={{ background: 'var(--sand)' }} />
-        <div className="h-64 rounded-2xl" style={{ background: 'var(--sand)' }} />
-      </div>
-    )
+    return <RemindersPageSkeleton />
   }
 
   if (error) {

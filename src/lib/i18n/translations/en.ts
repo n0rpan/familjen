@@ -227,6 +227,16 @@ export const en: TranslationStrings = {
     deleteMemberConfirm: 'Are you sure you want to delete {name}? This cannot be undone.',
     calendarSyncHint: 'Automatic calendar sync',
     calendarSyncDesc: 'Send calendar invitations to this address to automatically add them to your family plan:',
+    // Additional profile strings
+    subtitle: 'Manage your profile and household',
+    noAllergies: 'No allergies registered',
+    addAllergy: '+ Add',
+    noRegistered: 'Not registered',
+    householdAdminBadge: 'Household admin',
+    allergyPlaceholder: 'E.g. nuts, milk, gluten...',
+    shortNamePlaceholder: 'E.g. Dad',
+    workEmailPlaceholder: 'work@company.com',
+    tryReloadPage: 'Try reloading the page.',
   },
 
   // Recipes page

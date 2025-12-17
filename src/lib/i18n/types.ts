@@ -198,6 +198,7 @@ export interface TranslationStrings {
   // Settings page
   settings: {
     title: string
+    subtitle: string
     household: string
     householdName: string
     members: string
@@ -235,6 +236,15 @@ export interface TranslationStrings {
     deleteMemberConfirm: string
     calendarSyncHint: string
     calendarSyncDesc: string
+    // Additional profile strings
+    noAllergies: string
+    addAllergy: string
+    noRegistered: string
+    householdAdminBadge: string
+    allergyPlaceholder: string
+    shortNamePlaceholder: string
+    workEmailPlaceholder: string
+    tryReloadPage: string
   }
 
   // Recipes page

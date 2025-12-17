@@ -190,6 +190,7 @@ export const nb: TranslationStrings = {
   // Settings page
   settings: {
     title: 'Innstillinger',
+    subtitle: 'Administrer familien din',
     household: 'Husstand',
     householdName: 'Hustandsnavn',
     members: 'Familiemedlemmer',
@@ -227,6 +228,15 @@ export const nb: TranslationStrings = {
     deleteMemberConfirm: 'Er du sikker på at du vil slette {name}? Dette kan ikke angres.',
     calendarSyncHint: 'Automatisk kalendersynk',
     calendarSyncDesc: 'Send kalenderinvitasjoner til denne adressen for å automatisk legge dem til i familieplanen:',
+    // Additional profile strings
+    noAllergies: 'Ingen allergier registrert',
+    addAllergy: '+ Legg til',
+    noRegistered: 'Ingen registrert',
+    householdAdminBadge: 'Husstandsadmin',
+    allergyPlaceholder: 'F.eks. nøtter, melk, gluten...',
+    shortNamePlaceholder: 'F.eks. Far',
+    workEmailPlaceholder: 'jobb@firma.no',
+    tryReloadPage: 'Prøv å laste siden på nytt.',
   },
 
   // Recipes page

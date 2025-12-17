@@ -13,6 +13,7 @@ import type {
 } from "@/lib/types";
 import { useLanguage } from "@/lib/i18n/context";
 import { UnmatchedCalendarTray } from "@/components/UnmatchedCalendarTray";
+import { AdminPageSkeleton } from "@/components/Skeleton";
 
 // Extended types for admin view
 interface HouseholdWithDetails extends Household {
@@ -555,22 +556,7 @@ export default function AdminPage() {
   }
 
   if (loading) {
-    return (
-      <div className="space-y-6 animate-pulse">
-        <div
-          className="h-10 rounded-xl w-48"
-          style={{ background: "var(--sand)" }}
-        />
-        <div
-          className="h-64 rounded-2xl"
-          style={{ background: "var(--sand)" }}
-        />
-        <div
-          className="h-48 rounded-2xl"
-          style={{ background: "var(--sand)" }}
-        />
-      </div>
-    );
+    return <AdminPageSkeleton />;
   }
 
   // Count stats

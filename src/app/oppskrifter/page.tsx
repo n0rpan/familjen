@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Recipe, Household } from '@/lib/types'
 import { useLanguage } from '@/lib/i18n/context'
+import { RecipesPageSkeleton } from '@/components/Skeleton'
 
 export default function RecipesPage() {
   const { t } = useLanguage()
@@ -191,13 +192,7 @@ export default function RecipesPage() {
     })
 
   if (loading) {
-    return (
-      <div className="space-y-6 animate-pulse">
-        <div className="h-10 rounded-xl w-48" style={{ background: 'var(--sand)' }} />
-        <div className="h-32 rounded-2xl" style={{ background: 'var(--sand)' }} />
-        <div className="h-32 rounded-2xl" style={{ background: 'var(--sand)' }} />
-      </div>
-    )
+    return <RecipesPageSkeleton />
   }
 
   if (error) {
