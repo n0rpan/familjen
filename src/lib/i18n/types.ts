@@ -49,13 +49,18 @@ export interface TranslationStrings {
     today: string
     yesterday: string
     tomorrow: string
+    day: string
+    days: string
     week: string
     month: string
     year: string
+    dismiss: string
     previousDay: string
     nextDay: string
     remove: string
     saving: string
+    pending: string
+    syncing: string
     creating: string
     finish: string
     items: string
@@ -122,6 +127,8 @@ export interface TranslationStrings {
     copyLastWeekConfirm: string
     clearWeek: string
     clearWeekConfirm: string
+    quickPickup: string
+    quickPickupConfirm: string
     weekContext: string
     weekContextPlaceholder: string
     noPickup: string
@@ -179,6 +186,9 @@ export interface TranslationStrings {
     editAndSave: string
     noDaysNeedSuggestions: string
     use: string
+    addToShoppingList: string
+    ingredientsAdded: string
+    noIngredients: string
     // DayView
     selectPickerPrompt: string
     notAssigned: string
@@ -362,6 +372,14 @@ export interface TranslationStrings {
     modelUpdated: string
     appAdmin: string
     householdAdmin: string
+    // Unmatched calendar invites
+    unmatchedInvites: string
+    unmatchedInvitesDesc: string
+    emailMaskedForPrivacy: string
+    expiresIn: string
+    expiringToday: string
+    assign: string
+    eventAssigned: string
   }
 
   // New household wizard

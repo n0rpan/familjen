@@ -373,3 +373,15 @@ export interface AIMealSuggestionsRequest {
 export interface AIMealSuggestionsResponse {
   suggestions: MealSuggestion[]
 }
+
+// Unmatched calendar invite (for review tray)
+export interface UnmatchedCalendarInvite {
+  id: string  // Unique ID (from gmail message ID or UID)
+  title: string
+  date: string  // ISO date
+  endDate?: string
+  organizerEmail: string  // Original email (for backend matching)
+  maskedEmail: string  // Masked version for display
+  receivedAt: string  // When the invite was received
+  expiresAt: string  // When this unmatched invite expires (7 days)
+}

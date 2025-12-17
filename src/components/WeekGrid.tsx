@@ -200,6 +200,8 @@ export function WeekGrid({
                         background: getChildColor(child.color).bg,
                         color: getChildColor(child.color).text
                       }}
+                      aria-hidden="true"
+                      title={child.name}
                     >
                       {child.name.charAt(0)}
                     </div>

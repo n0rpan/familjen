@@ -4,9 +4,10 @@ import { useEffect, useState, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { WeekGrid } from '@/components/WeekGrid'
 import { formatDateISO, getWeekStart, addDays, formatWeekHeaderLocalized } from '@/lib/utils'
-import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Household, Recipe, MealSuggestion, MemberEvent, MemberEventType, ChildTask, ChildTaskType } from '@/lib/types'
+import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Household, Recipe, MealSuggestion, MemberEvent, MemberEventType, ChildTask, ChildTaskType, RecipeIngredient } from '@/lib/types'
 import Link from 'next/link'
 import { AISuggestionModal } from '@/components/AISuggestionModal'
+import { RecentChanges } from '@/components/RecentChanges'
 import { useLanguage } from '@/lib/i18n/context'
 import { notifyPickupAssigned, notifyMealChanged, notifyTaskAdded, notifyEventAdded } from '@/lib/notify'
 import { DayPicker } from 'react-day-picker'
@@ -73,6 +74,9 @@ export default function WeekEditPage() {
   // Week picker state
   const [showWeekPicker, setShowWeekPicker] = useState(false)
   const weekPickerRef = useRef<HTMLDivElement>(null)
+
+  // Quick pickup modal state
+  const [showQuickPickupModal, setShowQuickPickupModal] = useState(false)
 
   const supabase = useMemo(() => createClient(), [])
 
@@ -379,6 +383,55 @@ export default function WeekEditPage() {
       triggerReload()
     } catch (err) {
       console.error('Error clearing week:', err)
+      showMessage('error', t.errors.saveFailed)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Quick set pickup for all children all week
+  const quickPickupAllWeek = async (pickerId: string) => {
+    if (!household || children.length === 0) return
+
+    const pickerName = members.find(m => m.id === pickerId)?.name || ''
+    const confirmMessage = t.week.quickPickupConfirm.replace('{name}', pickerName)
+    if (!confirm(confirmMessage)) return
+
+    setSaving(true)
+    setShowQuickPickupModal(false)
+
+    try {
+      // Generate all pickup records for the week
+      const pickupRecords: Array<{
+        household_id: string
+        child_id: string
+        date: string
+        picker_id: string
+      }> = []
+
+      for (let i = 0; i < 7; i++) {
+        const date = formatDateISO(addDays(weekStart, i))
+        for (const child of children) {
+          pickupRecords.push({
+            household_id: household.id,
+            child_id: child.id,
+            date,
+            picker_id: pickerId,
+          })
+        }
+      }
+
+      // Upsert all pickups
+      const { error } = await supabase
+        .from('pickups')
+        .upsert(pickupRecords, { onConflict: 'household_id,child_id,date' })
+
+      if (error) throw error
+
+      showMessage('success', t.success.saved)
+      triggerReload()
+    } catch (err) {
+      console.error('Error setting quick pickups:', err)
       showMessage('error', t.errors.saveFailed)
     } finally {
       setSaving(false)
@@ -786,6 +839,81 @@ export default function WeekEditPage() {
     }
   }
 
+  const handleAddToShoppingList = async (ingredients: RecipeIngredient[]) => {
+    if (!household || ingredients.length === 0) return
+
+    try {
+      // Get or create the default shopping list
+      let { data: lists } = await supabase
+        .from('shopping_lists')
+        .select('id')
+        .eq('household_id', household.id)
+        .order('sort_order')
+        .limit(1)
+
+      let listId: string
+
+      if (!lists || lists.length === 0) {
+        // Create default list
+        const { data: newList, error: createError } = await supabase
+          .from('shopping_lists')
+          .insert({ household_id: household.id, name: t.shopping.groceries, sort_order: 0 })
+          .select('id')
+          .single()
+
+        if (createError || !newList) {
+          throw new Error(t.errors.saveFailed)
+        }
+        listId = newList.id
+      } else {
+        listId = lists[0].id
+      }
+
+      // Add all ingredients to the shopping list
+      const items = ingredients.map(ing => ({
+        list_id: listId,
+        name: ing.item,
+        quantity: ing.amount || null,
+      }))
+
+      const { error: insertError } = await supabase
+        .from('shopping_list_items')
+        .insert(items)
+
+      if (insertError) {
+        throw new Error(t.errors.saveFailed)
+      }
+
+      showMessage('success', t.week.ingredientsAdded)
+    } catch (err) {
+      console.error('Error adding to shopping list:', err)
+      showMessage('error', t.errors.saveFailed)
+    }
+  }
+
+  // Apply all AI suggestions at once
+  const handleApplyAll = async () => {
+    if (!household || aiSuggestions.length === 0) return
+
+    setSaving(true)
+
+    try {
+      // Apply each suggestion without saving as recipe
+      for (const suggestion of aiSuggestions) {
+        await handleMealChange(suggestion.day, suggestion.name, undefined)
+      }
+
+      showMessage('success', t.success.saved)
+      setAiSuggestions([])
+      setShowSuggestionModal(false)
+    } catch (err) {
+      console.error('Error applying all suggestions:', err)
+      showMessage('error', t.errors.saveFailed)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-6 animate-pulse">
@@ -1042,6 +1170,27 @@ export default function WeekEditPage() {
             <span className="hidden sm:inline">{t.success.cleared}</span>
           </button>
 
+          {/* Quick pickup button */}
+          <button
+            onClick={() => setShowQuickPickupModal(true)}
+            disabled={saving || members.length === 0 || children.length === 0}
+            className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors"
+            style={{
+              background: 'var(--card)',
+              border: '1px solid var(--border)',
+              color: 'var(--color-sage)',
+            }}
+            title={t.week.quickPickup}
+            aria-label={t.week.quickPickup}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <polyline points="16 11 18 13 22 9"/>
+            </svg>
+            <span className="hidden sm:inline">{t.week.quickPickup}</span>
+          </button>
+
           {/* AI Suggestion button */}
           <button
             onClick={fetchAISuggestions}
@@ -1075,6 +1224,15 @@ export default function WeekEditPage() {
           </svg>
           {t.common.loading}
         </div>
+      )}
+
+      {/* Recent changes */}
+      {household && (
+        <RecentChanges
+          householdId={household.id}
+          weekStart={weekStart}
+          weekEnd={weekEnd}
+        />
       )}
 
       {/* Add event button */}
@@ -1157,7 +1315,63 @@ export default function WeekEditPage() {
         error={aiError}
         onAccept={handleAcceptSuggestion}
         onRetry={fetchAISuggestions}
+        onAddToShoppingList={handleAddToShoppingList}
+        onApplyAll={handleApplyAll}
       />
+
+      {/* Quick Pickup Modal */}
+      {showQuickPickupModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0"
+            style={{ background: 'rgba(0, 0, 0, 0.5)' }}
+            onClick={() => setShowQuickPickupModal(false)}
+          />
+          <div
+            className="relative w-full max-w-sm rounded-2xl p-6 space-y-4 animate-fade-in"
+            style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold font-display" style={{ color: 'var(--foreground)' }}>
+                {t.week.quickPickup}
+              </h2>
+              <button
+                onClick={() => setShowQuickPickupModal(false)}
+                className="p-2 rounded-lg transition-colors"
+                style={{ color: 'var(--muted)' }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/>
+                  <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+            <p className="text-sm" style={{ color: 'var(--muted)' }}>
+              {t.week.selectMember}
+            </p>
+            <div className="space-y-2">
+              {members.map((member) => (
+                <button
+                  key={member.id}
+                  onClick={() => quickPickupAllWeek(member.id)}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl transition-colors hover:bg-[var(--sand)]"
+                  style={{ border: '1px solid var(--border)' }}
+                >
+                  <div
+                    className="w-10 h-10 rounded-full flex items-center justify-center text-white font-medium"
+                    style={{ background: 'var(--color-sage)' }}
+                  >
+                    {member.name.substring(0, 2).toUpperCase()}
+                  </div>
+                  <span className="font-medium" style={{ color: 'var(--foreground)' }}>
+                    {member.name}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Event Modal */}
       {showEventModal && (

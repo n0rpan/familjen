@@ -4,9 +4,12 @@ import { isUserAdmin } from '@/lib/config'
 import {
   fetchCalendarInvitesFromGmail,
   mapGmailInviteToMemberEvent,
+  ParsedCalendarInvite,
 } from '@/lib/google-calendar'
 import { formatDateISO, addDays } from '@/lib/utils'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
+import { maskEmail } from '@/lib/email-mask'
+import type { UnmatchedCalendarInvite } from '@/lib/types'
 
 // POST /api/calendar/sync - Sync events from Gmail calendar invites
 export async function POST() {
@@ -105,7 +108,9 @@ export async function POST() {
 
     // Process Gmail invites
     const eventsToUpsert: Array<ReturnType<typeof mapGmailInviteToMemberEvent>> = []
-    const unmatchedEvents: string[] = []
+    const unmatchedInvites: UnmatchedCalendarInvite[] = []
+    const now = new Date()
+    const expiresAt = addDays(now, 7) // Unmatched invites expire after 7 days
 
     for (const invite of gmailInvites) {
       gmailEventIds.add(invite.uid)
@@ -118,8 +123,17 @@ export async function POST() {
       // Find matching member by organizer email
       const member = emailToMember.get(invite.organizerEmail.toLowerCase())
       if (!member) {
-        // Organizer email doesn't match any member - ignore
-        unmatchedEvents.push(`${invite.summary} (from ${invite.organizerEmail})`)
+        // Organizer email doesn't match any member - add to unmatched
+        unmatchedInvites.push({
+          id: invite.uid,
+          title: invite.summary,
+          date: invite.startDate,
+          endDate: invite.endDate,
+          organizerEmail: invite.organizerEmail,
+          maskedEmail: maskEmail(invite.organizerEmail),
+          receivedAt: now.toISOString(),
+          expiresAt: formatDateISO(expiresAt),
+        })
         continue
       }
 
@@ -154,8 +168,8 @@ export async function POST() {
       success: true,
       synced: upsertedCount,
       deleted: 0,
-      unmatched: unmatchedEvents.length,
-      unmatchedEvents: unmatchedEvents.slice(0, 10), // Show first 10
+      unmatched: unmatchedInvites.length,
+      unmatchedInvites: unmatchedInvites.slice(0, 20), // Show first 20 with masked emails
       totalInvitesFound: gmailInvites.length,
     })
   } catch (error) {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef, useMemo } from 'react'
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
@@ -50,15 +50,53 @@ export function UniversalAIInput({
   const [executedActions, setExecutedActions] = useState<ExecutedAction[]>([])
   const [error, setError] = useState<string | null>(null)
   const [pendingConfirmation, setPendingConfirmation] = useState<ParsedAction | null>(null)
+  const [rateLimitCountdown, setRateLimitCountdown] = useState<number>(0)
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const pendingInputRef = useRef<string>('')
 
   const currentMember = members.find(m => m.user_id === currentUserId)
+
+  // Rate limit countdown timer
+  useEffect(() => {
+    if (rateLimitCountdown <= 0) return
+
+    const timer = setInterval(() => {
+      setRateLimitCountdown(prev => {
+        if (prev <= 1) {
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [rateLimitCountdown])
+
+  // Auto-retry when countdown ends
+  useEffect(() => {
+    if (rateLimitCountdown === 0 && pendingInputRef.current) {
+      const pending = pendingInputRef.current
+      pendingInputRef.current = ''
+      // Use setTimeout to avoid calling parseInput during render
+      setTimeout(() => {
+        if (pending.trim().length >= 3) {
+          parseInput(pending)
+        }
+      }, 100)
+    }
+  }, [rateLimitCountdown])
 
   const parseInput = useCallback(async (text: string) => {
     if (text.trim().length < 3) {
       setParsedActions([])
+      return
+    }
+
+    // Don't parse while rate limited
+    if (rateLimitCountdown > 0) {
+      pendingInputRef.current = text
       return
     }
 
@@ -86,6 +124,16 @@ export function UniversalAIInput({
         }),
       })
 
+      // Handle rate limiting with countdown
+      if (response.status === 429) {
+        const retryAfter = parseInt(response.headers.get('Retry-After') || '60', 10)
+        setRateLimitCountdown(retryAfter)
+        pendingInputRef.current = text
+        setError(null)
+        setParsedActions([])
+        return
+      }
+
       if (!response.ok) {
         const data = await response.json()
         throw new Error(data.error || 'Kunne ikke tolke tekst')
@@ -99,7 +147,7 @@ export function UniversalAIInput({
     } finally {
       setIsParsing(false)
     }
-  }, [children, members, currentUserId])
+  }, [children, members, currentUserId, rateLimitCountdown])
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value
@@ -286,7 +334,7 @@ export function UniversalAIInput({
           ref={inputRef}
           value={input}
           onChange={handleInputChange}
-          placeholder={t.ai?.inputPlaceholder || "Skriv noe... (f.eks. 'Taco fredag' eller 'Storm tannlege tirsdag kl 10')"}
+          placeholder={t.ai?.inputPlaceholder || 'Middag, henting, oppgave...'}
           className="w-full p-4 rounded-xl text-base resize-none"
           style={{
             background: 'var(--card)',
@@ -304,10 +352,36 @@ export function UniversalAIInput({
             <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
           </div>
         )}
+        {rateLimitCountdown > 0 && (
+          <div
+            className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium"
+            style={{ background: 'var(--color-honey)', color: 'white' }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+            {rateLimitCountdown}s
+          </div>
+        )}
       </div>
 
+      {/* Rate limit countdown message */}
+      {rateLimitCountdown > 0 && (
+        <div
+          className="p-3 rounded-xl text-sm flex items-center gap-2"
+          style={{ background: 'rgba(229, 185, 94, 0.15)', color: 'var(--color-honey)' }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10" />
+            <polyline points="12 6 12 12 16 14" />
+          </svg>
+          {t.ai?.parsing || 'Venter'}... {rateLimitCountdown}s
+        </div>
+      )}
+
       {/* Error message */}
-      {error && (
+      {error && !rateLimitCountdown && (
         <div
           className="p-3 rounded-xl text-sm"
           style={{ background: 'rgba(232, 120, 109, 0.1)', color: 'var(--color-coral)' }}

@@ -1,8 +1,8 @@
 // Familjen Service Worker
 // Handles PWA installation, push notifications, and asset caching
 
-const CACHE_NAME = 'familjen-v2'
-const STATIC_CACHE = 'familjen-static-v1'
+const CACHE_NAME = 'familjen-v3'
+const STATIC_CACHE = 'familjen-static-v2'
 
 // Static assets to cache immediately on install
 const STATIC_ASSETS = [
@@ -53,8 +53,12 @@ self.addEventListener('fetch', (event) => {
   // Skip non-GET requests
   if (request.method !== 'GET') return
 
-  // Skip API calls and auth - always go to network
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/')) {
+  // Skip API calls, auth, and RSC requests - always go to network
+  if (
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/auth/') ||
+    url.searchParams.has('_rsc')  // Next.js React Server Components
+  ) {
     return
   }
 

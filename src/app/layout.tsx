@@ -6,6 +6,7 @@ import { getLanguageFromCookieOrBrowser } from "@/lib/i18n/cookie.server";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
 import { UpdatePrompt } from "@/components/UpdatePrompt";
 import { AppShell } from "@/components/AppShell";
+import { OfflineIndicator } from "@/components/OfflineIndicator";
 
 export const metadata: Metadata = {
   title: "Familjen",
@@ -46,6 +47,7 @@ export default async function RootLayout({
     <html lang={language}>
       <body className="antialiased min-h-screen grain" style={{ background: 'var(--background)' }}>
         <LanguageProvider initialLanguage={language}>
+          <OfflineIndicator />
           <Header />
           <AppShell>
             <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 pb-24 md:pb-6">

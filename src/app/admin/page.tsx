@@ -9,8 +9,10 @@ import type {
   HouseholdMember,
   Child,
   AuditLogEntry,
+  UnmatchedCalendarInvite,
 } from "@/lib/types";
 import { useLanguage } from "@/lib/i18n/context";
+import { UnmatchedCalendarTray } from "@/components/UnmatchedCalendarTray";
 
 // Extended types for admin view
 interface HouseholdWithDetails extends Household {
@@ -306,6 +308,7 @@ export default function AdminPage() {
     syncedEvents: number;
   } | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [unmatchedInvites, setUnmatchedInvites] = useState<UnmatchedCalendarInvite[]>([]);
 
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
@@ -357,6 +360,10 @@ export default function AdminPage() {
 
       if (res.ok) {
         showMessage('success', t.admin.syncSuccess.replace('{added}', data.synced).replace('{deleted}', data.deleted));
+        // Store unmatched invites
+        if (data.unmatchedInvites) {
+          setUnmatchedInvites(data.unmatchedInvites);
+        }
         await loadCalendarStatus();
       } else {
         showMessage('error', data.error || t.errors.calendarSyncFailed);
@@ -365,6 +372,43 @@ export default function AdminPage() {
       showMessage('error', t.errors.calendarSyncFailed);
     }
     setSyncing(false);
+  };
+
+  // Handle assigning an unmatched invite to a member
+  const handleAssignInvite = async (invite: UnmatchedCalendarInvite, memberId: string) => {
+    const member = households.flatMap(h => h.members).find(m => m.id === memberId);
+    if (!member) return;
+
+    // Create member event from the unmatched invite
+    const { error } = await supabase
+      .from('member_events')
+      .insert({
+        household_id: member.household_id,
+        member_id: memberId,
+        date: invite.date,
+        end_date: invite.endDate || null,
+        title: invite.title,
+        event_type: 'other',
+        source: 'google_calendar',
+        source_email: invite.organizerEmail,
+        google_event_id: invite.id,
+      });
+
+    if (error) {
+      console.error('Failed to assign invite:', error);
+      showMessage('error', t.errors.saveFailed);
+      return;
+    }
+
+    // Remove from unmatched list
+    setUnmatchedInvites(prev => prev.filter(i => i.id !== invite.id));
+    showMessage('success', t.admin.eventAssigned);
+    await loadCalendarStatus();
+  };
+
+  // Handle dismissing an unmatched invite
+  const handleDismissInvite = (inviteId: string) => {
+    setUnmatchedInvites(prev => prev.filter(i => i.id !== inviteId));
   };
 
   const loadData = async () => {
@@ -1464,6 +1508,16 @@ export default function AdminPage() {
               </>
             )}
           </div>
+
+          {/* Unmatched invites tray */}
+          {unmatchedInvites.length > 0 && (
+            <UnmatchedCalendarTray
+              invites={unmatchedInvites}
+              members={households.flatMap(h => h.members)}
+              onAssign={handleAssignInvite}
+              onDismiss={handleDismissInvite}
+            />
+          )}
 
           {/* Info */}
           <p className="text-xs" style={{ color: "var(--muted)" }}>

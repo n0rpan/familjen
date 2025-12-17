@@ -152,8 +152,13 @@ export default function SettingsPage() {
       }
 
       // Get connected calendar email (available to all members)
-      const { data: calendarEmail } = await supabase.rpc('get_connected_calendar_email')
-      setConnectedCalendarEmail(calendarEmail || null)
+      // Gracefully handle if function doesn't exist in production
+      const { data: calendarEmail, error: calError } = await supabase.rpc('get_connected_calendar_email')
+      if (!calError) {
+        setConnectedCalendarEmail(calendarEmail || null)
+      } else {
+        console.warn('Could not fetch calendar email:', calError.message)
+      }
     } catch (err) {
       console.error('Settings page error:', err)
       setError(err instanceof Error ? err.message : 'En feil oppstod')

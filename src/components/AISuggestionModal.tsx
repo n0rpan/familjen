@@ -12,6 +12,8 @@ interface AISuggestionModalProps {
   error: string | null
   onAccept: (suggestion: MealSuggestion, saveAsRecipe: boolean) => void
   onRetry: () => void
+  onAddToShoppingList?: (ingredients: RecipeIngredient[]) => Promise<void>
+  onApplyAll?: () => void
 }
 
 export function AISuggestionModal({
@@ -22,9 +24,12 @@ export function AISuggestionModal({
   error,
   onAccept,
   onRetry,
+  onAddToShoppingList,
+  onApplyAll,
 }: AISuggestionModalProps) {
   const { t } = useLanguage()
   const [expandedDay, setExpandedDay] = useState<string | null>(null)
+  const [addingToList, setAddingToList] = useState<string | null>(null)
   const [editingRecipe, setEditingRecipe] = useState<MealSuggestion | null>(null)
   const [editedName, setEditedName] = useState('')
   const [editedIngredients, setEditedIngredients] = useState<RecipeIngredient[]>([])
@@ -63,6 +68,16 @@ export function AISuggestionModal({
 
   const handleQuickAccept = (suggestion: MealSuggestion) => {
     onAccept(suggestion, false)
+  }
+
+  const handleAddToShoppingList = async (suggestion: MealSuggestion) => {
+    if (!onAddToShoppingList || !suggestion.ingredients?.length) return
+    setAddingToList(suggestion.day)
+    try {
+      await onAddToShoppingList(suggestion.ingredients)
+    } finally {
+      setAddingToList(null)
+    }
   }
 
   const addIngredient = () => {
@@ -116,17 +131,28 @@ export function AISuggestionModal({
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg transition-colors hover:bg-[var(--sand)]"
-            style={{ color: 'var(--muted)' }}
-            aria-label={t.common.close}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="18" y1="6" x2="6" y2="18"/>
-              <line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
+          <div className="flex items-center gap-2">
+            {suggestions.length > 1 && onApplyAll && !editingRecipe && (
+              <button
+                onClick={onApplyAll}
+                className="px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+                style={{ background: 'var(--color-sage)', color: 'white' }}
+              >
+                {t.week.applyAll}
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg transition-colors hover:bg-[var(--sand)]"
+              style={{ color: 'var(--muted)' }}
+              aria-label={t.common.close}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Content */}
@@ -330,16 +356,41 @@ export function AISuggestionModal({
                         </div>
                       )}
 
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 flex-wrap">
                         <button
                           onClick={() => handleQuickAccept(suggestion)}
-                          className="btn btn-primary flex-1 text-sm"
+                          className="btn btn-primary flex-1 text-sm min-w-[80px]"
                         >
                           {t.week.use}
                         </button>
+                        {onAddToShoppingList && (
+                          <button
+                            onClick={() => handleAddToShoppingList(suggestion)}
+                            disabled={!suggestion.ingredients?.length || addingToList === suggestion.day}
+                            className="btn flex-1 text-sm min-w-[80px] flex items-center justify-center gap-1"
+                            style={{ background: 'var(--color-sage)', color: 'white', opacity: suggestion.ingredients?.length ? 1 : 0.5 }}
+                            title={!suggestion.ingredients?.length ? t.week.noIngredients : undefined}
+                          >
+                            {addingToList === suggestion.day ? (
+                              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                              </svg>
+                            ) : (
+                              <>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
+                                  <line x1="3" y1="6" x2="21" y2="6"/>
+                                  <path d="M16 10a4 4 0 0 1-8 0"/>
+                                </svg>
+                                {t.week.addToShoppingList}
+                              </>
+                            )}
+                          </button>
+                        )}
                         <button
                           onClick={() => handleStartEdit(suggestion)}
-                          className="btn flex-1 text-sm"
+                          className="btn text-sm min-w-[80px]"
                           style={{ background: 'var(--sand)', color: 'var(--foreground)' }}
                         >
                           {t.week.editAndSave}

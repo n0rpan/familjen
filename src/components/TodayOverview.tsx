@@ -95,6 +95,8 @@ export function TodayOverview({ summary, loading }: TodayOverviewProps) {
                   background: getChildColor(pickup.child.color).bg,
                   color: getChildColor(pickup.child.color).text
                 }}
+                aria-hidden="true"
+                title={pickup.child.name}
               >
                 {pickup.child.name.charAt(0)}
               </div>
