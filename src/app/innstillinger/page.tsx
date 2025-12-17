@@ -80,29 +80,40 @@ export default function SettingsPage() {
     setError(null)
 
     try {
-      // Get or create household
-      let { data: householdData, error: householdError } = await supabase
-        .from('households')
-        .select('*')
+      // Get current user first
+      const { data: { user: currentUser } } = await supabase.auth.getUser()
+      if (!currentUser) {
+        router.push('/login')
+        return
+      }
+      setUser(currentUser)
+
+      // Find user's household via their membership (works for admins who can see multiple households)
+      const { data: myMembership } = await supabase
+        .from('household_members')
+        .select('household_id')
+        .eq('user_id', currentUser.id)
         .single()
 
-      if (householdError && householdError.code !== 'PGRST116') {
-        // PGRST116 = no rows returned, which is ok for new users
-        throw new Error('Kunne ikke laste husstand')
-      }
-
-      if (!householdData) {
-        // No household - redirect to create page (which enforces can_create_household)
+      if (!myMembership) {
+        // No household - redirect to create page
         router.push('/ny-husstand')
         return
       }
 
+      // Now get the household by ID
+      const { data: householdData, error: householdError } = await supabase
+        .from('households')
+        .select('*')
+        .eq('id', myMembership.household_id)
+        .single()
+
+      if (householdError || !householdData) {
+        throw new Error('Kunne ikke laste husstand')
+      }
+
       setHousehold(householdData)
       setAiMealContext(householdData?.ai_meal_context || '')
-
-      // Get current user
-      const { data: { user: currentUser } } = await supabase.auth.getUser()
-      setUser(currentUser)
 
       // Load members and children
       const [membersResult, childrenResult] = await Promise.all([
