@@ -18,10 +18,11 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { type, data, targetMemberIds } = body as {
+    const { type, data, targetMemberIds, test } = body as {
       type: NotificationType
       data: Record<string, string>
       targetMemberIds?: string[] // Optional: specific members to notify
+      test?: boolean // If true, send to the requesting user (for testing)
     }
 
     if (!type || !data) {
@@ -61,6 +62,11 @@ export async function POST(request: Request) {
       notify_task_added: boolean
       notify_event_affects_me: boolean
     }) => {
+      // Test mode: only notify the requesting user
+      if (test) {
+        return sub.user_id === user.id
+      }
+
       // Don't notify the user who made the change
       if (sub.user_id === user.id) return false
 

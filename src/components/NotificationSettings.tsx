@@ -89,7 +89,7 @@ export function NotificationSettings() {
     if (!isSubscribed) return
 
     try {
-      // We'll send a simple notification through the API
+      // Send test notification to self (test: true bypasses the "don't notify self" filter)
       await fetch('/api/push/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -99,6 +99,7 @@ export function NotificationSettings() {
             mealName: 'Test middag',
             date: 'i dag',
           },
+          test: true,
         }),
       })
       setTestSent(true)
