@@ -70,7 +70,7 @@ export default function CreateHouseholdPage() {
         .from('household_members')
         .select('id')
         .eq('user_id', user.id)
-        .single()
+        .maybeSingle()
 
       if (existingMember) {
         router.push('/')
