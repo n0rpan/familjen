@@ -63,11 +63,12 @@ export function OfflineIndicator() {
 
   if (!shouldShow) return null
 
+  // Use calmer colors: sky for offline (informational), honey for syncing, sage for online
   return (
     <div
       className="fixed top-0 left-0 right-0 z-50 flex items-center justify-center gap-2 py-2 px-4 text-sm font-medium animate-fade-in"
       style={{
-        background: isOffline ? 'var(--color-coral)' : pendingCount > 0 ? 'var(--color-honey)' : 'var(--color-sage)',
+        background: isOffline ? 'var(--color-sky)' : pendingCount > 0 ? 'var(--color-honey)' : 'var(--color-sage)',
         color: 'white',
       }}
     >
@@ -82,7 +83,7 @@ export function OfflineIndicator() {
             <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
             <line x1="12" y1="20" x2="12.01" y2="20" />
           </svg>
-          <span>{t.notifications?.disabled || 'Offline'}</span>
+          <span>Offline</span>
           {pendingCount > 0 && (
             <span className="ml-2 px-2 py-0.5 rounded-full text-xs" style={{ background: 'rgba(0,0,0,0.2)' }}>
               {pendingCount} {t.common?.pending || 'pending'}

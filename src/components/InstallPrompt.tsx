@@ -8,6 +8,36 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
 }
 
+// Track visits and engagement for smarter install prompt timing
+const VISIT_THRESHOLD = 3
+const STORAGE_KEY = 'familjen-install-prompt'
+
+function getInstallPromptState() {
+  if (typeof window === 'undefined') return { visits: 0, engaged: false, dismissed: false }
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    return stored ? JSON.parse(stored) : { visits: 0, engaged: false, dismissed: false }
+  } catch {
+    return { visits: 0, engaged: false, dismissed: false }
+  }
+}
+
+function updateInstallPromptState(updates: Partial<{ visits: number; engaged: boolean; dismissed: boolean }>) {
+  if (typeof window === 'undefined') return
+  try {
+    const current = getInstallPromptState()
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...current, ...updates }))
+  } catch {
+    // localStorage not available
+  }
+}
+
+// Call this when user engages with a core feature (e.g., adds a pickup, creates a meal plan)
+// This will make the install prompt show on next visit
+export function markUserEngaged() {
+  updateInstallPromptState({ engaged: true })
+}
+
 export function InstallPrompt() {
   const { t } = useLanguage()
   const [isInstalled, setIsInstalled] = useState(false)
@@ -15,6 +45,7 @@ export function InstallPrompt() {
   const [isAndroid, setIsAndroid] = useState(false)
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [showInstructions, setShowInstructions] = useState(false)
+  const [shouldShowPrompt, setShouldShowPrompt] = useState(false)
 
   useEffect(() => {
     // Check if already installed (standalone mode)
@@ -26,6 +57,17 @@ export function InstallPrompt() {
     const ua = navigator.userAgent.toLowerCase()
     setIsIOS(/iphone|ipad|ipod/.test(ua) && !(window as Window & { MSStream?: unknown }).MSStream)
     setIsAndroid(/android/.test(ua))
+
+    // Track visit and check if we should show prompt
+    const state = getInstallPromptState()
+    const newVisits = state.visits + 1
+    updateInstallPromptState({ visits: newVisits })
+
+    // Show prompt after 3+ visits OR if user has engaged with core features
+    // Don't show if user previously dismissed
+    if (!state.dismissed && (newVisits >= VISIT_THRESHOLD || state.engaged)) {
+      setShouldShowPrompt(true)
+    }
 
     // Listen for install prompt (Android/Chrome)
     const handleBeforeInstall = (e: Event) => {
@@ -54,6 +96,11 @@ export function InstallPrompt() {
     }
   }
 
+  const handleDismiss = () => {
+    updateInstallPromptState({ dismissed: true })
+    setShouldShowPrompt(false)
+  }
+
   // Already installed
   if (isInstalled) {
     return (
@@ -74,22 +121,40 @@ export function InstallPrompt() {
     )
   }
 
+  // Don't show prompt until user has earned it (3+ visits or engaged)
+  if (!shouldShowPrompt) {
+    return null
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between p-4 rounded-xl" style={{ background: 'var(--card-alt)' }}>
-        <div>
+        <div className="flex-1">
           <p className="font-medium">{t.install?.title || 'Installer app'}</p>
           <p className="text-sm" style={{ color: 'var(--muted)' }}>
             {t.install?.description || 'Legg til Familjen på hjemskjermen for raskere tilgang.'}
           </p>
         </div>
-        <button
-          onClick={handleInstallClick}
-          className="px-4 py-2 rounded-lg font-medium transition-colors"
-          style={{ background: 'var(--color-sky)', color: 'white' }}
-        >
-          {t.install?.install || 'Installer'}
-        </button>
+        <div className="flex items-center gap-2 ml-3">
+          <button
+            onClick={handleDismiss}
+            className="p-2 rounded-lg transition-colors hover:bg-[var(--sand)]"
+            style={{ color: 'var(--muted)' }}
+            aria-label={t.common?.dismiss || 'Dismiss'}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+          <button
+            onClick={handleInstallClick}
+            className="px-4 py-2 rounded-lg font-medium transition-colors"
+            style={{ background: 'var(--color-sky)', color: 'white' }}
+          >
+            {t.install?.install || 'Installer'}
+          </button>
+        </div>
       </div>
 
       {/* Instructions modal */}

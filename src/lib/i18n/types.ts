@@ -96,6 +96,9 @@ export interface TranslationStrings {
     everyoneHome: string
     memberAway: string
     membersAway: string
+    allReadyForToday: string // "All ready for today"
+    thingNeedsAttention: string // "1 thing needs attention"
+    thingsNeedAttention: string // "{count} things need attention"
   }
 
   // Login page

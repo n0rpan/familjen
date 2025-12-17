@@ -212,8 +212,55 @@ export default async function HomePage() {
     )
   }
 
+  // Calculate status for today
+  const childrenWithoutPickup = (children || []).filter(child =>
+    !todayPickups.some(p => p.child_id === child.id && p.picker_id)
+  )
+  const noMeal = !todayMeal?.recipe_id && !todayMeal?.custom_meal
+  const openTasks = todayTasks.filter(task => task.status === 'open')
+
+  // Count things needing attention
+  let attentionCount = 0
+  if (childrenWithoutPickup.length > 0) attentionCount += childrenWithoutPickup.length
+  if (noMeal) attentionCount += 1
+  // Don't count open tasks as "needing attention" - they're just tasks to do
+
+  const isAllReady = attentionCount === 0
+
   return (
     <div className="space-y-8 animate-fade-in">
+      {/* Today's Status Summary */}
+      <div
+        className="flex items-center gap-3 px-4 py-3 rounded-xl"
+        style={{
+          background: isAllReady ? 'rgba(131, 166, 151, 0.15)' : 'rgba(229, 185, 94, 0.15)',
+        }}
+      >
+        {isAllReady ? (
+          <>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-sage)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            <span className="text-sm font-medium" style={{ color: 'var(--color-sage-dark, #5A7A57)' }}>
+              {t.home.allReadyForToday}
+            </span>
+          </>
+        ) : (
+          <>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <span className="text-sm font-medium" style={{ color: 'var(--color-honey-dark, #A68A3A)' }}>
+              {attentionCount === 1
+                ? t.home.thingNeedsAttention
+                : t.home.thingsNeedAttention.replace('{count}', String(attentionCount))}
+            </span>
+          </>
+        )}
+      </div>
+
       {/* Universal AI Input - At top on all screen sizes */}
       <UniversalAIInput
         householdId={myMembership.household_id}

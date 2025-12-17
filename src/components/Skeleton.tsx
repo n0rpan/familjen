@@ -78,6 +78,17 @@ export function HomePageSkeleton() {
         <Skeleton height={40} width={100} borderRadius={12} />
       </div>
 
+      {/* AI input skeleton */}
+      <div
+        className="rounded-2xl p-4"
+        style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+      >
+        <div className="flex items-center gap-3">
+          <Skeleton height={24} width={24} borderRadius={8} />
+          <Skeleton height={20} width="70%" borderRadius={8} />
+        </div>
+      </div>
+
       {/* Today overview skeleton */}
       <div
         className="rounded-2xl p-6"
@@ -310,6 +321,9 @@ export function RemindersPageSkeleton() {
 }
 
 // List skeleton (for shopping list, etc.)
+// Deterministic widths for consistent visual appearance
+const LIST_ITEM_WIDTHS = ['65%', '80%', '55%', '70%', '60%', '75%', '50%', '85%']
+
 export function ListPageSkeleton() {
   return (
     <div className="space-y-6 animate-fade-in">
@@ -325,18 +339,71 @@ export function ListPageSkeleton() {
         <Skeleton height={48} width={80} borderRadius={12} />
       </div>
 
+      {/* Section title */}
+      <Skeleton height={18} width={100} borderRadius={8} />
+
       {/* List items */}
       <div className="space-y-2">
-        {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+        {LIST_ITEM_WIDTHS.map((width, i) => (
           <div
             key={i}
             className="flex items-center gap-3 p-4 rounded-xl"
             style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
           >
             <Skeleton height={24} width={24} borderRadius={6} />
-            <Skeleton height={18} width={`${50 + Math.random() * 40}%`} borderRadius={8} />
+            <Skeleton height={18} width={width} borderRadius={8} />
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+// Wizard skeleton (for multi-step forms)
+export function WizardSkeleton() {
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center animate-fade-in py-8">
+      <div className="w-full max-w-lg">
+        {/* Progress bar */}
+        <div className="flex items-center justify-center gap-2 mb-8">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} height={6} width={64} borderRadius={99} />
+          ))}
+        </div>
+
+        {/* Card */}
+        <div
+          className="rounded-2xl p-8"
+          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+        >
+          {/* Icon and header */}
+          <div className="text-center mb-8">
+            <div className="flex justify-center mb-4">
+              <Skeleton height={64} width={64} borderRadius={16} />
+            </div>
+            <Skeleton height={28} width="60%" borderRadius={12} className="mx-auto mb-3" />
+            <Skeleton height={18} width="80%" borderRadius={8} className="mx-auto" />
+          </div>
+
+          {/* Form fields */}
+          <div className="space-y-5">
+            <div>
+              <Skeleton height={14} width={120} borderRadius={6} className="mb-2" />
+              <Skeleton height={48} borderRadius={12} />
+            </div>
+            <div>
+              <Skeleton height={14} width={100} borderRadius={6} className="mb-2" />
+              <Skeleton height={48} borderRadius={12} />
+            </div>
+            <div>
+              <Skeleton height={14} width={140} borderRadius={6} className="mb-2" />
+              <Skeleton height={48} borderRadius={12} />
+            </div>
+          </div>
+
+          {/* Button */}
+          <Skeleton height={48} borderRadius={12} className="mt-6" />
+        </div>
       </div>
     </div>
   )

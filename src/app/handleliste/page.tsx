@@ -354,8 +354,21 @@ export default function ShoppingListPage() {
               <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
                 {unboughtItems.length === 0 && boughtItems.length === 0 ? (
                   <div className="p-8 text-center">
-                    <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                    <div
+                      className="inline-flex items-center justify-center w-12 h-12 rounded-full mb-3"
+                      style={{ background: 'var(--sand)' }}
+                    >
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
+                        <line x1="3" y1="6" x2="21" y2="6"/>
+                        <path d="M16 10a4 4 0 0 1-8 0"/>
+                      </svg>
+                    </div>
+                    <p className="text-sm font-medium mb-1" style={{ color: 'var(--foreground)' }}>
                       {t.shopping.emptyList}
+                    </p>
+                    <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                      {t.shopping.emptyListDesc}
                     </p>
                   </div>
                 ) : (

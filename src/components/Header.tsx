@@ -196,18 +196,19 @@ export function Header() {
             </Link>
 
             {/* Navigation */}
-            <nav className="flex items-center gap-1">
+            <nav className="flex items-center gap-1" aria-label="Main navigation">
               {navigation.map((item) => {
                 const isActive = pathname === item.href
                 return (
                   <TransitionLink
                     key={item.href}
                     href={item.href}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200"
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 hover:bg-[var(--sand)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
                     style={{
                       background: isActive ? 'var(--accent)' : 'transparent',
                       color: isActive ? 'white' : 'var(--muted)',
                     }}
+                    aria-current={isActive ? 'page' : undefined}
                   >
                     <item.icon />
                     <span>{item.name}</span>
@@ -221,8 +222,9 @@ export function Header() {
               {isAdmin && (
                 <Link
                   href="/admin"
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl transition-all duration-200 hover:bg-[var(--sand)]"
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl transition-all duration-200 hover:bg-[var(--sand)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
                   style={{ color: 'var(--muted)' }}
+                  aria-current={pathname === '/admin' ? 'page' : undefined}
                 >
                   <ShieldIcon />
                   {t.nav.admin}
@@ -231,7 +233,7 @@ export function Header() {
               {user && (
                 <button
                   onClick={handleLogout}
-                  className="px-4 py-2 text-sm font-medium rounded-xl transition-all duration-200 hover:bg-[var(--sand)]"
+                  className="px-4 py-2 text-sm font-medium rounded-xl transition-all duration-200 hover:bg-[var(--sand)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
                   style={{ color: 'var(--muted)' }}
                 >
                   {t.nav.logout}
@@ -275,6 +277,7 @@ export function Header() {
           borderTop: '1px solid var(--border)',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)'
         }}
+        aria-label="Mobile navigation"
       >
         <div className="flex justify-around items-center h-16 px-2">
           {primaryMobileNav.map((item) => {
@@ -283,10 +286,11 @@ export function Header() {
               <TransitionLink
                 key={item.href}
                 href={item.href}
-                className="flex flex-col items-center gap-1 py-2 px-3 rounded-xl transition-all duration-200 touch-feedback"
+                className="flex flex-col items-center gap-1 py-2 px-3 rounded-xl transition-all duration-200 touch-feedback focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                 style={{
                   color: isActive ? 'var(--accent)' : 'var(--muted)',
                 }}
+                aria-current={isActive ? 'page' : undefined}
               >
                 <item.icon />
                 <span className="text-xs font-medium">{item.name}</span>
@@ -296,10 +300,13 @@ export function Header() {
           {/* More button */}
           <button
             onClick={() => setMoreMenuOpen(true)}
-            className="flex flex-col items-center gap-1 py-2 px-3 rounded-xl transition-all duration-200 touch-feedback"
+            className="flex flex-col items-center gap-1 py-2 px-3 rounded-xl transition-all duration-200 touch-feedback focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
             style={{
               color: isSecondaryActive ? 'var(--accent)' : 'var(--muted)',
             }}
+            aria-expanded={moreMenuOpen}
+            aria-haspopup="dialog"
+            aria-label={t.nav.more}
           >
             <MoreIcon />
             <span className="text-xs font-medium">{t.nav.more}</span>
@@ -327,6 +334,9 @@ export function Header() {
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
           boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.15)'
         }}
+        role="dialog"
+        aria-label={t.nav.more}
+        aria-hidden={!moreMenuOpen}
       >
         {/* Handle bar */}
         <div className="flex justify-center pt-3 pb-2">
@@ -340,8 +350,9 @@ export function Header() {
           </span>
           <button
             onClick={() => setMoreMenuOpen(false)}
-            className="p-2 rounded-full hover:bg-[var(--sand)] transition-colors"
+            className="p-2 rounded-full hover:bg-[var(--sand)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
             style={{ color: 'var(--muted)' }}
+            aria-label={t.common.close}
           >
             <CloseIcon />
           </button>
@@ -356,11 +367,12 @@ export function Header() {
                 key={item.href}
                 href={item.href}
                 onClick={() => setMoreMenuOpen(false)}
-                className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 touch-feedback"
+                className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 touch-feedback focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                 style={{
                   background: isActive ? 'var(--accent)' : 'transparent',
                   color: isActive ? 'white' : 'var(--foreground)',
                 }}
+                aria-current={isActive ? 'page' : undefined}
               >
                 <item.icon />
                 <span className="text-base font-medium">{item.name}</span>
@@ -373,11 +385,12 @@ export function Header() {
             <TransitionLink
               href="/admin"
               onClick={() => setMoreMenuOpen(false)}
-              className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 touch-feedback"
+              className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 touch-feedback focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
               style={{
                 background: pathname === '/admin' ? 'var(--accent)' : 'transparent',
                 color: pathname === '/admin' ? 'white' : 'var(--foreground)',
               }}
+              aria-current={pathname === '/admin' ? 'page' : undefined}
             >
               <ShieldIcon />
               <span className="text-base font-medium">{t.nav.admin}</span>
@@ -391,7 +404,7 @@ export function Header() {
                 setMoreMenuOpen(false)
                 handleLogout(e)
               }}
-              className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 w-full text-left hover:bg-[var(--sand)]"
+              className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 w-full text-left hover:bg-[var(--sand)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
               style={{ color: 'var(--muted)' }}
             >
               <LogoutIcon />
