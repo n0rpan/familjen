@@ -45,15 +45,17 @@ export default async function RootLayout({
 
   return (
     <html lang={language}>
-      <body className="antialiased min-h-screen grain" style={{ background: 'var(--background)' }}>
+      <body className="antialiased grain app-shell" style={{ background: 'var(--background)' }}>
         <LanguageProvider initialLanguage={language}>
           <OfflineIndicator />
           <Header />
-          <AppShell>
-            <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 pb-24 md:pb-6">
-              {children}
-            </main>
-          </AppShell>
+          <div className="app-shell-content pt-mobile-header">
+            <AppShell>
+              <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-24 md:pb-6 relative z-0">
+                {children}
+              </main>
+            </AppShell>
+          </div>
           <UpdatePrompt />
         </LanguageProvider>
         <ServiceWorkerRegistration />

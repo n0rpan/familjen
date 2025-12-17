@@ -244,10 +244,11 @@ export function Header() {
 
       {/* Mobile Top Header */}
       <header
-        className="lg:hidden w-full sticky top-0 z-40 backdrop-blur-md"
+        className="lg:hidden w-full fixed top-0 left-0 right-0 z-40"
         style={{
-          background: 'var(--header-bg)',
-          borderBottom: '1px solid var(--border)'
+          background: 'var(--background)',
+          borderBottom: '1px solid var(--border)',
+          paddingTop: 'env(safe-area-inset-top, 0px)'
         }}
       >
         <div className="flex justify-center items-center h-14 px-4">
