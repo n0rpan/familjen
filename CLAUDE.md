@@ -174,6 +174,7 @@ Key migrations (in order):
 6. Member events and Google Calendar tokens
 7. Child tasks
 8. Pickup calendar sync
+9. Household creation fixes (RLS auth.jwt(), allergies array, calendar hint)
 
 ## Production Deployment Checklist
 
@@ -224,6 +225,30 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 GRANT EXECUTE ON FUNCTION create_household_with_admin(TEXT, TEXT, TEXT) TO authenticated;
+
+-- Updated version with birth_date and allergies (allergies as text[] array)
+CREATE OR REPLACE FUNCTION create_household_with_admin(
+  p_household_name TEXT, p_member_name TEXT, p_member_email TEXT,
+  p_birth_date DATE DEFAULT NULL, p_allergies TEXT DEFAULT NULL
+) RETURNS UUID AS $$
+DECLARE v_household_id UUID; v_user_id UUID; v_allergies TEXT[];
+BEGIN
+  v_user_id := auth.uid();
+  IF v_user_id IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  IF EXISTS (SELECT 1 FROM household_members WHERE user_id = v_user_id) THEN RAISE EXCEPTION 'Already has household'; END IF;
+  IF p_allergies IS NOT NULL AND TRIM(p_allergies) != '' THEN v_allergies := string_to_array(TRIM(p_allergies), ','); END IF;
+  INSERT INTO households (name) VALUES (p_household_name) RETURNING id INTO v_household_id;
+  INSERT INTO household_members (household_id, user_id, name, short_name, email, is_parent, is_household_admin, birth_date, allergies)
+  VALUES (v_household_id, v_user_id, p_member_name, LEFT(p_member_name, 3), LOWER(p_member_email), true, true, p_birth_date, v_allergies);
+  RETURN v_household_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+GRANT EXECUTE ON FUNCTION create_household_with_admin(TEXT, TEXT, TEXT, DATE, TEXT) TO authenticated;
+
+-- RLS: allowed_emails self-read (use auth.jwt() not subquery to auth.users)
+DROP POLICY IF EXISTS "View allowed emails" ON allowed_emails;
+CREATE POLICY "View allowed emails" ON allowed_emails FOR SELECT TO authenticated
+USING (is_admin() OR invited_by_household_id = get_user_household_id() OR LOWER(email) = LOWER(auth.jwt() ->> 'email'));
 
 -- Get connected calendar email (for all household members)
 CREATE OR REPLACE FUNCTION get_connected_calendar_email()
