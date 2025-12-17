@@ -1,9 +1,10 @@
-import { google, calendar_v3, Auth } from 'googleapis'
+import { google, calendar_v3, gmail_v1, Auth } from 'googleapis'
 
 const SCOPES = [
   'https://www.googleapis.com/auth/calendar',
   'https://www.googleapis.com/auth/calendar.events',
   'https://www.googleapis.com/auth/userinfo.email',  // To get the connected Gmail address
+  'https://www.googleapis.com/auth/gmail.readonly',  // To read calendar invites from Gmail
 ]
 
 // OAuth2 client singleton
@@ -217,5 +218,254 @@ export function mapGoogleEventToMemberEvent(
     source: 'google_calendar' as const,
     source_email: senderEmail,
     google_event_id: event.id,
+  }
+}
+
+// ===========================================
+// Gmail API functions for reading calendar invites
+// ===========================================
+
+// Get Gmail client with credentials
+export function getGmailClient(tokens: { access_token?: string | null; refresh_token?: string | null }): gmail_v1.Gmail {
+  const client = getOAuth2Client()
+  client.setCredentials(tokens)
+  return google.gmail({ version: 'v1', auth: client })
+}
+
+// Parsed calendar invite from .ics
+export interface ParsedCalendarInvite {
+  uid: string
+  summary: string
+  description?: string
+  startDate: string
+  endDate?: string
+  organizerEmail: string
+  organizerName?: string
+  location?: string
+  status?: string
+}
+
+// Search Gmail for calendar invite emails
+export async function fetchCalendarInvitesFromGmail(
+  tokens: { access_token?: string | null; refresh_token?: string | null },
+  options: {
+    afterDate?: string  // ISO date string
+    maxResults?: number
+  } = {}
+): Promise<ParsedCalendarInvite[]> {
+  const gmail = getGmailClient(tokens)
+
+  // Search for emails with calendar invites (text/calendar content type)
+  // Filter by date if provided
+  let query = 'filename:ics OR has:attachment filename:ics'
+  if (options.afterDate) {
+    const afterDateFormatted = options.afterDate.replace(/-/g, '/')
+    query += ` after:${afterDateFormatted}`
+  }
+
+  const response = await gmail.users.messages.list({
+    userId: 'me',
+    q: query,
+    maxResults: options.maxResults || 50,
+  })
+
+  const messages = response.data.messages || []
+  const invites: ParsedCalendarInvite[] = []
+
+  for (const message of messages) {
+    if (!message.id) continue
+
+    try {
+      const invite = await extractCalendarInviteFromMessage(gmail, message.id)
+      if (invite) {
+        invites.push(invite)
+      }
+    } catch (error) {
+      console.error(`Failed to parse invite from message ${message.id}:`, error)
+    }
+  }
+
+  return invites
+}
+
+// Extract calendar invite from a Gmail message
+async function extractCalendarInviteFromMessage(
+  gmail: gmail_v1.Gmail,
+  messageId: string
+): Promise<ParsedCalendarInvite | null> {
+  const message = await gmail.users.messages.get({
+    userId: 'me',
+    id: messageId,
+    format: 'full',
+  })
+
+  const payload = message.data.payload
+  if (!payload) return null
+
+  // Find .ics attachment or text/calendar part
+  const icsContent = findIcsContent(payload)
+  if (!icsContent) return null
+
+  // Parse the .ics content
+  return parseIcsContent(icsContent, messageId)
+}
+
+// Recursively find .ics content in message payload
+function findIcsContent(payload: gmail_v1.Schema$MessagePart): string | null {
+  // Check if this part is an .ics attachment
+  if (payload.mimeType === 'text/calendar' || payload.filename?.endsWith('.ics')) {
+    if (payload.body?.data) {
+      return Buffer.from(payload.body.data, 'base64').toString('utf-8')
+    }
+  }
+
+  // Check nested parts
+  if (payload.parts) {
+    for (const part of payload.parts) {
+      const icsContent = findIcsContent(part)
+      if (icsContent) return icsContent
+    }
+  }
+
+  return null
+}
+
+// Parse .ics content to extract event details
+function parseIcsContent(icsContent: string, messageId: string): ParsedCalendarInvite | null {
+  // Simple .ics parser - extract key fields
+  const lines = icsContent.split(/\r?\n/)
+
+  let uid = messageId // fallback to message ID
+  let summary = ''
+  let description = ''
+  let startDate = ''
+  let endDate = ''
+  let organizerEmail = ''
+  let organizerName = ''
+  let location = ''
+  let status = ''
+  let inEvent = false
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i]
+
+    // Handle line continuations (lines starting with space/tab)
+    while (i + 1 < lines.length && (lines[i + 1].startsWith(' ') || lines[i + 1].startsWith('\t'))) {
+      i++
+      line += lines[i].substring(1)
+    }
+
+    if (line.startsWith('BEGIN:VEVENT')) {
+      inEvent = true
+      continue
+    }
+    if (line.startsWith('END:VEVENT')) {
+      inEvent = false
+      continue
+    }
+
+    if (!inEvent) continue
+
+    if (line.startsWith('UID:')) {
+      uid = line.substring(4).trim()
+    } else if (line.startsWith('SUMMARY:') || line.startsWith('SUMMARY;')) {
+      summary = extractIcsValue(line)
+    } else if (line.startsWith('DESCRIPTION:') || line.startsWith('DESCRIPTION;')) {
+      description = extractIcsValue(line)
+    } else if (line.startsWith('DTSTART')) {
+      startDate = parseIcsDate(line)
+    } else if (line.startsWith('DTEND')) {
+      endDate = parseIcsDate(line)
+    } else if (line.startsWith('ORGANIZER')) {
+      const orgMatch = line.match(/mailto:([^"\s]+)/i)
+      if (orgMatch) {
+        organizerEmail = orgMatch[1]
+      }
+      const cnMatch = line.match(/CN=([^;:]+)/i)
+      if (cnMatch) {
+        organizerName = cnMatch[1].replace(/"/g, '')
+      }
+    } else if (line.startsWith('LOCATION:') || line.startsWith('LOCATION;')) {
+      location = extractIcsValue(line)
+    } else if (line.startsWith('STATUS:')) {
+      status = line.substring(7).trim()
+    }
+  }
+
+  // Skip cancelled events
+  if (status === 'CANCELLED') {
+    return null
+  }
+
+  // Need at least summary, start date, and organizer
+  if (!summary || !startDate || !organizerEmail) {
+    return null
+  }
+
+  return {
+    uid,
+    summary,
+    description: description || undefined,
+    startDate,
+    endDate: endDate && endDate !== startDate ? endDate : undefined,
+    organizerEmail,
+    organizerName: organizerName || undefined,
+    location: location || undefined,
+    status: status || undefined,
+  }
+}
+
+// Extract value from ICS line (handles parameters like SUMMARY;LANGUAGE=en:Value)
+function extractIcsValue(line: string): string {
+  const colonIndex = line.indexOf(':')
+  if (colonIndex === -1) return ''
+  return line.substring(colonIndex + 1).trim()
+    .replace(/\\n/g, '\n')
+    .replace(/\\,/g, ',')
+    .replace(/\\\\/g, '\\')
+}
+
+// Parse ICS date format to ISO date string
+function parseIcsDate(line: string): string {
+  const colonIndex = line.indexOf(':')
+  if (colonIndex === -1) return ''
+
+  const dateStr = line.substring(colonIndex + 1).trim()
+
+  // Handle various formats: 20251217, 20251217T070000, 20251217T070000Z
+  const match = dateStr.match(/^(\d{4})(\d{2})(\d{2})/)
+  if (!match) return ''
+
+  return `${match[1]}-${match[2]}-${match[3]}`
+}
+
+// Map Gmail invite to our MemberEvent format
+export function mapGmailInviteToMemberEvent(
+  invite: ParsedCalendarInvite,
+  memberId: string,
+  householdId: string
+) {
+  // Guess event type from summary
+  const summary = invite.summary.toLowerCase()
+  let eventType: 'work' | 'travel' | 'family' | 'other' = 'other'
+
+  if (summary.includes('reise') || summary.includes('travel') || summary.includes('flight') || summary.includes('fly')) {
+    eventType = 'travel'
+  } else if (summary.includes('jobb') || summary.includes('work') || summary.includes('møte') || summary.includes('meeting')) {
+    eventType = 'work'
+  } else if (summary.includes('familie') || summary.includes('family') || summary.includes('bursdag') || summary.includes('birthday')) {
+    eventType = 'family'
+  }
+
+  return {
+    household_id: householdId,
+    member_id: memberId,
+    date: invite.startDate,
+    end_date: invite.endDate || null,
+    title: invite.summary,
+    event_type: eventType,
+    source: 'google_calendar' as const,
+    source_email: invite.organizerEmail,
+    google_event_id: invite.uid,  // Use UID as unique identifier
   }
 }

@@ -2,15 +2,13 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { isUserAdmin } from '@/lib/config'
 import {
-  fetchCalendarEvents,
-  getEventSenderEmail,
-  isEventCancelled,
-  mapGoogleEventToMemberEvent,
+  fetchCalendarInvitesFromGmail,
+  mapGmailInviteToMemberEvent,
 } from '@/lib/google-calendar'
 import { formatDateISO, addDays } from '@/lib/utils'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 
-// POST /api/calendar/sync - Sync events from Google Calendar
+// POST /api/calendar/sync - Sync events from Gmail calendar invites
 export async function POST() {
   try {
     const supabase = await createClient()
@@ -53,13 +51,12 @@ export async function POST() {
       refresh_token: tokenData.refresh_token,
     }
 
-    // Fetch events from Google Calendar (next 30 days)
+    // Fetch calendar invites from Gmail (last 30 days)
     const today = new Date()
-    const thirtyDaysFromNow = addDays(today, 30)
+    const thirtyDaysAgo = addDays(today, -30)
 
-    const googleEvents = await fetchCalendarEvents(tokens, {
-      timeMin: formatDateISO(today),
-      timeMax: formatDateISO(thirtyDaysFromNow),
+    const gmailInvites = await fetchCalendarInvitesFromGmail(tokens, {
+      afterDate: formatDateISO(thirtyDaysAgo),
       maxResults: 100,
     })
 
@@ -93,7 +90,7 @@ export async function POST() {
       }
     })
 
-    // Get existing events synced from Google (to handle updates/deletes)
+    // Get existing events synced from Google (to track what we've seen)
     const { data: existingEvents } = await supabase
       .from('member_events')
       .select('id, google_event_id')
@@ -101,38 +98,30 @@ export async function POST() {
       .not('google_event_id', 'is', null)
 
     const existingEventIds = new Set(existingEvents?.map((e) => e.google_event_id) || [])
-    const googleEventIds = new Set<string>()
+    const gmailEventIds = new Set<string>()
 
-    // Process Google events
-    const eventsToUpsert: Array<ReturnType<typeof mapGoogleEventToMemberEvent>> = []
+    // Process Gmail invites
+    const eventsToUpsert: Array<ReturnType<typeof mapGmailInviteToMemberEvent>> = []
     const unmatchedEvents: string[] = []
 
-    for (const event of googleEvents) {
-      if (!event.id) continue
+    for (const invite of gmailInvites) {
+      gmailEventIds.add(invite.uid)
 
-      googleEventIds.add(event.id)
-
-      // Skip cancelled events
-      if (isEventCancelled(event)) {
+      // Skip events in the past
+      if (invite.startDate < formatDateISO(today)) {
         continue
       }
 
-      // Get sender email and find matching member
-      const senderEmail = getEventSenderEmail(event)
-      if (!senderEmail) {
-        unmatchedEvents.push(event.summary || 'Unknown event')
-        continue
-      }
-
-      const member = emailToMember.get(senderEmail.toLowerCase())
+      // Find matching member by organizer email
+      const member = emailToMember.get(invite.organizerEmail.toLowerCase())
       if (!member) {
-        // Sender email doesn't match any member - ignore
-        unmatchedEvents.push(`${event.summary || 'Unknown'} (from ${senderEmail})`)
+        // Organizer email doesn't match any member - ignore
+        unmatchedEvents.push(`${invite.summary} (from ${invite.organizerEmail})`)
         continue
       }
 
       // Map to our format
-      const memberEvent = mapGoogleEventToMemberEvent(event, member.id, member.household_id)
+      const memberEvent = mapGmailInviteToMemberEvent(invite, member.id, member.household_id)
       eventsToUpsert.push(memberEvent)
     }
 
@@ -155,34 +144,16 @@ export async function POST() {
       }
     }
 
-    // Delete events that were removed or cancelled in Google Calendar
-    const eventsToDelete = existingEvents?.filter(
-      (e) => e.google_event_id && !googleEventIds.has(e.google_event_id)
-    )
-
-    let deletedCount = 0
-    if (eventsToDelete && eventsToDelete.length > 0) {
-      const { error: deleteError } = await supabase
-        .from('member_events')
-        .delete()
-        .in(
-          'id',
-          eventsToDelete.map((e) => e.id)
-        )
-
-      if (deleteError) {
-        console.error('Error deleting events:', deleteError)
-      } else {
-        deletedCount = eventsToDelete.length
-      }
-    }
+    // Note: We don't auto-delete events since Gmail retains emails
+    // Users can manually delete events they don't want
 
     return NextResponse.json({
       success: true,
       synced: upsertedCount,
-      deleted: deletedCount,
+      deleted: 0,
       unmatched: unmatchedEvents.length,
       unmatchedEvents: unmatchedEvents.slice(0, 10), // Show first 10
+      totalInvitesFound: gmailInvites.length,
     })
   } catch (error) {
     console.error('Calendar sync error:', error)
