@@ -15,8 +15,22 @@ export function AppShell({ children }: AppShellProps) {
   const [pullDistance, setPullDistance] = useState(0)
   const startY = useRef(0)
   const containerRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLElement | null>(null)
 
   const threshold = 80
+
+  // Get the scroll container (.app-shell-content)
+  useEffect(() => {
+    scrollContainerRef.current = document.querySelector('.app-shell-content')
+  }, [])
+
+  const getScrollTop = useCallback(() => {
+    // Check app-shell-content first, fallback to window
+    if (scrollContainerRef.current) {
+      return scrollContainerRef.current.scrollTop
+    }
+    return window.scrollY
+  }, [])
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true)
@@ -29,13 +43,13 @@ export function AppShell({ children }: AppShellProps) {
   useEffect(() => {
     const handleTouchStart = (e: TouchEvent) => {
       if (isRefreshing) return
-      if (window.scrollY > 5) return // Only trigger when near top
+      if (getScrollTop() > 5) return // Only trigger when near top
       startY.current = e.touches[0].clientY
     }
 
     const handleTouchMove = (e: TouchEvent) => {
       if (isRefreshing) return
-      if (window.scrollY > 5) {
+      if (getScrollTop() > 5) {
         setPullDistance(0)
         setIsPulling(false)
         return
@@ -77,7 +91,7 @@ export function AppShell({ children }: AppShellProps) {
       document.removeEventListener('touchmove', handleTouchMove)
       document.removeEventListener('touchend', handleTouchEnd)
     }
-  }, [isRefreshing, pullDistance, threshold, handleRefresh])
+  }, [isRefreshing, pullDistance, threshold, handleRefresh, getScrollTop])
 
   // Reset on navigation
   useEffect(() => {
