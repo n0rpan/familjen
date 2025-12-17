@@ -215,26 +215,14 @@ export default async function HomePage() {
   }
 
   return (
-    <div className="space-y-8 animate-fade-in pb-44 md:pb-0">
-      {/* Universal AI Input - Sticky on mobile, inline on desktop */}
-      <div className="fixed bottom-20 left-0 right-0 z-40 px-4 md:static md:px-0 md:z-auto">
-        <div className="md:hidden rounded-2xl shadow-lg" style={{ background: 'var(--card)', padding: '12px' }}>
-          <UniversalAIInput
-            householdId={myMembership.household_id}
-            children={children || []}
-            members={members || []}
-            currentUserId={user.id}
-          />
-        </div>
-        <div className="hidden md:block">
-          <UniversalAIInput
-            householdId={myMembership.household_id}
-            children={children || []}
-            members={members || []}
-            currentUserId={user.id}
-          />
-        </div>
-      </div>
+    <div className="space-y-8 animate-fade-in">
+      {/* Universal AI Input - At top on all screen sizes */}
+      <UniversalAIInput
+        householdId={myMembership.household_id}
+        children={children || []}
+        members={members || []}
+        currentUserId={user.id}
+      />
 
       {/* Today's Overview */}
       <TodayOverview summary={todaySummary} />
