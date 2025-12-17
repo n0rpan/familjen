@@ -104,18 +104,18 @@ export default async function HomePage() {
   const weekStartStr = formatDateISO(weekStart)
   const weekEndStr = formatDateISO(weekEnd)
 
-  // Fetch all data in parallel
+  // Fetch all data in parallel, filtering by household_id to prevent admin seeing other households
   const [childrenResult, membersResult, pickupsResult, mealsResult, eventsResult, tasksResult, remindersResult] = await Promise.all([
-    supabase.from('children').select('*').order('sort_order'),
-    supabase.from('household_members').select('*'),
-    supabase.from('pickups').select(`*, child:children(*), picker:household_members(*)`).gte('date', weekStartStr).lte('date', weekEndStr),
-    supabase.from('meals').select(`*, recipe:recipes(*)`).gte('date', weekStartStr).lte('date', weekEndStr),
+    supabase.from('children').select('*').eq('household_id', myMembership.household_id).order('sort_order'),
+    supabase.from('household_members').select('*').eq('household_id', myMembership.household_id),
+    supabase.from('pickups').select(`*, child:children(*), picker:household_members(*)`).eq('household_id', myMembership.household_id).gte('date', weekStartStr).lte('date', weekEndStr),
+    supabase.from('meals').select(`*, recipe:recipes(*)`).eq('household_id', myMembership.household_id).gte('date', weekStartStr).lte('date', weekEndStr),
     // Fetch events that overlap with this week
-    supabase.from('member_events').select('*').lte('date', weekEndStr).or(`end_date.gte.${weekStartStr},end_date.is.null`),
+    supabase.from('member_events').select('*').eq('household_id', myMembership.household_id).lte('date', weekEndStr).or(`end_date.gte.${weekStartStr},end_date.is.null`),
     // Fetch child tasks for this week
-    supabase.from('child_tasks').select('*, child:children(*)').gte('date', weekStartStr).lte('date', weekEndStr).order('date').order('time'),
+    supabase.from('child_tasks').select('*, child:children(*)').eq('household_id', myMembership.household_id).gte('date', weekStartStr).lte('date', weekEndStr).order('date').order('time'),
     // Fetch household reminders for this week
-    supabase.from('household_reminders').select('*, assignee:household_members(*)').gte('date', weekStartStr).lte('date', weekEndStr).eq('status', 'open').order('date').order('time'),
+    supabase.from('household_reminders').select('*, assignee:household_members(*)').eq('household_id', myMembership.household_id).gte('date', weekStartStr).lte('date', weekEndStr).eq('status', 'open').order('date').order('time'),
   ])
 
   // Check for errors
@@ -215,7 +215,7 @@ export default async function HomePage() {
   }
 
   return (
-    <div className="space-y-8 animate-fade-in pb-28 md:pb-0">
+    <div className="space-y-8 animate-fade-in pb-44 md:pb-0">
       {/* Universal AI Input - Sticky on mobile, inline on desktop */}
       <div className="fixed bottom-20 left-0 right-0 z-40 px-4 md:static md:px-0 md:z-auto">
         <div className="md:hidden rounded-2xl shadow-lg" style={{ background: 'var(--card)', padding: '12px' }}>
