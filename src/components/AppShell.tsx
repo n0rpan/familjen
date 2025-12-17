@@ -1,0 +1,150 @@
+'use client'
+
+import { useRouter, usePathname } from 'next/navigation'
+import { useCallback, useState, useRef, useEffect } from 'react'
+
+interface AppShellProps {
+  children: React.ReactNode
+}
+
+export function AppShell({ children }: AppShellProps) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const [isPulling, setIsPulling] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [pullDistance, setPullDistance] = useState(0)
+  const startY = useRef(0)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const threshold = 80
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true)
+    router.refresh()
+    // Wait a bit for the refresh to complete
+    await new Promise(resolve => setTimeout(resolve, 500))
+    setIsRefreshing(false)
+  }, [router])
+
+  useEffect(() => {
+    const handleTouchStart = (e: TouchEvent) => {
+      if (isRefreshing) return
+      if (window.scrollY > 5) return // Only trigger when near top
+      startY.current = e.touches[0].clientY
+    }
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (isRefreshing) return
+      if (window.scrollY > 5) {
+        setPullDistance(0)
+        setIsPulling(false)
+        return
+      }
+
+      const currentY = e.touches[0].clientY
+      const distance = Math.max(0, currentY - startY.current)
+
+      if (distance > 0) {
+        // Apply resistance
+        const resistance = 0.4
+        const actualDistance = Math.min(distance * resistance, threshold * 1.5)
+        setPullDistance(actualDistance)
+        setIsPulling(actualDistance > 10)
+
+        if (actualDistance > 10) {
+          e.preventDefault()
+        }
+      }
+    }
+
+    const handleTouchEnd = async () => {
+      if (isRefreshing) return
+
+      if (pullDistance >= threshold) {
+        await handleRefresh()
+      }
+
+      setIsPulling(false)
+      setPullDistance(0)
+    }
+
+    document.addEventListener('touchstart', handleTouchStart, { passive: true })
+    document.addEventListener('touchmove', handleTouchMove, { passive: false })
+    document.addEventListener('touchend', handleTouchEnd, { passive: true })
+
+    return () => {
+      document.removeEventListener('touchstart', handleTouchStart)
+      document.removeEventListener('touchmove', handleTouchMove)
+      document.removeEventListener('touchend', handleTouchEnd)
+    }
+  }, [isRefreshing, pullDistance, threshold, handleRefresh])
+
+  // Reset on navigation
+  useEffect(() => {
+    setIsPulling(false)
+    setPullDistance(0)
+    setIsRefreshing(false)
+  }, [pathname])
+
+  const progress = Math.min(pullDistance / threshold, 1)
+
+  // Don't show on login page
+  if (pathname === '/login') {
+    return <>{children}</>
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      {/* Pull indicator */}
+      <div
+        className="fixed left-0 right-0 flex items-center justify-center z-50 pointer-events-none"
+        style={{
+          top: 56, // Below mobile header
+          height: 60,
+          opacity: isPulling || isRefreshing ? 1 : 0,
+          transition: 'opacity 0.2s ease',
+        }}
+      >
+        <div
+          className="w-10 h-10 rounded-full flex items-center justify-center shadow-lg"
+          style={{
+            background: 'var(--card)',
+            transform: `translateY(${Math.min(pullDistance, 60) - 30}px) rotate(${isRefreshing ? 0 : progress * 360}deg)`,
+            transition: isPulling ? 'none' : 'transform 0.3s ease',
+          }}
+        >
+          {isRefreshing ? (
+            <div className="spinner" style={{ width: 20, height: 20 }} />
+          ) : (
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--accent)"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{
+                opacity: progress,
+                transform: `scale(${0.6 + progress * 0.4})`,
+              }}
+            >
+              <path d="M12 19V5M5 12l7-7 7 7" />
+            </svg>
+          )}
+        </div>
+      </div>
+
+      {/* Content */}
+      <div
+        style={{
+          transform: isPulling || isRefreshing ? `translateY(${Math.min(pullDistance, 40)}px)` : 'none',
+          transition: isPulling ? 'none' : 'transform 0.3s ease',
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
