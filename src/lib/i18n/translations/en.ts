@@ -555,4 +555,14 @@ export const en: TranslationStrings = {
     items: 'wishes',
     item: 'wish',
   },
+
+  ai: {
+    inputPlaceholder: "Type something... (e.g. 'Taco Friday' or 'Storm dentist Tuesday')",
+    add: 'Add',
+    change: 'Change',
+    added: 'Added',
+    changed: 'Changed',
+    undo: 'Undo',
+    parsing: 'Parsing...',
+  },
 }

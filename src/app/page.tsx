@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { TodayOverview } from '@/components/TodayOverview'
 import { WeekGrid } from '@/components/WeekGrid'
+import { UniversalAIInput } from '@/components/ai'
 import { formatDateISO, addDays } from '@/lib/utils'
 import Link from 'next/link'
 import { getLanguageFromCookieOrBrowser } from '@/lib/i18n/cookie.server'
@@ -215,6 +216,14 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-8 animate-fade-in">
+      {/* Universal AI Input */}
+      <UniversalAIInput
+        householdId={myMembership.household_id}
+        children={children || []}
+        members={members || []}
+        currentUserId={user.id}
+      />
+
       {/* Today's Overview */}
       <TodayOverview summary={todaySummary} />
 

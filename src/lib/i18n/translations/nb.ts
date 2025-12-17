@@ -555,4 +555,14 @@ export const nb: TranslationStrings = {
     items: 'ønsker',
     item: 'ønske',
   },
+
+  ai: {
+    inputPlaceholder: "Skriv noe... (f.eks. 'Taco fredag' eller 'Storm tannlege tirsdag')",
+    add: 'Legg til',
+    change: 'Endre',
+    added: 'Lagt til',
+    changed: 'Endret',
+    undo: 'Angre',
+    parsing: 'Tolker...',
+  },
 }

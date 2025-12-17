@@ -1,0 +1,256 @@
+import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { getUserHousehold } from '@/lib/supabase/household'
+import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
+import { z } from 'zod'
+
+// Request schema
+const parseActionSchema = z.object({
+  input: z.string().min(1).max(500),
+  context: z.object({
+    today: z.string(),
+    children: z.array(z.object({
+      id: z.string(),
+      name: z.string(),
+    })),
+    members: z.array(z.object({
+      id: z.string(),
+      name: z.string(),
+      isCurrentUser: z.boolean(),
+    })),
+  }),
+})
+
+// Response types
+export type ActionType = 'meal' | 'child_task' | 'member_event' | 'pickup'
+
+export interface ParsedAction {
+  type: ActionType
+  operation: 'add' | 'modify'
+  data: Record<string, unknown>
+  display: {
+    title: string
+    subtitle: string
+    icon: string
+  }
+  confidence: number
+  needsClarification?: {
+    field: string
+    question: string
+    options: Array<{
+      label: string
+      value: string | null
+      resultType?: ActionType
+    }>
+  }
+}
+
+export interface ParseActionResponse {
+  actions: ParsedAction[]
+  error?: string
+}
+
+export async function POST(request: Request) {
+  try {
+    const supabase = await createClient()
+
+    // Check authentication
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
+    }
+
+    // Check rate limit (reuse aiParseReminders limit)
+    const rateLimitKey = createRateLimitKey(user.id, 'aiParseReminders')
+    const rateLimit = checkRateLimit(rateLimitKey, RATE_LIMITS.aiParseReminders)
+    if (rateLimit.limited) {
+      return NextResponse.json(
+        { error: `For mange forespørsler. Prøv igjen om ${rateLimit.retryAfter} sekunder.` },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
+      )
+    }
+
+    // Parse request body
+    const body = await request.json()
+    const validation = parseActionSchema.safeParse(body)
+    if (!validation.success) {
+      return NextResponse.json({ error: 'Ugyldig forespørsel' }, { status: 400 })
+    }
+    const { input, context } = validation.data
+
+    // Fetch model from app_settings
+    const { data: modelSetting } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'openrouter_model')
+      .single()
+
+    const model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
+
+    // Get household for current user context
+    const { data: household } = await getUserHousehold(supabase)
+    const currentMember = context.members.find(m => m.isCurrentUser)
+
+    // Build the prompt
+    const systemPrompt = buildSystemPrompt(context)
+    const userPrompt = buildUserPrompt(input, context, currentMember?.name)
+
+    // Call OpenRouter API
+    const apiKey = process.env.OPENROUTER_API_KEY
+    if (!apiKey) {
+      return NextResponse.json({ error: 'OpenRouter API-nøkkel ikke konfigurert' }, { status: 500 })
+    }
+
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+        'X-Title': 'Familjen',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.2,
+        max_tokens: 2000,
+      }),
+    })
+
+    if (!response.ok) {
+      console.error('OpenRouter error:', { status: response.status })
+      return NextResponse.json({ error: 'Kunne ikke tolke tekst' }, { status: 500 })
+    }
+
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content
+
+    if (!content) {
+      return NextResponse.json({ error: 'Tomt svar fra AI' }, { status: 500 })
+    }
+
+    // Parse the JSON response
+    try {
+      let jsonContent = content
+      if (content.includes('```json')) {
+        jsonContent = content.split('```json')[1].split('```')[0].trim()
+      } else if (content.includes('```')) {
+        jsonContent = content.split('```')[1].split('```')[0].trim()
+      }
+
+      const parsed = JSON.parse(jsonContent)
+      const actions: ParsedAction[] = (parsed.actions || []).map((a: Record<string, unknown>) => ({
+        type: a.type as ActionType,
+        operation: a.operation || 'add',
+        data: a.data || {},
+        display: a.display || { title: '', subtitle: '', icon: '📝' },
+        confidence: typeof a.confidence === 'number' ? a.confidence : 0.5,
+        needsClarification: a.needs_clarification || null,
+      }))
+
+      return NextResponse.json({ actions } as ParseActionResponse)
+    } catch (parseError) {
+      console.error('Failed to parse AI response:', parseError)
+      return NextResponse.json({ error: 'Kunne ikke tolke AI-svar' }, { status: 500 })
+    }
+  } catch (error) {
+    console.error('Parse action error:', error)
+    return NextResponse.json({ error: 'En feil oppstod' }, { status: 500 })
+  }
+}
+
+function buildSystemPrompt(context: z.infer<typeof parseActionSchema>['context']): string {
+  return `Du er en assistent for en norsk familieplanleggingsapp. Din oppgave er å tolke brukerens naturlige språk og returnere strukturerte handlinger.
+
+HANDLINGSTYPER:
+
+1. "meal" - Middag/måltid
+   - Brukes når: "taco fredag", "pizza i morgen", "laks på lørdag"
+   - Data: { date, meal_name }
+
+2. "child_task" - Oppgave for barn
+   - Brukes når: "Storm tannlege tirsdag", "Ylva må ha med gymtøy", "barnehagen stengt fredag"
+   - task_type: "bring" (ta med), "appointment" (avtale), "activity" (aktivitet), "closure" (stengt), "reminder", "other"
+   - Data: { date, time?, title, task_type, child_id?, child_name? }
+
+3. "member_event" - Hendelse for voksen
+   - Brukes når: "jeg er i Bergen onsdag", "pappa på jobbtur", "mamma på kurs"
+   - Data: { date, end_date?, title, member_id?, member_name? }
+
+4. "pickup" - Endring av henting
+   - Brukes når: "jeg henter Storm i morgen", "pappa henter begge på fredag"
+   - operation: "modify" (alltid for pickup - endrer eksisterende)
+   - Data: { date, child_id?, child_name?, picker_id?, picker_name? }
+
+REGLER:
+
+1. I dag er ${context.today}
+2. "i morgen" = dagen etter i dag
+3. "på mandag/tirsdag/..." = neste forekomst av den ukedagen
+4. Hvis "jeg" brukes, referer til nåværende bruker
+5. Hvis barn/person ikke kan identifiseres sikkert, sett needs_clarification
+
+BARN I FAMILIEN:
+${context.children.map(c => `- ${c.name} (id: ${c.id})`).join('\n')}
+
+VOKSNE I FAMILIEN:
+${context.members.map(m => `- ${m.name} (id: ${m.id})${m.isCurrentUser ? ' [deg]' : ''}`).join('\n')}
+
+SVAR FORMAT (JSON):
+{
+  "actions": [
+    {
+      "type": "meal|child_task|member_event|pickup",
+      "operation": "add|modify",
+      "data": { ... },
+      "display": {
+        "title": "Kort beskrivelse",
+        "subtitle": "Dato/tid info",
+        "icon": "🍕|📅|✈️|🚗"
+      },
+      "confidence": 0.0-1.0,
+      "needs_clarification": null | {
+        "field": "child_id|member_id|picker_id",
+        "question": "Spørsmål på norsk",
+        "options": [
+          { "label": "Visningsnavn", "value": "uuid", "result_type": "child_task" }
+        ]
+      }
+    }
+  ]
+}
+
+IKONER:
+- meal: 🍕🌮🍝🍗🐟
+- child_task/bring: 🎒
+- child_task/appointment: 🏥🦷
+- child_task/activity: ⚽🎭🎨
+- child_task/closure: 🏠
+- member_event: ✈️💼🎓
+- pickup: 🚗
+
+VIKTIG:
+- Returner BARE gyldig JSON
+- Sett operation="modify" for pickup (endrer alltid eksisterende hentinger)
+- Sett needs_clarification hvis du er usikker på hvem handlingen gjelder
+- confidence bør være høy (0.8+) kun når du er sikker`
+}
+
+function buildUserPrompt(
+  input: string,
+  context: z.infer<typeof parseActionSchema>['context'],
+  currentUserName?: string
+): string {
+  return `Tolk følgende og returner handlinger:
+
+"${input}"
+
+Kontekst:
+- I dag: ${context.today}
+- Nåværende bruker: ${currentUserName || 'ukjent'}
+- Barn: ${context.children.map(c => c.name).join(', ') || 'ingen'}
+- Voksne: ${context.members.map(m => m.name).join(', ') || 'ingen'}`
+}

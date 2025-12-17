@@ -555,4 +555,14 @@ export const sv: TranslationStrings = {
     items: 'önskningar',
     item: 'önskning',
   },
+
+  ai: {
+    inputPlaceholder: "Skriv något... (t.ex. 'Taco fredag' eller 'Storm tandläkare tisdag')",
+    add: 'Lägg till',
+    change: 'Ändra',
+    added: 'Tillagt',
+    changed: 'Ändrat',
+    undo: 'Ångra',
+    parsing: 'Tolkar...',
+  },
 }

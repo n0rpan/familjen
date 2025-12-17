@@ -576,4 +576,15 @@ export interface TranslationStrings {
     items: string
     item: string
   }
+
+  // Universal AI Input
+  ai: {
+    inputPlaceholder: string
+    add: string
+    change: string
+    added: string
+    changed: string
+    undo: string
+    parsing: string
+  }
 }
