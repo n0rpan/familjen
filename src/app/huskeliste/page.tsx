@@ -273,6 +273,7 @@ export default function HusklistePage() {
           .eq('id', childData.id)
       } else {
         await supabase.from('child_tasks').insert({
+          household_id: household!.id,
           child_id: childData.child_id,
           date: childData.date,
           time: childData.time,
@@ -330,33 +331,60 @@ export default function HusklistePage() {
 
   // Handle AI parsed reminder
   const handleAIReminder = useCallback(async (parsed: ParsedReminder) => {
-    // Create a child task from parsed reminder
-    if (parsed.child_id) {
-      await supabase.from('child_tasks').insert({
-        child_id: parsed.child_id,
-        date: parsed.date || new Date().toISOString().split('T')[0],
-        time: parsed.time,
-        task_type: parsed.task_type,
-        title: parsed.title,
-        notes: parsed.notes,
-        source: 'ai_suggested',
-      })
-    } else {
-      // Create as household reminder if no child specified
-      await supabase.from('household_reminders').insert({
-        household_id: household!.id,
-        date: parsed.date || new Date().toISOString().split('T')[0],
-        time: parsed.time,
-        title: parsed.title,
-        notes: parsed.notes,
-        category: 'other',
-        priority: 'normal',
-        source: 'ai_suggested',
-      })
+    try {
+      // Try to match child_id from child_name if not provided
+      let childId = parsed.child_id
+      if (!childId && parsed.child_name) {
+        const matchedChild = children.find(
+          c => c.name.toLowerCase() === parsed.child_name?.toLowerCase()
+        )
+        if (matchedChild) {
+          childId = matchedChild.id
+        }
+      }
+
+      // Create a child task from parsed reminder
+      if (childId) {
+        const { error } = await supabase.from('child_tasks').insert({
+          household_id: household!.id,
+          child_id: childId,
+          date: parsed.date || new Date().toISOString().split('T')[0],
+          time: parsed.time,
+          task_type: parsed.task_type,
+          title: parsed.title,
+          notes: parsed.notes,
+          source: 'ai_suggested',
+        })
+        if (error) {
+          console.error('Failed to insert child task:', error)
+          setError(t.errors.saveFailed)
+          return
+        }
+      } else {
+        // Create as household reminder if no child specified
+        const { error } = await supabase.from('household_reminders').insert({
+          household_id: household!.id,
+          date: parsed.date || new Date().toISOString().split('T')[0],
+          time: parsed.time,
+          title: parsed.title,
+          notes: parsed.notes,
+          category: 'other',
+          priority: 'normal',
+          source: 'ai_suggested',
+        })
+        if (error) {
+          console.error('Failed to insert household reminder:', error)
+          setError(t.errors.saveFailed)
+          return
+        }
+      }
+      loadData()
+      setShowNLInput(false)
+    } catch (err) {
+      console.error('handleAIReminder error:', err)
+      setError(t.errors.generic)
     }
-    loadData()
-    setShowNLInput(false)
-  }, [supabase, household])
+  }, [supabase, household, children, t])
 
   // Wishlist handlers
   const handleReserveItem = useCallback(async (itemId: string) => {

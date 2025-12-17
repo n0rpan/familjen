@@ -337,6 +337,7 @@ export interface TranslationStrings {
     aiSettingsDesc: string
     openrouterModel: string
     priceNote: string
+    modelTestHint: string
     calendarDesc: string
     connected: string
     notConnected: string

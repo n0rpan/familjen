@@ -490,9 +490,13 @@ export default function AdminPage() {
     setSaving(true);
     const { error } = await supabase
       .from("app_settings")
-      .upsert({ key, value, updated_at: new Date().toISOString() });
+      .upsert(
+        { key, value, updated_at: new Date().toISOString() },
+        { onConflict: "key" }
+      );
 
     if (error) {
+      console.error("Failed to update setting:", error);
       showMessage("error", t.errors.saveFailed);
     } else {
       setSettings((prev) => ({ ...prev, [key]: value }));
@@ -1168,13 +1172,16 @@ export default function AdminPage() {
               {t.admin.openrouterModel}
             </label>
             <ModelSelector
-              value={settings.openrouter_model || "anthropic/claude-3.5-sonnet"}
+              value={settings.openrouter_model || "google/gemini-2.5-flash-lite"}
               onChange={(modelId) => updateSetting("openrouter_model", modelId)}
               disabled={saving}
               t={t}
             />
             <p className="text-xs mt-2" style={{ color: "var(--muted)" }}>
               {t.admin.priceNote}
+            </p>
+            <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>
+              {t.admin.modelTestHint}
             </p>
           </div>
         </div>

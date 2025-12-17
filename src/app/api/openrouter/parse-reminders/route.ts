@@ -40,7 +40,7 @@ export async function POST(request: Request) {
       .eq('key', 'openrouter_model')
       .single()
 
-    const model = modelSetting?.value || 'anthropic/claude-3.5-sonnet'
+    const model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
 
     // Fetch household data (using safe multi-row handler)
     const { data: household, error: householdError } = await getUserHousehold(supabase)
