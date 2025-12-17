@@ -1,15 +1,20 @@
 'use client'
 
-import { useState, useEffect, Suspense, useMemo } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useState, useEffect, Suspense, useMemo, useCallback } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useTranslation } from '@/lib/i18n/context'
+import { OTPInput } from '@/components/OTPInput'
+
+type LoginStep = 'email' | 'otp'
 
 function LoginContent() {
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
+  const [step, setStep] = useState<LoginStep>('email')
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const searchParams = useSearchParams()
+  const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
   const t = useTranslation()
 
@@ -42,7 +47,7 @@ function LoginContent() {
     }
   }
 
-  const handleMagicLink = async (e: React.FormEvent) => {
+  const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!email) return
 
@@ -61,11 +66,57 @@ function LoginContent() {
     if (error) {
       setMessage({ type: 'error', text: error.message })
     } else {
-      setMessage({
-        type: 'success',
-        text: t.login.checkEmail,
-      })
+      setStep('otp')
     }
+  }
+
+  const handleResendCode = async () => {
+    setLoading(true)
+    setMessage(null)
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
+    })
+
+    setLoading(false)
+
+    if (error) {
+      setMessage({ type: 'error', text: error.message })
+    } else {
+      setMessage({ type: 'success', text: t.login.checkEmail })
+    }
+  }
+
+  const handleVerifyOTP = useCallback(async (code: string) => {
+    setLoading(true)
+    setMessage(null)
+
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token: code,
+      type: 'email',
+    })
+
+    setLoading(false)
+
+    if (error) {
+      if (error.message.includes('expired')) {
+        setMessage({ type: 'error', text: t.login.codeExpired })
+      } else {
+        setMessage({ type: 'error', text: t.login.invalidCode })
+      }
+    } else {
+      // Success - redirect to app
+      router.push('/auth/callback')
+    }
+  }, [email, supabase.auth, router, t.login.codeExpired, t.login.invalidCode])
+
+  const handleBackToEmail = () => {
+    setStep('email')
+    setMessage(null)
   }
 
   return (
@@ -109,116 +160,210 @@ function LoginContent() {
 
           {/* Login Card */}
           <div
-            className="rounded-2xl p-8 shadow-xl stagger-children"
+            className="rounded-2xl p-8 shadow-xl"
             style={{
               background: 'var(--card)',
               border: '1px solid var(--border)'
             }}
           >
-            {/* Google Login */}
-            <button
-              onClick={handleGoogleLogin}
-              disabled={loading}
-              className="w-full flex items-center justify-center gap-3 px-5 py-4 rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:hover:scale-100"
-              style={{
-                background: 'var(--background)',
-                border: '1.5px solid var(--border)'
-              }}
-            >
-              <svg className="w-5 h-5" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                />
-              </svg>
-              <span className="font-medium" style={{ color: 'var(--foreground)' }}>
-                {t.login.continueWithGoogle}
-              </span>
-            </button>
-
-            {/* Divider */}
-            <div className="relative my-8">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full" style={{ borderTop: '1px solid var(--border)' }} />
-              </div>
-              <div className="relative flex justify-center">
-                <span
-                  className="px-4 text-sm"
-                  style={{ background: 'var(--card)', color: 'var(--muted)' }}
+            {step === 'email' ? (
+              <>
+                {/* Google Login */}
+                <button
+                  onClick={handleGoogleLogin}
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-3 px-5 py-4 rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:hover:scale-100"
+                  style={{
+                    background: 'var(--background)',
+                    border: '1.5px solid var(--border)'
+                  }}
                 >
-                  {t.common.or}
-                </span>
-              </div>
-            </div>
+                  <svg className="w-5 h-5" viewBox="0 0 24 24">
+                    <path
+                      fill="#4285F4"
+                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                    />
+                  </svg>
+                  <span className="font-medium" style={{ color: 'var(--foreground)' }}>
+                    {t.login.continueWithGoogle}
+                  </span>
+                </button>
 
-            {/* Magic Link Form */}
-            <form onSubmit={handleMagicLink} className="space-y-4">
-              <div>
-                <label
-                  htmlFor="email"
-                  className="block text-sm font-medium mb-2"
-                  style={{ color: 'var(--foreground)' }}
+                {/* Divider */}
+                <div className="relative my-8">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full" style={{ borderTop: '1px solid var(--border)' }} />
+                  </div>
+                  <div className="relative flex justify-center">
+                    <span
+                      className="px-4 text-sm"
+                      style={{ background: 'var(--card)', color: 'var(--muted)' }}
+                    >
+                      {t.common.or}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Email Code Form */}
+                <form onSubmit={handleSendCode} className="space-y-4">
+                  <div>
+                    <label
+                      htmlFor="email"
+                      className="block text-sm font-medium mb-2"
+                      style={{ color: 'var(--foreground)' }}
+                    >
+                      {t.login.emailLabel}
+                    </label>
+                    <input
+                      type="email"
+                      id="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder={t.login.emailPlaceholder}
+                      className="input"
+                      required
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={loading || !email}
+                    className="btn btn-primary w-full py-4 text-base disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? (
+                      <>
+                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                        <span>{t.login.sending}</span>
+                      </>
+                    ) : (
+                      t.login.sendCode
+                    )}
+                  </button>
+                </form>
+
+                {/* Error Message */}
+                {message && (
+                  <div
+                    className="mt-6 p-4 rounded-xl text-sm animate-fade-in"
+                    style={{
+                      background: message.type === 'success'
+                        ? 'rgba(139, 168, 136, 0.15)'
+                        : 'rgba(232, 120, 109, 0.15)',
+                      color: message.type === 'success'
+                        ? '#5A7A57'
+                        : 'var(--color-coral-dark)',
+                    }}
+                  >
+                    {message.text}
+                  </div>
+                )}
+              </>
+            ) : (
+              /* OTP Entry Step */
+              <div className="space-y-6 animate-fade-in">
+                {/* Header */}
+                <div className="text-center">
+                  <h2
+                    className="text-xl font-semibold mb-2"
+                    style={{ color: 'var(--foreground)' }}
+                  >
+                    {t.login.enterCode}
+                  </h2>
+                  <p style={{ color: 'var(--muted)' }} className="text-sm">
+                    {t.login.enterCodeDesc}
+                  </p>
+                  <p
+                    className="font-medium mt-1"
+                    style={{ color: 'var(--foreground)' }}
+                  >
+                    {email}
+                  </p>
+                </div>
+
+                {/* OTP Input */}
+                <div className="py-4">
+                  <OTPInput
+                    onComplete={handleVerifyOTP}
+                    disabled={loading}
+                    error={message?.type === 'error'}
+                  />
+                </div>
+
+                {/* Helper text */}
+                <p
+                  className="text-center text-sm"
+                  style={{ color: 'var(--muted)' }}
                 >
-                  {t.login.emailLabel}
-                </label>
-                <input
-                  type="email"
-                  id="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder={t.login.emailPlaceholder}
-                  className="input"
-                  required
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={loading || !email}
-                className="btn btn-primary w-full py-4 text-base disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? (
-                  <>
+                  {t.login.orClickLink}
+                </p>
+
+                {/* Loading indicator */}
+                {loading && (
+                  <div className="flex items-center justify-center gap-2" style={{ color: 'var(--muted)' }}>
                     <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
                     </svg>
-                    <span>{t.login.sending}</span>
-                  </>
-                ) : (
-                  t.login.sendMagicLink
+                    <span className="text-sm">{t.login.verifying}</span>
+                  </div>
                 )}
-              </button>
-            </form>
 
-            {/* Message */}
-            {message && (
-              <div
-                className="mt-6 p-4 rounded-xl text-sm animate-fade-in"
-                style={{
-                  background: message.type === 'success'
-                    ? 'rgba(139, 168, 136, 0.15)'
-                    : 'rgba(232, 120, 109, 0.15)',
-                  color: message.type === 'success'
-                    ? '#5A7A57'
-                    : 'var(--color-coral-dark)',
-                }}
-              >
-                {message.type === 'success' && (
-                  <span className="inline-block mr-2">✓</span>
+                {/* Error Message */}
+                {message && (
+                  <div
+                    className="p-4 rounded-xl text-sm text-center animate-fade-in"
+                    style={{
+                      background: message.type === 'success'
+                        ? 'rgba(139, 168, 136, 0.15)'
+                        : 'rgba(232, 120, 109, 0.15)',
+                      color: message.type === 'success'
+                        ? '#5A7A57'
+                        : 'var(--color-coral-dark)',
+                    }}
+                  >
+                    {message.text}
+                  </div>
                 )}
-                {message.text}
+
+                {/* Action buttons */}
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button
+                    type="button"
+                    onClick={handleBackToEmail}
+                    disabled={loading}
+                    className="flex-1 py-3 px-4 rounded-xl font-medium transition-colors hover:bg-[var(--sand)] disabled:opacity-50"
+                    style={{ color: 'var(--muted)' }}
+                  >
+                    {t.login.differentEmail}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResendCode}
+                    disabled={loading}
+                    className="flex-1 py-3 px-4 rounded-xl font-medium transition-colors disabled:opacity-50"
+                    style={{
+                      background: 'var(--background)',
+                      color: 'var(--foreground)',
+                      border: '1px solid var(--border)'
+                    }}
+                  >
+                    {t.login.resendCode}
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -228,7 +373,7 @@ function LoginContent() {
             className="text-center mt-8 text-sm"
             style={{ color: 'var(--muted)' }}
           >
-            Trygg innlogging • Ingen passord nødvendig
+            {t.login.secureLogin}
           </p>
         </div>
       </div>

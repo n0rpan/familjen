@@ -106,9 +106,19 @@ export interface TranslationStrings {
     emailPlaceholder: string
     continueWithGoogle: string
     sendMagicLink: string
+    sendCode: string
     sending: string
     checkEmail: string
     checkEmailDesc: string
+    enterCode: string
+    enterCodeDesc: string
+    orClickLink: string
+    verifying: string
+    invalidCode: string
+    codeExpired: string
+    resendCode: string
+    differentEmail: string
+    secureLogin: string
     errorNotAllowed: string
     errorAuthFailed: string
     errorGeneric: string
