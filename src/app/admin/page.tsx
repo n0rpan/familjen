@@ -377,7 +377,7 @@ export default function AdminPage() {
       childrenResult,
       auditResult,
     ] = await Promise.all([
-      supabase.from("allowed_emails").select("*").order("created_at"),
+      fetch('/api/admin/allowed-emails').then(r => r.ok ? r.json() : []),
       supabase.from("app_settings").select("*"),
       supabase.from("households").select("*").order("created_at"),
       supabase.from("household_members").select("*").order("name"),
@@ -389,7 +389,7 @@ export default function AdminPage() {
         .limit(50),
     ]);
 
-    setAllowedEmails(emailsResult.data || []);
+    setAllowedEmails(emailsResult || []);
 
     const settingsMap: Record<string, string> = {};
     settingsResult.data?.forEach((s) => {
@@ -429,29 +429,37 @@ export default function AdminPage() {
     if (!newEmail) return;
 
     setSaving(true);
-    const { error } = await supabase.from("allowed_emails").insert({
-      email: newEmail.toLowerCase().trim(),
-      added_by: currentUserId,
-      can_create_household: inviteAsHouseholdAdmin,
-    });
+    try {
+      const res = await fetch('/api/admin/allowed-emails', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: newEmail.toLowerCase().trim(),
+          can_create_household: inviteAsHouseholdAdmin,
+        }),
+      });
 
-    if (error) {
-      showMessage(
-        "error",
-        error.code === "23505"
-          ? t.admin.emailExists
-          : t.errors.loadFailed,
-      );
-    } else {
-      setNewEmail("");
-      setInviteAsHouseholdAdmin(false);
-      loadData();
-      showMessage(
-        "success",
-        inviteAsHouseholdAdmin
-          ? t.admin.userAddedCanCreate
-          : t.admin.userAdded,
-      );
+      if (!res.ok) {
+        const data = await res.json();
+        showMessage(
+          "error",
+          data.error?.includes('duplicate') || data.error?.includes('23505')
+            ? t.admin.emailExists
+            : t.errors.loadFailed,
+        );
+      } else {
+        setNewEmail("");
+        setInviteAsHouseholdAdmin(false);
+        loadData();
+        showMessage(
+          "success",
+          inviteAsHouseholdAdmin
+            ? t.admin.userAddedCanCreate
+            : t.admin.userAdded,
+        );
+      }
+    } catch {
+      showMessage("error", t.errors.loadFailed);
     }
     setSaving(false);
   };
@@ -464,14 +472,17 @@ export default function AdminPage() {
     const confirmMsg = `${t.common.confirm}: ${emailItem.email}?`;
     if (!confirm(confirmMsg)) return;
 
-    const { error } = await supabase
-      .from("allowed_emails")
-      .delete()
-      .eq("id", id);
-    if (error) {
+    try {
+      const res = await fetch(`/api/admin/allowed-emails?id=${id}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        showMessage("error", t.errors.deleteFailed);
+      } else {
+        loadData();
+      }
+    } catch {
       showMessage("error", t.errors.deleteFailed);
-    } else {
-      loadData();
     }
   };
 
