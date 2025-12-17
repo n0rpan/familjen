@@ -9,12 +9,8 @@ const PGRST_MULTIPLE_ROWS_NEW = 'PGRST116' // In newer versions, multiple rows a
 /**
  * Fetches the current user's household with proper error handling.
  *
- * This handles the edge case where a user might somehow end up in multiple households
- * (data anomaly, admin operations, etc.) by:
- * 1. Querying for all visible households
- * 2. Returning the first one if exactly one exists
- * 3. Logging an error if multiple exist (data integrity issue)
- * 4. Returning null if none exist
+ * This queries through household_members to get the user's specific household,
+ * avoiding issues where admins can see all households via RLS.
  *
  * @param supabase - Supabase client instance
  * @returns The household data, or null if not found
@@ -22,30 +18,40 @@ const PGRST_MULTIPLE_ROWS_NEW = 'PGRST116' // In newer versions, multiple rows a
 export async function getUserHousehold(
   supabase: SupabaseClient
 ): Promise<{ data: Household | null; error: string | null; multipleHouseholds: boolean }> {
-  const { data, error } = await supabase
-    .from('households')
-    .select('*')
-
-  if (error) {
-    console.error('Error fetching households:', error)
-    return { data: null, error: error.message, multipleHouseholds: false }
+  // First get the user's household_id via their membership
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return { data: null, error: 'Not authenticated', multipleHouseholds: false }
   }
 
-  if (!data || data.length === 0) {
+  const { data: membership, error: memberError } = await supabase
+    .from('household_members')
+    .select('household_id')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (memberError) {
+    console.error('Error fetching membership:', memberError)
+    return { data: null, error: memberError.message, multipleHouseholds: false }
+  }
+
+  if (!membership) {
     return { data: null, error: null, multipleHouseholds: false }
   }
 
-  if (data.length > 1) {
-    // This indicates a data integrity issue - user is in multiple households
-    // Log it for debugging but return the first one to keep the app functional
-    console.error(
-      `Data integrity warning: User belongs to ${data.length} households. ` +
-      `IDs: ${data.map(h => h.id).join(', ')}. Using first one.`
-    )
-    return { data: data[0] as Household, error: null, multipleHouseholds: true }
+  // Now fetch the specific household by ID
+  const { data: household, error: householdError } = await supabase
+    .from('households')
+    .select('*')
+    .eq('id', membership.household_id)
+    .single()
+
+  if (householdError) {
+    console.error('Error fetching household:', householdError)
+    return { data: null, error: householdError.message, multipleHouseholds: false }
   }
 
-  return { data: data[0] as Household, error: null, multipleHouseholds: false }
+  return { data: household as Household, error: null, multipleHouseholds: false }
 }
 
 /**

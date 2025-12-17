@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { validateOrigin } from '@/lib/config'
 import {
   sendPushNotification,
   getNotificationContent,
@@ -9,6 +10,11 @@ import {
 
 export async function POST(request: Request) {
   try {
+    // CSRF protection
+    if (!validateOrigin(request)) {
+      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+    }
+
     const supabase = await createClient()
 
     // Check authentication

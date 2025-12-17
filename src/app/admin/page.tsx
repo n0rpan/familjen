@@ -293,6 +293,7 @@ export default function AdminPage() {
   const [newEmail, setNewEmail] = useState("");
   const [inviteAsHouseholdAdmin, setInviteAsHouseholdAdmin] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [expandedHousehold, setExpandedHousehold] = useState<string | null>(null);
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
@@ -871,49 +872,161 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Simple households list */}
+        {/* Expandable households list */}
         <div className="space-y-2">
           {households.length === 0 ? (
             <div className="text-center py-8" style={{ color: "var(--muted)" }}>
               {t.admin.noHouseholdsYet}
             </div>
           ) : (
-            households.map((household) => (
-              <div
-                key={household.id}
-                className="p-4 rounded-xl flex items-center justify-between"
-                style={{ background: "var(--background)" }}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold"
-                    style={{
-                      background: "var(--color-coral)",
-                      color: "white",
-                    }}
+            households.map((household) => {
+              const isExpanded = expandedHousehold === household.id;
+              return (
+                <div
+                  key={household.id}
+                  className="rounded-xl overflow-hidden"
+                  style={{ background: "var(--background)" }}
+                >
+                  {/* Clickable header */}
+                  <button
+                    onClick={() => setExpandedHousehold(isExpanded ? null : household.id)}
+                    className="w-full p-4 flex items-center justify-between hover:bg-[var(--sand)] transition-colors"
                   >
-                    {(household.name || "H").charAt(0).toUpperCase()}
-                  </div>
-                  <div>
-                    <div
-                      className="font-medium"
-                      style={{ color: "var(--foreground)" }}
-                    >
-                      {household.name || t.admin.unnamed}
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold"
+                        style={{
+                          background: "var(--color-coral)",
+                          color: "white",
+                        }}
+                      >
+                        {(household.name || "H").charAt(0).toUpperCase()}
+                      </div>
+                      <div className="text-left">
+                        <div
+                          className="font-medium"
+                          style={{ color: "var(--foreground)" }}
+                        >
+                          {household.name || t.admin.unnamed}
+                        </div>
+                        <div
+                          className="text-sm"
+                          style={{ color: "var(--muted)" }}
+                        >
+                          {household.members.length} medlemmer • {household.children.length} barn
+                        </div>
+                      </div>
                     </div>
-                    <div
-                      className="text-sm"
-                      style={{ color: "var(--muted)" }}
-                    >
-                      {household.members.length} medlemmer • {household.children.length} barn
+                    <div className="flex items-center gap-3">
+                      <div className="text-xs" style={{ color: "var(--muted)" }}>
+                        {new Date(household.created_at).toLocaleDateString("nb-NO")}
+                      </div>
+                      <svg
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                        style={{ color: "var(--muted)" }}
+                      >
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
                     </div>
-                  </div>
+                  </button>
+
+                  {/* Expanded details */}
+                  {isExpanded && (
+                    <div className="px-4 pb-4 space-y-4" style={{ borderTop: "1px solid var(--border)" }}>
+                      {/* Members */}
+                      <div className="pt-4">
+                        <h4 className="text-sm font-medium mb-2" style={{ color: "var(--foreground)" }}>
+                          {t.settings.members}
+                        </h4>
+                        <div className="space-y-2">
+                          {household.members.map((member) => (
+                            <div
+                              key={member.id}
+                              className="flex items-center justify-between p-3 rounded-lg"
+                              style={{ background: "var(--card)" }}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div
+                                  className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold"
+                                  style={{
+                                    background: member.is_household_admin ? "var(--color-sage)" : "var(--color-sky)",
+                                    color: "white",
+                                  }}
+                                >
+                                  {(member.short_name || member.name?.charAt(0) || "?").toUpperCase()}
+                                </div>
+                                <div>
+                                  <div className="font-medium text-sm" style={{ color: "var(--foreground)" }}>
+                                    {member.name}
+                                    {member.is_household_admin && (
+                                      <span className="ml-2 badge badge-sage text-xs">{t.admin.householdAdmin}</span>
+                                    )}
+                                  </div>
+                                  <div className="text-xs" style={{ color: "var(--muted)" }}>
+                                    {member.email}
+                                    {member.work_email && ` • ${member.work_email}`}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Children */}
+                      {household.children.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-medium mb-2" style={{ color: "var(--foreground)" }}>
+                            {t.settings.children}
+                          </h4>
+                          <div className="space-y-2">
+                            {household.children.map((child) => (
+                              <div
+                                key={child.id}
+                                className="flex items-center justify-between p-3 rounded-lg"
+                                style={{ background: "var(--card)" }}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div
+                                    className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold"
+                                    style={{
+                                      background: `var(--color-${child.color || "sky"})`,
+                                      color: "white",
+                                    }}
+                                  >
+                                    {child.name?.charAt(0)?.toUpperCase() || "?"}
+                                  </div>
+                                  <div>
+                                    <div className="font-medium text-sm" style={{ color: "var(--foreground)" }}>
+                                      {child.name}
+                                    </div>
+                                    <div className="text-xs" style={{ color: "var(--muted)" }}>
+                                      {child.location_name || "—"}
+                                      {child.birth_date && ` • ${new Date(child.birth_date).toLocaleDateString("nb-NO")}`}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Household ID for debugging */}
+                      <div className="pt-2 text-xs" style={{ color: "var(--muted)" }}>
+                        ID: <code className="font-mono">{household.id}</code>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div className="text-xs" style={{ color: "var(--muted)" }}>
-                  {new Date(household.created_at).toLocaleDateString("nb-NO")}
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
 

@@ -1,13 +1,20 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getUserHousehold } from '@/lib/supabase/household'
+import { validateOrigin } from '@/lib/config'
 import { aiParseRemindersSchema, validateRequest } from '@/lib/schemas'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
+import { extractJSON } from '@/lib/json-extract'
 import type { ParsedReminder } from '@/lib/schemas'
 import type { ChildTaskType } from '@/lib/types'
 
 export async function POST(request: Request) {
   try {
+    // CSRF protection
+    if (!validateOrigin(request)) {
+      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+    }
+
     const supabase = await createClient()
 
     // Check authentication
@@ -152,42 +159,36 @@ Svar ALLTID i dette JSON-formatet:
       return NextResponse.json({ error: 'Tomt svar fra AI' }, { status: 500 })
     }
 
-    // Parse the JSON response
-    try {
-      // Extract JSON from potential markdown code blocks
-      let jsonContent = content
-      if (content.includes('```json')) {
-        jsonContent = content.split('```json')[1].split('```')[0].trim()
-      } else if (content.includes('```')) {
-        jsonContent = content.split('```')[1].split('```')[0].trim()
-      }
+    // Parse the JSON response using robust extraction
+    interface RawReminder {
+      title: string
+      date: string | null
+      time: string | null
+      task_type: string
+      child_name: string | null
+      child_id: string | null
+      notes: string | null
+      confidence: number
+    }
 
-      const parsed = JSON.parse(jsonContent)
-      const reminders: ParsedReminder[] = (parsed.reminders || []).map((r: {
-        title: string
-        date: string | null
-        time: string | null
-        task_type: string
-        child_name: string | null
-        child_id: string | null
-        notes: string | null
-        confidence: number
-      }) => ({
-        title: r.title || '',
-        date: r.date || null,
-        time: r.time || null,
-        task_type: validateTaskType(r.task_type),
-        child_name: r.child_name || null,
-        child_id: r.child_id || null,
-        notes: r.notes || null,
-        confidence: typeof r.confidence === 'number' ? Math.min(1, Math.max(0, r.confidence)) : 0.5,
-      }))
-
-      return NextResponse.json({ reminders })
-    } catch (parseError) {
-      console.error('Failed to parse AI response:', { error: parseError instanceof Error ? parseError.message : 'Unknown parse error', contentLength: content?.length })
+    const parsed = extractJSON<{ reminders?: RawReminder[] }>(content)
+    if (!parsed) {
+      console.error('Failed to extract JSON from AI response:', { contentLength: content?.length })
       return NextResponse.json({ error: 'Kunne ikke tolke AI-svar' }, { status: 500 })
     }
+
+    const reminders: ParsedReminder[] = (parsed.reminders || []).map((r) => ({
+      title: r.title || '',
+      date: r.date || null,
+      time: r.time || null,
+      task_type: validateTaskType(r.task_type),
+      child_name: r.child_name || null,
+      child_id: r.child_id || null,
+      notes: r.notes || null,
+      confidence: typeof r.confidence === 'number' ? Math.min(1, Math.max(0, r.confidence)) : 0.5,
+    }))
+
+    return NextResponse.json({ reminders })
   } catch (error) {
     console.error('Parse reminders error:', error)
     return NextResponse.json({ error: 'En feil oppstod' }, { status: 500 })

@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getUserHousehold } from '@/lib/supabase/household'
+import { validateOrigin } from '@/lib/config'
 import type { MealSuggestion } from '@/lib/types'
 import { aiSuggestRequestSchema, validateRequest } from '@/lib/schemas'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
+import { extractJSON } from '@/lib/json-extract'
 
 // Helper to calculate age from birth date
 function calculateAge(birthDate: string): number {
@@ -28,6 +30,11 @@ function getNorwegianSeason(): string {
 
 export async function POST(request: Request) {
   try {
+    // CSRF protection
+    if (!validateOrigin(request)) {
+      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+    }
+
     const supabase = await createClient()
 
     // Check authentication
@@ -255,24 +262,15 @@ Ikke inkluder noe annet enn JSON i svaret.`,
       return NextResponse.json({ error: 'Tomt svar fra AI' }, { status: 500 })
     }
 
-    // Parse the JSON response
-    try {
-      // Extract JSON from potential markdown code blocks
-      let jsonContent = content
-      if (content.includes('```json')) {
-        jsonContent = content.split('```json')[1].split('```')[0].trim()
-      } else if (content.includes('```')) {
-        jsonContent = content.split('```')[1].split('```')[0].trim()
-      }
-
-      const parsed = JSON.parse(jsonContent)
-      const suggestions: MealSuggestion[] = parsed.suggestions || []
-
-      return NextResponse.json({ suggestions })
-    } catch (parseError) {
-      console.error('Failed to parse AI response:', { error: parseError instanceof Error ? parseError.message : 'Unknown parse error', contentLength: content?.length })
+    // Parse the JSON response using robust extraction
+    const parsed = extractJSON<{ suggestions?: MealSuggestion[] }>(content)
+    if (!parsed) {
+      console.error('Failed to extract JSON from AI response:', { contentLength: content?.length })
       return NextResponse.json({ error: 'Kunne ikke tolke AI-svar' }, { status: 500 })
     }
+
+    const suggestions: MealSuggestion[] = parsed.suggestions || []
+    return NextResponse.json({ suggestions })
   } catch (error) {
     console.error('Suggest meals error:', error)
     return NextResponse.json({ error: 'En feil oppstod' }, { status: 500 })

@@ -112,12 +112,30 @@ export default function WeekEditPage() {
       setError(null)
 
       try {
+        // First get user's membership to find their specific household
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) {
+          throw new Error(t.errors.unauthorized)
+        }
+
+        const { data: membership } = await supabase
+          .from('household_members')
+          .select('household_id')
+          .eq('user_id', user.id)
+          .maybeSingle()
+
+        if (!membership) {
+          setHousehold(null)
+          setLoading(false)
+          return
+        }
+
         const weekStartStr = formatDateISO(weekStart)
         const weekEndStr = formatDateISO(weekEnd)
 
-        // Fetch all data in parallel
+        // Fetch all data in parallel, using the specific household_id
         const [householdResult, childrenResult, membersResult, pickupsResult, mealsResult, recipesResult, eventsResult, tasksResult] = await Promise.all([
-          supabase.from('households').select('*').single(),
+          supabase.from('households').select('*').eq('id', membership.household_id).single(),
           supabase.from('children').select('*').order('sort_order'),
           supabase.from('household_members').select('*'),
           supabase.from('pickups').select(`*, child:children(*), picker:household_members(*)`).gte('date', weekStartStr).lte('date', weekEndStr),
@@ -130,7 +148,7 @@ export default function WeekEditPage() {
         ])
 
         // Check for critical errors
-        if (householdResult.error && householdResult.error.code !== 'PGRST116') {
+        if (householdResult.error) {
           throw new Error(t.errors.couldNotLoadHousehold)
         }
         if (childrenResult.error) throw new Error(t.errors.couldNotLoadChildren)

@@ -36,12 +36,32 @@ export default function RecipesPage() {
     setError(null)
 
     try {
+      // First get user's membership to find their specific household
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        throw new Error(t.errors.unauthorized)
+      }
+
+      const { data: membership } = await supabase
+        .from('household_members')
+        .select('household_id')
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (!membership) {
+        setHousehold(null)
+        setRecipes([])
+        setLoading(false)
+        return
+      }
+
+      // Now fetch household by ID and recipes in parallel
       const [householdResult, recipesResult] = await Promise.all([
-        supabase.from('households').select('*').single(),
+        supabase.from('households').select('*').eq('id', membership.household_id).single(),
         supabase.from('recipes').select('*').order('name'),
       ])
 
-      if (householdResult.error && householdResult.error.code !== 'PGRST116') {
+      if (householdResult.error) {
         throw new Error(t.errors.couldNotLoadHousehold)
       }
       if (recipesResult.error) {

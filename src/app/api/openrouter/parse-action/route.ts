@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getUserHousehold } from '@/lib/supabase/household'
+import { validateOrigin } from '@/lib/config'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
+import { extractJSON } from '@/lib/json-extract'
 import { z } from 'zod'
 
 // Request schema
@@ -52,6 +54,11 @@ export interface ParseActionResponse {
 
 export async function POST(request: Request) {
   try {
+    // CSRF protection
+    if (!validateOrigin(request)) {
+      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+    }
+
     const supabase = await createClient()
 
     // Check authentication
@@ -132,30 +139,36 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Tomt svar fra AI' }, { status: 500 })
     }
 
-    // Parse the JSON response
-    try {
-      let jsonContent = content
-      if (content.includes('```json')) {
-        jsonContent = content.split('```json')[1].split('```')[0].trim()
-      } else if (content.includes('```')) {
-        jsonContent = content.split('```')[1].split('```')[0].trim()
-      }
+    // Parse the JSON response using robust extraction
+    interface RawAction {
+      type: string
+      operation?: string
+      data?: Record<string, unknown>
+      display?: { title?: string; subtitle?: string; icon?: string }
+      confidence?: number
+      needs_clarification?: ParsedAction['needsClarification']
+    }
 
-      const parsed = JSON.parse(jsonContent)
-      const actions: ParsedAction[] = (parsed.actions || []).map((a: Record<string, unknown>) => ({
-        type: a.type as ActionType,
-        operation: a.operation || 'add',
-        data: a.data || {},
-        display: a.display || { title: '', subtitle: '', icon: '📝' },
-        confidence: typeof a.confidence === 'number' ? a.confidence : 0.5,
-        needsClarification: a.needs_clarification || null,
-      }))
-
-      return NextResponse.json({ actions } as ParseActionResponse)
-    } catch (parseError) {
-      console.error('Failed to parse AI response:', parseError)
+    const parsed = extractJSON<{ actions?: RawAction[] }>(content)
+    if (!parsed) {
+      console.error('Failed to extract JSON from AI response:', { contentLength: content?.length })
       return NextResponse.json({ error: 'Kunne ikke tolke AI-svar' }, { status: 500 })
     }
+
+    const actions: ParsedAction[] = (parsed.actions || []).map((a) => ({
+      type: a.type as ActionType,
+      operation: (a.operation || 'add') as 'add' | 'modify',
+      data: a.data || {},
+      display: {
+        title: a.display?.title || '',
+        subtitle: a.display?.subtitle || '',
+        icon: a.display?.icon || '📝',
+      },
+      confidence: typeof a.confidence === 'number' ? a.confidence : 0.5,
+      needsClarification: a.needs_clarification || undefined,
+    }))
+
+    return NextResponse.json({ actions } as ParseActionResponse)
   } catch (error) {
     console.error('Parse action error:', error)
     return NextResponse.json({ error: 'En feil oppstod' }, { status: 500 })

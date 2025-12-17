@@ -75,9 +75,10 @@ export async function POST() {
 
     // Build email to member lookup
     const emailToMember = new Map<string, { id: string; household_id: string }>()
-    console.log(`Found ${members?.length || 0} household members`)
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`Found ${members?.length || 0} household members`)
+    }
     members?.forEach((member) => {
-      console.log(`Member: email=${member.email}, work_email=${member.work_email}`)
       if (member.email) {
         emailToMember.set(member.email.toLowerCase(), {
           id: member.id,

@@ -32,21 +32,34 @@ export default function ShoppingListPage() {
     setError(null)
 
     try {
-      // Get household
-      const { data: householdData, error: householdError } = await supabase
-        .from('households')
-        .select('*')
-        .single()
-
-      if (householdError && householdError.code !== 'PGRST116') {
-        throw new Error(t.errors.couldNotLoadHousehold)
+      // First get user's membership to find their specific household
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        throw new Error(t.errors.unauthorized)
       }
 
-      if (!householdData) {
+      const { data: membership } = await supabase
+        .from('household_members')
+        .select('household_id')
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (!membership) {
         setHousehold(null)
         setLists([])
         setLoading(false)
         return
+      }
+
+      // Get household by ID
+      const { data: householdData, error: householdError } = await supabase
+        .from('households')
+        .select('*')
+        .eq('id', membership.household_id)
+        .single()
+
+      if (householdError) {
+        throw new Error(t.errors.couldNotLoadHousehold)
       }
 
       setHousehold(householdData)
