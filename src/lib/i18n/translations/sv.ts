@@ -607,4 +607,11 @@ export const sv: TranslationStrings = {
     androidStep1: 'Tryck på menyikonen (⋮) i webbläsaren',
     androidStep2: 'Välj "Installera app" eller "Lägg till på startskärmen"',
   },
+
+  update: {
+    available: 'Uppdatering tillgänglig',
+    description: 'En ny version av Familjen är klar.',
+    refresh: 'Uppdatera nu',
+    later: 'Senare',
+  },
 }

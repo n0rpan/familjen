@@ -631,4 +631,12 @@ export interface TranslationStrings {
     androidStep1: string
     androidStep2: string
   }
+
+  // App update
+  update: {
+    available: string
+    description: string
+    refresh: string
+    later: string
+  }
 }

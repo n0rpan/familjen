@@ -607,4 +607,11 @@ export const en: TranslationStrings = {
     androidStep1: 'Tap the menu icon (⋮) in the browser',
     androidStep2: 'Select "Install app" or "Add to Home screen"',
   },
+
+  update: {
+    available: 'Update available',
+    description: 'A new version of Familjen is ready.',
+    refresh: 'Update now',
+    later: 'Later',
+  },
 }

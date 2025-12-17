@@ -607,4 +607,11 @@ export const nb: TranslationStrings = {
     androidStep1: 'Trykk på meny-ikonet (⋮) i nettleseren',
     androidStep2: 'Velg "Installer app" eller "Legg til på startskjermen"',
   },
+
+  update: {
+    available: 'Oppdatering tilgjengelig',
+    description: 'En ny versjon av Familjen er klar.',
+    refresh: 'Oppdater nå',
+    later: 'Senere',
+  },
 }
