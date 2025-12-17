@@ -247,7 +247,8 @@ export function Header() {
         className="lg:hidden w-full sticky top-0 z-40"
         style={{
           background: 'var(--background)',
-          borderBottom: '1px solid var(--border)'
+          borderBottom: '1px solid var(--border)',
+          paddingTop: 'env(safe-area-inset-top, 0px)'
         }}
       >
         <div className="flex justify-center items-center h-14 px-4">
