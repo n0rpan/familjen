@@ -256,9 +256,9 @@ export async function fetchCalendarInvitesFromGmail(
   const gmail = getGmailClient(tokens)
 
   // Search for emails with calendar invites
-  // has:invite is Gmail's operator for finding calendar invites
-  // Also search for .ics attachments and common invite subject patterns
-  let query = 'has:invite OR filename:ics OR subject:(invitation OR "calendar invitation")'
+  // Broad search: any email with attachments, then filter by MIME type during processing
+  // This catches Outlook/Teams invites that have inline text/calendar parts
+  let query = 'has:attachment'
   if (options.afterDate) {
     const afterDateFormatted = options.afterDate.replace(/-/g, '/')
     query += ` after:${afterDateFormatted}`
@@ -275,9 +275,9 @@ export async function fetchCalendarInvitesFromGmail(
   })
 
   const messages = response.data.messages || []
-  if (process.env.NODE_ENV === 'development') {
-    console.log(`Found ${messages.length} potential calendar emails`)
-  }
+  // Temporary production logging to debug sync issues
+  console.log(`[Gmail Sync] Query: ${query}`)
+  console.log(`[Gmail Sync] Found ${messages.length} messages with attachments`)
 
   const invites: ParsedCalendarInvite[] = []
 
@@ -287,19 +287,15 @@ export async function fetchCalendarInvitesFromGmail(
     try {
       const invite = await extractCalendarInviteFromMessage(gmail, message.id)
       if (invite) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`Parsed invite: ${invite.summary} from ${invite.organizerEmail}`)
-        }
+        console.log(`[Gmail Sync] Parsed invite: "${invite.summary}" from ${invite.organizerEmail} on ${invite.startDate}`)
         invites.push(invite)
       }
     } catch (error) {
-      console.error(`Failed to parse invite from message ${message.id}:`, error)
+      console.error(`[Gmail Sync] Failed to parse message ${message.id}:`, error)
     }
   }
 
-  if (process.env.NODE_ENV === 'development') {
-    console.log(`Total parsed invites: ${invites.length}`)
-  }
+  console.log(`[Gmail Sync] Total calendar invites found: ${invites.length}`)
   return invites
 }
 
