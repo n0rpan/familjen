@@ -138,18 +138,18 @@ export default function WeekEditPage() {
         const weekStartStr = formatDateISO(weekStart)
         const weekEndStr = formatDateISO(weekEnd)
 
-        // Fetch all data in parallel, using the specific household_id
+        // Fetch all data in parallel, using the specific household_id to prevent admin seeing other households
         const [householdResult, childrenResult, membersResult, pickupsResult, mealsResult, recipesResult, eventsResult, tasksResult] = await Promise.all([
           supabase.from('households').select('*').eq('id', membership.household_id).single(),
-          supabase.from('children').select('*').order('sort_order'),
-          supabase.from('household_members').select('*'),
-          supabase.from('pickups').select(`*, child:children(*), picker:household_members(*)`).gte('date', weekStartStr).lte('date', weekEndStr),
-          supabase.from('meals').select(`*, recipe:recipes(*)`).gte('date', weekStartStr).lte('date', weekEndStr),
-          supabase.from('recipes').select('*').order('name'),
+          supabase.from('children').select('*').eq('household_id', membership.household_id).order('sort_order'),
+          supabase.from('household_members').select('*').eq('household_id', membership.household_id),
+          supabase.from('pickups').select(`*, child:children(*), picker:household_members(*)`).eq('household_id', membership.household_id).gte('date', weekStartStr).lte('date', weekEndStr),
+          supabase.from('meals').select(`*, recipe:recipes(*)`).eq('household_id', membership.household_id).gte('date', weekStartStr).lte('date', weekEndStr),
+          supabase.from('recipes').select('*').eq('household_id', membership.household_id).order('name'),
           // Fetch events that overlap with this week (start <= weekEnd AND (end >= weekStart OR end IS NULL))
-          supabase.from('member_events').select('*').lte('date', weekEndStr).or(`end_date.gte.${weekStartStr},end_date.is.null`),
+          supabase.from('member_events').select('*').eq('household_id', membership.household_id).lte('date', weekEndStr).or(`end_date.gte.${weekStartStr},end_date.is.null`),
           // Fetch child tasks for this week
-          supabase.from('child_tasks').select('*').gte('date', weekStartStr).lte('date', weekEndStr).order('date').order('time'),
+          supabase.from('child_tasks').select('*').eq('household_id', membership.household_id).gte('date', weekStartStr).lte('date', weekEndStr).order('date').order('time'),
         ])
 
         // Check for critical errors
