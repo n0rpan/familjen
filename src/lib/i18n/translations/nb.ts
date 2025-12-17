@@ -215,6 +215,8 @@ export const nb: TranslationStrings = {
     deleteChildConfirm: 'Er du sikker på at du vil slette {name}? Dette kan ikke angres.',
     deleteMember: 'Slett medlem',
     deleteMemberConfirm: 'Er du sikker på at du vil slette {name}? Dette kan ikke angres.',
+    calendarSyncHint: 'Automatisk kalendersynk',
+    calendarSyncDesc: 'Send kalenderinvitasjoner til denne adressen for å automatisk legge dem til i familieplanen:',
   },
 
   // Recipes page

@@ -215,6 +215,8 @@ export const sv: TranslationStrings = {
     deleteChildConfirm: 'Är du säker på att du vill radera {name}? Detta kan inte ångras.',
     deleteMember: 'Radera medlem',
     deleteMemberConfirm: 'Är du säker på att du vill radera {name}? Detta kan inte ångras.',
+    calendarSyncHint: 'Automatisk kalendersynk',
+    calendarSyncDesc: 'Skicka kalenderinbjudningar till denna adress för att automatiskt lägga till dem i familjeplanen:',
   },
 
   // Recipes page

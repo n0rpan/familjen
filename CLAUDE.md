@@ -224,6 +224,19 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 GRANT EXECUTE ON FUNCTION create_household_with_admin(TEXT, TEXT, TEXT) TO authenticated;
+
+-- Get connected calendar email (for all household members)
+CREATE OR REPLACE FUNCTION get_connected_calendar_email()
+RETURNS TEXT AS $$
+DECLARE v_household_id UUID; v_email TEXT;
+BEGIN
+  SELECT household_id INTO v_household_id FROM household_members WHERE user_id = auth.uid() LIMIT 1;
+  IF v_household_id IS NULL THEN RETURN NULL; END IF;
+  SELECT email INTO v_email FROM google_calendar_tokens WHERE household_id = v_household_id LIMIT 1;
+  RETURN v_email;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+GRANT EXECUTE ON FUNCTION get_connected_calendar_email() TO authenticated;
 ```
 
 ### Vercel Environment Variables

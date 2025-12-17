@@ -215,6 +215,8 @@ export const en: TranslationStrings = {
     deleteChildConfirm: 'Are you sure you want to delete {name}? This cannot be undone.',
     deleteMember: 'Delete member',
     deleteMemberConfirm: 'Are you sure you want to delete {name}? This cannot be undone.',
+    calendarSyncHint: 'Automatic calendar sync',
+    calendarSyncDesc: 'Send calendar invitations to this address to automatically add them to your family plan:',
   },
 
   // Recipes page

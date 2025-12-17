@@ -223,6 +223,8 @@ export interface TranslationStrings {
     deleteChildConfirm: string
     deleteMember: string
     deleteMemberConfirm: string
+    calendarSyncHint: string
+    calendarSyncDesc: string
   }
 
   // Recipes page

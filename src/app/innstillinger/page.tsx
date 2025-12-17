@@ -64,6 +64,7 @@ export default function SettingsPage() {
 
   const [aiMealContext, setAiMealContext] = useState('')
   const [savingAiContext, setSavingAiContext] = useState(false)
+  const [connectedCalendarEmail, setConnectedCalendarEmail] = useState<string | null>(null)
 
   const supabase = useMemo(() => createClient(), [])
   const router = useRouter()
@@ -136,6 +137,10 @@ export default function SettingsPage() {
           .order('created_at', { ascending: false })
         setInvitedEmails(emailsData || [])
       }
+
+      // Get connected calendar email (available to all members)
+      const { data: calendarEmail } = await supabase.rpc('get_connected_calendar_email')
+      setConnectedCalendarEmail(calendarEmail || null)
     } catch (err) {
       console.error('Settings page error:', err)
       setError(err instanceof Error ? err.message : 'En feil oppstod')
@@ -720,6 +725,42 @@ export default function SettingsPage() {
               <span className="badge badge-honey">Husstandsadmin</span>
             </div>
           )}
+        </section>
+      )}
+
+      {/* Calendar Sync Hint */}
+      {connectedCalendarEmail && (
+        <section
+          className="rounded-2xl p-6"
+          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+        >
+          <div className="flex items-start gap-3">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+              style={{ background: 'rgba(229, 185, 94, 0.2)' }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                <line x1="16" y1="2" x2="16" y2="6"/>
+                <line x1="8" y1="2" x2="8" y2="6"/>
+                <line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+            </div>
+            <div>
+              <h3 className="font-medium" style={{ color: 'var(--foreground)' }}>
+                {t.settings?.calendarSyncHint || 'Automatisk kalendersynk'}
+              </h3>
+              <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>
+                {t.settings?.calendarSyncDesc || 'Send kalenderinvitasjoner til denne adressen for å automatisk legge dem til i familieplanen:'}
+              </p>
+              <div
+                className="mt-2 px-3 py-2 rounded-lg text-sm font-mono inline-block"
+                style={{ background: 'var(--background)', color: 'var(--foreground)' }}
+              >
+                {connectedCalendarEmail}
+              </div>
+            </div>
+          </div>
         </section>
       )}
 
