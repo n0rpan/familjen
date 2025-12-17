@@ -405,6 +405,63 @@ input:focus, select:focus, textarea:focus {
   opacity: 0.7;
 }
 
+/* Contextual micro-feedback - highlight just-saved items */
+@keyframes save-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(139, 168, 136, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(139, 168, 136, 0.2);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(139, 168, 136, 0);
+  }
+}
+
+@keyframes check-pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.just-saved {
+  animation: save-pulse 0.6s ease-out;
+}
+
+.just-checked {
+  animation: check-pulse 0.3s ease-out;
+}
+
+/* Subtle background highlight for saved rows */
+.highlight-save {
+  position: relative;
+}
+
+.highlight-save::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(139, 168, 136, 0.15);
+  border-radius: inherit;
+  pointer-events: none;
+  animation: highlight-fade 1s ease-out forwards;
+}
+
+@keyframes highlight-fade {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 /* Touch feedback for native feel */
 @media (hover: none) {
   .touch-feedback {

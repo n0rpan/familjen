@@ -7,6 +7,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react'
 import { User } from '@supabase/supabase-js'
 import { useTranslation } from '@/lib/i18n/context'
 import { TransitionLink } from './TransitionLink'
+import { usePrefetchRoutes, KEY_ROUTES } from '@/hooks/usePrefetchRoutes'
 
 function ShieldIcon() {
   return (
@@ -110,6 +111,9 @@ export function Header() {
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   const supabase = useMemo(() => createClient(), [])
   const t = useTranslation()
+
+  // Proactively prefetch key routes for instant navigation
+  usePrefetchRoutes(KEY_ROUTES)
 
   // All navigation items for desktop
   const navigation = [

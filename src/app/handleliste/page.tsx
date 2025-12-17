@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { ShoppingList, ShoppingListItem, Household } from '@/lib/types'
 import { useLanguage } from '@/lib/i18n/context'
 import { ListPageSkeleton } from '@/components/Skeleton'
+import { useMicroFeedback } from '@/hooks/useMicroFeedback'
 
 interface ListWithItems extends ShoppingList {
   items: ShoppingListItem[]
@@ -19,6 +20,9 @@ export default function ShoppingListPage() {
   const [newItemText, setNewItemText] = useState<Record<string, string>>({})
   const [newItemQuantity, setNewItemQuantity] = useState<Record<string, string>>({})
   const hasInitialized = useRef(false)
+
+  // Micro-feedback for recently changed items
+  const { markChanged, isRecentlyChanged } = useMicroFeedback(800)
 
   const supabase = useMemo(() => createClient(), [])
 
@@ -165,12 +169,8 @@ export default function ShoppingListPage() {
   }
 
   const toggleBought = async (itemId: string, currentValue: boolean) => {
-    await supabase
-      .from('shopping_list_items')
-      .update({ is_bought: !currentValue })
-      .eq('id', itemId)
-
-    // Optimistic update
+    // Optimistic update with micro-feedback
+    markChanged(itemId)
     setLists(prev =>
       prev.map(list => ({
         ...list,
@@ -179,6 +179,12 @@ export default function ShoppingListPage() {
         ),
       }))
     )
+
+    // Persist to database
+    await supabase
+      .from('shopping_list_items')
+      .update({ is_bought: !currentValue })
+      .eq('id', itemId)
   }
 
   const deleteItem = async (itemId: string) => {
@@ -377,7 +383,7 @@ export default function ShoppingListPage() {
                     {unboughtItems.map(item => (
                       <div
                         key={item.id}
-                        className="flex items-center gap-3 p-3 group"
+                        className={`flex items-center gap-3 p-3 group ${isRecentlyChanged(item.id) ? 'highlight-save' : ''}`}
                       >
                         <button
                           onClick={() => toggleBought(item.id, item.is_bought)}
@@ -418,11 +424,11 @@ export default function ShoppingListPage() {
                         {boughtItems.map(item => (
                           <div
                             key={item.id}
-                            className="flex items-center gap-3 px-3 py-2 group"
+                            className={`flex items-center gap-3 px-3 py-2 group ${isRecentlyChanged(item.id) ? 'highlight-save' : ''}`}
                           >
                             <button
                               onClick={() => toggleBought(item.id, item.is_bought)}
-                              className="w-6 h-6 rounded-lg flex items-center justify-center"
+                              className={`w-6 h-6 rounded-lg flex items-center justify-center ${isRecentlyChanged(item.id) ? 'just-checked' : ''}`}
                               style={{ background: 'var(--color-sage)' }}
                             >
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
