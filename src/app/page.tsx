@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { TodayOverview } from '@/components/TodayOverview'
 import { WeekGrid } from '@/components/WeekGrid'
-import { formatDateISO, getWeekStart, addDays } from '@/lib/utils'
+import { formatDateISO, addDays } from '@/lib/utils'
 import Link from 'next/link'
 import { getLanguageFromCookieOrBrowser } from '@/lib/i18n/cookie.server'
 import { getTranslations } from '@/lib/i18n/translations'
@@ -98,10 +98,10 @@ export default async function HomePage() {
     )
   }
 
-  // Fetch household data
+  // Fetch household data - rolling 7-day view starting from today
   const today = new Date()
   const todayStr = formatDateISO(today)
-  const weekStart = getWeekStart(today)
+  const weekStart = today  // Start from today, not Monday
   const weekEnd = addDays(weekStart, 6)
   const weekStartStr = formatDateISO(weekStart)
   const weekEndStr = formatDateISO(weekEnd)

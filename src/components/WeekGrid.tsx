@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import {
   getWeekDates,
   getWeekStart,
+  getWeekdayIndex,
   formatDateISO,
   isToday,
   isWeekend,
@@ -173,7 +174,7 @@ export function WeekGrid({
                     color: isWeekend(date) ? 'var(--muted)' : 'var(--foreground)',
                   }}
                 >
-                  <div className="font-medium">{t.date.weekdaysShort[i]}</div>
+                  <div className="font-medium">{t.date.weekdaysShort[getWeekdayIndex(date)]}</div>
                   <div
                     className={cn(
                       'text-xs mt-1',

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { WeekGrid } from '@/components/WeekGrid'
 import { formatDateISO, getWeekStart, addDays, formatWeekHeaderLocalized } from '@/lib/utils'
@@ -8,6 +8,9 @@ import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Househo
 import Link from 'next/link'
 import { AISuggestionModal } from '@/components/AISuggestionModal'
 import { useLanguage } from '@/lib/i18n/context'
+import { DayPicker } from 'react-day-picker'
+import { nb, sv } from 'react-day-picker/locale'
+import 'react-day-picker/style.css'
 
 export default function WeekEditPage() {
   const { language, t } = useLanguage()
@@ -66,6 +69,10 @@ export default function WeekEditPage() {
     setTimeout(() => setMessage(null), 4000)
   }
 
+  // Week picker state
+  const [showWeekPicker, setShowWeekPicker] = useState(false)
+  const weekPickerRef = useRef<HTMLDivElement>(null)
+
   const supabase = useMemo(() => createClient(), [])
 
   const { weekStart, weekEnd } = useMemo(() => {
@@ -73,6 +80,30 @@ export default function WeekEditPage() {
     const end = addDays(start, 6)
     return { weekStart: start, weekEnd: end }
   }, [weekOffset])
+
+  // Handle week picker date selection
+  const handleWeekSelect = (date: Date | undefined) => {
+    if (!date) return
+    const selectedWeekStart = getWeekStart(date)
+    const currentWeekStart = getWeekStart(new Date())
+    const diffTime = selectedWeekStart.getTime() - currentWeekStart.getTime()
+    const diffWeeks = Math.round(diffTime / (7 * 24 * 60 * 60 * 1000))
+    setWeekOffset(diffWeeks)
+    setShowWeekPicker(false)
+  }
+
+  // Close week picker on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (weekPickerRef.current && !weekPickerRef.current.contains(event.target as Node)) {
+        setShowWeekPicker(false)
+      }
+    }
+    if (showWeekPicker) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showWeekPicker])
 
   useEffect(() => {
     const loadData = async () => {
@@ -783,7 +814,7 @@ export default function WeekEditPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 relative" ref={weekPickerRef}>
           <button
             onClick={() => setWeekOffset(weekOffset - 1)}
             className="p-2 rounded-xl transition-colors"
@@ -794,12 +825,13 @@ export default function WeekEditPage() {
               <polyline points="15 18 9 12 15 6"/>
             </svg>
           </button>
-          <span
-            className="px-4 py-2 text-sm font-medium rounded-xl"
+          <button
+            onClick={() => setShowWeekPicker(!showWeekPicker)}
+            className="px-4 py-2 text-sm font-medium rounded-xl transition-colors hover:opacity-80"
             style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--foreground)' }}
           >
             {formatWeekHeaderLocalized(weekStart, language)}
-          </span>
+          </button>
           <button
             onClick={() => setWeekOffset(weekOffset + 1)}
             className="p-2 rounded-xl transition-colors"
@@ -818,6 +850,39 @@ export default function WeekEditPage() {
             >
               {t.common.today}
             </button>
+          )}
+
+          {/* Week picker dropdown */}
+          {showWeekPicker && (
+            <div
+              className="absolute top-full mt-2 left-0 z-50 rounded-xl shadow-lg animate-fade-in"
+              style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+            >
+              <DayPicker
+                mode="single"
+                selected={weekStart}
+                onSelect={handleWeekSelect}
+                weekStartsOn={1}
+                showOutsideDays
+                locale={language === 'nb' ? nb : language === 'sv' ? sv : undefined}
+                classNames={{
+                  root: 'p-3',
+                  month_caption: 'flex justify-center py-2 font-semibold',
+                  nav: 'flex items-center justify-between absolute top-3 left-3 right-3',
+                  button_previous: 'p-1 rounded hover:bg-[var(--background)]',
+                  button_next: 'p-1 rounded hover:bg-[var(--background)]',
+                  month_grid: 'w-full border-collapse',
+                  weekdays: 'flex',
+                  weekday: 'text-muted text-xs font-medium w-9 text-center',
+                  week: 'flex',
+                  day: 'w-9 h-9 text-center text-sm',
+                  day_button: 'w-full h-full rounded-lg hover:bg-[var(--background)] transition-colors',
+                  selected: 'bg-[var(--accent)] text-white rounded-lg',
+                  today: 'font-bold text-[var(--accent)]',
+                  outside: 'text-[var(--muted)] opacity-50',
+                }}
+              />
+            </div>
           )}
         </div>
       </div>
