@@ -90,9 +90,6 @@ export default async function HomePage() {
           >
             {t.settings.household}
           </Link>
-          <p className="text-sm mt-6" style={{ color: 'var(--muted)' }}>
-            {t.wizard.waitingForInviteDesc}
-          </p>
         </div>
       </div>
     )

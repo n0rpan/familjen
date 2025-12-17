@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getUserHousehold } from '@/lib/supabase/household'
 import type { MealSuggestion } from '@/lib/types'
 import { aiSuggestRequestSchema, validateRequest } from '@/lib/schemas'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
@@ -61,11 +62,8 @@ export async function POST(request: Request) {
 
     const model = modelSetting?.value || 'anthropic/claude-3.5-sonnet'
 
-    // Fetch household data
-    const { data: household, error: householdError } = await supabase
-      .from('households')
-      .select('id, ai_meal_context')
-      .single()
+    // Fetch household data (using safe multi-row handler)
+    const { data: household, error: householdError } = await getUserHousehold(supabase)
 
     if (householdError || !household) {
       return NextResponse.json({ error: 'Kunne ikke finne husstand' }, { status: 404 })
@@ -246,8 +244,7 @@ Ikke inkluder noe annet enn JSON i svaret.`,
     })
 
     if (!response.ok) {
-      const errorText = await response.text()
-      console.error('OpenRouter error:', errorText)
+      console.error('OpenRouter error:', { status: response.status, statusText: response.statusText })
       return NextResponse.json({ error: 'Kunne ikke få AI-forslag' }, { status: 500 })
     }
 
@@ -273,7 +270,7 @@ Ikke inkluder noe annet enn JSON i svaret.`,
 
       return NextResponse.json({ suggestions })
     } catch (parseError) {
-      console.error('Failed to parse AI response:', content)
+      console.error('Failed to parse AI response:', { error: parseError instanceof Error ? parseError.message : 'Unknown parse error', contentLength: content?.length })
       return NextResponse.json({ error: 'Kunne ikke tolke AI-svar' }, { status: 500 })
     }
   } catch (error) {

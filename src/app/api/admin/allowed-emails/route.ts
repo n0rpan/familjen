@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { validateOrigin } from '@/lib/config'
 import { NextResponse } from 'next/server'
 
 // GET - Fetch all allowed emails (admin only)
@@ -28,6 +29,11 @@ export async function GET() {
 
 // POST - Add new allowed email (admin only)
 export async function POST(request: Request) {
+  // CSRF protection
+  if (!validateOrigin(request)) {
+    return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+  }
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -62,6 +68,11 @@ export async function POST(request: Request) {
 
 // DELETE - Remove allowed email (admin only)
 export async function DELETE(request: Request) {
+  // CSRF protection
+  if (!validateOrigin(request)) {
+    return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+  }
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
