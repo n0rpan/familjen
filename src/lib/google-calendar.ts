@@ -275,9 +275,9 @@ export async function fetchCalendarInvitesFromGmail(
   })
 
   const messages = response.data.messages || []
-  // Temporary production logging to debug sync issues
-  console.log(`[Gmail Sync] Query: ${query}`)
-  console.log(`[Gmail Sync] Found ${messages.length} messages with attachments`)
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`[Gmail Sync] Found ${messages.length} messages with attachments`)
+  }
 
   const invites: ParsedCalendarInvite[] = []
 
@@ -287,7 +287,9 @@ export async function fetchCalendarInvitesFromGmail(
     try {
       const invite = await extractCalendarInviteFromMessage(gmail, message.id)
       if (invite) {
-        console.log(`[Gmail Sync] Parsed invite: "${invite.summary}" from ${invite.organizerEmail} on ${invite.startDate}`)
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[Gmail Sync] Parsed: "${invite.summary}" from ${invite.organizerEmail}`)
+        }
         invites.push(invite)
       }
     } catch (error) {
@@ -295,7 +297,9 @@ export async function fetchCalendarInvitesFromGmail(
     }
   }
 
-  console.log(`[Gmail Sync] Total calendar invites found: ${invites.length}`)
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`[Gmail Sync] Total invites found: ${invites.length}`)
+  }
   return invites
 }
 

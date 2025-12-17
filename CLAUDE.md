@@ -201,6 +201,7 @@ ALTER TABLE children ADD COLUMN IF NOT EXISTS allergies TEXT;
 
 -- member_events
 ALTER TABLE member_events ADD COLUMN IF NOT EXISTS end_date DATE;
+ALTER TABLE member_events ADD COLUMN IF NOT EXISTS source_email TEXT;
 ```
 
 ### Required Functions
