@@ -244,9 +244,9 @@ export function Header() {
 
       {/* Mobile Top Header */}
       <header
-        className="lg:hidden w-full sticky top-0 z-40 backdrop-blur-md"
+        className="lg:hidden w-full sticky top-0 z-40"
         style={{
-          background: 'var(--header-bg)',
+          background: 'var(--background)',
           borderBottom: '1px solid var(--border)'
         }}
       >
