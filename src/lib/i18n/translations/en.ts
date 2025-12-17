@@ -592,4 +592,19 @@ export const en: TranslationStrings = {
     testNotification: 'Send test notification',
     testSent: 'Test notification sent!',
   },
+
+  install: {
+    title: 'Install app',
+    description: 'Add Familjen to your home screen for quicker access.',
+    install: 'Install',
+    installed: 'App installed',
+    installedDesc: 'Familjen has been added to your home screen.',
+    howTo: 'How to install',
+    iosStep1: 'Tap the Share icon',
+    iosStep1b: 'at the bottom of Safari',
+    iosStep2: 'Scroll down and tap "Add to Home Screen"',
+    iosStep3: 'Tap "Add"',
+    androidStep1: 'Tap the menu icon (⋮) in the browser',
+    androidStep2: 'Select "Install app" or "Add to Home screen"',
+  },
 }

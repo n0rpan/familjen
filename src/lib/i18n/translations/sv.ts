@@ -592,4 +592,19 @@ export const sv: TranslationStrings = {
     testNotification: 'Skicka testnotifikation',
     testSent: 'Testnotifikation skickad!',
   },
+
+  install: {
+    title: 'Installera app',
+    description: 'Lägg till Familjen på hemskärmen för snabbare åtkomst.',
+    install: 'Installera',
+    installed: 'App installerad',
+    installedDesc: 'Familjen har lagts till på din hemskärm.',
+    howTo: 'Så här installerar du',
+    iosStep1: 'Tryck på Dela-ikonen',
+    iosStep1b: 'längst ner i Safari',
+    iosStep2: 'Scrolla ner och tryck "Lägg till på hemskärmen"',
+    iosStep3: 'Tryck "Lägg till"',
+    androidStep1: 'Tryck på menyikonen (⋮) i webbläsaren',
+    androidStep2: 'Välj "Installera app" eller "Lägg till på startskärmen"',
+  },
 }

@@ -592,4 +592,19 @@ export const nb: TranslationStrings = {
     testNotification: 'Send testvarsel',
     testSent: 'Testvarsel sendt!',
   },
+
+  install: {
+    title: 'Installer app',
+    description: 'Legg til Familjen på hjemskjermen for raskere tilgang.',
+    install: 'Installer',
+    installed: 'App installert',
+    installedDesc: 'Familjen er lagt til på hjemskjermen din.',
+    howTo: 'Slik installerer du',
+    iosStep1: 'Trykk på Del-ikonet',
+    iosStep1b: 'nederst i Safari',
+    iosStep2: 'Bla ned og trykk "Legg til på Hjem-skjerm"',
+    iosStep3: 'Trykk "Legg til"',
+    androidStep1: 'Trykk på meny-ikonet (⋮) i nettleseren',
+    androidStep2: 'Velg "Installer app" eller "Legg til på startskjermen"',
+  },
 }

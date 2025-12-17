@@ -9,6 +9,7 @@ import { User } from '@supabase/supabase-js'
 import { useLanguage } from '@/lib/i18n/context'
 import { LANGUAGES, type Language } from '@/lib/i18n/types'
 import { NotificationSettings } from '@/components/NotificationSettings'
+import { InstallPrompt } from '@/components/InstallPrompt'
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
@@ -798,6 +799,31 @@ export default function SettingsPage() {
           </div>
         </div>
         <NotificationSettings />
+      </section>
+
+      {/* Install App */}
+      <section
+        className="rounded-2xl p-6 md:p-8"
+        style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+      >
+        <div className="flex items-center gap-3 mb-6">
+          <div
+            className="w-10 h-10 rounded-xl flex items-center justify-center"
+            style={{ background: 'rgba(126, 182, 196, 0.2)' }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-sky)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold" style={{ color: 'var(--foreground)' }}>
+              {t.install?.title || 'Installer app'}
+            </h2>
+          </div>
+        </div>
+        <InstallPrompt />
       </section>
 
       {/* Language Settings */}

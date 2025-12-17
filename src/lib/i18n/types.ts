@@ -615,4 +615,20 @@ export interface TranslationStrings {
     testNotification: string
     testSent: string
   }
+
+  // Install / Add to home screen
+  install: {
+    title: string
+    description: string
+    install: string
+    installed: string
+    installedDesc: string
+    howTo: string
+    iosStep1: string
+    iosStep1b: string
+    iosStep2: string
+    iosStep3: string
+    androidStep1: string
+    androidStep2: string
+  }
 }
