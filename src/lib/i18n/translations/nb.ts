@@ -53,6 +53,8 @@ export const nb: TranslationStrings = {
     saving: 'Lagrer...',
     pending: 'venter',
     syncing: 'Synkroniserer',
+    offline: 'Frakoblet',
+    backOnline: 'Tilkoblet igjen',
     creating: 'Oppretter...',
     finish: 'Fullfør',
     items: 'varer',

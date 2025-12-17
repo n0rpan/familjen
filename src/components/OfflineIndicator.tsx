@@ -83,7 +83,7 @@ export function OfflineIndicator() {
             <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
             <line x1="12" y1="20" x2="12.01" y2="20" />
           </svg>
-          <span>Offline</span>
+          <span>{t.common?.offline || 'Offline'}</span>
           {pendingCount > 0 && (
             <span className="ml-2 px-2 py-0.5 rounded-full text-xs" style={{ background: 'rgba(0,0,0,0.2)' }}>
               {pendingCount} {t.common?.pending || 'pending'}
@@ -105,7 +105,7 @@ export function OfflineIndicator() {
             <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
             <line x1="12" y1="20" x2="12.01" y2="20" />
           </svg>
-          {t.notifications?.enabled || 'Online'}
+          <span>{t.common?.backOnline || 'Back online'}</span>
         </>
       )}
     </div>
