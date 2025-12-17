@@ -145,6 +145,19 @@ allowed_emails (
 )
 ```
 
+**RLS Policies on `allowed_emails`:**
+| Policy | Command | Who can access |
+|--------|---------|----------------|
+| `View allowed emails` | SELECT | Own email entry, emails invited by your household, or admin |
+| `Admin manages allowed_emails` | ALL | Admin only |
+| `Insert allowed emails` | INSERT | Admin or household admin (for invites) |
+| `Delete allowed emails` | DELETE | Admin or household admin (for their invites) |
+
+**Critical**: Users must be able to read their own entry to check `can_create_household`. The SELECT policy includes:
+```sql
+OR email = LOWER((SELECT email FROM auth.users WHERE id = auth.uid()))
+```
+
 ## Migrations
 
 Located in `supabase/migrations/`. Run with:
