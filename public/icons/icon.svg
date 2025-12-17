@@ -17,6 +17,9 @@
     </linearGradient>
   </defs>
 
+  <!-- Square background to fill corners (prevents white on iOS) -->
+  <rect x="0" y="0" width="512" height="512" fill="#F8F4F0" />
+
   <!-- Background circle -->
   <circle cx="256" cy="256" r="240" fill="url(#bgGradient)" />
 
