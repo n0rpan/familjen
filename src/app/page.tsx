@@ -18,15 +18,13 @@ export default async function HomePage() {
     return (
       <div className="min-h-[70vh] flex items-center justify-center">
         <div className="text-center max-w-md mx-auto animate-fade-in">
-          <div
-            className="inline-flex items-center justify-center w-20 h-20 rounded-2xl mb-8 shadow-lg"
-            style={{ background: 'var(--accent)' }}
-          >
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-              <polyline points="9,22 9,12 15,12 15,22"/>
-            </svg>
-          </div>
+          <img
+            src="/icons/icon.svg"
+            alt="Familjen"
+            width={80}
+            height={80}
+            className="rounded-2xl mb-8 shadow-lg mx-auto"
+          />
           <h1 className="text-4xl font-semibold font-display mb-4" style={{ color: 'var(--foreground)' }}>
             {t.home.welcome}
           </h1>
