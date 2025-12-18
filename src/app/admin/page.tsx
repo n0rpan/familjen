@@ -283,6 +283,162 @@ function ModelSelector({
   );
 }
 
+interface IntegrationInfo {
+  id: string;
+  service: string;
+  display_name: string;
+  account_email: string | null;
+  last_sync_at: string | null;
+  last_sync_status: string;
+  last_sync_error: string | null;
+  eventsCount: number;
+  messagesCount: number;
+  photosCount: number;
+}
+
+function IntegrationDebug({ householdId }: { householdId: string }) {
+  const [integrations, setIntegrations] = useState<IntegrationInfo[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const supabase = useMemo(() => createClient(), []);
+
+  const loadIntegrations = async () => {
+    setLoading(true);
+    try {
+      // Fetch integrations for this household
+      const { data: intData } = await supabase
+        .from('external_integrations')
+        .select('id, service, display_name, account_email, last_sync_at, last_sync_status, last_sync_error')
+        .eq('household_id', householdId);
+
+      if (intData && intData.length > 0) {
+        // Get counts for each integration
+        const integrationInfos: IntegrationInfo[] = [];
+        for (const int of intData) {
+          const [events, messages, photos] = await Promise.all([
+            supabase.from('external_events').select('id', { count: 'exact', head: true }).eq('integration_id', int.id),
+            supabase.from('external_messages').select('id', { count: 'exact', head: true }).eq('integration_id', int.id),
+            supabase.from('external_photos').select('id', { count: 'exact', head: true }).eq('integration_id', int.id),
+          ]);
+          integrationInfos.push({
+            ...int,
+            eventsCount: events.count || 0,
+            messagesCount: messages.count || 0,
+            photosCount: photos.count || 0,
+          });
+        }
+        setIntegrations(integrationInfos);
+      } else {
+        setIntegrations([]);
+      }
+    } catch (e) {
+      console.error('Failed to load integrations:', e);
+    }
+    setLoading(false);
+  };
+
+  const triggerSync = async (integrationId: string, service: string) => {
+    setSyncing(integrationId);
+    try {
+      const endpoint = `/api/integrations/${service}/sync`;
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ integrationId }),
+      });
+      const data = await res.json();
+      console.log('[Admin] Sync result:', data);
+      alert(`Sync ${res.ok ? 'completed' : 'failed'}: ${JSON.stringify(data, null, 2)}`);
+      loadIntegrations(); // Refresh
+    } catch (e) {
+      console.error('Sync error:', e);
+      alert(`Sync error: ${e}`);
+    }
+    setSyncing(null);
+  };
+
+  useEffect(() => {
+    if (expanded) {
+      loadIntegrations();
+    }
+  }, [expanded, householdId]);
+
+  return (
+    <div className="pt-4" style={{ borderTop: "1px solid var(--border)" }}>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-2 text-sm font-medium"
+        style={{ color: "var(--foreground)" }}
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          className={`transition-transform ${expanded ? "rotate-90" : ""}`}
+        >
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+        Debug Integrations
+      </button>
+
+      {expanded && (
+        <div className="mt-3 space-y-3">
+          {loading ? (
+            <div className="text-xs" style={{ color: "var(--muted)" }}>Laster...</div>
+          ) : integrations.length === 0 ? (
+            <div className="text-xs" style={{ color: "var(--muted)" }}>Ingen integrasjoner</div>
+          ) : (
+            integrations.map((int) => (
+              <div
+                key={int.id}
+                className="p-3 rounded-lg text-xs space-y-2"
+                style={{ background: "var(--sand)" }}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="font-medium" style={{ color: "var(--foreground)" }}>
+                    {int.service.toUpperCase()} - {int.display_name}
+                  </div>
+                  <span
+                    className={`px-2 py-0.5 rounded text-xs ${
+                      int.last_sync_status === 'ok' ? 'bg-green-100 text-green-700' :
+                      int.last_sync_status === 'error' ? 'bg-red-100 text-red-700' :
+                      'bg-yellow-100 text-yellow-700'
+                    }`}
+                  >
+                    {int.last_sync_status}
+                  </span>
+                </div>
+                <div style={{ color: "var(--muted)" }}>
+                  Email: {int.account_email || '—'}<br />
+                  Last sync: {int.last_sync_at ? new Date(int.last_sync_at).toLocaleString('nb-NO') : 'Aldri'}<br />
+                  Events: {int.eventsCount} | Messages: {int.messagesCount} | Photos: {int.photosCount}
+                </div>
+                {int.last_sync_error && (
+                  <div className="p-2 rounded text-xs bg-red-50 text-red-600 font-mono break-all">
+                    {int.last_sync_error}
+                  </div>
+                )}
+                <button
+                  onClick={() => triggerSync(int.id, int.service)}
+                  disabled={syncing === int.id}
+                  className="px-3 py-1 rounded text-xs font-medium"
+                  style={{ background: "var(--accent)", color: "white" }}
+                >
+                  {syncing === int.id ? 'Syncing...' : 'Trigger Sync'}
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const { t } = useLanguage();
   const [loading, setLoading] = useState(true);
@@ -1106,6 +1262,11 @@ export default function AdminPage() {
                           </div>
                         )}
                       </div>
+
+                      {/* Integration Debug Info */}
+                      {household.external_integrations_enabled && (
+                        <IntegrationDebug householdId={household.id} />
+                      )}
 
                       {/* Household ID for debugging */}
                       <div className="pt-2 text-xs" style={{ color: "var(--muted)" }}>
