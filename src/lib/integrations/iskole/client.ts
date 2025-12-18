@@ -168,8 +168,14 @@ export class ISkoleClient {
     const results = JSON.parse(response.result) as ISkoleValidationResult[]
     const result = results[0]
 
-    if (result.ret_code < 0 || result.error_text) {
-      throw new ISkoleAuthError(result.error_text || 'Invalid credentials')
+    // Check for auth failure - ret_code is negative on error
+    // Note: error_text can be the string "null" on success, so check explicitly
+    const hasError = result.ret_code < 0 || (result.error_text && result.error_text !== 'null')
+    if (hasError) {
+      const errorMsg = result.error_text && result.error_text !== 'null'
+        ? result.error_text
+        : 'Invalid credentials'
+      throw new ISkoleAuthError(errorMsg)
     }
 
     this.log('Credentials validated, personId:', result.ret_code)
