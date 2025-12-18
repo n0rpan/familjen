@@ -57,3 +57,7 @@ logs/
 
 # Local Claude context
 .claude-context.local
+
+# Research files containing personal data (SSN, credentials, etc.)
+docs/iskole-integration-research.md
+*.har

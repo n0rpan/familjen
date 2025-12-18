@@ -11,6 +11,7 @@ interface SyncResult {
   displayName: string
   success: boolean
   error?: string
+  chatError?: string
   eventsCount: number
   messagesCount: number
 }
@@ -167,9 +168,12 @@ export async function POST(request: Request) {
       }
     }
 
+    // Collect chat errors for debugging
+    const chatErrors = results.filter((r) => r.chatError).map((r) => r.chatError)
+
     return NextResponse.json({
       success: failureCount === 0,
-      results: isAdmin ? results : results.map((r) => ({ ...r, error: r.error ? 'Sync failed' : undefined })),
+      results: isAdmin ? results : results.map((r) => ({ ...r, error: r.error ? 'Sync failed' : undefined, chatError: undefined })),
       summary: {
         integrationsTotal: integrations.length,
         integrationsSuccess: successCount,
@@ -178,6 +182,7 @@ export async function POST(request: Request) {
         messagesTotal: totalMessages,
         messagesProcessed: aiExtractionResult.processed,
         suggestionsCreated: aiExtractionResult.suggestionsCreated,
+        chatErrors: isAdmin ? chatErrors : chatErrors.length > 0 ? ['Chat sync failed'] : [],
       },
     })
   } catch (error) {
@@ -423,7 +428,9 @@ async function syncIntegration(
       }
     } catch (chatError) {
       // Chat errors are non-fatal - we still synced events
-      console.error('Error syncing chats:', chatError)
+      const chatErrorMsg = chatError instanceof Error ? chatError.message : String(chatError)
+      console.error('Error syncing chats:', chatErrorMsg, chatError)
+      result.chatError = chatErrorMsg
     }
 
     // Update sync status
