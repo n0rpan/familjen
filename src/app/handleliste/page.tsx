@@ -157,6 +157,52 @@ export default function ShoppingListPage() {
     }
   }
 
+  // Refetch data when app returns to foreground (catches changes missed while backgrounded)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && hasInitialized.current) {
+        // Silently refresh data without showing loading state
+        refreshData()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [])
+
+  // Silent refresh that doesn't show loading spinner
+  const refreshData = async () => {
+    if (!household) return
+
+    try {
+      // Refetch shopping lists with items
+      const { data: listsData } = await supabase
+        .from('shopping_lists')
+        .select('*')
+        .eq('household_id', household.id)
+        .order('sort_order')
+
+      if (!listsData) return
+
+      // Get items for each list
+      const { data: allItems } = await supabase
+        .from('shopping_list_items')
+        .select('*')
+        .in('list_id', listsData.map(l => l.id))
+        .order('created_at', { ascending: true })
+
+      // Combine lists with items
+      const listsWithItems: ListWithItems[] = listsData.map(list => ({
+        ...list,
+        items: (allItems || []).filter(item => item.list_id === list.id)
+      }))
+
+      setLists(listsWithItems)
+    } catch {
+      // Silent fail - user can pull to refresh if needed
+    }
+  }
+
   // Get list IDs for filtering realtime events
   const listIds = useMemo(() => lists.map(l => l.id), [lists])
 

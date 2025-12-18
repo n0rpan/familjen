@@ -218,6 +218,18 @@ export default function WeekEditPage() {
 
   const triggerReload = () => setReloadTrigger(prev => prev + 1)
 
+  // Refetch data when app returns to foreground (catches changes missed while backgrounded)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !loading) {
+        triggerReload()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [loading])
+
   // Date range strings for filtering realtime events
   const weekStartStr = formatDateISO(weekStart)
   const weekEndStr = formatDateISO(weekEnd)
