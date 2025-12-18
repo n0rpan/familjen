@@ -160,11 +160,13 @@ ALTER TABLE external_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE external_suggestions ENABLE ROW LEVEL SECURITY;
 
 -- external_integrations policies
+DROP POLICY IF EXISTS "Users can view own household integrations" ON external_integrations;
 CREATE POLICY "Users can view own household integrations"
   ON external_integrations FOR SELECT
   TO authenticated
   USING (household_id = get_user_household_id());
 
+DROP POLICY IF EXISTS "Users can insert integrations for own household" ON external_integrations;
 CREATE POLICY "Users can insert integrations for own household"
   ON external_integrations FOR INSERT
   TO authenticated
@@ -177,17 +179,20 @@ CREATE POLICY "Users can insert integrations for own household"
     )
   );
 
+DROP POLICY IF EXISTS "Users can update own household integrations" ON external_integrations;
 CREATE POLICY "Users can update own household integrations"
   ON external_integrations FOR UPDATE
   TO authenticated
   USING (household_id = get_user_household_id());
 
+DROP POLICY IF EXISTS "Users can delete own household integrations" ON external_integrations;
 CREATE POLICY "Users can delete own household integrations"
   ON external_integrations FOR DELETE
   TO authenticated
   USING (household_id = get_user_household_id());
 
 -- external_integration_children policies
+DROP POLICY IF EXISTS "Users can view own household integration children" ON external_integration_children;
 CREATE POLICY "Users can view own household integration children"
   ON external_integration_children FOR SELECT
   TO authenticated
@@ -199,6 +204,7 @@ CREATE POLICY "Users can view own household integration children"
     )
   );
 
+DROP POLICY IF EXISTS "Users can manage own household integration children" ON external_integration_children;
 CREATE POLICY "Users can manage own household integration children"
   ON external_integration_children FOR ALL
   TO authenticated
@@ -211,6 +217,7 @@ CREATE POLICY "Users can manage own household integration children"
   );
 
 -- external_events policies
+DROP POLICY IF EXISTS "Users can view own household external events" ON external_events;
 CREATE POLICY "Users can view own household external events"
   ON external_events FOR SELECT
   TO authenticated
@@ -222,6 +229,7 @@ CREATE POLICY "Users can view own household external events"
     )
   );
 
+DROP POLICY IF EXISTS "Users can update own household external events" ON external_events;
 CREATE POLICY "Users can update own household external events"
   ON external_events FOR UPDATE
   TO authenticated
@@ -233,6 +241,7 @@ CREATE POLICY "Users can update own household external events"
     )
   );
 
+DROP POLICY IF EXISTS "Users can insert own household external events" ON external_events;
 CREATE POLICY "Users can insert own household external events"
   ON external_events FOR INSERT
   TO authenticated
@@ -245,6 +254,7 @@ CREATE POLICY "Users can insert own household external events"
   );
 
 -- external_messages policies
+DROP POLICY IF EXISTS "Users can view own household external messages" ON external_messages;
 CREATE POLICY "Users can view own household external messages"
   ON external_messages FOR SELECT
   TO authenticated
@@ -256,6 +266,7 @@ CREATE POLICY "Users can view own household external messages"
     )
   );
 
+DROP POLICY IF EXISTS "Users can update own household external messages" ON external_messages;
 CREATE POLICY "Users can update own household external messages"
   ON external_messages FOR UPDATE
   TO authenticated
@@ -267,6 +278,7 @@ CREATE POLICY "Users can update own household external messages"
     )
   );
 
+DROP POLICY IF EXISTS "Users can insert own household external messages" ON external_messages;
 CREATE POLICY "Users can insert own household external messages"
   ON external_messages FOR INSERT
   TO authenticated
@@ -279,11 +291,13 @@ CREATE POLICY "Users can insert own household external messages"
   );
 
 -- external_suggestions policies
+DROP POLICY IF EXISTS "Users can view own household suggestions" ON external_suggestions;
 CREATE POLICY "Users can view own household suggestions"
   ON external_suggestions FOR SELECT
   TO authenticated
   USING (household_id = get_user_household_id());
 
+DROP POLICY IF EXISTS "Users can update own household suggestions" ON external_suggestions;
 CREATE POLICY "Users can update own household suggestions"
   ON external_suggestions FOR UPDATE
   TO authenticated
