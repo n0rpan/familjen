@@ -11,6 +11,7 @@ import { LANGUAGES, type Language } from '@/lib/i18n/types'
 import { NotificationSettings } from '@/components/NotificationSettings'
 import { InstallPrompt } from '@/components/InstallPrompt'
 import { SettingsPageSkeleton } from '@/components/Skeleton'
+import { SpondIntegration } from '@/components/integrations/SpondIntegration'
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
@@ -848,6 +849,39 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
+        </section>
+      )}
+
+      {/* Spond Integration - Only show if enabled for household */}
+      {household?.external_integrations_enabled && (
+        <section
+          className="rounded-2xl p-6 md:p-8"
+          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+        >
+          <div className="flex items-center gap-3 mb-6">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center"
+              style={{ background: 'rgba(126, 182, 196, 0.2)' }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-sky)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M12 6v6l4 2"/>
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold" style={{ color: 'var(--foreground)' }}>
+                Spond
+              </h2>
+              <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                Synkroniser hendelser og meldinger fra Spond
+              </p>
+            </div>
+          </div>
+          <SpondIntegration
+            householdId={household.id}
+            children={children}
+            onMessage={showMessage}
+          />
         </section>
       )}
 

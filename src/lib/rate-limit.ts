@@ -32,6 +32,10 @@ export const RATE_LIMITS = {
   calendarInvite: { limit: 20, windowMs: 60 * 1000 },
   // Push notifications - moderate, 30/minute per user
   pushNotify: { limit: 30, windowMs: 60 * 1000 },
+  // Spond sync - moderate, 10/minute (API calls are slow)
+  spondSync: { limit: 10, windowMs: 60 * 1000 },
+  // Spond test connection - 5/minute (during setup)
+  spondTestConnection: { limit: 5, windowMs: 60 * 1000 },
 } as const
 
 /**

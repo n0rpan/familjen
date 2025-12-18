@@ -11,7 +11,7 @@ import {
   formatWeekHeaderLocalized,
   cn,
 } from '@/lib/utils'
-import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Recipe, MemberEvent, ChildTask, MemberEventType, ChildTaskType } from '@/lib/types'
+import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Recipe, MemberEvent, ChildTask, MemberEventType, ChildTaskType, ExternalEvent } from '@/lib/types'
 import { getChildColor, getEventConfig, getTaskConfig } from '@/lib/colors'
 import { MealSelector } from './MealSelector'
 import { useLanguage } from '@/lib/i18n/context'
@@ -23,6 +23,7 @@ interface WeekGridProps {
   meals: MealWithRecipe[]
   memberEvents?: MemberEvent[]  // Parent events (work trips, dinners, etc.)
   childTasks?: ChildTask[]  // Kid tasks (bring items, appointments, reminders)
+  externalEvents?: ExternalEvent[]  // External events from Spond, Kidplan, etc.
   recipes?: Recipe[]  // For meal selector dropdown
   weekStart?: Date | string  // May be serialized as string from server
   editable?: boolean
@@ -34,6 +35,7 @@ interface WeekGridProps {
   onTaskToggle?: (taskId: string, done: boolean) => void  // Mark task done/undone
   onTaskClick?: (task: ChildTask) => void  // Click to edit task
   onAddTask?: (childId: string, date: string) => void  // Quick add task
+  onExternalEventClick?: (event: ExternalEvent) => void  // Click external event for details
 }
 
 export const WeekGrid = memo(function WeekGrid({
@@ -43,6 +45,7 @@ export const WeekGrid = memo(function WeekGrid({
   meals,
   memberEvents = [],
   childTasks = [],
+  externalEvents = [],
   recipes = [],
   weekStart: providedWeekStart,
   editable = false,
@@ -54,6 +57,7 @@ export const WeekGrid = memo(function WeekGrid({
   onTaskToggle,
   onTaskClick,
   onAddTask,
+  onExternalEventClick,
 }: WeekGridProps) {
   const { language, t } = useLanguage()
 
@@ -120,6 +124,19 @@ export const WeekGrid = memo(function WeekGrid({
     return map
   }, [childTasks])
 
+  // Group external events by child and date
+  const externalEventsByChildDate = useMemo(() => {
+    const map = new Map<string, ExternalEvent[]>()
+    externalEvents.forEach((event) => {
+      if (!event.child_id) return // Skip events not linked to a child
+      const key = `${event.child_id}-${event.event_date}`
+      const existing = map.get(key) || []
+      existing.push(event)
+      map.set(key, existing)
+    })
+    return map
+  }, [externalEvents])
+
   const getPickup = (childId: string, date: Date) => {
     return pickupMap.get(`${childId}-${formatDateISO(date)}`)
   }
@@ -134,6 +151,19 @@ export const WeekGrid = memo(function WeekGrid({
 
   const getTasksForChildDate = (childId: string, date: Date) => {
     return tasksByChildDate.get(`${childId}-${formatDateISO(date)}`) || []
+  }
+
+  const getExternalEventsForChildDate = (childId: string, date: Date) => {
+    return externalEventsByChildDate.get(`${childId}-${formatDateISO(date)}`) || []
+  }
+
+  // Get service badge label (e.g., "Spond")
+  const getServiceBadge = (event: ExternalEvent) => {
+    const service = event.integration?.service?.toLowerCase()
+    if (service === 'spond') return 'Spond'
+    if (service === 'kidplan') return 'Kidplan'
+    if (service === 'iskole') return 'iSkole'
+    return 'Ekstern'
   }
 
   return (
@@ -213,6 +243,7 @@ export const WeekGrid = memo(function WeekGrid({
                 {weekDates.map((date, i) => {
                   const pickup = getPickup(child.id, date)
                   const tasks = getTasksForChildDate(child.id, date)
+                  const extEvents = getExternalEventsForChildDate(child.id, date)
                   const dateStr = formatDateISO(date)
 
                   return (
@@ -317,6 +348,39 @@ export const WeekGrid = memo(function WeekGrid({
                             {tasks.length > 2 && (
                               <span className="text-xs" style={{ color: 'var(--muted)' }}>
                                 {t.week.more.replace('{count}', String(tasks.length - 2))}
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* External events (Spond, Kidplan, etc.) */}
+                        {extEvents.length > 0 && (
+                          <div className="space-y-0.5 pt-1 border-t border-dashed" style={{ borderColor: 'rgba(126, 182, 196, 0.4)' }}>
+                            {extEvents.slice(0, 2).map((event) => (
+                              <button
+                                key={event.id}
+                                onClick={() => onExternalEventClick?.(event)}
+                                className="w-full flex items-center gap-1 text-xs py-0.5 px-1 rounded transition-colors text-left touch-feedback"
+                                style={{
+                                  background: 'rgba(126, 182, 196, 0.15)',
+                                  color: 'var(--foreground)',
+                                }}
+                                title={`[${getServiceBadge(event)}] ${event.title}${event.event_time ? ` kl ${event.event_time.substring(0, 5)}` : ''}`}
+                              >
+                                <span className="flex-shrink-0 text-[10px] px-1 rounded" style={{ background: 'var(--color-sky)', color: 'white' }}>
+                                  {getServiceBadge(event).substring(0, 1)}
+                                </span>
+                                <span className="truncate">{event.title}</span>
+                                {event.event_time && (
+                                  <span className="flex-shrink-0 text-[10px]" style={{ color: 'var(--muted)' }}>
+                                    {event.event_time.substring(0, 5)}
+                                  </span>
+                                )}
+                              </button>
+                            ))}
+                            {extEvents.length > 2 && (
+                              <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                                {t.week.more.replace('{count}', String(extEvents.length - 2))}
                               </span>
                             )}
                           </div>

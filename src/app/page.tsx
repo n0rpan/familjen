@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { TodayOverview } from '@/components/TodayOverview'
 import { WeekGrid } from '@/components/WeekGrid'
 import { UniversalAIInput } from '@/components/ai'
+import { SuggestionBanner } from '@/components/integrations/SuggestionReview'
 import { formatDateISO, addDays } from '@/lib/utils'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -269,6 +270,12 @@ export default async function HomePage() {
         children={children || []}
         members={members || []}
         currentUserId={user.id}
+      />
+
+      {/* Suggestion Banner - Shows pending suggestions from Spond etc. */}
+      <SuggestionBanner
+        householdId={myMembership.household_id}
+        children={children || []}
       />
 
       {/* Today's Overview */}

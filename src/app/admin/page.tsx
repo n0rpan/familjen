@@ -551,6 +551,27 @@ export default function AdminPage() {
     setSaving(false);
   };
 
+  const toggleHouseholdIntegrations = async (householdId: string, enabled: boolean) => {
+    setSaving(true);
+    const { error } = await supabase
+      .from("households")
+      .update({ external_integrations_enabled: enabled })
+      .eq("id", householdId);
+
+    if (error) {
+      console.error("Failed to update household:", error);
+      showMessage("error", t.errors.saveFailed);
+    } else {
+      setHouseholds((prev) =>
+        prev.map((h) =>
+          h.id === householdId ? { ...h, external_integrations_enabled: enabled } : h
+        )
+      );
+      showMessage("success", enabled ? "Integrasjoner aktivert" : "Integrasjoner deaktivert");
+    }
+    setSaving(false);
+  };
+
   if (!isAdmin) {
     return null;
   }
@@ -1047,6 +1068,44 @@ export default function AdminPage() {
                           </div>
                         </div>
                       )}
+
+                      {/* External Integrations Toggle */}
+                      <div className="pt-4" style={{ borderTop: "1px solid var(--border)" }}>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="text-sm font-medium" style={{ color: "var(--foreground)" }}>
+                              Eksterne integrasjoner
+                            </h4>
+                            <p className="text-xs" style={{ color: "var(--muted)" }}>
+                              Tillat kobling til Spond, Kidplan, iSkole
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => toggleHouseholdIntegrations(household.id, !household.external_integrations_enabled)}
+                            disabled={saving}
+                            className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+                            style={{
+                              background: household.external_integrations_enabled
+                                ? "var(--color-sage)"
+                                : "var(--sand)",
+                            }}
+                          >
+                            <span
+                              className="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
+                              style={{
+                                transform: household.external_integrations_enabled
+                                  ? "translateX(1.375rem)"
+                                  : "translateX(0.25rem)",
+                              }}
+                            />
+                          </button>
+                        </div>
+                        {household.external_integrations_enabled && (
+                          <div className="mt-2 text-xs" style={{ color: "var(--color-sage)" }}>
+                            Aktivert - husstand kan koble til Spond i innstillinger
+                          </div>
+                        )}
+                      </div>
 
                       {/* Household ID for debugging */}
                       <div className="pt-2 text-xs" style={{ color: "var(--muted)" }}>

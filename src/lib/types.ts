@@ -16,6 +16,7 @@ export interface Household extends AuditFields {
   openrouter_api_key_encrypted: string | null
   ai_meal_context: string | null  // Default AI preferences for meal suggestions
   share_names_with_ai: boolean  // When false, anonymize children names in AI prompts
+  external_integrations_enabled: boolean  // Allow household to connect Spond, Kidplan, iSkole
 }
 
 export interface HouseholdMember extends AuditFields {
@@ -214,6 +215,32 @@ export interface MemberEvent {
 
 export interface MemberEventWithMember extends MemberEvent {
   member: HouseholdMember
+}
+
+// External events (from Spond, Kidplan, iSkole)
+export interface ExternalEvent {
+  id: string
+  integration_id: string
+  child_id: string | null
+  external_id: string
+  external_group_id: string | null
+  title: string
+  description: string | null
+  event_date: string  // YYYY-MM-DD
+  event_time: string | null  // HH:MM:SS
+  end_date: string | null
+  end_time: string | null
+  location: string | null
+  event_type: string | null
+  is_hidden: boolean
+  user_notes: string | null
+  created_at: string
+  updated_at: string | null
+  // Joined data
+  integration?: {
+    service: string
+    display_name: string
+  }
 }
 
 // Child tasks (reminders, appointments, bring items, activities, closures)

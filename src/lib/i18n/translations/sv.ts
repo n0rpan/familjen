@@ -47,6 +47,7 @@ export const sv: TranslationStrings = {
     month: 'Månad',
     year: 'År',
     dismiss: 'Avvisa',
+    accept: 'Godkänn',
     previousDay: 'Föregående dag',
     nextDay: 'Nästa dag',
     remove: 'Ta bort',
@@ -200,6 +201,15 @@ export const sv: TranslationStrings = {
     selectPickerPrompt: 'Välj vem som hämtar...',
     notAssigned: 'Inte tilldelad',
     mealPlaceholder: 'Vad ska vi äta?',
+    // External suggestions
+    suggestion: 'förslag',
+    reviewSuggestions: 'Granska förslag från aktivitetsgrupper',
+    remaining: 'kvar',
+    originalMessage: 'Ursprungligt meddelande',
+    aiSuggestion: 'AI-förslag',
+    confidence: 'Säkerhet',
+    noMoreSuggestions: 'Inga fler förslag',
+    allSuggestionsReviewed: 'Du har granskat alla förslag',
   },
 
   // Settings page

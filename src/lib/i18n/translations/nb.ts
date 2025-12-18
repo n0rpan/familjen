@@ -47,6 +47,7 @@ export const nb: TranslationStrings = {
     month: 'Måned',
     year: 'År',
     dismiss: 'Avvis',
+    accept: 'Godta',
     previousDay: 'Forrige dag',
     nextDay: 'Neste dag',
     remove: 'Fjern',
@@ -200,6 +201,15 @@ export const nb: TranslationStrings = {
     selectPickerPrompt: 'Velg hvem som henter...',
     notAssigned: 'Ikke tildelt',
     mealPlaceholder: 'Hva skal vi spise?',
+    // External suggestions
+    suggestion: 'forslag',
+    reviewSuggestions: 'Gå gjennom forslag fra aktivitetsgrupper',
+    remaining: 'igjen',
+    originalMessage: 'Opprinnelig melding',
+    aiSuggestion: 'AI-forslag',
+    confidence: 'Sikkerhet',
+    noMoreSuggestions: 'Ingen flere forslag',
+    allSuggestionsReviewed: 'Du har gått gjennom alle forslagene',
   },
 
   // Settings page

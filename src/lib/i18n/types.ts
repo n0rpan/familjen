@@ -55,6 +55,7 @@ export interface TranslationStrings {
     month: string
     year: string
     dismiss: string
+    accept: string
     previousDay: string
     nextDay: string
     remove: string
@@ -208,6 +209,15 @@ export interface TranslationStrings {
     selectPickerPrompt: string
     notAssigned: string
     mealPlaceholder: string
+    // External suggestions
+    suggestion: string
+    reviewSuggestions: string
+    remaining: string
+    originalMessage: string
+    aiSuggestion: string
+    confidence: string
+    noMoreSuggestions: string
+    allSuggestionsReviewed: string
   }
 
   // Settings page

@@ -47,6 +47,7 @@ export const en: TranslationStrings = {
     month: 'Month',
     year: 'Year',
     dismiss: 'Dismiss',
+    accept: 'Accept',
     previousDay: 'Previous day',
     nextDay: 'Next day',
     remove: 'Remove',
@@ -200,6 +201,15 @@ export const en: TranslationStrings = {
     selectPickerPrompt: 'Select who picks up...',
     notAssigned: 'Not assigned',
     mealPlaceholder: 'What should we eat?',
+    // External suggestions
+    suggestion: 'suggestion',
+    reviewSuggestions: 'Review suggestions from activity groups',
+    remaining: 'remaining',
+    originalMessage: 'Original message',
+    aiSuggestion: 'AI suggestion',
+    confidence: 'Confidence',
+    noMoreSuggestions: 'No more suggestions',
+    allSuggestionsReviewed: 'You have reviewed all suggestions',
   },
 
   // Settings page

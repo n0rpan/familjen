@@ -19,6 +19,13 @@ Norwegian family planning app for managing daily pickups, meals, and child tasks
   - Example: "Jeg henter Falk i dag" (I'm picking up Falk today)
   - Example: "Taco til middag på fredag" (Tacos for dinner on Friday)
 
+### External Integrations (Spond)
+- **Spond Sync**: Connect to Spond to sync events from children's activity groups
+- **AI Action Extraction**: Automatically extract tasks and reminders from Spond messages
+- **Suggestion Review**: Review AI-suggested tasks before adding them to your calendar
+- **Daily Sync**: Automatic sync at 05:00 UTC + manual refresh button
+- **Admin Control**: Enable/disable integrations per household from admin panel
+
 ### Progressive Web App (PWA)
 - **Install as App**: Add to home screen for native app experience
 - **Push Notifications**: Get notified about pickup assignments and reminders
@@ -89,12 +96,13 @@ Open [http://localhost:3000](http://localhost:3000)
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anonymous key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes | For server-side operations |
-| `OPENROUTER_API_KEY` | No | For AI meal suggestions |
+| `OPENROUTER_API_KEY` | No | For AI meal suggestions and Spond message extraction |
 | `GOOGLE_CLIENT_ID` | No | For calendar integration |
 | `GOOGLE_CLIENT_SECRET` | No | For calendar integration |
 | `GOOGLE_REDIRECT_URI` | No | OAuth callback URL |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | No | For push notifications |
 | `VAPID_PRIVATE_KEY` | No | For push notifications |
+| `CRON_SECRET` | No | For Vercel Cron (Spond daily sync) |
 
 ## Database Migrations
 
@@ -112,6 +120,10 @@ Migrations are in `supabase/migrations/`. Key tables:
 - `google_calendar_tokens` - OAuth tokens for calendar sync
 - `push_subscriptions` - Web push notification subscriptions
 - `allowed_emails` - Access control for app registration
+- `external_integrations` - Spond/Kidplan/iSkole connections (encrypted credentials)
+- `external_events` - Synced events from external services
+- `external_messages` - Synced messages for AI extraction
+- `external_suggestions` - AI-extracted action items pending review
 
 Run migrations:
 ```bash
@@ -152,6 +164,8 @@ src/
 │   │   ├── cookie.ts       # Client-side cookie helpers
 │   │   ├── cookie.server.ts # Server-side cookie + browser detection
 │   │   └── translations/   # nb.ts, sv.ts, en.ts
+│   ├── integrations/  # External service clients
+│   │   └── spond/     # Spond API client (ported from Python)
 │   └── google-calendar.ts
 └── styles/            # Global CSS
 
