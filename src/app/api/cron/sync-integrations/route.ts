@@ -352,12 +352,12 @@ async function syncSpondIntegration(
       throw error
     }
 
-    // Calculate date ranges
+    // Calculate date ranges (90 days ahead for calendar, 30 days back for messages)
     const now = new Date()
-    const futureDate = addDays(now, 30)
+    const futureDate = addDays(now, 90)
     const lastSync = integration.last_sync_at
       ? new Date(integration.last_sync_at)
-      : addDays(now, -7)
+      : addDays(now, -30)
 
     const mappedGroupIds = new Set(childMappings.map((m) => m.groupId))
 
@@ -618,7 +618,7 @@ async function syncKidplanIntegration(
     const now = new Date()
     const lastSync = integration.last_sync_at
       ? new Date(integration.last_sync_at)
-      : addDays(now, -7)
+      : addDays(now, -30)
 
     // Fetch board posts and conversations
     // Note: Kidplan messages are not child-specific (board posts/conversations apply to all children)
@@ -778,7 +778,7 @@ async function syncISkoleIntegration(
     const now = new Date()
     const lastSync = integration.last_sync_at
       ? new Date(integration.last_sync_at)
-      : addDays(now, -7)
+      : addDays(now, -30)
 
     const messagesToUpsert: Array<Record<string, unknown>> = []
 
@@ -917,7 +917,7 @@ async function syncMyKidIntegration(
     const futureDate = addDays(now, 90)
     const lastSync = integration.last_sync_at
       ? new Date(integration.last_sync_at)
-      : addDays(now, -7)
+      : addDays(now, -30)
 
     // Sync calendar events (JSON API - easy)
     try {

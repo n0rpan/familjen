@@ -323,11 +323,11 @@ function IntegrationDebug({ householdId }: { householdId: string }) {
   const triggerSync = async (integrationId: string, service: string) => {
     setSyncing(integrationId);
     try {
-      const endpoint = `/api/integrations/${service}/sync`;
-      const res = await fetch(endpoint, {
+      // Use admin sync endpoint to bypass RLS
+      const res = await fetch('/api/admin/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ integrationId }),
+        body: JSON.stringify({ integrationId, service, householdId }),
       });
       const data = await res.json();
       console.log('[Admin] Sync result:', data);
