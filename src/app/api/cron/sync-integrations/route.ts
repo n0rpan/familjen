@@ -3,6 +3,7 @@ import { createClient as createServiceClient, SupabaseClient } from '@supabase/s
 import { SpondClient, SpondAuthError, SpondError } from '@/lib/integrations/spond'
 import { KidplanClient, KidplanAuthError, KidplanError } from '@/lib/integrations/kidplan'
 import { ISkoleClient, ISkoleAuthError, ISkoleError } from '@/lib/integrations/iskole'
+import { MyKidClient, MyKidAuthError, MyKidError } from '@/lib/integrations/mykid'
 import { formatDateISO, addDays } from '@/lib/utils'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -77,11 +78,11 @@ export async function GET(request: Request) {
 
     console.log(`[Cron] Found ${households.length} households with integrations enabled`)
 
-    // Get all integrations (Spond, Kidplan, iSkole)
+    // Get all integrations (Spond, Kidplan, iSkole, MyKid)
     const { data: integrations, error: integrationsError } = await supabase
       .from('external_integrations')
       .select('*')
-      .in('service', ['spond', 'kidplan', 'iskole'])
+      .in('service', ['spond', 'kidplan', 'iskole', 'mykid'])
       .in(
         'household_id',
         households.map((h) => h.id)
@@ -106,8 +107,9 @@ export async function GET(request: Request) {
     const spondIntegrations = integrations.filter((i) => i.service === 'spond')
     const kidplanIntegrations = integrations.filter((i) => i.service === 'kidplan')
     const iskoleIntegrations = integrations.filter((i) => i.service === 'iskole')
+    const mykidIntegrations = integrations.filter((i) => i.service === 'mykid')
 
-    console.log(`[Cron] Found ${spondIntegrations.length} Spond, ${kidplanIntegrations.length} Kidplan, ${iskoleIntegrations.length} iSkole integrations`)
+    console.log(`[Cron] Found ${spondIntegrations.length} Spond, ${kidplanIntegrations.length} Kidplan, ${iskoleIntegrations.length} iSkole, ${mykidIntegrations.length} MyKid integrations`)
 
     // Get all child mappings
     const { data: allChildMappings } = await supabase
@@ -186,6 +188,21 @@ export async function GET(request: Request) {
         integrationId: integration.id,
         householdId: integration.household_id,
         service: 'iskole',
+        ...result,
+      })
+    }
+
+    // Sync MyKid integrations
+    for (const integration of mykidIntegrations) {
+      const result = await syncMyKidIntegration(
+        supabase,
+        integration,
+        childMappingsByIntegration.get(integration.id) || []
+      )
+      results.push({
+        integrationId: integration.id,
+        householdId: integration.household_id,
+        service: 'mykid',
         ...result,
       })
     }
@@ -829,6 +846,184 @@ async function syncISkoleIntegration(
   } catch (error) {
     console.error(`[Cron] iSkole sync failed for ${integration.id}:`, error)
     result.error = error instanceof ISkoleError ? error.message : 'Unknown error'
+    await updateSyncStatus(supabase, integration.id, 'error', result.error)
+    return result
+  }
+}
+
+/**
+ * Sync a single MyKid integration.
+ * Note: Photos are NOT synced in cron (too slow) - only in on-demand sync.
+ */
+async function syncMyKidIntegration(
+  supabase: AnySupabaseClient,
+  integration: {
+    id: string
+    household_id: string
+    display_name: string
+    credentials_encrypted: string
+    last_sync_at: string | null
+  },
+  childMappings: Array<{ childId: string; groupId: string }>
+): Promise<{
+  success: boolean
+  eventsCount: number
+  messagesCount: number
+  error?: string
+}> {
+  const result = {
+    success: false,
+    eventsCount: 0,
+    messagesCount: 0,
+    error: undefined as string | undefined,
+  }
+
+  try {
+    // Decrypt credentials
+    const { data: credentials, error: credError } = await supabase.rpc('decrypt_token', {
+      ciphertext: integration.credentials_encrypted,
+    })
+
+    if (credError || !credentials) {
+      result.error = 'Failed to decrypt credentials'
+      await updateSyncStatus(supabase, integration.id, 'error', result.error)
+      return result
+    }
+
+    let parsedCreds: { phone: string; password: string }
+    try {
+      parsedCreds = JSON.parse(credentials)
+    } catch {
+      result.error = 'Invalid credentials format'
+      await updateSyncStatus(supabase, integration.id, 'error', result.error)
+      return result
+    }
+
+    // Create MyKid client and login
+    const client = new MyKidClient()
+
+    try {
+      await client.login(parsedCreds.phone, parsedCreds.password)
+    } catch (error) {
+      if (error instanceof MyKidAuthError) {
+        result.error = 'Authentication failed'
+        await updateSyncStatus(supabase, integration.id, 'auth_failed', result.error)
+        return result
+      }
+      throw error
+    }
+
+    const now = new Date()
+    const futureDate = addDays(now, 90)
+    const lastSync = integration.last_sync_at
+      ? new Date(integration.last_sync_at)
+      : addDays(now, -7)
+
+    // Sync calendar events (JSON API - easy)
+    try {
+      const events = await client.getCalendarEvents(now, futureDate)
+      const eventsToUpsert: Array<Record<string, unknown>> = []
+
+      for (const event of events) {
+        const mapped = MyKidClient.mapCalendarEventToDb(event)
+        eventsToUpsert.push({
+          integration_id: integration.id,
+          child_id: null, // MyKid events are not child-specific
+          external_id: mapped.externalId,
+          external_group_id: null,
+          title: mapped.title,
+          description: mapped.description,
+          event_date: mapped.eventDate,
+          event_time: mapped.eventTime,
+          end_date: mapped.endDate,
+          end_time: mapped.endTime,
+          location: null,
+          event_type: mapped.eventType,
+          raw_data: mapped.rawData,
+          updated_at: new Date().toISOString(),
+        })
+      }
+
+      if (eventsToUpsert.length > 0) {
+        const { error: eventsError } = await supabase
+          .from('external_events')
+          .upsert(eventsToUpsert, {
+            onConflict: 'integration_id,external_id',
+          })
+
+        if (!eventsError) {
+          result.eventsCount = eventsToUpsert.length
+        }
+      }
+    } catch (calendarError) {
+      console.error(`[Cron] MyKid calendar error for ${integration.id}:`, calendarError)
+    }
+
+    // Sync newsletters (HTML parsing)
+    const messagesToUpsert: Array<Record<string, unknown>> = []
+
+    try {
+      const newsletters = await client.getNewsletterList()
+
+      // Limit to recent 20 in cron
+      for (const summary of newsletters.slice(0, 20)) {
+        // Check if already synced
+        const { data: existing } = await supabase
+          .from('external_messages')
+          .select('id')
+          .eq('integration_id', integration.id)
+          .eq('external_id', `newsletter_${summary.id}`)
+          .single()
+
+        if (!existing) {
+          try {
+            const full = await client.getNewsletterContent(summary.id)
+            const mapped = MyKidClient.mapNewsletterToDb(full)
+
+            messagesToUpsert.push({
+              integration_id: integration.id,
+              child_id: null,
+              external_id: mapped.externalId,
+              external_group_id: null,
+              chat_id: null,
+              sender_name: null,
+              title: mapped.title,
+              body: mapped.body,
+              message_date: mapped.messageDate,
+              source_type: 'newsletter',
+              raw_data: mapped.rawData,
+            })
+
+            // Small delay to avoid rate limiting
+            await new Promise((resolve) => setTimeout(resolve, 100))
+          } catch (contentError) {
+            console.error(`[Cron] MyKid newsletter content error for ${summary.id}:`, contentError)
+          }
+        }
+      }
+    } catch (newsletterError) {
+      console.error(`[Cron] MyKid newsletter list error for ${integration.id}:`, newsletterError)
+    }
+
+    // Upsert messages
+    if (messagesToUpsert.length > 0) {
+      const { error: messagesError } = await supabase
+        .from('external_messages')
+        .upsert(messagesToUpsert, {
+          onConflict: 'integration_id,external_id',
+        })
+
+      if (!messagesError) {
+        result.messagesCount = messagesToUpsert.length
+      }
+    }
+
+    await updateSyncStatus(supabase, integration.id, 'ok', null)
+    result.success = true
+    return result
+  } catch (error) {
+    console.error(`[Cron] MyKid sync failed for ${integration.id}:`, error)
+    result.error = error instanceof MyKidError ? error.message : 'Unknown error'
     await updateSyncStatus(supabase, integration.id, 'error', result.error)
     return result
   }

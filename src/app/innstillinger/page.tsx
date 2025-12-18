@@ -14,6 +14,7 @@ import { SettingsPageSkeleton } from '@/components/Skeleton'
 import { SpondIntegration } from '@/components/integrations/SpondIntegration'
 import { KidplanIntegration } from '@/components/integrations/KidplanIntegration'
 import { ISkoleIntegration } from '@/components/integrations/ISkoleIntegration'
+import { MyKidIntegration } from '@/components/integrations/MyKidIntegration'
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
@@ -947,6 +948,39 @@ export default function SettingsPage() {
             </div>
           </div>
           <ISkoleIntegration
+            householdId={household.id}
+            children={children}
+            onMessage={showMessage}
+          />
+        </section>
+      )}
+
+      {/* MyKid Integration */}
+      {household?.external_integrations_enabled && (
+        <section
+          className="rounded-2xl p-6 md:p-8"
+          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+        >
+          <div className="flex items-center gap-3 mb-6">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center"
+              style={{ background: 'rgba(159, 205, 178, 0.2)' }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-sage)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="8" r="4" />
+                <path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold" style={{ color: 'var(--foreground)' }}>
+                MyKid
+              </h2>
+              <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                Synkroniser kalender, nyhetsbrev og bilder fra barnehagen
+              </p>
+            </div>
+          </div>
+          <MyKidIntegration
             householdId={household.id}
             children={children}
             onMessage={showMessage}

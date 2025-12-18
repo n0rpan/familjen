@@ -39,6 +39,10 @@ export const RATE_LIMITS = {
   iskoleSync: { limit: 10, windowMs: 60 * 1000 },
   // iSkole test connection - 5/minute (during setup)
   iskoleTestConnection: { limit: 5, windowMs: 60 * 1000 },
+  // MyKid sync - moderate, 10/minute
+  mykidSync: { limit: 10, windowMs: 60 * 1000 },
+  // MyKid test connection - 5/minute (during setup)
+  mykidTestConnection: { limit: 5, windowMs: 60 * 1000 },
 } as const
 
 // ============================================================================
