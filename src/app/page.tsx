@@ -172,19 +172,38 @@ export default async function HomePage() {
   const childTasks = tasksResult.data || []
   const householdReminders = remindersResult.data || []
 
-  // Transform photos data
-  const recentPhotos = (photosResult.data || []).map((photo) => {
-    // children is returned as a single object when using foreign key relation
-    const childData = photo.children as unknown as { name: string } | null
-    return {
-      id: photo.id,
-      title: photo.title,
-      taken_at: photo.taken_at,
-      storage_path: photo.storage_path,
-      thumbnail_path: photo.thumbnail_path,
-      child_name: childData?.name || null,
-    }
-  })
+  // Transform photos data - filter out pending and generate signed URLs
+  const actualPhotos = (photosResult.data || []).filter(
+    (photo) => photo.storage_path && !photo.storage_path.startsWith('pending/')
+  )
+
+  const recentPhotos = await Promise.all(
+    actualPhotos.map(async (photo) => {
+      // children is returned as a single object when using foreign key relation
+      const childData = photo.children as unknown as { name: string } | null
+
+      // Generate signed URL
+      let imageUrl: string | null = null
+      try {
+        const { data: signedUrlData } = await supabase.storage
+          .from('external-photos')
+          .createSignedUrl(photo.storage_path, 3600) // 1 hour
+        imageUrl = signedUrlData?.signedUrl || null
+      } catch (err) {
+        console.error('Failed to get signed URL:', err)
+      }
+
+      return {
+        id: photo.id,
+        title: photo.title,
+        taken_at: photo.taken_at,
+        storage_path: photo.storage_path,
+        thumbnail_path: photo.thumbnail_path,
+        child_name: childData?.name || null,
+        image_url: imageUrl,
+      }
+    })
+  )
 
   // Get today's summary
   const todayPickups = pickups?.filter(p => p.date === todayStr) || []

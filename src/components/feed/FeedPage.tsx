@@ -54,6 +54,7 @@ export function FeedPage({ householdId }: Props) {
         service: msg.external_integrations?.service as 'spond' | 'kidplan' | 'iskole',
         child_name: msg.children?.name || null,
         integration_name: msg.external_integrations?.display_name || null,
+        raw_data: msg.raw_data,
       }))
 
       setMessages(transformedMessages)
@@ -71,18 +72,41 @@ export function FeedPage({ householdId }: Props) {
         .order('taken_at', { ascending: false })
         .limit(50)
 
-      const transformedPhotos: FeedPhoto[] = (photosData || []).map((photo) => ({
-        id: photo.id,
-        integration_id: photo.integration_id,
-        child_id: photo.child_id,
-        external_id: photo.external_id,
-        title: photo.title,
-        taken_at: photo.taken_at,
-        storage_path: photo.storage_path,
-        thumbnail_path: photo.thumbnail_path,
-        child_name: photo.children?.name || null,
-        integration_name: photo.external_integrations?.display_name || null,
-      }))
+      // Filter out pending photos and generate signed URLs for actual photos
+      const actualPhotos = (photosData || []).filter(
+        (photo) => photo.storage_path && !photo.storage_path.startsWith('pending/')
+      )
+
+      // Generate signed URLs for photos (1 hour expiry)
+      const transformedPhotos: FeedPhoto[] = await Promise.all(
+        actualPhotos.map(async (photo) => {
+          let imageUrl: string | null = null
+
+          try {
+            const { data: signedUrlData } = await supabase.storage
+              .from('external-photos')
+              .createSignedUrl(photo.storage_path, 3600) // 1 hour
+
+            imageUrl = signedUrlData?.signedUrl || null
+          } catch (err) {
+            console.error('Failed to get signed URL:', err)
+          }
+
+          return {
+            id: photo.id,
+            integration_id: photo.integration_id,
+            child_id: photo.child_id,
+            external_id: photo.external_id,
+            title: photo.title,
+            taken_at: photo.taken_at,
+            storage_path: photo.storage_path,
+            thumbnail_path: photo.thumbnail_path,
+            child_name: photo.children?.name || null,
+            integration_name: photo.external_integrations?.display_name || null,
+            image_url: imageUrl,
+          }
+        })
+      )
 
       setPhotos(transformedPhotos)
 

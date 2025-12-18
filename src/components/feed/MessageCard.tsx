@@ -2,6 +2,25 @@
 
 import { useState } from 'react'
 
+// Spond comment structure from raw_data
+interface SpondComment {
+  id: string
+  text: string
+  timestamp: string
+  sender?: {
+    id: string
+    firstName: string
+    lastName: string
+  }
+}
+
+// Spond post raw_data structure (partial)
+interface SpondPostRaw {
+  group?: { id: string; name: string }
+  subGroup?: { id: string; name: string }
+  comments?: SpondComment[]
+}
+
 export interface FeedMessage {
   id: string
   integration_id: string
@@ -15,6 +34,7 @@ export interface FeedMessage {
   service: 'spond' | 'kidplan' | 'iskole'
   child_name?: string | null
   integration_name?: string | null
+  raw_data?: unknown
 }
 
 interface Props {
@@ -23,6 +43,14 @@ interface Props {
 
 export function MessageCard({ message }: Props) {
   const [expanded, setExpanded] = useState(false)
+  const [showComments, setShowComments] = useState(false)
+
+  // Extract Spond-specific data from raw_data
+  const spondData = message.service === 'spond' && message.raw_data
+    ? (message.raw_data as SpondPostRaw)
+    : null
+  const groupName = spondData?.group?.name || spondData?.subGroup?.name
+  const comments = spondData?.comments || []
 
   // Format date
   const formatDate = (dateStr: string) => {
@@ -73,6 +101,11 @@ export function MessageCard({ message }: Props) {
           >
             {serviceStyle.label}
           </span>
+          {groupName && (
+            <span className="text-xs" style={{ color: 'var(--muted)' }}>
+              {groupName}
+            </span>
+          )}
           {message.child_name && (
             <span className="text-xs" style={{ color: 'var(--muted)' }}>
               {message.child_name}
@@ -112,6 +145,57 @@ export function MessageCard({ message }: Props) {
         >
           {expanded ? 'Vis mindre' : 'Les mer'}
         </button>
+      )}
+
+      {/* Comments section (Spond only) */}
+      {comments.length > 0 && (
+        <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+          <button
+            onClick={() => setShowComments(!showComments)}
+            className="text-sm font-medium flex items-center gap-1"
+            style={{ color: 'var(--muted)' }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            {comments.length} {comments.length === 1 ? 'kommentar' : 'kommentarer'}
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className={`transition-transform ${showComments ? 'rotate-180' : ''}`}
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+
+          {showComments && (
+            <div className="mt-3 space-y-3">
+              {comments.map((comment) => (
+                <div
+                  key={comment.id}
+                  className="pl-3 py-2"
+                  style={{ borderLeft: '2px solid var(--border)' }}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                      {comment.sender?.firstName} {comment.sender?.lastName}
+                    </span>
+                    <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                      {formatDate(comment.timestamp)}
+                    </span>
+                  </div>
+                  <p className="text-sm" style={{ color: 'var(--foreground)' }}>
+                    {comment.text}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
     </div>
   )

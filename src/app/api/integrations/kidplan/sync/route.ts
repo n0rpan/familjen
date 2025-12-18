@@ -4,6 +4,7 @@ import { validateOrigin, isUserAdmin } from '@/lib/config'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 import { KidplanClient, KidplanAuthError, KidplanError } from '@/lib/integrations/kidplan'
 import { addDays } from '@/lib/utils'
+import sharp from 'sharp'
 
 interface SyncResult {
   integrationId: string
@@ -306,42 +307,95 @@ async function syncIntegration(
       }
     }
 
-    // Fetch and sync photos
-    // Note: Photo download and storage would be handled by a separate background job
-    // Here we just record the photo metadata
+    // Fetch, download, compress, and store photos
     try {
-      const boardData = await client.getBoardPosts()
-      const photos = boardData.LatestPictures || []
+      // Get photos with download tokens from the HTML page
+      const photos = await client.getLatestPhotos()
 
       if (photos.length > 0) {
-        const photosToUpsert = photos.map((pic) => {
-          const takenAt = pic.Created ? new Date(pic.Created).toISOString() : null
-          const expiresAt = addDays(new Date(), 365).toISOString() // 1 year retention
+        let uploadedCount = 0
 
-          return {
-            integration_id: integration.id,
-            child_id: null,
-            external_id: pic.PictureId,
-            title: pic.AlbumName || null,
-            taken_at: takenAt,
-            storage_path: `pending/${pic.PictureId}`, // Placeholder until downloaded
-            expires_at: expiresAt,
-            raw_data: pic,
+        for (const photo of photos) {
+          try {
+            // Check if we already have this photo (skip if storage_path is not pending)
+            const { data: existing } = await supabase
+              .from('external_photos')
+              .select('id, storage_path')
+              .eq('integration_id', integration.id)
+              .eq('external_id', photo.id)
+              .single()
+
+            if (existing && !existing.storage_path.startsWith('pending/')) {
+              // Already downloaded, skip
+              continue
+            }
+
+            // Download the photo
+            const { buffer, contentType } = await client.fetchPhoto(photo.fullUrl)
+
+            // Compress with sharp (max 1200px width, JPEG quality 80)
+            const compressed = await sharp(buffer)
+              .resize(1200, null, { withoutEnlargement: true })
+              .jpeg({ quality: 80 })
+              .toBuffer()
+
+            // Get image metadata
+            const metadata = await sharp(compressed).metadata()
+
+            // Generate storage path
+            const storagePath = `${householdId}/${integration.id}/${photo.id}.jpg`
+
+            // Upload to Supabase Storage
+            const { error: uploadError } = await supabase.storage
+              .from('external-photos')
+              .upload(storagePath, compressed, {
+                contentType: 'image/jpeg',
+                upsert: true,
+              })
+
+            if (uploadError) {
+              console.error(`Failed to upload photo ${photo.id}:`, uploadError)
+              continue
+            }
+
+            // Upsert photo record with actual storage path
+            const expiresAt = addDays(new Date(), 365).toISOString() // 1 year retention
+
+            const { error: dbError } = await supabase
+              .from('external_photos')
+              .upsert({
+                integration_id: integration.id,
+                child_id: null,
+                external_id: photo.id,
+                title: photo.albumName || null,
+                taken_at: new Date().toISOString(), // Best guess since not in token URL
+                storage_path: storagePath,
+                width: metadata.width,
+                height: metadata.height,
+                file_size: compressed.length,
+                expires_at: expiresAt,
+                raw_data: photo,
+              }, {
+                onConflict: 'integration_id,external_id',
+                ignoreDuplicates: false,
+              })
+
+            if (dbError) {
+              console.error(`Failed to save photo ${photo.id}:`, dbError)
+            } else {
+              uploadedCount++
+            }
+
+            // Small delay between photos to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 200))
+
+          } catch (photoError) {
+            console.error(`Error processing photo ${photo.id}:`, photoError)
+            // Continue with next photo
           }
-        })
-
-        const { error: photosError } = await supabase
-          .from('external_photos')
-          .upsert(photosToUpsert, {
-            onConflict: 'integration_id,external_id',
-            ignoreDuplicates: false,
-          })
-
-        if (photosError) {
-          console.error('Error upserting photos:', photosError)
-        } else {
-          result.photosCount = photosToUpsert.length
         }
+
+        result.photosCount = uploadedCount
       }
     } catch (photoError) {
       console.error('Error syncing photos:', photoError)

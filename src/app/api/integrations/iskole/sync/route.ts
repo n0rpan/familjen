@@ -284,6 +284,100 @@ async function syncIntegration(
       }
     }
 
+    // Fetch and sync school calendar (FD = free day, PD = planning day)
+    const eventsToUpsert: Array<{
+      integration_id: string
+      child_id: string | null
+      external_id: string
+      external_group_id: string | null
+      title: string
+      description: string | null
+      event_date: string
+      event_type: string
+      raw_data: unknown
+    }> = []
+
+    // Get current and next month
+    const currentDate = new Date()
+    const currentMonth = currentDate.getMonth() + 1 // 1-12
+    const nextMonth = currentMonth === 12 ? 1 : currentMonth + 1
+
+    // Weekday names for extracting specific days
+    const weekdays = ['Mandag', 'Tirsdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lordag', 'Sondag'] as const
+    const weekdayTypes = ['SkoletypeMandag', 'SkoletypeTirsdag', 'SkoletypeOnsdag', 'SkoletypeTorsdag', 'SkoletypeFredag', 'SkoletypeLordag', 'SkoletypeSondag'] as const
+
+    for (const child of children) {
+      const childIdStr = String(child.Elevnr)
+      const mappedChildId = childIdMap.get(childIdStr) || null
+
+      // Fetch calendar for both months
+      for (const month of [currentMonth, nextMonth]) {
+        try {
+          const calendarDays = await client.getSchoolCalendar(
+            month,
+            child.Fylkeid,
+            child.Planperi,
+            child.Skoleid
+          )
+
+          // Process each week's data
+          for (const week of calendarDays) {
+            // Parse the base date (first day of week - Monday)
+            const baseDateStr = week.Dato // "20250113" format
+            const baseYear = parseInt(baseDateStr.substring(0, 4))
+            const baseMonth = parseInt(baseDateStr.substring(4, 6)) - 1
+            const baseDay = parseInt(baseDateStr.substring(6, 8))
+            const baseDate = new Date(baseYear, baseMonth, baseDay)
+
+            // Check each day of the week
+            for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+              const dayTypeKey = weekdayTypes[dayIndex]
+              const dayType = week[dayTypeKey]
+
+              // Only sync FD (free day) and PD (planning day)
+              if (dayType === 'FD' || dayType === 'PD') {
+                const eventDate = new Date(baseDate)
+                eventDate.setDate(baseDate.getDate() + dayIndex)
+                const eventDateStr = eventDate.toISOString().split('T')[0]
+
+                const title = dayType === 'FD' ? 'Skolefri' : 'Planleggingsdag'
+                const dayName = weekdays[dayIndex]
+                const dayContent = week[dayName]
+
+                eventsToUpsert.push({
+                  integration_id: integration.id,
+                  child_id: mappedChildId,
+                  external_id: `iskole_cal_${child.Elevnr}_${eventDateStr}`,
+                  external_group_id: childIdStr,
+                  title,
+                  description: dayContent || null,
+                  event_date: eventDateStr,
+                  event_type: 'school_closure',
+                  raw_data: { week, dayIndex, dayType },
+                })
+              }
+            }
+          }
+        } catch (calError) {
+          console.error(`Error fetching calendar for child ${child.Elevnr} month ${month}:`, calError)
+        }
+      }
+    }
+
+    // Upsert calendar events
+    if (eventsToUpsert.length > 0) {
+      const { error: eventsError } = await supabase
+        .from('external_events')
+        .upsert(eventsToUpsert, {
+          onConflict: 'integration_id,external_id',
+          ignoreDuplicates: false,
+        })
+
+      if (eventsError) {
+        console.error('Error upserting calendar events:', eventsError)
+      }
+    }
+
     // Update sync status
     await supabase.rpc('update_integration_sync_status', {
       p_integration_id: integration.id,

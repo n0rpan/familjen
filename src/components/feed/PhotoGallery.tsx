@@ -13,6 +13,7 @@ export interface FeedPhoto {
   thumbnail_path: string | null
   child_name?: string | null
   integration_name?: string | null
+  image_url?: string | null // Signed URL for display
 }
 
 interface Props {
@@ -68,25 +69,34 @@ export function PhotoGallery({ photos, onPhotoClick }: Props) {
             className="relative aspect-square rounded-xl overflow-hidden group"
             style={{ background: 'var(--background)' }}
           >
-            {/* Placeholder - will be replaced with actual image when storage is set up */}
-            <div
-              className="absolute inset-0 flex items-center justify-center"
-              style={{ background: 'var(--sand)' }}
-            >
-              <svg
-                width="32"
-                height="32"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                style={{ color: 'var(--muted)' }}
+            {/* Photo or placeholder */}
+            {photo.image_url ? (
+              <img
+                src={photo.image_url}
+                alt={photo.title || 'Bilde'}
+                className="absolute inset-0 w-full h-full object-cover"
+                loading="lazy"
+              />
+            ) : (
+              <div
+                className="absolute inset-0 flex items-center justify-center"
+                style={{ background: 'var(--sand)' }}
               >
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                <circle cx="8.5" cy="8.5" r="1.5" />
-                <polyline points="21 15 16 10 5 21" />
-              </svg>
-            </div>
+                <svg
+                  width="32"
+                  height="32"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  style={{ color: 'var(--muted)' }}
+                >
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <polyline points="21 15 16 10 5 21" />
+                </svg>
+              </div>
+            )}
 
             {/* Overlay on hover */}
             <div
@@ -151,35 +161,42 @@ export function PhotoGallery({ photos, onPhotoClick }: Props) {
             className="max-w-4xl max-h-[80vh] flex items-center justify-center"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Placeholder for now */}
-            <div
-              className="w-96 h-96 rounded-xl flex items-center justify-center"
-              style={{ background: 'var(--card)' }}
-            >
-              <div className="text-center">
-                <svg
-                  width="64"
-                  height="64"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1"
-                  style={{ color: 'var(--muted)', margin: '0 auto' }}
-                >
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                  <circle cx="8.5" cy="8.5" r="1.5" />
-                  <polyline points="21 15 16 10 5 21" />
-                </svg>
-                <p className="mt-4 text-sm" style={{ color: 'var(--muted)' }}>
-                  {photos[selectedIndex].title || 'Bilde'}
-                </p>
-                {photos[selectedIndex].taken_at && (
-                  <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
-                    {formatDate(photos[selectedIndex].taken_at)}
+            {photos[selectedIndex].image_url ? (
+              <img
+                src={photos[selectedIndex].image_url}
+                alt={photos[selectedIndex].title || 'Bilde'}
+                className="max-w-full max-h-[80vh] object-contain rounded-lg"
+              />
+            ) : (
+              <div
+                className="w-96 h-96 rounded-xl flex items-center justify-center"
+                style={{ background: 'var(--card)' }}
+              >
+                <div className="text-center">
+                  <svg
+                    width="64"
+                    height="64"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1"
+                    style={{ color: 'var(--muted)', margin: '0 auto' }}
+                  >
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <polyline points="21 15 16 10 5 21" />
+                  </svg>
+                  <p className="mt-4 text-sm" style={{ color: 'var(--muted)' }}>
+                    {photos[selectedIndex].title || 'Bilde'}
                   </p>
-                )}
+                  {photos[selectedIndex].taken_at && (
+                    <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
+                      {formatDate(photos[selectedIndex].taken_at)}
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Counter */}

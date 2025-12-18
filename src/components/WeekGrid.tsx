@@ -159,12 +159,17 @@ export const WeekGrid = memo(function WeekGrid({
 
   // Get service badge label (e.g., "Spond")
   const getServiceBadge = (event: ExternalEvent) => {
+    // Special case for school closures
+    if (event.event_type === 'school_closure') return 'Skole'
     const service = event.integration?.service?.toLowerCase()
     if (service === 'spond') return 'Spond'
     if (service === 'kidplan') return 'Kidplan'
     if (service === 'iskole') return 'iSkole'
     return 'Ekstern'
   }
+
+  // Check if event is a school closure
+  const isSchoolClosure = (event: ExternalEvent) => event.event_type === 'school_closure'
 
   return (
     <div
@@ -356,28 +361,35 @@ export const WeekGrid = memo(function WeekGrid({
                         {/* External events (Spond, Kidplan, etc.) */}
                         {extEvents.length > 0 && (
                           <div className="space-y-0.5 pt-1 border-t border-dashed" style={{ borderColor: 'rgba(126, 182, 196, 0.4)' }}>
-                            {extEvents.slice(0, 2).map((event) => (
-                              <button
-                                key={event.id}
-                                onClick={() => onExternalEventClick?.(event)}
-                                className="w-full flex items-center gap-1 text-xs py-0.5 px-1 rounded transition-colors text-left touch-feedback"
-                                style={{
-                                  background: 'rgba(126, 182, 196, 0.15)',
-                                  color: 'var(--foreground)',
-                                }}
-                                title={`[${getServiceBadge(event)}] ${event.title}${event.event_time ? ` kl ${event.event_time.substring(0, 5)}` : ''}`}
-                              >
-                                <span className="flex-shrink-0 text-[10px] px-1 rounded" style={{ background: 'var(--color-sky)', color: 'white' }}>
-                                  {getServiceBadge(event).substring(0, 1)}
-                                </span>
-                                <span className="truncate">{event.title}</span>
-                                {event.event_time && (
-                                  <span className="flex-shrink-0 text-[10px]" style={{ color: 'var(--muted)' }}>
-                                    {event.event_time.substring(0, 5)}
-                                  </span>
-                                )}
-                              </button>
-                            ))}
+                            {extEvents.slice(0, 2).map((event) => {
+                              const closure = isSchoolClosure(event)
+                              return (
+                                <button
+                                  key={event.id}
+                                  onClick={() => onExternalEventClick?.(event)}
+                                  className="w-full flex items-center gap-1 text-xs py-0.5 px-1 rounded transition-colors text-left touch-feedback"
+                                  style={{
+                                    background: closure ? 'rgba(178, 154, 198, 0.2)' : 'rgba(126, 182, 196, 0.15)',
+                                    color: 'var(--foreground)',
+                                  }}
+                                  title={`[${getServiceBadge(event)}] ${event.title}${event.event_time ? ` kl ${event.event_time.substring(0, 5)}` : ''}`}
+                                >
+                                  {closure ? (
+                                    <span className="flex-shrink-0">🏫</span>
+                                  ) : (
+                                    <span className="flex-shrink-0 text-[10px] px-1 rounded" style={{ background: 'var(--color-sky)', color: 'white' }}>
+                                      {getServiceBadge(event).substring(0, 1)}
+                                    </span>
+                                  )}
+                                  <span className="truncate">{event.title}</span>
+                                  {event.event_time && !closure && (
+                                    <span className="flex-shrink-0 text-[10px]" style={{ color: 'var(--muted)' }}>
+                                      {event.event_time.substring(0, 5)}
+                                    </span>
+                                  )}
+                                </button>
+                              )
+                            })}
                             {extEvents.length > 2 && (
                               <span className="text-xs" style={{ color: 'var(--muted)' }}>
                                 {t.week.more.replace('{count}', String(extEvents.length - 2))}
