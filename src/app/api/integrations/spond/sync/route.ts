@@ -363,7 +363,9 @@ async function syncIntegration(
 
     // Fetch chats and messages
     try {
+      console.log('[Spond Sync] lastSync:', lastSync.toISOString())
       const chats = await client.getChats({ limit: 50 })
+      console.log('[Spond Sync] Found', chats.length, 'chats')
 
       const messagesToUpsert: Array<{
         integration_id: string
@@ -388,10 +390,12 @@ async function syncIntegration(
 
         // Get messages for this chat
         const messages = await client.getChatMessages(chat.id, { limit: 50 })
+        console.log(`[Spond Sync] Chat ${chat.id}: ${messages.length} messages`)
 
         for (const message of messages) {
           // Filter by date - only get messages since last sync
           const messageDate = new Date(message.timestamp)
+          console.log(`[Spond Sync] Message date: ${messageDate.toISOString()}, lastSync: ${lastSync.toISOString()}, pass: ${messageDate >= lastSync}`)
           if (messageDate < lastSync) continue
 
           const mapped = SpondClient.mapMessageToDb(message, chat.id, groupId)
@@ -486,6 +490,7 @@ async function syncIntegration(
       }
 
       // Upsert messages (including posts)
+      console.log(`[Spond Sync] Total messages to upsert: ${messagesToUpsert.length}`)
       if (messagesToUpsert.length > 0) {
         const { error: messagesError } = await supabase
           .from('external_messages')
