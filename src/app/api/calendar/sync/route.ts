@@ -32,7 +32,7 @@ export async function POST(request: Request) {
 
     // Check rate limit
     const rateLimitKey = createRateLimitKey(user.id, 'calendarSync')
-    const rateLimit = checkRateLimit(rateLimitKey, RATE_LIMITS.calendarSync)
+    const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.calendarSync)
     if (rateLimit.limited) {
       return NextResponse.json(
         { error: `For mange forespørsler. Prøv igjen om ${rateLimit.retryAfter} sekunder.` },

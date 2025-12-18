@@ -1,4 +1,34 @@
 import type { Language } from './i18n/types'
+import type {
+  ChildColor,
+  ChildTaskType,
+  ChildTaskStatus,
+  TaskSource,
+  ReminderCategory,
+  ReminderStatus,
+  ReminderPriority,
+  WishlistOccasion,
+  WishlistItemStatus,
+  CalendarEventType,
+  MemberEventType,
+  RecurrenceType,
+} from './constants'
+
+// Re-export shared types from constants (single source of truth)
+export type {
+  ChildColor,
+  ChildTaskType,
+  ChildTaskStatus,
+  TaskSource,
+  ReminderCategory,
+  ReminderStatus,
+  ReminderPriority,
+  WishlistOccasion,
+  WishlistItemStatus,
+  CalendarEventType,
+  MemberEventType,
+  RecurrenceType,
+}
 
 // Audit fields shared by most entities
 interface AuditFields {
@@ -12,8 +42,8 @@ export interface Household extends AuditFields {
   name: string | null
   ical_calendar_url: string | null
   ical_username: string | null
-  ical_password_encrypted: string | null
-  openrouter_api_key_encrypted: string | null
+  ical_password_encrypted?: string | null  // Optional: not fetched in UI queries
+  openrouter_api_key_encrypted?: string | null  // Optional: not fetched in UI queries
   ai_meal_context: string | null  // Default AI preferences for meal suggestions
   share_names_with_ai: boolean  // When false, anonymize children names in AI prompts
   external_integrations_enabled: boolean  // Allow household to connect Spond, Kidplan, iSkole
@@ -33,8 +63,6 @@ export interface HouseholdMember extends AuditFields {
   allergies: string[]  // List of allergies/dietary restrictions
   language_preference: Language | null  // User's preferred UI language
 }
-
-export type ChildColor = 'sky' | 'coral' | 'sage' | 'honey' | 'lavender' | 'mint'
 
 export interface Child extends AuditFields {
   id: string
@@ -180,9 +208,6 @@ export interface ShoppingListWithItems extends ShoppingList {
   items: ShoppingListItem[]
 }
 
-// Calendar event types
-export type CalendarEventType = 'holiday' | 'birthday' | 'family'
-
 export interface CalendarEvent {
   id: string
   household_id: string | null  // NULL for system holidays
@@ -196,8 +221,6 @@ export interface CalendarEvent {
 }
 
 // Member events (work trips, dinners, etc.)
-export type MemberEventType = 'work' | 'travel' | 'family' | 'other'
-
 export interface MemberEvent {
   id: string
   household_id: string
@@ -243,14 +266,9 @@ export interface ExternalEvent {
   }
 }
 
-// Child tasks (reminders, appointments, bring items, activities, closures)
-export type ChildTaskType = 'bring' | 'appointment' | 'reminder' | 'activity' | 'closure' | 'other'
-export type ChildTaskStatus = 'open' | 'done'
-export type TaskSource = 'manual' | 'ai_suggested' | 'imported' | 'recurring'
-
 // Recurrence pattern for recurring tasks/reminders
 export interface RecurrencePattern {
-  type: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly'
+  type: RecurrenceType
   days?: number[]        // For weekly: 0=Sun, 1=Mon, etc.
   dayOfMonth?: number    // For monthly
   interval?: number      // Every N days/weeks/months
@@ -281,10 +299,6 @@ export interface ChildTaskWithChild extends ChildTask {
 }
 
 // Household reminders (not tied to a specific child)
-export type ReminderCategory = 'bill' | 'insurance' | 'car' | 'home' | 'health' | 'subscription' | 'other'
-export type ReminderStatus = 'open' | 'done' | 'snoozed'
-export type ReminderPriority = 'low' | 'normal' | 'high'
-
 export interface HouseholdReminder {
   id: string
   household_id: string
@@ -311,9 +325,6 @@ export interface HouseholdReminderWithAssignee extends HouseholdReminder {
 }
 
 // Wishlists
-export type WishlistOccasion = 'birthday' | 'christmas' | 'anniversary' | 'general' | 'other'
-export type WishlistItemStatus = 'open' | 'reserved' | 'fulfilled' | 'dismissed'
-
 export interface Wishlist {
   id: string
   household_id: string

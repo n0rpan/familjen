@@ -12,6 +12,8 @@
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.87.3",
     "@tailwindcss/postcss": "^4.1.18",
+    "@upstash/ratelimit": "^2.0.7",
+    "@upstash/redis": "^1.35.8",
     "googleapis": "^169.0.0",
     "next": "^16.0.10",
     "react": "^19.2.3",

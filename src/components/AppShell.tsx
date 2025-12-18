@@ -7,6 +7,18 @@ interface AppShellProps {
   children: React.ReactNode
 }
 
+/**
+ * App shell with pull-to-refresh functionality
+ *
+ * IMPORTANT: This component registers global touch event listeners on document.
+ * Only ONE instance should be mounted at a time - typically in layout.tsx.
+ * Multiple instances will cause duplicate event handlers and unpredictable behavior.
+ *
+ * The pull-to-refresh functionality:
+ * - Triggers when user is at the top of the page and pulls down
+ * - Shows a visual indicator during the pull
+ * - Calls router.refresh() when threshold is reached
+ */
 export function AppShell({ children }: AppShellProps) {
   const router = useRouter()
   const pathname = usePathname()

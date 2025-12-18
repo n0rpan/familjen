@@ -27,7 +27,7 @@ export async function GET() {
 
     // Rate limit
     const rateLimitKey = createRateLimitKey(user.id, 'aiModels')
-    const rateLimit = checkRateLimit(rateLimitKey, RATE_LIMITS.aiModels)
+    const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.aiModels)
     if (rateLimit.limited) {
       return NextResponse.json(
         { error: `For mange forespørsler. Prøv igjen om ${rateLimit.retryAfter} sekunder.` },

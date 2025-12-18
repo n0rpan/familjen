@@ -29,7 +29,7 @@ export async function POST(request: Request) {
 
     // Check rate limit
     const rateLimitKey = createRateLimitKey(user.id, 'iskoleTestConnection')
-    const rateLimit = checkRateLimit(rateLimitKey, RATE_LIMITS.iskoleTestConnection)
+    const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.iskoleTestConnection)
     if (rateLimit.limited) {
       return NextResponse.json(
         { error: `Too many requests. Try again in ${rateLimit.retryAfter} seconds.` },

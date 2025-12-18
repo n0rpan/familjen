@@ -26,7 +26,7 @@ export async function POST(request: Request) {
 
     // Rate limit push notifications
     const rateLimitKey = createRateLimitKey(user.id, 'pushNotify')
-    const rateLimit = checkRateLimit(rateLimitKey, RATE_LIMITS.pushNotify)
+    const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.pushNotify)
     if (rateLimit.limited) {
       return NextResponse.json(
         { error: `For mange forespørsler. Prøv igjen om ${rateLimit.retryAfter} sekunder.` },
@@ -124,10 +124,14 @@ export async function POST(request: Request) {
 
         // If subscription is invalid, remove it
         if (!success) {
-          await supabase
+          const { error: deleteError } = await supabase
             .from('push_subscriptions')
             .delete()
             .eq('endpoint', sub.endpoint)
+
+          if (deleteError) {
+            console.error('[Push] Failed to delete invalid subscription:', deleteError.message, 'endpoint:', sub.endpoint.slice(0, 50))
+          }
         }
 
         return success

@@ -1,20 +1,32 @@
 import { z } from 'zod'
+import {
+  CHILD_TASK_TYPES,
+  CHILD_TASK_STATUSES,
+  TASK_SOURCES,
+  RECURRENCE_TYPES,
+  REMINDER_CATEGORIES,
+  REMINDER_STATUSES,
+  REMINDER_PRIORITIES,
+  WISHLIST_OCCASIONS,
+  WISHLIST_ITEM_STATUSES,
+} from './constants'
 
 /**
  * Zod schemas for API request validation
  * Provides type-safe runtime validation for all API endpoints
+ * Uses shared constants for enum values (single source of truth)
  */
 
 // ============================================
 // Child Task Schemas
 // ============================================
 
-export const childTaskTypeSchema = z.enum(['bring', 'appointment', 'reminder', 'activity', 'closure', 'other'])
-export const childTaskStatusSchema = z.enum(['open', 'done'])
-export const taskSourceSchema = z.enum(['manual', 'ai_suggested', 'imported', 'recurring'])
+export const childTaskTypeSchema = z.enum(CHILD_TASK_TYPES)
+export const childTaskStatusSchema = z.enum(CHILD_TASK_STATUSES)
+export const taskSourceSchema = z.enum(TASK_SOURCES)
 
 export const recurrencePatternSchema = z.object({
-  type: z.enum(['daily', 'weekly', 'biweekly', 'monthly', 'yearly']),
+  type: z.enum(RECURRENCE_TYPES),
   days: z.array(z.number().min(0).max(6)).optional(),
   dayOfMonth: z.number().min(1).max(31).optional(),
   interval: z.number().min(1).optional(),
@@ -37,9 +49,9 @@ export type CreateChildTaskRequest = z.infer<typeof createChildTaskSchema>
 // Household Reminder Schemas
 // ============================================
 
-export const reminderCategorySchema = z.enum(['bill', 'insurance', 'car', 'home', 'health', 'subscription', 'other'])
-export const reminderStatusSchema = z.enum(['open', 'done', 'snoozed'])
-export const reminderPrioritySchema = z.enum(['low', 'normal', 'high'])
+export const reminderCategorySchema = z.enum(REMINDER_CATEGORIES)
+export const reminderStatusSchema = z.enum(REMINDER_STATUSES)
+export const reminderPrioritySchema = z.enum(REMINDER_PRIORITIES)
 
 export const createHouseholdReminderSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Dato må være YYYY-MM-DD format'),
@@ -64,8 +76,8 @@ export type UpdateHouseholdReminderRequest = z.infer<typeof updateHouseholdRemin
 // Wishlist Schemas
 // ============================================
 
-export const wishlistOccasionSchema = z.enum(['birthday', 'christmas', 'anniversary', 'general', 'other'])
-export const wishlistItemStatusSchema = z.enum(['open', 'reserved', 'fulfilled', 'dismissed'])
+export const wishlistOccasionSchema = z.enum(WISHLIST_OCCASIONS)
+export const wishlistItemStatusSchema = z.enum(WISHLIST_ITEM_STATUSES)
 
 export const createWishlistSchema = z.object({
   member_id: z.string().uuid().optional().nullable(),

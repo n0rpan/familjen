@@ -41,7 +41,7 @@ export async function POST(request: Request) {
 
     // Check rate limit
     const rateLimitKey = createRateLimitKey(user.id, 'spondSync')
-    const rateLimit = checkRateLimit(rateLimitKey, RATE_LIMITS.calendarSync) // Reuse calendar rate limit
+    const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.calendarSync) // Reuse calendar rate limit
     if (rateLimit.limited) {
       return NextResponse.json(
         { error: `Too many requests. Try again in ${rateLimit.retryAfter} seconds.` },

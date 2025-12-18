@@ -4,7 +4,7 @@ import { WeekGrid } from '@/components/WeekGrid'
 import { UniversalAIInput } from '@/components/ai'
 import { SuggestionBanner } from '@/components/integrations/SuggestionReview'
 import { RecentPhotos } from '@/components/RecentPhotos'
-import { formatDateISO, addDays } from '@/lib/utils'
+import { getHomePageData, getTodaySummary, getAttentionStatus } from '@/lib/data/home'
 import Link from 'next/link'
 import Image from 'next/image'
 import { getLanguageFromCookieOrBrowser } from '@/lib/i18n/cookie.server'
@@ -98,39 +98,11 @@ export default async function HomePage() {
     )
   }
 
-  // Fetch household data - rolling 7-day view starting from today
-  const today = new Date()
-  const todayStr = formatDateISO(today)
-  const weekStart = today  // Start from today, not Monday
-  const weekEnd = addDays(weekStart, 6)
-  const weekStartStr = formatDateISO(weekStart)
-  const weekEndStr = formatDateISO(weekEnd)
+  // Fetch all household data using dedicated loader
+  const { data: homeData, error: dataError } = await getHomePageData(supabase, myMembership.household_id)
 
-  // Fetch all data in parallel, filtering by household_id to prevent admin seeing other households
-  const [childrenResult, membersResult, pickupsResult, mealsResult, eventsResult, tasksResult, remindersResult, photosResult] = await Promise.all([
-    supabase.from('children').select('*').eq('household_id', myMembership.household_id).order('sort_order'),
-    supabase.from('household_members').select('*').eq('household_id', myMembership.household_id),
-    supabase.from('pickups').select(`*, child:children(*), picker:household_members(*)`).eq('household_id', myMembership.household_id).gte('date', weekStartStr).lte('date', weekEndStr),
-    supabase.from('meals').select(`*, recipe:recipes(*)`).eq('household_id', myMembership.household_id).gte('date', weekStartStr).lte('date', weekEndStr),
-    // Fetch events that overlap with this week
-    supabase.from('member_events').select('*').eq('household_id', myMembership.household_id).lte('date', weekEndStr).or(`end_date.gte.${weekStartStr},end_date.is.null`),
-    // Fetch child tasks for this week
-    supabase.from('child_tasks').select('*, child:children(*)').eq('household_id', myMembership.household_id).gte('date', weekStartStr).lte('date', weekEndStr).order('date').order('time'),
-    // Fetch household reminders for this week
-    supabase.from('household_reminders').select('*, assignee:household_members(*)').eq('household_id', myMembership.household_id).gte('date', weekStartStr).lte('date', weekEndStr).eq('status', 'open').order('date').order('time'),
-    // Fetch recent photos from integrations
-    supabase.from('external_photos')
-      .select('id, title, taken_at, storage_path, thumbnail_path, external_integrations!inner(household_id), children(name)')
-      .eq('external_integrations.household_id', myMembership.household_id)
-      .gt('expires_at', new Date().toISOString())
-      .order('taken_at', { ascending: false })
-      .limit(4),
-  ])
-
-  // Check for errors
-  const queryError = childrenResult.error || membersResult.error || pickupsResult.error || mealsResult.error || eventsResult.error || tasksResult.error || remindersResult.error
-  if (queryError) {
-    console.error('Error loading home page data:', queryError)
+  if (dataError || !homeData) {
+    console.error('Error loading home page data:', dataError)
     return (
       <div className="space-y-8 animate-fade-in">
         <div
@@ -164,60 +136,8 @@ export default async function HomePage() {
     )
   }
 
-  const children = childrenResult.data
-  const members = membersResult.data
-  const pickups = pickupsResult.data
-  const meals = mealsResult.data
-  const memberEvents = eventsResult.data
-  const childTasks = tasksResult.data || []
-  const householdReminders = remindersResult.data || []
-
-  // Transform photos data - filter out pending and generate signed URLs
-  const actualPhotos = (photosResult.data || []).filter(
-    (photo) => photo.storage_path && !photo.storage_path.startsWith('pending/')
-  )
-
-  const recentPhotos = await Promise.all(
-    actualPhotos.map(async (photo) => {
-      // children is returned as a single object when using foreign key relation
-      const childData = photo.children as unknown as { name: string } | null
-
-      // Generate signed URL
-      let imageUrl: string | null = null
-      try {
-        const { data: signedUrlData } = await supabase.storage
-          .from('external-photos')
-          .createSignedUrl(photo.storage_path, 3600) // 1 hour
-        imageUrl = signedUrlData?.signedUrl || null
-      } catch (err) {
-        console.error('Failed to get signed URL:', err)
-      }
-
-      return {
-        id: photo.id,
-        title: photo.title,
-        taken_at: photo.taken_at,
-        storage_path: photo.storage_path,
-        thumbnail_path: photo.thumbnail_path,
-        child_name: childData?.name || null,
-        image_url: imageUrl,
-      }
-    })
-  )
-
-  // Get today's summary
-  const todayPickups = pickups?.filter(p => p.date === todayStr) || []
-  const todayMeal = meals?.find(m => m.date === todayStr) || null
-  const todayTasks = childTasks.filter(t => t.date === todayStr)
-  const todayReminders = householdReminders.filter(r => r.date === todayStr)
-
-  const todaySummary = {
-    date: todayStr,
-    pickups: todayPickups,
-    meal: todayMeal,
-    tasks: todayTasks,
-    reminders: todayReminders,
-  }
+  const { children, members, pickups, meals, memberEvents, childTasks, householdReminders, recentPhotos, weekStart } = homeData
+  const todaySummary = getTodaySummary(homeData)
 
   // Check if we have any data set up
   const hasSetup = children && children.length > 0
@@ -256,20 +176,8 @@ export default async function HomePage() {
     )
   }
 
-  // Calculate status for today
-  const childrenWithoutPickup = (children || []).filter(child =>
-    !todayPickups.some(p => p.child_id === child.id && p.picker_id)
-  )
-  const noMeal = !todayMeal?.recipe_id && !todayMeal?.custom_meal
-  const openTasks = todayTasks.filter(task => task.status === 'open')
-
-  // Count things needing attention
-  let attentionCount = 0
-  if (childrenWithoutPickup.length > 0) attentionCount += childrenWithoutPickup.length
-  if (noMeal) attentionCount += 1
-  // Don't count open tasks as "needing attention" - they're just tasks to do
-
-  const isAllReady = attentionCount === 0
+  // Calculate status for today using helper
+  const { attentionCount, isAllReady } = getAttentionStatus(homeData)
 
   return (
     <div className="space-y-8 animate-fade-in">

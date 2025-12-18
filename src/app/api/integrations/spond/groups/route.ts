@@ -29,7 +29,7 @@ export async function GET(request: Request) {
 
     // Check rate limit
     const rateLimitKey = createRateLimitKey(user.id, 'spondGroups')
-    const rateLimit = checkRateLimit(rateLimitKey, RATE_LIMITS.spondTestConnection)
+    const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.spondTestConnection)
     if (rateLimit.limited) {
       return NextResponse.json(
         { error: `Too many requests. Try again in ${rateLimit.retryAfter} seconds.` },
