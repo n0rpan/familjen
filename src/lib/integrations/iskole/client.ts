@@ -108,7 +108,21 @@ export class ISkoleClient {
     })
 
     // Collect cookies from response
-    const setCookies = response.headers.getSetCookie?.() || []
+    // Handle both getSetCookie() and get('set-cookie') for different runtimes
+    let setCookies: string[] = []
+    const getSetCookie = (response.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie
+    if (typeof getSetCookie === 'function') {
+      setCookies = getSetCookie.call(response.headers) || []
+    }
+    // Fallback for environments without getSetCookie
+    if (setCookies.length === 0) {
+      const singleCookie = response.headers.get('set-cookie')
+      if (singleCookie) {
+        setCookies = [singleCookie]
+      }
+    }
+    this.log('Set-Cookie headers:', setCookies.length)
+
     if (setCookies.length > 0) {
       this.cookies = [
         ...this.cookies.filter((c) => {
@@ -178,8 +192,20 @@ export class ISkoleClient {
       body: formData,
     })
 
-    // Collect cookies
-    const setCookies = response.headers.getSetCookie?.() || []
+    // Collect cookies - handle both getSetCookie() and get('set-cookie')
+    let setCookies: string[] = []
+    const getSetCookieFn = (response.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie
+    if (typeof getSetCookieFn === 'function') {
+      setCookies = getSetCookieFn.call(response.headers) || []
+    }
+    if (setCookies.length === 0) {
+      const singleCookie = response.headers.get('set-cookie')
+      if (singleCookie) {
+        setCookies = [singleCookie]
+      }
+    }
+    this.log('Session Set-Cookie headers:', setCookies.length)
+
     if (setCookies.length > 0) {
       this.cookies = [
         ...this.cookies.filter((c) => {

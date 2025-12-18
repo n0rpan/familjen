@@ -113,23 +113,36 @@ export class KidplanClient {
     })
 
     // Extract session cookie from response
-    const setCookie = response.headers.get('set-cookie')
-    if (!setCookie) {
-      throw new KidplanAuthError('Login failed: no cookie received')
-    }
-
-    // Look for .ASPXAUTH cookie
+    // Note: In serverless environments, we need to handle multiple Set-Cookie headers
     let sessionCookie: string | null = null
-    const cookies = setCookie.split(',').map(c => c.trim())
-    for (const cookie of cookies) {
-      if (cookie.includes('.ASPXAUTH')) {
-        sessionCookie = cookie.split(';')[0]
-        break
+
+    // Try getSetCookie() first (works in Node.js 18+ and modern runtimes)
+    const setCookieHeaders = (response.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie?.()
+      || [response.headers.get('set-cookie')].filter(Boolean) as string[]
+
+    this.log('Set-Cookie headers:', setCookieHeaders.length)
+
+    for (const cookieStr of setCookieHeaders) {
+      if (!cookieStr) continue
+
+      // Handle multiple cookies in one header (comma-separated, but watch for dates)
+      // Split carefully - dates have commas like "Mon, 18 Dec 2025"
+      const cookieParts = cookieStr.split(/,(?=\s*[^;]+=)/)
+
+      for (const part of cookieParts) {
+        if (part.includes('.ASPXAUTH')) {
+          // Extract just the cookie name=value part
+          sessionCookie = part.trim().split(';')[0]
+          this.log('Found .ASPXAUTH cookie')
+          break
+        }
       }
+      if (sessionCookie) break
     }
 
     if (!sessionCookie) {
-      throw new KidplanAuthError('Login failed: no session cookie received')
+      this.log('Available headers:', [...response.headers.entries()])
+      throw new KidplanAuthError('Login failed: no session cookie received. Headers: ' + JSON.stringify([...response.headers.entries()]))
     }
 
     this.sessionCookie = sessionCookie

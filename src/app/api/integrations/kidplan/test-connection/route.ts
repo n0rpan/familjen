@@ -74,10 +74,13 @@ export async function POST(request: Request) {
     }
 
     // Test connection to Kidplan
-    const client = new KidplanClient({ debug: process.env.NODE_ENV === 'development' })
+    // Enable debug in production temporarily for troubleshooting
+    const client = new KidplanClient({ debug: true })
 
     try {
+      console.log('[Kidplan] Starting login for:', email)
       const session = await client.login(email, password)
+      console.log('[Kidplan] Login successful, kindergarten:', session.kindergartenName)
 
       // Get children to show the user what's available
       const childrenResponse = await client.getChildren()
@@ -100,9 +103,10 @@ export async function POST(request: Request) {
         children,
       })
     } catch (error) {
+      console.error('[Kidplan] Auth error:', error)
       if (error instanceof KidplanAuthError) {
         return NextResponse.json(
-          { error: 'Invalid Kidplan credentials. Please check your email and password.' },
+          { error: `Kidplan auth failed: ${error.message}` },
           { status: 401 }
         )
       }
@@ -110,8 +114,9 @@ export async function POST(request: Request) {
     }
   } catch (error) {
     console.error('Kidplan test connection error:', error)
+    const message = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json(
-      { error: 'Failed to connect to Kidplan. Please try again later.' },
+      { error: `Failed to connect to Kidplan: ${message}` },
       { status: 500 }
     )
   }
