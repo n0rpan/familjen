@@ -241,8 +241,8 @@ export function UniversalAIInput({
       }
 
       let result
-      if (action.type === 'pickup' && action.operation === 'modify') {
-        // Upsert for pickups
+      if (action.type === 'pickup') {
+        // Always upsert for pickups (one per child per day)
         result = await supabase
           .from(table)
           .upsert(record, { onConflict: 'household_id,child_id,date' })
