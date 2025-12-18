@@ -568,7 +568,7 @@ GRANT EXECUTE ON FUNCTION get_integration_credentials(UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_household_integrations() TO authenticated;
 GRANT EXECUTE ON FUNCTION update_integration_sync_status(UUID, TEXT, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_pending_suggestions_count() TO authenticated;
-GRANT EXECUTE ON FUNCTION accept_suggestion(UUID, TEXT, DATE, TIME, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION accept_suggestion(UUID, TEXT, DATE, TIME, UUID, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION dismiss_suggestion(UUID) TO authenticated;
 
 -- ============================================================================
