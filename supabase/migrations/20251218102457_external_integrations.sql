@@ -303,6 +303,12 @@ CREATE POLICY "Users can update own household suggestions"
   TO authenticated
   USING (household_id = get_user_household_id());
 
+DROP POLICY IF EXISTS "Users can insert own household suggestions" ON external_suggestions;
+CREATE POLICY "Users can insert own household suggestions"
+  ON external_suggestions FOR INSERT
+  TO authenticated
+  WITH CHECK (household_id = get_user_household_id());
+
 -- ============================================================================
 -- RPC Functions
 -- ============================================================================
