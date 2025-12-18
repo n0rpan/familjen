@@ -401,6 +401,9 @@ async function syncISkole(supabase: AnySupabase, integration: AnyIntegration, cr
         const calendar = await client.getSchoolCalendar(month, firstChild.Fylkeid, firstChild.Planperi, firstChild.Skoleid)
 
         for (const week of calendar) {
+          // Skip if week.Dato is missing
+          if (!week.Dato) continue
+
           for (let d = 1; d <= 5; d++) {
             const dayType = week[`Dag${d}` as keyof typeof week]
             if (dayType === 'FD' || dayType === 'PD') {
