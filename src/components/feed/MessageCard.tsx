@@ -31,7 +31,7 @@ export interface FeedMessage {
   body: string
   message_date: string
   source_type: string
-  service: 'spond' | 'kidplan' | 'iskole'
+  service: 'spond' | 'kidplan' | 'iskole' | 'mykid'
   child_name?: string | null
   integration_name?: string | null
   raw_data?: unknown
