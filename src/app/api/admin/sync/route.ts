@@ -50,7 +50,6 @@ export async function POST(request: Request) {
       )
     }
 
-    console.log(`[Admin Sync] Starting ${service} sync for integration ${integrationId}`)
 
     // Create service role client
     const serviceSupabase = createServiceClient(
@@ -142,7 +141,6 @@ export async function POST(request: Request) {
         .eq('id', integrationId)
     }
 
-    console.log(`[Admin Sync] Completed: ${JSON.stringify(result)}`)
     return NextResponse.json(result)
 
   } catch (error) {
@@ -245,7 +243,6 @@ async function syncKidplan(supabase: AnySupabase, integration: AnyIntegration, c
 
   // Sync board posts
   const boardData = await client.getBoardPosts()
-  console.log(`[Admin Sync] Kidplan board posts: ${boardData.BoardPosts?.length || 0}`)
 
   for (const post of boardData.BoardPosts || []) {
     const postDate = KidplanClient.parseMicrosoftDate(post.Created)
@@ -267,7 +264,6 @@ async function syncKidplan(supabase: AnySupabase, integration: AnyIntegration, c
 
   // Sync conversations
   const conversations = await client.getConversations(20, 0)
-  console.log(`[Admin Sync] Kidplan conversations: ${conversations.length}`)
 
   for (const conv of conversations) {
     try {
@@ -298,7 +294,6 @@ async function syncKidplan(supabase: AnySupabase, integration: AnyIntegration, c
 
   // Sync photos
   const photos = await client.getLatestPhotos()
-  console.log(`[Admin Sync] Kidplan photos: ${photos.length}`)
 
   for (const photo of photos.slice(0, 30)) {
     try {
@@ -357,12 +352,10 @@ async function syncISkole(supabase: AnySupabase, integration: AnyIntegration, cr
 
   // Fetch children and messages
   const children = await client.getChildren()
-  console.log(`[Admin Sync] iSkole children: ${children.length}`)
 
   for (const child of children) {
     try {
       const messages = await client.getMessages(child.Elevnr, child.Fylkeid, child.Planperi, child.Skoleid, 50, 0)
-      console.log(`[Admin Sync] iSkole child ${child.Elevnr}: ${messages.length} messages`)
 
       for (const msg of messages) {
         const msgDate = new Date(msg.Mottatt)
@@ -446,7 +439,6 @@ async function syncMyKid(supabase: AnySupabase, integration: AnyIntegration, cre
   // Sync calendar events
   try {
     const events = await client.getCalendarEvents(now, futureDate)
-    console.log(`[Admin Sync] MyKid calendar events: ${events.length}`)
 
     for (const event of events) {
       const mapped = MyKidClient.mapCalendarEventToDb(event)
@@ -468,10 +460,6 @@ async function syncMyKid(supabase: AnySupabase, integration: AnyIntegration, cre
   // Sync newsletters
   try {
     const newsletters = await client.getNewsletterList()
-    console.log(`[Admin Sync] MyKid newsletters found: ${newsletters.length}`)
-    if (newsletters.length > 0) {
-      console.log(`[Admin Sync] First few newsletters:`, newsletters.slice(0, 3))
-    }
 
     let skippedExisting = 0
     let skippedDate = 0
@@ -505,7 +493,6 @@ async function syncMyKid(supabase: AnySupabase, integration: AnyIntegration, cre
 
         if (!isInitialSync && nlDate && nlDate < lastSync) {
           skippedDate++
-          console.log(`[Admin Sync] Skipping newsletter ${summary.id} - date ${full.date} is before ${lastSync.toISOString()}`)
           continue
         }
 
@@ -525,7 +512,6 @@ async function syncMyKid(supabase: AnySupabase, integration: AnyIntegration, cre
       }
     }
 
-    console.log(`[Admin Sync] MyKid newsletters: inserted=${inserted}, skippedExisting=${skippedExisting}, skippedDate=${skippedDate}`)
   } catch (e) {
     console.error('[Admin Sync] Error syncing MyKid newsletters:', e)
   }
@@ -533,7 +519,6 @@ async function syncMyKid(supabase: AnySupabase, integration: AnyIntegration, cre
   // Sync photos
   try {
     const photos = await client.getPhotosFromRecentDays(30)
-    console.log(`[Admin Sync] MyKid photos: ${photos.length}`)
 
     for (const photo of photos.slice(0, 50)) {
       const { data: existing } = await supabase

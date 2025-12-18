@@ -327,9 +327,7 @@ async function syncIntegration(
     // ========================================================================
     try {
       // Get photos from /foto gallery (primary source)
-      console.log(`[MyKid] Starting photo discovery from /foto gallery...`)
       const photos = await client.getPhotosFromRecentDays(30)
-      console.log(`[MyKid] Total photos found: ${photos.length}`)
 
       if (photos.length > 0) {
         let uploadedCount = 0

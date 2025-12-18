@@ -330,7 +330,6 @@ function IntegrationDebug({ householdId }: { householdId: string }) {
         body: JSON.stringify({ integrationId, service, householdId }),
       });
       const data = await res.json();
-      console.log('[Admin] Sync result:', data);
       alert(`Sync ${res.ok ? 'completed' : 'failed'}: ${JSON.stringify(data, null, 2)}`);
       loadIntegrations(); // Refresh
     } catch (e) {

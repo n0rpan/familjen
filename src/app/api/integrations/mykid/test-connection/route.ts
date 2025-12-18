@@ -77,16 +77,12 @@ export async function POST(request: Request) {
     const client = new MyKidClient()
 
     try {
-      console.log('[MyKid] Testing connection for phone:', phone)
       await client.login(phone, password)
-      console.log('[MyKid] Login successful')
 
       // Get children list
       const children = await client.getChildren()
-      console.log('[MyKid] Got children:', children.length, children.map((c) => c.name).join(', '))
 
       if (children.length === 0) {
-        console.log('[MyKid] Warning: No children found in MyKid account')
         return NextResponse.json({
           success: true,
           phone,
@@ -105,13 +101,11 @@ export async function POST(request: Request) {
       })
     } catch (error) {
       if (error instanceof MyKidAuthError) {
-        console.log('[MyKid] Auth error:', error.message)
         return NextResponse.json(
           { error: 'Feil telefonnummer eller passord' },
           { status: 401 }
         )
       }
-      console.error('[MyKid] Unexpected error in test-connection:', error)
       throw error
     }
   } catch (error) {

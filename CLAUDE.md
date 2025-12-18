@@ -408,3 +408,127 @@ Uses OpenRouter API with context:
 | User | Own household data |
 | Household Admin | Manage household members/children |
 | App Admin | All households, user management, AI settings |
+
+## External Integrations
+
+The app syncs data from external services (kindergartens, schools, sports clubs).
+
+### Services
+
+| Service | Auth Method | Data Synced |
+|---------|-------------|-------------|
+| Spond | Email + Password | Messages, photos, calendar events |
+| Kidplan | Email + Password | Messages, photos, calendar events |
+| iSkole | Username + Password (SHA256) | Messages, timetable, absences, school calendar |
+| MyKid | Phone + Password | Newsletters, photos, calendar events |
+
+### Integration Files
+
+```
+src/lib/integrations/
+├── spond/client.ts      # Spond API client
+├── kidplan/client.ts    # Kidplan API client
+├── iskole/client.ts     # iSkole API client (3-step SHA256 auth)
+└── mykid/
+    ├── client.ts        # MyKid API client (3-step CSRF auth)
+    ├── types.ts         # MyKid-specific types
+    └── index.ts         # Exports
+
+src/app/api/integrations/
+├── spond/sync/          # Spond sync endpoint
+├── kidplan/sync/        # Kidplan sync endpoint
+├── iskole/sync/         # iSkole sync endpoint
+└── mykid/
+    ├── test-connection/ # Test MyKid credentials
+    ├── groups/          # Get children for mapping
+    └── sync/            # Sync MyKid data
+
+src/components/integrations/
+├── SpondIntegration.tsx
+├── KidplanIntegration.tsx
+├── ISkoleIntegration.tsx
+└── MyKidIntegration.tsx
+```
+
+### Database Tables
+
+```sql
+external_integrations (
+  id, household_id, service, display_name,
+  credentials_encrypted,  -- Encrypted via RPC
+  child_mappings,         -- JSON: external_group_id → child_id
+  last_sync_at, last_sync_status, last_sync_error,
+  created_at
+)
+
+external_messages (
+  id, integration_id, child_id, external_id,
+  sender_name, title, body, message_date,
+  source_type,  -- 'message', 'newsletter', 'board_post'
+  raw_data
+)
+
+external_events (
+  id, integration_id, external_id,
+  title, event_date, end_date, event_time, end_time,
+  event_type,  -- 'birthday', 'school_class', 'school_absence', 'school_closure'
+  raw_data
+)
+
+external_photos (
+  id, integration_id, child_id, external_id,
+  title, taken_at, storage_path,
+  width, height, file_size, expires_at,
+  raw_data
+)
+```
+
+### Sync Flow
+
+1. **Cron job** (`/api/cron/sync-integrations`) runs on schedule
+2. **Decrypts credentials** via `decrypt_token` RPC
+3. **Authenticates** with each service
+4. **Syncs data** (messages, events, photos)
+5. **AI extracts** actionable items from messages → `ai_suggestions`
+
+### Key Patterns
+
+**Credential encryption:**
+```typescript
+// Store (RPC handles encryption)
+await supabase.rpc('upsert_external_integration', {
+  p_service: 'mykid',
+  p_credentials: { phone, password },  // Raw object, NOT JSON.stringify
+  p_display_name: phone,
+  p_child_mappings: mappings,
+})
+
+// Retrieve (RPC handles decryption)
+const { data } = await supabase.rpc('decrypt_token', {
+  ciphertext: integration.credentials_encrypted
+})
+const { phone, password } = JSON.parse(data)
+```
+
+**MyKid-specific (3-step CSRF):**
+```typescript
+// 1. GET /nb/logg_inn → extract CSRF from hidden input
+// 2. POST /forside/forside/login with AJAX headers
+// 3. GET /foreldre → extract CSRF from meta tag
+const client = new MyKidClient()
+await client.login(phone, password)
+```
+
+### Feed System
+
+Feed page (`/feed`) displays synced content:
+- Messages from kindergartens/schools
+- Photos with lightbox viewer
+- Reminders extracted by AI
+
+Filter categories:
+- **Spond** - Sports club messages
+- **Skole** - iSkole school messages
+- **Barnehage** - Kidplan + MyKid messages
+- **Bilder** - Photos from all services
+- **Påminnelser** - AI-extracted reminders
