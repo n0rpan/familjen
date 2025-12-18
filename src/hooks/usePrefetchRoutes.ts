@@ -28,10 +28,15 @@ export function usePrefetchRoutes(routes: string[]) {
   }, [router, routes])
 }
 
-// Default key routes for the app
+// Primary routes - prefetched first for instant navigation
 export const KEY_ROUTES = [
-  '/uke',
-  '/feed',
+  '/',        // Home (hjemme)
+  '/uke',     // Week planner
+  '/feed',    // Activity feed
+]
+
+// Secondary routes - prefetched after primary
+export const SECONDARY_ROUTES = [
   '/handleliste',
   '/oppskrifter',
   '/innstillinger',

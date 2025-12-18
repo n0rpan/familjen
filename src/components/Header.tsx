@@ -8,7 +8,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react'
 import { User } from '@supabase/supabase-js'
 import { useTranslation } from '@/lib/i18n/context'
 import { TransitionLink } from './TransitionLink'
-import { usePrefetchRoutes, KEY_ROUTES } from '@/hooks/usePrefetchRoutes'
+import { usePrefetchRoutes, KEY_ROUTES, SECONDARY_ROUTES } from '@/hooks/usePrefetchRoutes'
 
 function ShieldIcon() {
   return (
@@ -122,7 +122,8 @@ export function Header() {
   const t = useTranslation()
 
   // Proactively prefetch key routes for instant navigation
-  usePrefetchRoutes(KEY_ROUTES)
+  // Primary routes (/, /uke, /feed) prefetch first, then secondary
+  usePrefetchRoutes([...KEY_ROUTES, ...SECONDARY_ROUTES])
 
   // Primary navigation items (shown in both desktop and mobile bottom bar)
   // New "Feed-First" structure: Hjem, Uke, Feed + Mer menu
