@@ -120,7 +120,12 @@ export function MyKidIntegration({ householdId, children, onMessage }: Props) {
 
       setMykidChildren(data.children || [])
       setConnectionTested(true)
-      onMessage('success', 'Koblet til MyKid')
+
+      if (data.children?.length === 0 || data.warning) {
+        onMessage('error', data.warning || 'Ingen barn funnet i MyKid-kontoen')
+      } else {
+        onMessage('success', `Fant ${data.children?.length || 0} barn i MyKid`)
+      }
     } catch (error) {
       console.error('Test connection error:', error)
       onMessage('error', 'Nettverksfeil - prøv igjen')
@@ -688,11 +693,20 @@ export function MyKidIntegration({ householdId, children, onMessage }: Props) {
                 <p className="text-xs" style={{ color: 'var(--muted)' }}>
                   Koble dine barn til barna i MyKid for å synkronisere kalender, meldinger og bilder.
                 </p>
-                <div className="space-y-2">
-                  {children.map((child) => (
-                    <ChildMappingRow key={child.id} child={child} />
-                  ))}
-                </div>
+                {mykidChildren.length === 0 ? (
+                  <div
+                    className="p-3 rounded-lg text-sm"
+                    style={{ background: 'rgba(232, 165, 144, 0.2)', color: 'var(--color-coral)' }}
+                  >
+                    Ingen barn funnet i MyKid-kontoen. Sjekk at du bruker riktig konto.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {children.map((child) => (
+                      <ChildMappingRow key={child.id} child={child} />
+                    ))}
+                  </div>
+                )}
               </div>
 
               <button

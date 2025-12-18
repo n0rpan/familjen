@@ -177,7 +177,29 @@ export class MyKidClient {
     this.log('Fetching children from InfoBus topics')
 
     const response = await this.ajaxRequest('GET', `/_ajax/infobus/get_topics?_csrf=${this.csrf}`)
-    const topics = await response.json() as string[]
+
+    if (!response.ok) {
+      this.log(`get_topics failed with status ${response.status}`)
+      throw new MyKidError(`Failed to fetch topics: ${response.status}`)
+    }
+
+    const text = await response.text()
+    this.log(`get_topics response: ${text.substring(0, 200)}`)
+
+    let topics: string[]
+    try {
+      topics = JSON.parse(text) as string[]
+    } catch {
+      this.log('Failed to parse topics as JSON')
+      throw new MyKidError('Invalid response from get_topics')
+    }
+
+    if (!Array.isArray(topics)) {
+      this.log(`Topics is not an array: ${typeof topics}`)
+      throw new MyKidError('get_topics returned non-array')
+    }
+
+    this.log(`Got ${topics.length} topics: ${topics.join(', ')}`)
 
     // Extract child IDs from topic patterns like "parent.kid.123456.update"
     const childIds = new Set<number>()
@@ -188,6 +210,8 @@ export class MyKidClient {
       }
     }
 
+    this.log(`Found ${childIds.size} child IDs from topics`)
+
     // Try to extract names from dashboard HTML
     const children: MyKidChild[] = []
     for (const id of childIds) {
@@ -195,7 +219,7 @@ export class MyKidClient {
       children.push({ id, name })
     }
 
-    this.log(`Found ${children.length} children`)
+    this.log(`Returning ${children.length} children`)
     return children
   }
 
