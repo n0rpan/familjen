@@ -301,35 +301,17 @@ function IntegrationDebug({ householdId }: { householdId: string }) {
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
-  const supabase = useMemo(() => createClient(), []);
 
   const loadIntegrations = async () => {
     setLoading(true);
     try {
-      // Fetch integrations for this household
-      const { data: intData } = await supabase
-        .from('external_integrations')
-        .select('id, service, display_name, account_email, last_sync_at, last_sync_status, last_sync_error')
-        .eq('household_id', householdId);
-
-      if (intData && intData.length > 0) {
-        // Get counts for each integration
-        const integrationInfos: IntegrationInfo[] = [];
-        for (const int of intData) {
-          const [events, messages, photos] = await Promise.all([
-            supabase.from('external_events').select('id', { count: 'exact', head: true }).eq('integration_id', int.id),
-            supabase.from('external_messages').select('id', { count: 'exact', head: true }).eq('integration_id', int.id),
-            supabase.from('external_photos').select('id', { count: 'exact', head: true }).eq('integration_id', int.id),
-          ]);
-          integrationInfos.push({
-            ...int,
-            eventsCount: events.count || 0,
-            messagesCount: messages.count || 0,
-            photosCount: photos.count || 0,
-          });
-        }
-        setIntegrations(integrationInfos);
+      // Use admin API endpoint to bypass RLS
+      const res = await fetch(`/api/admin/integration-debug?householdId=${householdId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setIntegrations(data.integrations || []);
       } else {
+        console.error('Failed to load integrations:', await res.text());
         setIntegrations([]);
       }
     } catch (e) {

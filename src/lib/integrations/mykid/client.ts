@@ -518,6 +518,36 @@ export class MyKidClient {
   }
 
   /**
+   * Get photos from the /foto gallery page.
+   * This is where ALL photos are stored, not just recent ones.
+   */
+  async getPhotoGallery(): Promise<MyKidPhoto[]> {
+    this.ensureAuthenticated()
+
+    this.log('Fetching /foto gallery page...')
+    const response = await fetch('https://mykid.no/foto', {
+      method: 'GET',
+      headers: {
+        Cookie: this.getCookieHeader(),
+        Accept: 'text/html',
+      },
+      redirect: 'follow',
+    })
+
+    if (!response.ok) {
+      this.log(`/foto request failed: ${response.status}`)
+      return []
+    }
+
+    const html = await response.text()
+    this.log(`/foto page size: ${html.length} bytes`)
+
+    const photos = this.extractPhotosFromHtml(html)
+    this.log(`Found ${photos.length} photos in /foto gallery`)
+    return photos
+  }
+
+  /**
    * Get photos from My Day for a specific date.
    * This fetches from the show_myday_photos AJAX endpoint.
    */
@@ -546,13 +576,28 @@ export class MyKidClient {
    * Get photos from multiple days (for comprehensive sync).
    * @param days Number of days to look back (default 30)
    */
-  async getPhotosFromRecentDays(days: number = 30): Promise<MyKidPhoto[]> {
+  async getPhotosFromRecentDays(_days: number = 30): Promise<MyKidPhoto[]> {
     this.ensureAuthenticated()
     const allPhotos: MyKidPhoto[] = []
     const seen = new Set<string>()
 
-    // Start with dashboard photos
+    // Primary source: /foto gallery page (has ALL photos)
+    try {
+      const galleryPhotos = await this.getPhotoGallery()
+      this.log(`Gallery returned ${galleryPhotos.length} photos`)
+      for (const p of galleryPhotos) {
+        if (!seen.has(p.photoId)) {
+          seen.add(p.photoId)
+          allPhotos.push(p)
+        }
+      }
+    } catch (e) {
+      this.log(`Error fetching photo gallery: ${e}`)
+    }
+
+    // Secondary source: dashboard photos
     const dashboardPhotos = this.getPhotoUrls()
+    this.log(`Dashboard returned ${dashboardPhotos.length} photos`)
     for (const p of dashboardPhotos) {
       if (!seen.has(p.photoId)) {
         seen.add(p.photoId)
@@ -560,28 +605,7 @@ export class MyKidClient {
       }
     }
 
-    // Fetch from recent days
-    const today = new Date()
-    for (let i = 0; i < days; i++) {
-      const date = new Date(today)
-      date.setDate(date.getDate() - i)
-
-      try {
-        const dayPhotos = await this.getPhotosForDate(date)
-        for (const p of dayPhotos) {
-          if (!seen.has(p.photoId)) {
-            seen.add(p.photoId)
-            allPhotos.push(p)
-          }
-        }
-        // Small delay to be nice to the server
-        await new Promise(resolve => setTimeout(resolve, 100))
-      } catch (e) {
-        this.log(`Error fetching photos for ${date.toISOString().split('T')[0]}: ${e}`)
-      }
-    }
-
-    this.log(`Total photos from ${days} days: ${allPhotos.length}`)
+    this.log(`Photo summary: ${allPhotos.length} unique photos total`)
     return allPhotos
   }
 

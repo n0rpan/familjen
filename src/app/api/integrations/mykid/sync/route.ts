@@ -326,9 +326,10 @@ async function syncIntegration(
     // SYNC PHOTOS (download during sync - IP lock workaround!)
     // ========================================================================
     try {
-      // Get photo URLs from recent 30 days (not just dashboard)
+      // Get photos from /foto gallery (primary source)
+      console.log(`[MyKid] Starting photo discovery from /foto gallery...`)
       const photos = await client.getPhotosFromRecentDays(30)
-      console.log(`[MyKid] Found ${photos.length} photos from last 30 days`)
+      console.log(`[MyKid] Total photos found: ${photos.length}`)
 
       if (photos.length > 0) {
         let uploadedCount = 0
