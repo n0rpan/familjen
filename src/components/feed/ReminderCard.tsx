@@ -17,13 +17,25 @@ interface Props {
 }
 
 export function ReminderCard({ reminder, onToggle }: Props) {
-  // Format date
+  // Format date - compare dates only (ignore time) to avoid timezone issues
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return null
-    const date = new Date(dateStr)
+
+    // Parse as local date (YYYY-MM-DD format)
+    const dateParts = dateStr.split('T')[0].split('-')
+    const dueDate = new Date(
+      parseInt(dateParts[0]),
+      parseInt(dateParts[1]) - 1,
+      parseInt(dateParts[2])
+    )
+
+    // Get today at midnight local time
     const now = new Date()
-    const diffMs = date.getTime() - now.getTime()
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+
+    // Calculate difference in days
+    const diffMs = dueDate.getTime() - today.getTime()
+    const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
 
     if (diffDays < 0) {
       return { text: 'Forfalt', isOverdue: true }
@@ -32,9 +44,9 @@ export function ReminderCard({ reminder, onToggle }: Props) {
     } else if (diffDays === 1) {
       return { text: 'I morgen', isOverdue: false }
     } else if (diffDays < 7) {
-      return { text: date.toLocaleDateString('nb-NO', { weekday: 'long' }), isOverdue: false }
+      return { text: dueDate.toLocaleDateString('nb-NO', { weekday: 'long' }), isOverdue: false }
     }
-    return { text: date.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' }), isOverdue: false }
+    return { text: dueDate.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' }), isOverdue: false }
   }
 
   const dueInfo = formatDate(reminder.due_date)

@@ -468,7 +468,14 @@ async function syncMyKid(supabase: AnySupabase, integration: AnyIntegration, cre
   // Sync newsletters
   try {
     const newsletters = await client.getNewsletterList()
-    console.log(`[Admin Sync] MyKid newsletters: ${newsletters.length}`)
+    console.log(`[Admin Sync] MyKid newsletters found: ${newsletters.length}`)
+    if (newsletters.length > 0) {
+      console.log(`[Admin Sync] First few newsletters:`, newsletters.slice(0, 3))
+    }
+
+    let skippedExisting = 0
+    let skippedDate = 0
+    let inserted = 0
 
     for (const summary of newsletters.slice(0, 50)) {
       const { data: existing } = await supabase
@@ -478,12 +485,29 @@ async function syncMyKid(supabase: AnySupabase, integration: AnyIntegration, cre
         .eq('external_id', `newsletter_${summary.id}`)
         .single()
 
-      if (existing) continue
+      if (existing) {
+        skippedExisting++
+        continue
+      }
 
       try {
         const full = await client.getNewsletterContent(summary.id)
         const nlDate = MyKidClient.parseNorwegianDate(full.date)
-        if (nlDate && nlDate < lastSync) continue
+
+        // For initial sync, sync ALL newsletters regardless of date
+        // Only skip old ones if we already have some messages synced
+        const { count } = await supabase
+          .from('external_messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('integration_id', integration.id)
+
+        const isInitialSync = (count || 0) === 0
+
+        if (!isInitialSync && nlDate && nlDate < lastSync) {
+          skippedDate++
+          console.log(`[Admin Sync] Skipping newsletter ${summary.id} - date ${full.date} is before ${lastSync.toISOString()}`)
+          continue
+        }
 
         await supabase.from('external_messages').insert({
           integration_id: integration.id,
@@ -494,11 +518,14 @@ async function syncMyKid(supabase: AnySupabase, integration: AnyIntegration, cre
           source_type: 'newsletter',
           raw_data: full,
         })
+        inserted++
         result.messagesCount++
       } catch (e) {
         console.error(`[Admin Sync] Error fetching newsletter ${summary.id}:`, e)
       }
     }
+
+    console.log(`[Admin Sync] MyKid newsletters: inserted=${inserted}, skippedExisting=${skippedExisting}, skippedDate=${skippedDate}`)
   } catch (e) {
     console.error('[Admin Sync] Error syncing MyKid newsletters:', e)
   }

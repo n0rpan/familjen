@@ -238,7 +238,7 @@ export function FeedPage({ householdId }: Props) {
   return (
     <div className="space-y-6">
       {/* Header with sync button */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <FeedFilters
           activeFilter={activeFilter}
           onFilterChange={setActiveFilter}
@@ -247,7 +247,7 @@ export function FeedPage({ householdId }: Props) {
         <button
           onClick={handleSync}
           disabled={syncing}
-          className="btn btn-secondary text-sm flex-shrink-0 ml-4"
+          className="btn btn-secondary text-sm flex-shrink-0 self-end sm:self-auto"
         >
           {syncing ? (
             <span className="flex items-center gap-2">

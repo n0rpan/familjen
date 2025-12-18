@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
 export interface FeedPhoto {
   id: string
@@ -23,6 +24,12 @@ interface Props {
 
 export function PhotoGallery({ photos, onPhotoClick }: Props) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
+  const [mounted, setMounted] = useState(false)
+
+  // For portal to work on client side
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   if (photos.length === 0) {
     return null
@@ -116,17 +123,17 @@ export function PhotoGallery({ photos, onPhotoClick }: Props) {
         ))}
       </div>
 
-      {/* Lightbox */}
-      {selectedIndex !== null && (
+      {/* Lightbox - rendered via portal to escape transform context */}
+      {mounted && selectedIndex !== null && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
           style={{ background: 'rgba(0,0,0,0.9)' }}
           onClick={handleClose}
         >
           {/* Close button */}
           <button
             onClick={handleClose}
-            className="absolute top-4 right-4 p-2 text-white hover:bg-white/10 rounded-full"
+            className="absolute top-4 right-4 p-2 text-white hover:bg-white/10 rounded-full z-10"
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -138,7 +145,7 @@ export function PhotoGallery({ photos, onPhotoClick }: Props) {
           {selectedIndex > 0 && (
             <button
               onClick={handlePrev}
-              className="absolute left-4 p-2 text-white hover:bg-white/10 rounded-full"
+              className="absolute left-4 top-1/2 -translate-y-1/2 p-2 text-white hover:bg-white/10 rounded-full z-10"
             >
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polyline points="15 18 9 12 15 6" />
@@ -148,7 +155,7 @@ export function PhotoGallery({ photos, onPhotoClick }: Props) {
           {selectedIndex < photos.length - 1 && (
             <button
               onClick={handleNext}
-              className="absolute right-4 p-2 text-white hover:bg-white/10 rounded-full"
+              className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-white hover:bg-white/10 rounded-full z-10"
             >
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polyline points="9 18 15 12 9 6" />
@@ -203,7 +210,8 @@ export function PhotoGallery({ photos, onPhotoClick }: Props) {
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white text-sm">
             {selectedIndex + 1} / {photos.length}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   )
