@@ -28,7 +28,7 @@ function verifyCronRequest(request: Request): boolean {
  * Scheduled cleanup of expired photos from external integrations.
  * Called by Vercel Cron at 06:00 UTC daily (after sync at 05:00).
  *
- * Photos have a 7-day retention period set via expires_at.
+ * Photos have a 1-year retention period set via expires_at.
  * This job deletes expired photo records and their storage files.
  */
 export async function GET(request: Request) {

@@ -36,7 +36,7 @@ Family planning app for managing daily pickups, meals, tasks, and more. Built fo
 - **AI Action Extraction**: Automatically extract tasks/reminders from messages
 - **Suggestion Review**: Review AI-suggested tasks before adding to calendar
 - **Daily Sync**: Automatic sync at 05:00 UTC + cleanup at 06:00 UTC
-- **Photo Gallery**: 7-day retention for kindergarten photos with homepage preview
+- **Photo Gallery**: 1-year retention for kindergarten photos with homepage preview
 - **Admin Control**: Enable/disable integrations per household
 
 ### Progressive Web App (PWA)
@@ -153,7 +153,7 @@ Key tables in `supabase/migrations/`:
 - `external_integrations` - Spond/Kidplan/iSkole connections (encrypted)
 - `external_events` - Synced events from external services
 - `external_messages` - Synced messages for AI extraction
-- `external_photos` - Kindergarten photos (7-day retention)
+- `external_photos` - Kindergarten photos (1-year retention)
 - `external_suggestions` - AI-extracted action items pending review
 
 **Other:**

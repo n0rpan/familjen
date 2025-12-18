@@ -318,7 +318,7 @@ async function syncIntegration(
       if (photos.length > 0) {
         const photosToUpsert = photos.map((pic) => {
           const takenAt = pic.Created ? new Date(pic.Created).toISOString() : null
-          const expiresAt = addDays(new Date(), 7).toISOString()
+          const expiresAt = addDays(new Date(), 365).toISOString() // 1 year retention
 
           return {
             integration_id: integration.id,

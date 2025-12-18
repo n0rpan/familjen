@@ -1,6 +1,6 @@
 -- Migration: External Photos table for Kidplan/iSkole photo sync
 -- Photos are downloaded, compressed to max 1200px, stored in Supabase Storage
--- with 7-day retention policy for automatic cleanup
+-- with 1-year retention policy for automatic cleanup
 
 -- ============================================================================
 -- External Photos table
