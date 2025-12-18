@@ -152,7 +152,7 @@ export function ISkoleIntegration({ householdId, children, onMessage }: Props) {
           p_service: 'iskole',
           p_display_name: `iSkole - ${testResult.parent.name}`,
           p_account_email: username,
-          p_credentials: JSON.stringify({ username, password }),
+          p_credentials: { username, password },
         }
       )
 

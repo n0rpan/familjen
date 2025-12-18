@@ -196,11 +196,11 @@ export function KidplanIntegration({ householdId, children, onMessage }: Props) 
           p_household_id: householdId,
           p_service: 'kidplan',
           p_display_name: kindergartenInfo?.name || 'Kidplan',
-          p_credentials: JSON.stringify({
+          p_credentials: {
             email,
             password,
             kindergartenId: kindergartenInfo?.id,
-          }),
+          },
           p_account_email: email,
         }
       )
