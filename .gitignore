@@ -58,10 +58,8 @@ logs/
 # Local Claude context
 .claude-context.local
 
-# Research files containing personal data (SSN, credentials, etc.)
-docs/iskole-integration-research.md
+# HAR files (contain session data and credentials)
 *.har
 
-# Test scripts (may contain credentials in usage examples)
+# Test scripts that may contain credentials
 scripts/test-spond-chat.ts
-scripts/test-iskole.ts
