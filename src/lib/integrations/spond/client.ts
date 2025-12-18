@@ -319,7 +319,7 @@ export class SpondClient {
         ? `${message.sender.firstName} ${message.sender.lastName}`.trim()
         : null,
       title: null, // Messages don't have titles
-      body: message.text,
+      body: message.text || '', // Fallback to empty string for NOT NULL constraint
       messageDate: message.timestamp,
       rawData: message,
     }
