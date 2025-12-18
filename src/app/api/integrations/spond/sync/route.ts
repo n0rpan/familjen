@@ -258,20 +258,46 @@ async function syncIntegration(
 
     for (const event of events) {
       // Find which group this event belongs to
-      const groupId = event.recipients?.group?.id
-      if (!groupId) continue
+      // Events can be sent to parent groups or subgroups
+      const parentGroupId = event.recipients?.group?.id
+      const subGroupIds = event.recipients?.subGroups?.map((sg) => sg.id) || []
 
-      // Check if this group is mapped to any children
-      const childMapping = childMappings.find((m) => m.groupId === groupId)
-      if (!childMapping && mappedGroupIds.size > 0) {
-        // If we have mappings but this group isn't mapped, skip it
+      // Find a matching child mapping - check parent group and all subgroups
+      let matchedMapping: { childId: string; groupId: string } | undefined
+      let matchedGroupId: string | undefined
+
+      // First check if parent group matches
+      if (parentGroupId) {
+        matchedMapping = childMappings.find((m) => m.groupId === parentGroupId)
+        if (matchedMapping) {
+          matchedGroupId = parentGroupId
+        }
+      }
+
+      // If no parent match, check subgroups
+      if (!matchedMapping && subGroupIds.length > 0) {
+        for (const subGroupId of subGroupIds) {
+          matchedMapping = childMappings.find((m) => m.groupId === subGroupId)
+          if (matchedMapping) {
+            matchedGroupId = subGroupId
+            break
+          }
+        }
+      }
+
+      // If we have mappings but this event doesn't match any, skip it
+      if (!matchedMapping && mappedGroupIds.size > 0) {
         continue
       }
 
-      const mapped = SpondClient.mapEventToDb(event, groupId)
+      // Use the matched group ID, or fall back to parent group ID for unmapped events
+      const groupIdForDb = matchedGroupId || parentGroupId || subGroupIds[0]
+      if (!groupIdForDb) continue
+
+      const mapped = SpondClient.mapEventToDb(event, groupIdForDb)
       eventsToUpsert.push({
         integration_id: integration.id,
-        child_id: childMapping?.childId || null,
+        child_id: matchedMapping?.childId || null,
         external_id: mapped.externalId,
         external_group_id: mapped.externalGroupId,
         title: mapped.title,

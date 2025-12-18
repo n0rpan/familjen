@@ -4,12 +4,17 @@ import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Child } from '@/lib/types'
 
+interface SpondSubGroup {
+  id: string
+  name: string
+}
+
 interface SpondGroup {
   id: string
   name: string
   description: string | null
   memberCount: number
-  subGroups: Array<{ id: string; name: string }>
+  subGroups: SpondSubGroup[]
 }
 
 interface Integration {
@@ -154,12 +159,24 @@ export function SpondIntegration({ householdId, children, onMessage }: Props) {
       // Save child mappings
       const mappingsToInsert = Array.from(selectedGroups.entries()).map(
         ([childId, groupId]) => {
-          const group = availableGroups.find((g) => g.id === groupId)
+          // Find group name - could be parent group or subgroup
+          let groupName = ''
+          for (const group of availableGroups) {
+            if (group.id === groupId) {
+              groupName = group.name
+              break
+            }
+            const subGroup = group.subGroups?.find((sg) => sg.id === groupId)
+            if (subGroup) {
+              groupName = `${group.name} > ${subGroup.name}`
+              break
+            }
+          }
           return {
             integration_id: integrationId,
             child_id: childId,
             external_group_id: groupId,
-            external_group_name: group?.name || '',
+            external_group_name: groupName,
           }
         }
       )
@@ -504,9 +521,18 @@ export function SpondIntegration({ householdId, children, onMessage }: Props) {
                       >
                         <option value="">Velg gruppe...</option>
                         {availableGroups.map((group) => (
-                          <option key={group.id} value={group.id}>
-                            {group.name}
-                          </option>
+                          <optgroup key={group.id} label={group.name}>
+                            {/* Parent group as an option */}
+                            <option value={group.id}>
+                              {group.name} (hovedgruppe)
+                            </option>
+                            {/* Subgroups */}
+                            {group.subGroups?.map((subGroup) => (
+                              <option key={subGroup.id} value={subGroup.id}>
+                                {subGroup.name}
+                              </option>
+                            ))}
+                          </optgroup>
                         ))}
                       </select>
                     </div>
