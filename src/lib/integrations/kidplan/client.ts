@@ -376,15 +376,16 @@ export class KidplanClient {
   // ==========================================================================
 
   /**
-   * Parse Microsoft JSON date format.
-   * Format: /Date(1677754800000)/
+   * Parse Microsoft JSON date format or ISO date string.
+   * Format: /Date(1677754800000)/ or ISO string
    */
-  static parseMicrosoftDate(dateStr: string): Date {
-    const match = dateStr.match(/\/Date\((\d+)\)\//)
+  static parseMicrosoftDate(dateStr: string | null | undefined): Date | null {
+    if (!dateStr) return null
+    const match = dateStr.match(/\/Date\((-?\d+)\)\//)
     if (match) {
       return new Date(parseInt(match[1]))
     }
-    // Try parsing as ISO date
+    // Try parsing as ISO date or other format
     return new Date(dateStr)
   }
 
@@ -399,7 +400,7 @@ export class KidplanClient {
       senderName: post.AuthorName || null,
       title: post.Title || null,
       body: post.Content || '',
-      messageDate: new Date(post.Created).toISOString(),
+      messageDate: KidplanClient.parseMicrosoftDate(post.Created)?.toISOString() || new Date().toISOString(),
       sourceType: 'board_post',
       rawData: post,
     }
@@ -416,7 +417,7 @@ export class KidplanClient {
       senderName: message.SenderName || null,
       title: null,
       body: message.Body || '',
-      messageDate: new Date(message.Created).toISOString(),
+      messageDate: KidplanClient.parseMicrosoftDate(message.Created)?.toISOString() || new Date().toISOString(),
       sourceType: 'conversation',
       rawData: message,
     }
@@ -429,7 +430,7 @@ export class KidplanClient {
     return {
       externalId: picture.PictureId,
       title: picture.AlbumName || null,
-      takenAt: picture.Created ? new Date(picture.Created).toISOString() : null,
+      takenAt: KidplanClient.parseMicrosoftDate(picture.Created)?.toISOString() || null,
       albumName: picture.AlbumName || null,
       sourceUrl: `${IMG_BASE_URL}/albumpicture/?id=${picture.PictureId}`,
       rawData: picture,

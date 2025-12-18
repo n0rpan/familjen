@@ -87,7 +87,7 @@ export async function POST(request: Request) {
         id: child.ChildId,
         name: `${child.Firstname} ${child.Lastname}`,
         unit: child.unitName,
-        birthdate: KidplanClient.parseMicrosoftDate(child.Birthdate).toISOString().split('T')[0],
+        birthdate: KidplanClient.parseMicrosoftDate(child.Birthdate)?.toISOString().split('T')[0] || null,
       }))
 
       return NextResponse.json({

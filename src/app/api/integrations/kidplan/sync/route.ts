@@ -235,8 +235,8 @@ async function syncIntegration(
       const boardData = await client.getBoardPosts()
 
       for (const post of boardData.BoardPosts || []) {
-        const postDate = new Date(post.Created)
-        if (postDate < lastSync) continue
+        const postDate = KidplanClient.parseMicrosoftDate(post.Created)
+        if (!postDate || postDate < lastSync) continue
 
         messagesToUpsert.push({
           integration_id: integration.id,
@@ -263,11 +263,13 @@ async function syncIntegration(
       for (const conv of conversations) {
         // Get messages for each conversation
         try {
-          const messages = await client.getMessages(conv.ConversationId, 20, 0)
+          const messagesResponse = await client.getMessages(conv.ConversationId, 20, 0)
+          // Ensure we have an array
+          const messages = Array.isArray(messagesResponse) ? messagesResponse : []
 
           for (const msg of messages) {
-            const msgDate = new Date(msg.Created)
-            if (msgDate < lastSync) continue
+            const msgDate = KidplanClient.parseMicrosoftDate(msg.Created)
+            if (!msgDate || msgDate < lastSync) continue
 
             messagesToUpsert.push({
               integration_id: integration.id,

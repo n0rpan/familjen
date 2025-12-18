@@ -116,7 +116,7 @@ export async function GET(request: Request) {
       id: String(child.ChildId),
       name: `${child.Firstname} ${child.Lastname}`,
       unit: child.unitName,
-      birthdate: KidplanClient.parseMicrosoftDate(child.Birthdate).toISOString().split('T')[0],
+      birthdate: KidplanClient.parseMicrosoftDate(child.Birthdate)?.toISOString().split('T')[0] || null,
     }))
 
     // Also get current mappings
