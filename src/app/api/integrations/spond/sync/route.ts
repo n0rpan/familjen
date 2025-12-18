@@ -411,7 +411,81 @@ async function syncIntegration(
         }
       }
 
-      // Upsert messages
+      // Fetch posts (innlegg) from each mapped group and subgroups
+      // First, fetch groups to get subgroup info
+      const groups = await client.getGroups()
+      const mappedGroups = groups.filter((g) => mappedGroupIds.has(g.id))
+
+      for (const group of mappedGroups) {
+        const mapping = mappings.find((m) => m.groupId === group.id)
+
+        // Fetch posts for the main group
+        try {
+          const posts = await client.getPosts({ groupId: group.id, maxPosts: 50 })
+          for (const post of posts) {
+            const postDate = new Date(post.timestamp || post.createdTime || '')
+            if (isNaN(postDate.getTime()) || postDate < lastSync) continue
+
+            const mapped = SpondClient.mapPostToDb(post, group.id)
+            messagesToUpsert.push({
+              integration_id: integration.id,
+              child_id: mapping?.childId || null,
+              member_id: mapping?.memberId || null,
+              external_id: mapped.externalId,
+              external_group_id: mapped.externalGroupId,
+              chat_id: mapped.chatId,
+              sender_name: mapped.senderName,
+              title: mapped.title,
+              body: mapped.body,
+              message_date: mapped.messageDate,
+              raw_data: mapped.rawData,
+            })
+          }
+        } catch (postError) {
+          console.error(`Error fetching posts for group ${group.id}:`, postError)
+        }
+
+        // Fetch posts from each subgroup
+        if (group.subGroups && group.subGroups.length > 0) {
+          for (const subGroup of group.subGroups) {
+            try {
+              const posts = await client.getPosts({
+                groupId: group.id,
+                subGroupId: subGroup.id,
+                maxPosts: 50,
+              })
+              for (const post of posts) {
+                const postDate = new Date(post.timestamp || post.createdTime || '')
+                if (isNaN(postDate.getTime()) || postDate < lastSync) continue
+
+                const mapped = SpondClient.mapPostToDb(post, group.id)
+                // Add subgroup info to external_id to avoid duplicates
+                mapped.externalId = `post_${(post as { id: string }).id}_sg_${subGroup.id}`
+                messagesToUpsert.push({
+                  integration_id: integration.id,
+                  child_id: mapping?.childId || null,
+                  member_id: mapping?.memberId || null,
+                  external_id: mapped.externalId,
+                  external_group_id: mapped.externalGroupId,
+                  chat_id: mapped.chatId,
+                  sender_name: mapped.senderName,
+                  title: mapped.title,
+                  body: mapped.body,
+                  message_date: mapped.messageDate,
+                  raw_data: mapped.rawData,
+                })
+              }
+            } catch (postError) {
+              console.error(
+                `Error fetching posts for subgroup ${subGroup.id} in group ${group.id}:`,
+                postError
+              )
+            }
+          }
+        }
+      }
+
+      // Upsert messages (including posts)
       if (messagesToUpsert.length > 0) {
         const { error: messagesError } = await supabase
           .from('external_messages')
