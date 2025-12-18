@@ -9,7 +9,7 @@ interface OTPInputProps {
   error?: boolean
 }
 
-export function OTPInput({ length = 6, onComplete, disabled = false, error = false }: OTPInputProps) {
+export function OTPInput({ length = 8, onComplete, disabled = false, error = false }: OTPInputProps) {
   const [values, setValues] = useState<string[]>(Array(length).fill(''))
   const inputRefs = useRef<(HTMLInputElement | null)[]>([])
 
@@ -105,7 +105,7 @@ export function OTPInput({ length = 6, onComplete, disabled = false, error = fal
           onPaste={handlePaste}
           onFocus={() => handleFocus(index)}
           disabled={disabled}
-          className="w-11 h-14 sm:w-12 sm:h-16 text-center text-2xl font-semibold rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 disabled:opacity-50"
+          className="w-9 h-12 sm:w-11 sm:h-14 text-center text-xl sm:text-2xl font-semibold rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 disabled:opacity-50"
           style={{
             background: 'var(--background)',
             border: error ? '2px solid var(--color-coral)' : '2px solid var(--border)',
