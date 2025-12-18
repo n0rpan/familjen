@@ -207,7 +207,15 @@ export function MyKidIntegration({ householdId, children, onMessage }: Props) {
 
       if (saveError) {
         console.error('Save integration error:', saveError)
-        onMessage('error', 'Kunne ikke lagre integrasjon')
+        // Provide more specific error messages
+        if (saveError.message?.includes('not enabled')) {
+          onMessage('error', 'Integrasjoner er ikke aktivert for din husstand')
+        } else if (saveError.message?.includes('Access denied')) {
+          onMessage('error', 'Du har ikke tilgang til denne husstanden')
+        } else {
+          onMessage('error', `Kunne ikke lagre: ${saveError.message || 'Ukjent feil'}`)
+        }
+        setConnecting(false)
         return
       }
 

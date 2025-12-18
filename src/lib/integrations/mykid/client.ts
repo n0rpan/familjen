@@ -518,6 +518,105 @@ export class MyKidClient {
   }
 
   /**
+   * Get photos from My Day for a specific date.
+   * This fetches from the show_myday_photos AJAX endpoint.
+   */
+  async getPhotosForDate(date: Date): Promise<MyKidPhoto[]> {
+    this.ensureAuthenticated()
+
+    const dateStr = date.toISOString().split('T')[0] + '+00:00:00'
+    this.log(`Fetching photos for date: ${dateStr}`)
+
+    const response = await this.ajaxRequest(
+      'POST',
+      '/_ajax/dagenmin/show_myday_photos',
+      `date=${encodeURIComponent(dateStr)}&_csrf=${this.csrf}`
+    )
+
+    if (!response.ok) {
+      this.log(`show_myday_photos failed: ${response.status}`)
+      return []
+    }
+
+    const html = await response.text()
+    return this.extractPhotosFromHtml(html)
+  }
+
+  /**
+   * Get photos from multiple days (for comprehensive sync).
+   * @param days Number of days to look back (default 30)
+   */
+  async getPhotosFromRecentDays(days: number = 30): Promise<MyKidPhoto[]> {
+    this.ensureAuthenticated()
+    const allPhotos: MyKidPhoto[] = []
+    const seen = new Set<string>()
+
+    // Start with dashboard photos
+    const dashboardPhotos = this.getPhotoUrls()
+    for (const p of dashboardPhotos) {
+      if (!seen.has(p.photoId)) {
+        seen.add(p.photoId)
+        allPhotos.push(p)
+      }
+    }
+
+    // Fetch from recent days
+    const today = new Date()
+    for (let i = 0; i < days; i++) {
+      const date = new Date(today)
+      date.setDate(date.getDate() - i)
+
+      try {
+        const dayPhotos = await this.getPhotosForDate(date)
+        for (const p of dayPhotos) {
+          if (!seen.has(p.photoId)) {
+            seen.add(p.photoId)
+            allPhotos.push(p)
+          }
+        }
+        // Small delay to be nice to the server
+        await new Promise(resolve => setTimeout(resolve, 100))
+      } catch (e) {
+        this.log(`Error fetching photos for ${date.toISOString().split('T')[0]}: ${e}`)
+      }
+    }
+
+    this.log(`Total photos from ${days} days: ${allPhotos.length}`)
+    return allPhotos
+  }
+
+  /**
+   * Extract photo URLs from HTML content.
+   */
+  private extractPhotosFromHtml(html: string): MyKidPhoto[] {
+    const photos: MyKidPhoto[] = []
+    const pattern = /https:\/\/media\d*\.intutor\.no\/photo\.php\?t=([^"'\s&]+)/g
+    const seen = new Set<string>()
+    let urlMatch
+
+    while ((urlMatch = pattern.exec(html)) !== null) {
+      const token = urlMatch[1]
+      if (seen.has(token)) continue
+      seen.add(token)
+
+      try {
+        const jwt = this.decodePhotoJwt(token)
+        photos.push({
+          url: `https://media1.intutor.no/photo.php?t=${token}`,
+          expiresAt: new Date(jwt.exp * 1000),
+          photoId: jwt.name,
+          companyId: jwt.companyId,
+          date: jwt.date,
+        })
+      } catch (e) {
+        this.log('Failed to decode photo JWT:', e)
+      }
+    }
+
+    return photos
+  }
+
+  /**
    * Decode photo JWT to extract metadata.
    * Note: Does NOT verify signature, just decodes payload.
    */

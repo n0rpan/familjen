@@ -326,12 +326,13 @@ async function syncIntegration(
     // SYNC PHOTOS (download during sync - IP lock workaround!)
     // ========================================================================
     try {
-      // Get photo URLs from dashboard HTML (which was loaded during login)
-      const photos = client.getPhotoUrls()
+      // Get photo URLs from recent 30 days (not just dashboard)
+      const photos = await client.getPhotosFromRecentDays(30)
+      console.log(`[MyKid] Found ${photos.length} photos from last 30 days`)
 
       if (photos.length > 0) {
         let uploadedCount = 0
-        const maxPhotos = 20 // Limit per sync
+        const maxPhotos = 50 // Increased limit per sync
 
         for (const photo of photos.slice(0, maxPhotos)) {
           try {
