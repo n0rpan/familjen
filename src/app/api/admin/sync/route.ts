@@ -556,7 +556,7 @@ async function syncMyKid(supabase: AnySupabase, integration: AnyIntegration, cre
           upsert: true,
         })
 
-        await supabase.from('external_photos').upsert({
+        const { error: upsertError } = await supabase.from('external_photos').upsert({
           integration_id: integration.id,
           external_id: photo.photoId,
           storage_path: storagePath,
@@ -566,6 +566,11 @@ async function syncMyKid(supabase: AnySupabase, integration: AnyIntegration, cre
           original_content_type: contentType,
           expires_at: addDays(new Date(), 365).toISOString(),
         }, { onConflict: 'integration_id,external_id' })
+
+        if (upsertError) {
+          console.error(`[Admin Sync] Photo DB upsert failed for ${photo.photoId}:`, upsertError.message)
+          continue
+        }
         result.photosCount++
 
         await new Promise(r => setTimeout(r, 200))
