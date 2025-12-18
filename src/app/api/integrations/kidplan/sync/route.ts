@@ -210,11 +210,12 @@ async function syncIntegration(
       }
     })
 
-    // Calculate date range for messages
+    // Calculate date range for messages (first sync goes back 30 days)
     const now = new Date()
     const lastSync = integration.last_sync_at
       ? new Date(integration.last_sync_at)
-      : addDays(now, -7)
+      : addDays(now, -30)
+    console.log(`[Kidplan] Message sync window: ${lastSync.toISOString()} to now`)
 
     const messagesToUpsert: Array<{
       integration_id: string
@@ -233,6 +234,7 @@ async function syncIntegration(
     // Fetch board posts
     try {
       const boardData = await client.getBoardPosts()
+      console.log(`[Kidplan] Board posts: ${boardData.BoardPosts?.length || 0}`)
 
       for (const post of boardData.BoardPosts || []) {
         const postDate = KidplanClient.parseMicrosoftDate(post.Created)
@@ -259,6 +261,7 @@ async function syncIntegration(
     // Fetch conversations
     try {
       const conversations = await client.getConversations(20, 0)
+      console.log(`[Kidplan] Conversations: ${conversations.length}`)
 
       for (const conv of conversations) {
         // Get messages for each conversation

@@ -206,11 +206,12 @@ async function syncIntegration(
       }
     })
 
-    // Calculate date range for messages
+    // Calculate date range for messages (first sync goes back 30 days)
     const now = new Date()
     const lastSync = integration.last_sync_at
       ? new Date(integration.last_sync_at)
-      : addDays(now, -7)
+      : addDays(now, -30)
+    console.log(`[iSkole] Message sync window: ${lastSync.toISOString()} to now`)
 
     const messagesToUpsert: Array<{
       integration_id: string
@@ -230,6 +231,7 @@ async function syncIntegration(
     const children = await client.getChildren()
 
     // Fetch messages for each child
+    console.log(`[iSkole] Fetching messages for ${children.length} children`)
     for (const child of children) {
       try {
         const messages = await client.getMessages(
@@ -240,6 +242,7 @@ async function syncIntegration(
           50,
           0
         )
+        console.log(`[iSkole] Child ${child.Elevnr}: ${messages.length} messages returned`)
 
         for (const msg of messages) {
           const msgDate = new Date(msg.Mottatt)
