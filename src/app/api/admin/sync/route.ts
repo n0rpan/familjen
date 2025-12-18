@@ -546,7 +546,7 @@ async function syncMyKid(supabase: AnySupabase, integration: AnyIntegration, cre
       if (existing && !existing.storage_path?.startsWith('pending/')) continue
 
       try {
-        const { buffer, contentType } = await client.downloadPhoto(photo.url)
+        const { buffer } = await client.downloadPhoto(photo.url)
         const compressed = await sharp(buffer).resize(1200).jpeg({ quality: 80 }).toBuffer()
         const { width, height } = await sharp(compressed).metadata()
 
@@ -558,13 +558,16 @@ async function syncMyKid(supabase: AnySupabase, integration: AnyIntegration, cre
 
         const { error: upsertError } = await supabase.from('external_photos').upsert({
           integration_id: integration.id,
+          child_id: null,
           external_id: photo.photoId,
+          title: null,
+          taken_at: photo.date ? new Date(photo.date).toISOString() : new Date().toISOString(),
           storage_path: storagePath,
           width,
           height,
           file_size: compressed.length,
-          original_content_type: contentType,
           expires_at: addDays(new Date(), 365).toISOString(),
+          raw_data: photo,
         }, { onConflict: 'integration_id,external_id' })
 
         if (upsertError) {
