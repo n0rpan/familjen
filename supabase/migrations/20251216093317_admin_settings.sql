@@ -17,10 +17,11 @@ CREATE TABLE IF NOT EXISTS app_settings (
 ALTER TABLE allowed_emails ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
 
--- Admin email constant (you!)
+-- Admin email constant (customize this!)
+-- IMPORTANT: Replace 'admin@example.com' with your actual admin email after running migrations
 CREATE OR REPLACE FUNCTION is_admin()
 RETURNS BOOLEAN AS $$
-  SELECT (SELECT email FROM auth.users WHERE id = auth.uid()) = 'oscar.nordstrom@gmail.com';
+  SELECT (SELECT email FROM auth.users WHERE id = auth.uid()) = 'admin@example.com';
 $$ LANGUAGE SQL SECURITY DEFINER STABLE;
 
 -- Only admin can manage allowed_emails
@@ -44,14 +45,16 @@ CREATE POLICY "Users can read app settings"
   USING (true);
 
 -- Insert default settings
-INSERT INTO app_settings (key, value) VALUES 
+-- IMPORTANT: Update admin_email to your actual email after running migrations
+INSERT INTO app_settings (key, value) VALUES
   ('openrouter_model', 'anthropic/claude-3.5-sonnet'),
-  ('admin_email', 'oscar.nordstrom@gmail.com')
+  ('admin_email', 'admin@example.com')
 ON CONFLICT (key) DO NOTHING;
 
--- Insert your email as first allowed email
+-- Insert first allowed email (customize this!)
+-- IMPORTANT: Replace 'admin@example.com' with your actual admin email
 INSERT INTO allowed_emails (email, is_admin, can_create_household) VALUES
-  ('oscar.nordstrom@gmail.com', true, true)
+  ('admin@example.com', true, true)
 ON CONFLICT (email) DO NOTHING;
 
 -- Function to check if email is allowed (for auth hook)

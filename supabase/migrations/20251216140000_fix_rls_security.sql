@@ -133,10 +133,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS household_members_user_id_unique
 ALTER TABLE allowed_emails
   ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT false;
 
--- Set current admin email as admin
+-- Set admin email as admin (customize this!)
+-- IMPORTANT: Replace 'admin@example.com' with your actual admin email
 UPDATE allowed_emails
 SET is_admin = true
-WHERE email = 'oscar.nordstrom@gmail.com';
+WHERE email = 'admin@example.com';
 
 -- Redefine is_admin() function to check the database instead of hardcoded email
 CREATE OR REPLACE FUNCTION is_admin()
