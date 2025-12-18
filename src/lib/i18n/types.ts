@@ -13,6 +13,7 @@ export interface TranslationStrings {
   nav: {
     home: string
     weekPlan: string
+    feed: string
     recipes: string
     rememberList: string
     shoppingList: string

@@ -31,8 +31,8 @@ export function usePrefetchRoutes(routes: string[]) {
 // Default key routes for the app
 export const KEY_ROUTES = [
   '/uke',
+  '/feed',
   '/handleliste',
-  '/huskeliste',
   '/oppskrifter',
   '/innstillinger',
 ]

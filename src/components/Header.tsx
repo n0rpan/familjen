@@ -75,6 +75,14 @@ function BellIcon() {
   )
 }
 
+function FeedIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+    </svg>
+  )
+}
+
 function MoreIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -116,34 +124,25 @@ export function Header() {
   // Proactively prefetch key routes for instant navigation
   usePrefetchRoutes(KEY_ROUTES)
 
-  // All navigation items for desktop (memoized to prevent re-renders)
-  const navigation = useMemo(() => [
+  // Primary navigation items (shown in both desktop and mobile bottom bar)
+  // New "Feed-First" structure: Hjem, Uke, Feed + Mer menu
+  const primaryNav = useMemo(() => [
     { name: t.nav.home, href: '/', icon: HomeIcon },
     { name: t.nav.weekPlan, href: '/uke', icon: CalendarIcon },
-    { name: t.nav.recipes, href: '/oppskrifter', icon: BookIcon },
-    { name: t.nav.rememberList, href: '/huskeliste', icon: BellIcon },
-    { name: t.nav.shoppingList, href: '/handleliste', icon: ShoppingIcon },
-    { name: t.nav.settings, href: '/innstillinger', icon: SettingsIcon },
+    { name: t.nav.feed, href: '/feed', icon: FeedIcon },
   ], [t.nav])
 
-  // Primary mobile nav items (shown in bottom bar)
-  const primaryMobileNav = useMemo(() => [
-    { name: t.nav.home, href: '/', icon: HomeIcon },
-    { name: t.nav.weekPlan, href: '/uke', icon: CalendarIcon },
-    { name: t.nav.rememberList, href: '/huskeliste', icon: BellIcon },
-    { name: t.nav.shoppingList, href: '/handleliste', icon: ShoppingIcon },
-  ], [t.nav])
-
-  // Secondary mobile nav items (shown in "More" menu)
-  const secondaryMobileNav = useMemo(() => [
+  // Secondary nav items (shown in "More" menu on both desktop and mobile)
+  const secondaryNav = useMemo(() => [
     { name: t.nav.recipes, href: '/oppskrifter', icon: BookIcon },
+    { name: t.nav.shoppingList, href: '/handleliste', icon: ShoppingIcon },
     { name: t.nav.settings, href: '/innstillinger', icon: SettingsIcon },
   ], [t.nav])
 
   // Check if current page is a secondary nav item (not in primary nav)
   const isSecondaryActive = useMemo(() =>
-    secondaryMobileNav.some(item => pathname === item.href) || pathname === '/admin',
-    [secondaryMobileNav, pathname]
+    secondaryNav.some(item => pathname === item.href) || pathname === '/admin',
+    [secondaryNav, pathname]
   )
 
   useEffect(() => {
@@ -205,7 +204,7 @@ export function Header() {
 
             {/* Navigation */}
             <nav className="flex items-center gap-1" aria-label="Main navigation">
-              {navigation.map((item) => {
+              {primaryNav.map((item) => {
                 const isActive = pathname === item.href
                 return (
                   <TransitionLink
@@ -223,21 +222,24 @@ export function Header() {
                   </TransitionLink>
                 )
               })}
+              {/* More dropdown button for desktop */}
+              <button
+                onClick={() => setMoreMenuOpen(!moreMenuOpen)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 hover:bg-[var(--sand)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
+                style={{
+                  background: isSecondaryActive ? 'var(--accent)' : 'transparent',
+                  color: isSecondaryActive ? 'white' : 'var(--muted)',
+                }}
+                aria-expanded={moreMenuOpen}
+                aria-haspopup="menu"
+              >
+                <MoreIcon />
+                <span>{t.nav.more}</span>
+              </button>
             </nav>
 
             {/* User menu */}
             <div className="flex items-center gap-3">
-              {isAdmin && (
-                <Link
-                  href="/admin"
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl transition-all duration-200 hover:bg-[var(--sand)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
-                  style={{ color: 'var(--muted)' }}
-                  aria-current={pathname === '/admin' ? 'page' : undefined}
-                >
-                  <ShieldIcon />
-                  {t.nav.admin}
-                </Link>
-              )}
               {user && (
                 <button
                   onClick={handleLogout}
@@ -250,6 +252,63 @@ export function Header() {
             </div>
           </div>
         </div>
+
+        {/* Desktop More Dropdown */}
+        {moreMenuOpen && (
+          <>
+            {/* Backdrop */}
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setMoreMenuOpen(false)}
+            />
+            {/* Dropdown */}
+            <div
+              className="absolute right-6 top-16 z-50 min-w-[200px] py-2 rounded-xl shadow-lg"
+              style={{
+                background: 'var(--card)',
+                border: '1px solid var(--border)'
+              }}
+              role="menu"
+            >
+              {secondaryNav.map((item) => {
+                const isActive = pathname === item.href
+                return (
+                  <TransitionLink
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setMoreMenuOpen(false)}
+                    className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-all duration-200 hover:bg-[var(--sand)]"
+                    style={{
+                      background: isActive ? 'var(--accent)' : 'transparent',
+                      color: isActive ? 'white' : 'var(--foreground)',
+                    }}
+                    role="menuitem"
+                    aria-current={isActive ? 'page' : undefined}
+                  >
+                    <item.icon />
+                    <span>{item.name}</span>
+                  </TransitionLink>
+                )
+              })}
+              {isAdmin && (
+                <TransitionLink
+                  href="/admin"
+                  onClick={() => setMoreMenuOpen(false)}
+                  className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-all duration-200 hover:bg-[var(--sand)]"
+                  style={{
+                    background: pathname === '/admin' ? 'var(--accent)' : 'transparent',
+                    color: pathname === '/admin' ? 'white' : 'var(--foreground)',
+                  }}
+                  role="menuitem"
+                  aria-current={pathname === '/admin' ? 'page' : undefined}
+                >
+                  <ShieldIcon />
+                  <span>{t.nav.admin}</span>
+                </TransitionLink>
+              )}
+            </div>
+          </>
+        )}
       </header>
 
       {/* Mobile Top Header */}
@@ -288,7 +347,7 @@ export function Header() {
         aria-label="Mobile navigation"
       >
         <div className="flex justify-around items-center h-16 px-2">
-          {primaryMobileNav.map((item) => {
+          {primaryNav.map((item) => {
             const isActive = pathname === item.href
             return (
               <TransitionLink
@@ -368,7 +427,7 @@ export function Header() {
 
         {/* Menu items */}
         <div className="px-4 pb-6 space-y-1">
-          {secondaryMobileNav.map((item) => {
+          {secondaryNav.map((item) => {
             const isActive = pathname === item.href
             return (
               <TransitionLink

@@ -4,7 +4,8 @@ export const en: TranslationStrings = {
   // Navigation
   nav: {
     home: 'Home',
-    weekPlan: 'Week Plan',
+    weekPlan: 'Week',
+    feed: 'Feed',
     recipes: 'Recipes',
     rememberList: 'Remember List',
     shoppingList: 'Shopping List',

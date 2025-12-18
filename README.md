@@ -30,11 +30,14 @@ Family planning app for managing daily pickups, meals, tasks, and more. Built fo
 
 ### External Integrations
 - **Spond Sync**: Connect to Spond to sync events from children's activity groups
-- **AI Action Extraction**: Automatically extract tasks/reminders from Spond messages
+- **Kidplan Sync**: Sync messages and photos from kindergarten (barnehage)
+- **iSkole Sync**: Sync messages from school (skole) via parent portal
+- **Unified Feed**: View all messages, photos, and reminders from all services in one place
+- **AI Action Extraction**: Automatically extract tasks/reminders from messages
 - **Suggestion Review**: Review AI-suggested tasks before adding to calendar
-- **Daily Sync**: Automatic sync at 05:00 UTC + manual refresh
+- **Daily Sync**: Automatic sync at 05:00 UTC + cleanup at 06:00 UTC
+- **Photo Gallery**: 7-day retention for kindergarten photos with homepage preview
 - **Admin Control**: Enable/disable integrations per household
-- *Coming soon: Kidplan, iSkole*
 
 ### Progressive Web App (PWA)
 - **Install as App**: Add to home screen for native app experience
@@ -147,9 +150,10 @@ Key tables in `supabase/migrations/`:
 - `google_calendar_tokens` - Encrypted OAuth tokens
 
 **External Integrations:**
-- `external_integrations` - Spond/Kidplan connections (encrypted)
+- `external_integrations` - Spond/Kidplan/iSkole connections (encrypted)
 - `external_events` - Synced events from external services
 - `external_messages` - Synced messages for AI extraction
+- `external_photos` - Kindergarten photos (7-day retention)
 - `external_suggestions` - AI-extracted action items pending review
 
 **Other:**
@@ -162,8 +166,9 @@ Key tables in `supabase/migrations/`:
 ```
 src/
 ├── app/                    # Next.js App Router pages
-│   ├── page.tsx           # Home (today overview + AI input)
+│   ├── page.tsx           # Home (today overview + photo strip + AI input)
 │   ├── uke/               # Week planner
+│   ├── feed/              # Unified feed (messages, photos, reminders)
 │   ├── oppskrifter/       # Recipes
 │   ├── handleliste/       # Shopping lists
 │   ├── huskeliste/        # Household reminders
@@ -172,15 +177,17 @@ src/
 │   └── api/
 │       ├── openrouter/    # AI endpoints
 │       ├── calendar/      # Google Calendar
-│       ├── integrations/  # Spond sync
-│       ├── cron/          # Scheduled jobs
+│       ├── integrations/  # Spond, Kidplan, iSkole sync
+│       ├── cron/          # Scheduled jobs (sync + photo cleanup)
 │       └── push/          # Push notifications
 ├── components/
 │   ├── ai/                # UniversalAIInput
-│   ├── integrations/      # SpondIntegration, SuggestionReview
+│   ├── feed/              # FeedPage, MessageCard, PhotoGallery, etc.
+│   ├── integrations/      # Spond, Kidplan, iSkole integration UIs
 │   ├── AppShell.tsx       # iOS app shell
-│   ├── Header.tsx         # Navigation
+│   ├── Header.tsx         # Navigation (4-item mobile: Hjem, Uke, Feed, Mer)
 │   ├── WeekGrid.tsx       # Week planner grid
+│   ├── RecentPhotos.tsx   # Homepage photo strip
 │   └── ...
 ├── lib/
 │   ├── types.ts           # TypeScript interfaces
@@ -190,7 +197,9 @@ src/
 │   │   ├── context.tsx    # LanguageProvider, useLanguage
 │   │   └── translations/  # nb.ts, sv.ts, en.ts
 │   └── integrations/
-│       └── spond/         # Spond API client
+│       ├── spond/         # Spond API client
+│       ├── kidplan/       # Kidplan API client (kindergarten)
+│       └── iskole/        # iSkole API client (school)
 └── styles/
 
 public/

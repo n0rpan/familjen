@@ -12,6 +12,8 @@ import { NotificationSettings } from '@/components/NotificationSettings'
 import { InstallPrompt } from '@/components/InstallPrompt'
 import { SettingsPageSkeleton } from '@/components/Skeleton'
 import { SpondIntegration } from '@/components/integrations/SpondIntegration'
+import { KidplanIntegration } from '@/components/integrations/KidplanIntegration'
+import { ISkoleIntegration } from '@/components/integrations/ISkoleIntegration'
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
@@ -881,6 +883,72 @@ export default function SettingsPage() {
             householdId={household.id}
             children={children}
             members={members}
+            onMessage={showMessage}
+          />
+        </section>
+      )}
+
+      {/* Kidplan Integration - Only show if enabled for household */}
+      {household?.external_integrations_enabled && (
+        <section
+          className="rounded-2xl p-6 md:p-8"
+          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+        >
+          <div className="flex items-center gap-3 mb-6">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center"
+              style={{ background: 'rgba(131, 166, 151, 0.2)' }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-sage)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                <polyline points="9 22 9 12 15 12 15 22"/>
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold" style={{ color: 'var(--foreground)' }}>
+                Kidplan
+              </h2>
+              <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                Synkroniser meldinger og bilder fra barnehagen
+              </p>
+            </div>
+          </div>
+          <KidplanIntegration
+            householdId={household.id}
+            children={children}
+            onMessage={showMessage}
+          />
+        </section>
+      )}
+
+      {/* iSkole Integration - Only show if enabled for household */}
+      {household?.external_integrations_enabled && (
+        <section
+          className="rounded-2xl p-6 md:p-8"
+          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+        >
+          <div className="flex items-center gap-3 mb-6">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center"
+              style={{ background: 'rgba(126, 182, 196, 0.2)' }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-sky)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 10v6M2 10l10-5 10 5-10 5z"/>
+                <path d="M6 12v5c3 3 9 3 12 0v-5"/>
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold" style={{ color: 'var(--foreground)' }}>
+                iSkole
+              </h2>
+              <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                Synkroniser meldinger og timeplan fra skolen
+              </p>
+            </div>
+          </div>
+          <ISkoleIntegration
+            householdId={household.id}
+            children={children}
             onMessage={showMessage}
           />
         </section>

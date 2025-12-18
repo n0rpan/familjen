@@ -3,6 +3,7 @@ import { TodayOverview } from '@/components/TodayOverview'
 import { WeekGrid } from '@/components/WeekGrid'
 import { UniversalAIInput } from '@/components/ai'
 import { SuggestionBanner } from '@/components/integrations/SuggestionReview'
+import { RecentPhotos } from '@/components/RecentPhotos'
 import { formatDateISO, addDays } from '@/lib/utils'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -106,7 +107,7 @@ export default async function HomePage() {
   const weekEndStr = formatDateISO(weekEnd)
 
   // Fetch all data in parallel, filtering by household_id to prevent admin seeing other households
-  const [childrenResult, membersResult, pickupsResult, mealsResult, eventsResult, tasksResult, remindersResult] = await Promise.all([
+  const [childrenResult, membersResult, pickupsResult, mealsResult, eventsResult, tasksResult, remindersResult, photosResult] = await Promise.all([
     supabase.from('children').select('*').eq('household_id', myMembership.household_id).order('sort_order'),
     supabase.from('household_members').select('*').eq('household_id', myMembership.household_id),
     supabase.from('pickups').select(`*, child:children(*), picker:household_members(*)`).eq('household_id', myMembership.household_id).gte('date', weekStartStr).lte('date', weekEndStr),
@@ -117,6 +118,13 @@ export default async function HomePage() {
     supabase.from('child_tasks').select('*, child:children(*)').eq('household_id', myMembership.household_id).gte('date', weekStartStr).lte('date', weekEndStr).order('date').order('time'),
     // Fetch household reminders for this week
     supabase.from('household_reminders').select('*, assignee:household_members(*)').eq('household_id', myMembership.household_id).gte('date', weekStartStr).lte('date', weekEndStr).eq('status', 'open').order('date').order('time'),
+    // Fetch recent photos from integrations
+    supabase.from('external_photos')
+      .select('id, title, taken_at, storage_path, thumbnail_path, external_integrations!inner(household_id), children(name)')
+      .eq('external_integrations.household_id', myMembership.household_id)
+      .gt('expires_at', new Date().toISOString())
+      .order('taken_at', { ascending: false })
+      .limit(4),
   ])
 
   // Check for errors
@@ -163,6 +171,20 @@ export default async function HomePage() {
   const memberEvents = eventsResult.data
   const childTasks = tasksResult.data || []
   const householdReminders = remindersResult.data || []
+
+  // Transform photos data
+  const recentPhotos = (photosResult.data || []).map((photo) => {
+    // children is returned as a single object when using foreign key relation
+    const childData = photo.children as unknown as { name: string } | null
+    return {
+      id: photo.id,
+      title: photo.title,
+      taken_at: photo.taken_at,
+      storage_path: photo.storage_path,
+      thumbnail_path: photo.thumbnail_path,
+      child_name: childData?.name || null,
+    }
+  })
 
   // Get today's summary
   const todayPickups = pickups?.filter(p => p.date === todayStr) || []
@@ -280,6 +302,9 @@ export default async function HomePage() {
 
       {/* Today's Overview */}
       <TodayOverview summary={todaySummary} />
+
+      {/* Recent Photos */}
+      {recentPhotos.length > 0 && <RecentPhotos photos={recentPhotos} />}
 
       {/* Week Grid */}
       <div>

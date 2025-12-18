@@ -36,6 +36,14 @@ export const RATE_LIMITS = {
   spondSync: { limit: 10, windowMs: 60 * 1000 },
   // Spond test connection - 5/minute (during setup)
   spondTestConnection: { limit: 5, windowMs: 60 * 1000 },
+  // Kidplan sync - moderate, 10/minute
+  kidplanSync: { limit: 10, windowMs: 60 * 1000 },
+  // Kidplan test connection - 5/minute (during setup)
+  kidplanTestConnection: { limit: 5, windowMs: 60 * 1000 },
+  // iSkole sync - moderate, 10/minute
+  iskoleSync: { limit: 10, windowMs: 60 * 1000 },
+  // iSkole test connection - 5/minute (during setup)
+  iskoleTestConnection: { limit: 5, windowMs: 60 * 1000 },
 } as const
 
 /**

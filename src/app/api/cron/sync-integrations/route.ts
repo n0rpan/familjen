@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient as createServiceClient, SupabaseClient } from '@supabase/supabase-js'
 import { SpondClient, SpondAuthError, SpondError } from '@/lib/integrations/spond'
+import { KidplanClient, KidplanAuthError, KidplanError } from '@/lib/integrations/kidplan'
+import { ISkoleClient, ISkoleAuthError, ISkoleError } from '@/lib/integrations/iskole'
 import { formatDateISO, addDays } from '@/lib/utils'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -75,11 +77,11 @@ export async function GET(request: Request) {
 
     console.log(`[Cron] Found ${households.length} households with integrations enabled`)
 
-    // Get all Spond integrations
+    // Get all integrations (Spond, Kidplan, iSkole)
     const { data: integrations, error: integrationsError } = await supabase
       .from('external_integrations')
       .select('*')
-      .eq('service', 'spond')
+      .in('service', ['spond', 'kidplan', 'iskole'])
       .in(
         'household_id',
         households.map((h) => h.id)
@@ -91,16 +93,21 @@ export async function GET(request: Request) {
     }
 
     if (!integrations || integrations.length === 0) {
-      console.log('[Cron] No Spond integrations found')
+      console.log('[Cron] No integrations found')
       return NextResponse.json({
         success: true,
         householdsProcessed: households.length,
         integrationsProcessed: 0,
-        message: 'No Spond integrations to sync',
+        message: 'No integrations to sync',
       })
     }
 
-    console.log(`[Cron] Found ${integrations.length} Spond integrations to sync`)
+    // Group integrations by service
+    const spondIntegrations = integrations.filter((i) => i.service === 'spond')
+    const kidplanIntegrations = integrations.filter((i) => i.service === 'kidplan')
+    const iskoleIntegrations = integrations.filter((i) => i.service === 'iskole')
+
+    console.log(`[Cron] Found ${spondIntegrations.length} Spond, ${kidplanIntegrations.length} Kidplan, ${iskoleIntegrations.length} iSkole integrations`)
 
     // Get all child mappings
     const { data: allChildMappings } = await supabase
@@ -131,14 +138,16 @@ export async function GET(request: Request) {
     const results: Array<{
       integrationId: string
       householdId: string
+      service: string
       success: boolean
       eventsCount: number
       messagesCount: number
       error?: string
     }> = []
 
-    for (const integration of integrations) {
-      const result = await syncIntegration(
+    // Sync Spond integrations
+    for (const integration of spondIntegrations) {
+      const result = await syncSpondIntegration(
         supabase,
         integration,
         childMappingsByIntegration.get(integration.id) || []
@@ -146,6 +155,37 @@ export async function GET(request: Request) {
       results.push({
         integrationId: integration.id,
         householdId: integration.household_id,
+        service: 'spond',
+        ...result,
+      })
+    }
+
+    // Sync Kidplan integrations
+    for (const integration of kidplanIntegrations) {
+      const result = await syncKidplanIntegration(
+        supabase,
+        integration,
+        childMappingsByIntegration.get(integration.id) || []
+      )
+      results.push({
+        integrationId: integration.id,
+        householdId: integration.household_id,
+        service: 'kidplan',
+        ...result,
+      })
+    }
+
+    // Sync iSkole integrations
+    for (const integration of iskoleIntegrations) {
+      const result = await syncISkoleIntegration(
+        supabase,
+        integration,
+        childMappingsByIntegration.get(integration.id) || []
+      )
+      results.push({
+        integrationId: integration.id,
+        householdId: integration.household_id,
+        service: 'iskole',
         ...result,
       })
     }
@@ -233,9 +273,9 @@ export async function GET(request: Request) {
 }
 
 /**
- * Sync a single integration.
+ * Sync a single Spond integration.
  */
-async function syncIntegration(
+async function syncSpondIntegration(
   supabase: AnySupabaseClient,
   integration: {
     id: string
@@ -494,5 +534,302 @@ Return [] if no action items.`
     return Array.isArray(actions) ? actions : []
   } catch {
     return []
+  }
+}
+
+/**
+ * Sync a single Kidplan integration.
+ */
+async function syncKidplanIntegration(
+  supabase: AnySupabaseClient,
+  integration: {
+    id: string
+    household_id: string
+    display_name: string
+    credentials_encrypted: string
+    last_sync_at: string | null
+  },
+  childMappings: Array<{ childId: string; groupId: string }>
+): Promise<{
+  success: boolean
+  eventsCount: number
+  messagesCount: number
+  error?: string
+}> {
+  const result = {
+    success: false,
+    eventsCount: 0,
+    messagesCount: 0,
+    error: undefined as string | undefined,
+  }
+
+  try {
+    // Decrypt credentials
+    const { data: credentials, error: credError } = await supabase.rpc('decrypt_token', {
+      ciphertext: integration.credentials_encrypted,
+    })
+
+    if (credError || !credentials) {
+      result.error = 'Failed to decrypt credentials'
+      await updateSyncStatus(supabase, integration.id, 'error', result.error)
+      return result
+    }
+
+    let parsedCreds: { email: string; password: string; kindergartenId?: number }
+    try {
+      parsedCreds = JSON.parse(credentials)
+    } catch {
+      result.error = 'Invalid credentials format'
+      await updateSyncStatus(supabase, integration.id, 'error', result.error)
+      return result
+    }
+
+    // Create Kidplan client and login
+    const client = new KidplanClient()
+
+    try {
+      await client.login(parsedCreds.email, parsedCreds.password, parsedCreds.kindergartenId)
+    } catch (error) {
+      if (error instanceof KidplanAuthError) {
+        result.error = 'Authentication failed'
+        await updateSyncStatus(supabase, integration.id, 'auth_failed', result.error)
+        return result
+      }
+      throw error
+    }
+
+    const now = new Date()
+    const lastSync = integration.last_sync_at
+      ? new Date(integration.last_sync_at)
+      : addDays(now, -7)
+
+    // Fetch board posts and conversations
+    // Note: Kidplan messages are not child-specific (board posts/conversations apply to all children)
+    const messagesToUpsert: Array<Record<string, unknown>> = []
+
+    try {
+      const boardData = await client.getBoardPosts()
+
+      for (const post of boardData.BoardPosts || []) {
+        const postDate = new Date(post.Created)
+        if (postDate < lastSync) continue
+
+        messagesToUpsert.push({
+          integration_id: integration.id,
+          child_id: null,
+          external_id: `boardpost_${post.PostId}`,
+          external_group_id: null,
+          chat_id: null,
+          sender_name: post.AuthorName || null,
+          title: post.Title || null,
+          body: post.Content || '',
+          message_date: postDate.toISOString(),
+          source_type: 'board_post',
+          raw_data: post,
+        })
+      }
+    } catch (boardError) {
+      console.error(`[Cron] Kidplan board fetch error for ${integration.id}:`, boardError)
+    }
+
+    try {
+      const conversations = await client.getConversations(20, 0)
+
+      for (const conv of conversations) {
+        try {
+          const messages = await client.getMessages(conv.ConversationId, 20, 0)
+
+          for (const msg of messages) {
+            const msgDate = new Date(msg.Created)
+            if (msgDate < lastSync) continue
+
+            messagesToUpsert.push({
+              integration_id: integration.id,
+              child_id: null,
+              external_id: `message_${msg.MessageId}`,
+              external_group_id: null,
+              chat_id: String(conv.ConversationId),
+              sender_name: msg.SenderName || null,
+              title: null,
+              body: msg.Body || '',
+              message_date: msgDate.toISOString(),
+              source_type: 'conversation',
+              raw_data: msg,
+            })
+          }
+        } catch (msgError) {
+          console.error(`[Cron] Kidplan messages error for conversation ${conv.ConversationId}:`, msgError)
+        }
+      }
+    } catch (convError) {
+      console.error(`[Cron] Kidplan conversations error for ${integration.id}:`, convError)
+    }
+
+    // Upsert messages
+    if (messagesToUpsert.length > 0) {
+      const { error: messagesError } = await supabase
+        .from('external_messages')
+        .upsert(messagesToUpsert, {
+          onConflict: 'integration_id,external_id',
+        })
+
+      if (!messagesError) {
+        result.messagesCount = messagesToUpsert.length
+      }
+    }
+
+    await updateSyncStatus(supabase, integration.id, 'ok', null)
+    result.success = true
+    return result
+  } catch (error) {
+    console.error(`[Cron] Kidplan sync failed for ${integration.id}:`, error)
+    result.error = error instanceof KidplanError ? error.message : 'Unknown error'
+    await updateSyncStatus(supabase, integration.id, 'error', result.error)
+    return result
+  }
+}
+
+/**
+ * Sync a single iSkole integration.
+ */
+async function syncISkoleIntegration(
+  supabase: AnySupabaseClient,
+  integration: {
+    id: string
+    household_id: string
+    display_name: string
+    credentials_encrypted: string
+    last_sync_at: string | null
+  },
+  childMappings: Array<{ childId: string; groupId: string }>
+): Promise<{
+  success: boolean
+  eventsCount: number
+  messagesCount: number
+  error?: string
+}> {
+  const result = {
+    success: false,
+    eventsCount: 0,
+    messagesCount: 0,
+    error: undefined as string | undefined,
+  }
+
+  try {
+    // Decrypt credentials
+    const { data: credentials, error: credError } = await supabase.rpc('decrypt_token', {
+      ciphertext: integration.credentials_encrypted,
+    })
+
+    if (credError || !credentials) {
+      result.error = 'Failed to decrypt credentials'
+      await updateSyncStatus(supabase, integration.id, 'error', result.error)
+      return result
+    }
+
+    let parsedCreds: { username: string; password: string }
+    try {
+      parsedCreds = JSON.parse(credentials)
+    } catch {
+      result.error = 'Invalid credentials format'
+      await updateSyncStatus(supabase, integration.id, 'error', result.error)
+      return result
+    }
+
+    // Create iSkole client and login
+    const client = new ISkoleClient()
+
+    try {
+      await client.login(parsedCreds.username, parsedCreds.password)
+    } catch (error) {
+      if (error instanceof ISkoleAuthError) {
+        result.error = 'Authentication failed'
+        await updateSyncStatus(supabase, integration.id, 'auth_failed', result.error)
+        return result
+      }
+      throw error
+    }
+
+    // Build child ID map
+    const childIdMap = new Map<string, string>()
+    childMappings.forEach((m) => {
+      if (m.groupId && m.childId) {
+        childIdMap.set(m.groupId, m.childId)
+      }
+    })
+
+    const now = new Date()
+    const lastSync = integration.last_sync_at
+      ? new Date(integration.last_sync_at)
+      : addDays(now, -7)
+
+    const messagesToUpsert: Array<Record<string, unknown>> = []
+
+    // Fetch children and their messages
+    try {
+      const children = await client.getChildren()
+
+      for (const child of children) {
+        try {
+          const messages = await client.getMessages(
+            child.Elevnr,
+            child.Fylkeid,
+            child.Planperi,
+            child.Skoleid,
+            50,
+            0
+          )
+
+          for (const msg of messages) {
+            const msgDate = new Date(msg.Mottatt)
+            if (msgDate < lastSync) continue
+
+            const senderName = [msg.Fname, msg.Lname].filter(Boolean).join(' ') || null
+            const childIdStr = String(child.Elevnr)
+            const mappedChildId = childIdMap.get(childIdStr) || null
+
+            messagesToUpsert.push({
+              integration_id: integration.id,
+              child_id: mappedChildId,
+              external_id: `iskole_msg_${msg.Meldingid}`,
+              external_group_id: childIdStr,
+              chat_id: null,
+              sender_name: senderName,
+              title: msg.Emne || null,
+              body: msg.Tekst || '',
+              message_date: msgDate.toISOString(),
+              source_type: 'school_message',
+              raw_data: msg,
+            })
+          }
+        } catch (msgError) {
+          console.error(`[Cron] iSkole messages error for child ${child.Elevnr}:`, msgError)
+        }
+      }
+    } catch (childError) {
+      console.error(`[Cron] iSkole children error for ${integration.id}:`, childError)
+    }
+
+    // Upsert messages
+    if (messagesToUpsert.length > 0) {
+      const { error: messagesError } = await supabase
+        .from('external_messages')
+        .upsert(messagesToUpsert, {
+          onConflict: 'integration_id,external_id',
+        })
+
+      if (!messagesError) {
+        result.messagesCount = messagesToUpsert.length
+      }
+    }
+
+    await updateSyncStatus(supabase, integration.id, 'ok', null)
+    result.success = true
+    return result
+  } catch (error) {
+    console.error(`[Cron] iSkole sync failed for ${integration.id}:`, error)
+    result.error = error instanceof ISkoleError ? error.message : 'Unknown error'
+    await updateSyncStatus(supabase, integration.id, 'error', result.error)
+    return result
   }
 }
