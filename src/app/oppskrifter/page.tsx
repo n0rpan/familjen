@@ -58,7 +58,7 @@ export default function RecipesPage() {
 
       // Now fetch household by ID and recipes in parallel
       const [householdResult, recipesResult] = await Promise.all([
-        supabase.from('households').select('id, name, ical_calendar_url, ical_username, ai_meal_context, share_names_with_ai, external_integrations_enabled, created_at').eq('id', membership.household_id).single(),
+        supabase.from('households').select('id, name, ai_meal_context, share_names_with_ai, external_integrations_enabled, created_at').eq('id', membership.household_id).single(),
         supabase.from('recipes').select('*').eq('household_id', membership.household_id).order('name'),
       ])
 

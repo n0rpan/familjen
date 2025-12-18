@@ -111,7 +111,7 @@ export default function SettingsPage() {
       // Now get the household by ID (exclude encrypted fields)
       const { data: householdData, error: householdError } = await supabase
         .from('households')
-        .select('id, name, ical_calendar_url, ical_username, ai_meal_context, share_names_with_ai, external_integrations_enabled, created_at')
+        .select('id, name, ai_meal_context, share_names_with_ai, external_integrations_enabled, created_at')
         .eq('id', myMembership.household_id)
         .single()
 

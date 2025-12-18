@@ -40,8 +40,8 @@ interface AuditFields {
 export interface Household extends AuditFields {
   id: string
   name: string | null
-  ical_calendar_url: string | null
-  ical_username: string | null
+  ical_calendar_url?: string | null  // Optional: not in all environments
+  ical_username?: string | null  // Optional: not in all environments
   ical_password_encrypted?: string | null  // Optional: not fetched in UI queries
   openrouter_api_key_encrypted?: string | null  // Optional: not fetched in UI queries
   ai_meal_context: string | null  // Default AI preferences for meal suggestions

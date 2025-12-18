@@ -159,7 +159,7 @@ export default function WeekEditPage() {
 
         // Fetch all data in parallel, using the specific household_id to prevent admin seeing other households
         const [householdResult, childrenResult, membersResult, pickupsResult, mealsResult, recipesResult, eventsResult, tasksResult, externalEventsResult] = await Promise.all([
-          supabase.from('households').select('id, name, ical_calendar_url, ical_username, ai_meal_context, share_names_with_ai, external_integrations_enabled, created_at').eq('id', membership.household_id).single(),
+          supabase.from('households').select('id, name, ai_meal_context, share_names_with_ai, external_integrations_enabled, created_at').eq('id', membership.household_id).single(),
           supabase.from('children').select('*').eq('household_id', membership.household_id).order('sort_order'),
           supabase.from('household_members').select('*').eq('household_id', membership.household_id),
           supabase.from('pickups').select(`*, child:children(*), picker:household_members(*)`).eq('household_id', membership.household_id).gte('date', weekStartStr).lte('date', weekEndStr),
