@@ -177,10 +177,7 @@ async function syncIntegration(
     }
 
     // Create Kidplan client and login
-    // Enable debug temporarily for troubleshooting
-    const client = new KidplanClient({
-      debug: true,
-    })
+    const client = new KidplanClient()
 
     try {
       await client.login(email, password, kindergartenId)

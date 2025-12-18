@@ -223,19 +223,78 @@ export function Header() {
                 )
               })}
               {/* More dropdown button for desktop */}
-              <button
-                onClick={() => setMoreMenuOpen(!moreMenuOpen)}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 hover:bg-[var(--sand)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
-                style={{
-                  background: isSecondaryActive ? 'var(--accent)' : 'transparent',
-                  color: isSecondaryActive ? 'white' : 'var(--muted)',
-                }}
-                aria-expanded={moreMenuOpen}
-                aria-haspopup="menu"
-              >
-                <MoreIcon />
-                <span>{t.nav.more}</span>
-              </button>
+              <div className="relative">
+                <button
+                  onClick={() => setMoreMenuOpen(!moreMenuOpen)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 hover:bg-[var(--sand)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
+                  style={{
+                    background: isSecondaryActive ? 'var(--accent)' : 'transparent',
+                    color: isSecondaryActive ? 'white' : 'var(--muted)',
+                  }}
+                  aria-expanded={moreMenuOpen}
+                  aria-haspopup="menu"
+                >
+                  <MoreIcon />
+                  <span>{t.nav.more}</span>
+                </button>
+
+                {/* Desktop More Dropdown */}
+                {moreMenuOpen && (
+                  <>
+                    {/* Backdrop */}
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setMoreMenuOpen(false)}
+                    />
+                    {/* Dropdown */}
+                    <div
+                      className="absolute right-0 top-full mt-2 z-50 min-w-[200px] py-2 rounded-xl shadow-lg"
+                      style={{
+                        background: 'var(--card)',
+                        border: '1px solid var(--border)'
+                      }}
+                      role="menu"
+                    >
+                      {secondaryNav.map((item) => {
+                        const isActive = pathname === item.href
+                        return (
+                          <TransitionLink
+                            key={item.href}
+                            href={item.href}
+                            onClick={() => setMoreMenuOpen(false)}
+                            className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-all duration-200 hover:bg-[var(--sand)]"
+                            style={{
+                              background: isActive ? 'var(--accent)' : 'transparent',
+                              color: isActive ? 'white' : 'var(--foreground)',
+                            }}
+                            role="menuitem"
+                            aria-current={isActive ? 'page' : undefined}
+                          >
+                            <item.icon />
+                            <span>{item.name}</span>
+                          </TransitionLink>
+                        )
+                      })}
+                      {isAdmin && (
+                        <TransitionLink
+                          href="/admin"
+                          onClick={() => setMoreMenuOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-all duration-200 hover:bg-[var(--sand)]"
+                          style={{
+                            background: pathname === '/admin' ? 'var(--accent)' : 'transparent',
+                            color: pathname === '/admin' ? 'white' : 'var(--foreground)',
+                          }}
+                          role="menuitem"
+                          aria-current={pathname === '/admin' ? 'page' : undefined}
+                        >
+                          <ShieldIcon />
+                          <span>{t.nav.admin}</span>
+                        </TransitionLink>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
             </nav>
 
             {/* User menu */}
@@ -252,63 +311,6 @@ export function Header() {
             </div>
           </div>
         </div>
-
-        {/* Desktop More Dropdown */}
-        {moreMenuOpen && (
-          <>
-            {/* Backdrop */}
-            <div
-              className="fixed inset-0 z-40"
-              onClick={() => setMoreMenuOpen(false)}
-            />
-            {/* Dropdown */}
-            <div
-              className="absolute right-6 top-16 z-50 min-w-[200px] py-2 rounded-xl shadow-lg"
-              style={{
-                background: 'var(--card)',
-                border: '1px solid var(--border)'
-              }}
-              role="menu"
-            >
-              {secondaryNav.map((item) => {
-                const isActive = pathname === item.href
-                return (
-                  <TransitionLink
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setMoreMenuOpen(false)}
-                    className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-all duration-200 hover:bg-[var(--sand)]"
-                    style={{
-                      background: isActive ? 'var(--accent)' : 'transparent',
-                      color: isActive ? 'white' : 'var(--foreground)',
-                    }}
-                    role="menuitem"
-                    aria-current={isActive ? 'page' : undefined}
-                  >
-                    <item.icon />
-                    <span>{item.name}</span>
-                  </TransitionLink>
-                )
-              })}
-              {isAdmin && (
-                <TransitionLink
-                  href="/admin"
-                  onClick={() => setMoreMenuOpen(false)}
-                  className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-all duration-200 hover:bg-[var(--sand)]"
-                  style={{
-                    background: pathname === '/admin' ? 'var(--accent)' : 'transparent',
-                    color: pathname === '/admin' ? 'white' : 'var(--foreground)',
-                  }}
-                  role="menuitem"
-                  aria-current={pathname === '/admin' ? 'page' : undefined}
-                >
-                  <ShieldIcon />
-                  <span>{t.nav.admin}</span>
-                </TransitionLink>
-              )}
-            </div>
-          </>
-        )}
       </header>
 
       {/* Mobile Top Header */}

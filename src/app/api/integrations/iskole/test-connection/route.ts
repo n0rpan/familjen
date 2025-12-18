@@ -82,13 +82,10 @@ export async function POST(request: Request) {
     }
 
     // Test connection to iSkole
-    // Enable debug in production temporarily for troubleshooting
-    const client = new ISkoleClient({ debug: true })
+    const client = new ISkoleClient()
 
     try {
-      console.log('[iSkole] Starting login for:', username.substring(0, 6) + '...')
       const session = await client.login(username, password)
-      console.log('[iSkole] Login successful, personId:', session.personId)
 
       // Get children to show the user what's available
       const children = await client.getChildren()
@@ -115,10 +112,9 @@ export async function POST(request: Request) {
         children: mappedChildren,
       })
     } catch (error) {
-      console.error('[iSkole] Auth error:', error)
       if (error instanceof ISkoleAuthError) {
         return NextResponse.json(
-          { error: `iSkole auth failed: ${error.message}` },
+          { error: 'Feil fødselsnummer eller passord' },
           { status: 401 }
         )
       }
@@ -126,9 +122,8 @@ export async function POST(request: Request) {
     }
   } catch (error) {
     console.error('iSkole test connection error:', error)
-    const message = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json(
-      { error: `Kunne ikke koble til iSkole: ${message}` },
+      { error: 'Kunne ikke koble til iSkole. Prøv igjen senere.' },
       { status: 500 }
     )
   }
