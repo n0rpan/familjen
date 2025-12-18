@@ -2,9 +2,9 @@
 // Handles PWA installation, push notifications, and asset caching
 // Uses stale-while-revalidate for fast repeat visits while ensuring fresh data
 
-const CACHE_NAME = 'familjen-v5'
-const STATIC_CACHE = 'familjen-static-v4'
-const NAV_CACHE = 'familjen-nav-v1'
+const CACHE_NAME = 'familjen-v6'
+const STATIC_CACHE = 'familjen-static-v5'
+const NAV_CACHE = 'familjen-nav-v2'
 
 // Max age for cached navigation responses (5 minutes)
 // After this, we'll still show cached but prioritize network
@@ -27,8 +27,8 @@ self.addEventListener('install', (event) => {
       return cache.addAll(STATIC_ASSETS)
     })
   )
-  // Skip waiting to activate immediately
-  self.skipWaiting()
+  // DON'T skipWaiting here - let UpdatePrompt handle it via message
+  // This prevents automatic reloads when new SW is detected
 })
 
 // Activate event - clean up old caches
@@ -47,8 +47,9 @@ self.addEventListener('activate', (event) => {
       )
     })
   )
-  // Take control of all pages immediately
-  self.clients.claim()
+  // Only claim clients on first install (when there's no existing controller)
+  // On updates, the page will reload itself after user clicks "Update"
+  // This prevents the flickering/reload loop
 })
 
 // Fetch event - cache-first for static assets, network-first for API

@@ -1,12 +1,14 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useLanguage } from '@/lib/i18n/context'
 
 export function UpdatePrompt() {
   const { t } = useLanguage()
   const [showUpdate, setShowUpdate] = useState(false)
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null)
+  // Track if user explicitly requested update - prevents auto-reload on SW changes
+  const userRequestedUpdate = useRef(false)
 
   useEffect(() => {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
@@ -40,9 +42,15 @@ export function UpdatePrompt() {
     handleUpdate()
 
     // Listen for controller change (when new SW takes over)
+    // ONLY reload if user explicitly requested update via the prompt
     let refreshing = false
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (refreshing) return
+      // Only reload if user clicked "Update now" button
+      if (!userRequestedUpdate.current) {
+        console.log('[PWA] Controller changed but user did not request update, skipping reload')
+        return
+      }
       refreshing = true
       window.location.reload()
     })
@@ -51,6 +59,8 @@ export function UpdatePrompt() {
   const handleUpdate = () => {
     if (!waitingWorker) return
 
+    // Mark that user explicitly requested the update
+    userRequestedUpdate.current = true
     // Tell the waiting worker to skip waiting and activate
     waitingWorker.postMessage({ type: 'SKIP_WAITING' })
     setShowUpdate(false)
