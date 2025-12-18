@@ -4,13 +4,34 @@ Norwegian family planning app for managing daily pickups, meals, and child tasks
 
 ## Features
 
+### Core Features
 - **Pickup Management**: Assign who picks up each child daily
 - **Meal Planning**: Plan weekly dinners with recipe storage
 - **Child Tasks**: Track reminders and appointments per child (bring items, doctor visits, etc.)
-- **AI Meal Suggestions**: Get dinner ideas based on preferences and allergies
+- **Shopping Lists**: Manage grocery lists with recipe integration
 - **Calendar Integration**: Sync with Google Calendar for work calendar blocking
 - **Multi-household Support**: Invite family members to collaborate
 - **Multi-language Support**: Norwegian (nb), Swedish (sv), and English (en)
+
+### AI Features
+- **AI Meal Suggestions**: Get dinner ideas based on preferences, allergies, and existing meals
+- **Natural Language Input**: Use the AI input box to quickly add pickups, meals, and tasks
+  - Example: "Jeg henter Falk i dag" (I'm picking up Falk today)
+  - Example: "Taco til middag på fredag" (Tacos for dinner on Friday)
+
+### Progressive Web App (PWA)
+- **Install as App**: Add to home screen for native app experience
+- **Push Notifications**: Get notified about pickup assignments and reminders
+- **Offline Support**: Basic functionality works without internet
+- **Pull-to-Refresh**: Native-feel refresh gesture on mobile
+- **iOS Optimized**: Full support for Dynamic Island and safe areas
+- **Auto-Update Prompts**: Get notified when new versions are available
+
+### Mobile Experience
+- **iOS App Shell**: Fixed header with proper safe area handling
+- **Smooth Scrolling**: Content scrolls independently under fixed header
+- **Touch Optimized**: Large touch targets and native-feel interactions
+- **Skeleton Loaders**: Smooth loading states throughout the app
 
 ## Tech Stack
 
@@ -67,24 +88,30 @@ Open [http://localhost:3000](http://localhost:3000)
 |----------|----------|-------------|
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anonymous key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes | For server-side operations |
 | `OPENROUTER_API_KEY` | No | For AI meal suggestions |
 | `GOOGLE_CLIENT_ID` | No | For calendar integration |
 | `GOOGLE_CLIENT_SECRET` | No | For calendar integration |
 | `GOOGLE_REDIRECT_URI` | No | OAuth callback URL |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | No | For push notifications |
+| `VAPID_PRIVATE_KEY` | No | For push notifications |
 
 ## Database Migrations
 
 Migrations are in `supabase/migrations/`. Key tables:
 
 - `households` - Family units
-- `household_members` - Parents/adults
-- `children` - Kids with colors and locations
+- `household_members` - Parents/adults with language preferences
+- `children` - Kids with colors, locations, and allergies
 - `pickups` - Daily pickup assignments
 - `meals` - Meal plans linked to recipes
-- `recipes` - Stored recipes
+- `recipes` - Stored recipes with ingredients
 - `child_tasks` - Reminders/appointments per child
+- `household_reminders` - General household reminders
 - `member_events` - Parent calendar events
 - `google_calendar_tokens` - OAuth tokens for calendar sync
+- `push_subscriptions` - Web push notification subscriptions
+- `allowed_emails` - Access control for app registration
 
 Run migrations:
 ```bash
@@ -100,9 +127,20 @@ src/
 │   ├── uke/            # Week planner
 │   ├── oppskrifter/    # Recipes
 │   ├── handleliste/    # Shopping list
+│   ├── huskeliste/     # Reminders list
 │   ├── innstillinger/  # Settings (includes language switcher)
+│   ├── admin/          # Admin panel
 │   └── api/            # API routes
-├── components/         # React components
+│       ├── openrouter/ # AI endpoints
+│       ├── calendar/   # Google Calendar integration
+│       └── push/       # Push notification endpoints
+├── components/
+│   ├── ai/             # AI input components
+│   │   └── UniversalAIInput.tsx
+│   ├── AppShell.tsx    # iOS app shell with pull-to-refresh
+│   ├── Header.tsx      # Navigation with safe area support
+│   ├── WeekGrid.tsx    # Week planner grid
+│   └── ...
 ├── lib/
 │   ├── types.ts       # TypeScript interfaces
 │   ├── utils.ts       # Helper functions
@@ -116,6 +154,12 @@ src/
 │   │   └── translations/   # nb.ts, sv.ts, en.ts
 │   └── google-calendar.ts
 └── styles/            # Global CSS
+
+public/
+├── manifest.json      # PWA manifest
+├── sw.js              # Service worker
+├── icons/             # App icons (various sizes)
+└── apple-touch-icon.png
 ```
 
 ## Development
