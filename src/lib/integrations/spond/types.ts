@@ -168,6 +168,36 @@ export interface SpondMessage {
 }
 
 // ============================================================================
+// Posts (innlegg)
+// ============================================================================
+
+export interface SpondPost {
+  id: string
+  body?: string
+  timestamp?: string
+  createdTime?: string
+  author?: {
+    id: string
+    firstName: string
+    lastName: string
+    imageUrl?: string
+  }
+  group?: {
+    id: string
+    name: string
+  }
+  subGroup?: {
+    id: string
+    name: string
+  }
+  comments?: SpondComment[]
+  readStatus?: boolean
+  seenCount?: number
+  // Other fields we don't use
+  [key: string]: unknown
+}
+
+// ============================================================================
 // Client Options
 // ============================================================================
 
@@ -194,6 +224,17 @@ export interface GetEventsOptions {
 export interface GetChatsOptions {
   /** Maximum number of chats to return (default: 100) */
   limit?: number
+}
+
+export interface GetPostsOptions {
+  /** Group ID to filter by */
+  groupId?: string
+  /** Subgroup ID to filter by */
+  subGroupId?: string
+  /** Maximum number of posts to return (default: 100) */
+  maxPosts?: number
+  /** Maximum timestamp filter (ISO string or Date) */
+  maxTimestamp?: string | Date
 }
 
 // ============================================================================

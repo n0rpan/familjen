@@ -16,10 +16,12 @@ import {
   type SpondEvent,
   type SpondChat,
   type SpondMessage,
+  type SpondPost,
   type SpondLoginResponse,
   type SpondChatAuthResponse,
   type GetEventsOptions,
   type GetChatsOptions,
+  type GetPostsOptions,
   type MappedSpondEvent,
   type MappedSpondMessage,
   SpondError,
@@ -164,6 +166,48 @@ export class SpondClient {
   }
 
   // ==========================================================================
+  // Posts (innlegg)
+  // ==========================================================================
+
+  /**
+   * Get posts (innlegg) for a specific group.
+   * These are wall posts/announcements, different from chat messages.
+   */
+  async getPosts(options: GetPostsOptions = {}): Promise<SpondPost[]> {
+    const params = new URLSearchParams()
+    params.set('type', 'PLAIN')
+    params.set('includeComments', 'true')
+    params.set('includeReadStatus', 'true')
+    params.set('includeSeenCount', 'true')
+    params.set('max', String(options.maxPosts ?? 100))
+
+    if (options.groupId) {
+      params.set('groupId', options.groupId)
+    }
+
+    if (options.subGroupId) {
+      params.set('subGroupId', options.subGroupId)
+    }
+
+    if (options.maxTimestamp) {
+      const date =
+        typeof options.maxTimestamp === 'string'
+          ? options.maxTimestamp
+          : options.maxTimestamp.toISOString()
+      params.set('maxTimestamp', date)
+    }
+
+    const query = params.toString()
+    const endpoint = `posts?${query}`
+
+    this.log('Fetching posts:', endpoint)
+    const posts = await this.authenticatedFetch<SpondPost[]>(endpoint)
+    this.log(`Found ${posts.length} posts`)
+
+    return posts
+  }
+
+  // ==========================================================================
   // Chats / Messages
   // ==========================================================================
 
@@ -278,6 +322,25 @@ export class SpondClient {
       body: message.text,
       messageDate: message.timestamp,
       rawData: message,
+    }
+  }
+
+  /**
+   * Map a Spond post (innlegg) to our database format.
+   * Posts are treated as messages since they have similar structure.
+   */
+  static mapPostToDb(post: SpondPost, groupId?: string): MappedSpondMessage {
+    return {
+      externalId: `post_${post.id}`,
+      externalGroupId: groupId || post.group?.id || null,
+      chatId: `post_${post.id}`, // Posts don't have chats, use post ID
+      senderName: post.author
+        ? `${post.author.firstName} ${post.author.lastName}`.trim()
+        : null,
+      title: (post as unknown as { title?: string }).title || null,
+      body: post.body || '',
+      messageDate: post.timestamp || post.createdTime || new Date().toISOString(),
+      rawData: post as unknown as SpondMessage, // Cast for compatibility
     }
   }
 
