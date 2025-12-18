@@ -325,7 +325,7 @@ export class SpondClient {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.chatAuth}`,
+          auth: this.chatAuth,  // Custom auth header, not Bearer token
         },
         signal: controller.signal,
       })

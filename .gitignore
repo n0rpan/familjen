@@ -61,3 +61,7 @@ logs/
 # Research files containing personal data (SSN, credentials, etc.)
 docs/iskole-integration-research.md
 *.har
+
+# Test scripts (may contain credentials in usage examples)
+scripts/test-spond-chat.ts
+scripts/test-iskole.ts
