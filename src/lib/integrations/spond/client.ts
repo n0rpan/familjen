@@ -177,7 +177,8 @@ export class SpondClient {
     }
 
     this.log('Initializing chat authentication')
-    const response = await this.authenticatedFetch<SpondChatAuthResponse>('chat')
+    // The /chat endpoint requires POST to get auth token
+    const response = await this.authenticatedFetch<SpondChatAuthResponse>('chat', 'POST')
 
     if (!response.url || !response.auth) {
       throw new SpondError('Failed to initialize chat: missing url or auth')
@@ -284,13 +285,14 @@ export class SpondClient {
   /**
    * Make an authenticated API request, auto-retrying on 401.
    */
-  private async authenticatedFetch<T>(endpoint: string): Promise<T> {
+  private async authenticatedFetch<T>(endpoint: string, method: 'GET' | 'POST' = 'GET'): Promise<T> {
     if (!this.token) {
       throw new SpondAuthError('Not authenticated. Call login() first.')
     }
 
     try {
       return await this.fetch<T>(endpoint, {
+        method,
         headers: {
           Authorization: `Bearer ${this.token}`,
         },
