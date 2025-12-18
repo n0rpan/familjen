@@ -126,17 +126,17 @@ export function Header() {
   usePrefetchRoutes([...KEY_ROUTES, ...SECONDARY_ROUTES])
 
   // Primary navigation items (shown in both desktop and mobile bottom bar)
-  // New "Feed-First" structure: Hjem, Uke, Feed + Mer menu
+  // Structure: Hjem, Uke, Feed, Handleliste + Mer menu
   const primaryNav = useMemo(() => [
     { name: t.nav.home, href: '/', icon: HomeIcon },
     { name: t.nav.weekPlan, href: '/uke', icon: CalendarIcon },
     { name: t.nav.feed, href: '/feed', icon: FeedIcon },
+    { name: t.nav.shoppingList, href: '/handleliste', icon: ShoppingIcon },
   ], [t.nav])
 
   // Secondary nav items (shown in "More" menu on both desktop and mobile)
   const secondaryNav = useMemo(() => [
     { name: t.nav.recipes, href: '/oppskrifter', icon: BookIcon },
-    { name: t.nav.shoppingList, href: '/handleliste', icon: ShoppingIcon },
     { name: t.nav.settings, href: '/innstillinger', icon: SettingsIcon },
   ], [t.nav])
 
