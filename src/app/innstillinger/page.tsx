@@ -880,6 +880,7 @@ export default function SettingsPage() {
           <SpondIntegration
             householdId={household.id}
             children={children}
+            members={members}
             onMessage={showMessage}
           />
         </section>

@@ -101,28 +101,29 @@ export async function POST(request: Request) {
       )
     }
 
-    // Get child mappings for this household
-    const { data: childMappings } = await supabase
+    // Get all mappings (children and members) for this household
+    const { data: allMappings } = await supabase
       .from('external_integration_children')
-      .select('integration_id, child_id, external_group_id')
+      .select('integration_id, child_id, member_id, external_group_id')
       .in(
         'integration_id',
         integrations.map((i) => i.id)
       )
 
-    const childMappingsByIntegration = new Map<
+    const mappingsByIntegration = new Map<
       string,
-      Array<{ childId: string; groupId: string }>
+      Array<{ childId: string | null; memberId: string | null; groupId: string }>
     >()
-    childMappings?.forEach((mapping) => {
-      const existing = childMappingsByIntegration.get(mapping.integration_id) || []
+    allMappings?.forEach((mapping) => {
+      const existing = mappingsByIntegration.get(mapping.integration_id) || []
       if (mapping.external_group_id) {
         existing.push({
           childId: mapping.child_id,
+          memberId: mapping.member_id,
           groupId: mapping.external_group_id,
         })
       }
-      childMappingsByIntegration.set(mapping.integration_id, existing)
+      mappingsByIntegration.set(mapping.integration_id, existing)
     })
 
     // Sync each integration
@@ -133,7 +134,7 @@ export async function POST(request: Request) {
       const result = await syncIntegration(
         supabase,
         integration,
-        childMappingsByIntegration.get(integration.id) || [],
+        mappingsByIntegration.get(integration.id) || [],
         membership.household_id,
         isAdmin
       )
@@ -174,7 +175,7 @@ async function syncIntegration(
     credentials_encrypted: string
     last_sync_at: string | null
   },
-  childMappings: Array<{ childId: string; groupId: string }>,
+  mappings: Array<{ childId: string | null; memberId: string | null; groupId: string }>,
   householdId: string,
   isAdmin: boolean
 ): Promise<SyncResult> {
@@ -221,20 +222,21 @@ async function syncIntegration(
     }
 
     // Fetch groups to identify which ones we care about
-    const mappedGroupIds = new Set(childMappings.map((m) => m.groupId))
+    const mappedGroupIds = new Set(mappings.map((m) => m.groupId))
 
     // Calculate date ranges
     const now = new Date()
+    const pastDate = addDays(now, -7) // Include events from last 7 days
     const futureDate = addDays(now, 30) // Events for next 30 days
     const lastSync = integration.last_sync_at
       ? new Date(integration.last_sync_at)
       : addDays(now, -7) // Messages from last 7 days on first sync
 
-    // Fetch events
+    // Fetch events - include recent past events for reference
     const events = await client.getEvents({
       includeScheduled: true,
       maxEvents: 200,
-      minEndTimestamp: now,
+      minEndTimestamp: pastDate, // Include events from past 7 days
       maxStartTimestamp: futureDate,
     })
 
@@ -242,6 +244,7 @@ async function syncIntegration(
     const eventsToUpsert: Array<{
       integration_id: string
       child_id: string | null
+      member_id: string | null
       external_id: string
       external_group_id: string | null
       title: string
@@ -262,13 +265,14 @@ async function syncIntegration(
       const parentGroupId = event.recipients?.group?.id
       const subGroupIds = event.recipients?.subGroups?.map((sg) => sg.id) || []
 
-      // Find a matching child mapping - check parent group and all subgroups
-      let matchedMapping: { childId: string; groupId: string } | undefined
+      // Find a matching mapping - check parent group and all subgroups
+      // Can match to a child OR a member
+      let matchedMapping: { childId: string | null; memberId: string | null; groupId: string } | undefined
       let matchedGroupId: string | undefined
 
       // First check if parent group matches
       if (parentGroupId) {
-        matchedMapping = childMappings.find((m) => m.groupId === parentGroupId)
+        matchedMapping = mappings.find((m) => m.groupId === parentGroupId)
         if (matchedMapping) {
           matchedGroupId = parentGroupId
         }
@@ -277,7 +281,7 @@ async function syncIntegration(
       // If no parent match, check subgroups
       if (!matchedMapping && subGroupIds.length > 0) {
         for (const subGroupId of subGroupIds) {
-          matchedMapping = childMappings.find((m) => m.groupId === subGroupId)
+          matchedMapping = mappings.find((m) => m.groupId === subGroupId)
           if (matchedMapping) {
             matchedGroupId = subGroupId
             break
@@ -298,6 +302,7 @@ async function syncIntegration(
       eventsToUpsert.push({
         integration_id: integration.id,
         child_id: matchedMapping?.childId || null,
+        member_id: matchedMapping?.memberId || null,
         external_id: mapped.externalId,
         external_group_id: mapped.externalGroupId,
         title: mapped.title,
@@ -336,6 +341,7 @@ async function syncIntegration(
       const messagesToUpsert: Array<{
         integration_id: string
         child_id: string | null
+        member_id: string | null
         external_id: string
         external_group_id: string | null
         chat_id: string
@@ -347,10 +353,10 @@ async function syncIntegration(
       }> = []
 
       for (const chat of chats) {
-        // Check if this chat belongs to a mapped group
+        // Check if this chat belongs to a mapped group (child or member)
         const groupId = chat.groupId
-        const childMapping = groupId
-          ? childMappings.find((m) => m.groupId === groupId)
+        const mapping = groupId
+          ? mappings.find((m) => m.groupId === groupId)
           : null
 
         // Get messages for this chat
@@ -364,7 +370,8 @@ async function syncIntegration(
           const mapped = SpondClient.mapMessageToDb(message, chat.id, groupId)
           messagesToUpsert.push({
             integration_id: integration.id,
-            child_id: childMapping?.childId || null,
+            child_id: mapping?.childId || null,
+            member_id: mapping?.memberId || null,
             external_id: mapped.externalId,
             external_group_id: mapped.externalGroupId,
             chat_id: mapped.chatId,
