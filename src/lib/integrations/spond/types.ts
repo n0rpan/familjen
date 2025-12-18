@@ -150,18 +150,20 @@ export interface SpondChat {
 }
 
 export interface SpondMessage {
-  id: string
+  chatId: string
+  msgNum: number
   text: string
   timestamp: string
   type?: string
+  clubMessage?: boolean
+  reactions?: unknown[]
   sender?: {
     id: string
     firstName: string
     lastName: string
     imageUrl?: string
   }
-  chatId?: string
-  // Attachments, mentions, etc.
+  // Other fields
   [key: string]: unknown
 }
 

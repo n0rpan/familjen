@@ -61,5 +61,10 @@ logs/
 # HAR files (contain session data and credentials)
 *.har
 
+# Research files containing personal data
+docs/kidplan-integration-research.md
+
 # Test scripts that may contain credentials
 scripts/test-spond-chat.ts
+scripts/test-kidplan.ts
+scripts/debug-spond-messages.ts

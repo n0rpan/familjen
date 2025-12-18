@@ -264,8 +264,11 @@ export class SpondClient {
    * Map a Spond message to our database format.
    */
   static mapMessageToDb(message: SpondMessage, chatId: string, groupId?: string): MappedSpondMessage {
+    // Messages use chatId + msgNum as unique identifier (no id field)
+    const externalId = `${message.chatId || chatId}_${message.msgNum}`
+
     return {
-      externalId: message.id,
+      externalId,
       externalGroupId: groupId || null,
       chatId,
       senderName: message.sender
