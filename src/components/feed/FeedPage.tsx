@@ -51,7 +51,7 @@ export function FeedPage({ householdId }: Props) {
         body: msg.body,
         message_date: msg.message_date,
         source_type: msg.source_type || 'message',
-        service: msg.external_integrations?.service as 'spond' | 'kidplan' | 'iskole',
+        service: msg.external_integrations?.service as 'spond' | 'kidplan' | 'iskole' | 'mykid',
         child_name: msg.children?.name || null,
         integration_name: msg.external_integrations?.display_name || null,
         raw_data: msg.raw_data,
@@ -189,7 +189,7 @@ export function FeedPage({ householdId }: Props) {
   const counts = useMemo(() => {
     const spondCount = messages.filter((m) => m.service === 'spond').length
     const schoolCount = messages.filter((m) => m.service === 'iskole').length
-    const kindergartenCount = messages.filter((m) => m.service === 'kidplan').length
+    const kindergartenCount = messages.filter((m) => m.service === 'kidplan' || m.service === 'mykid').length
 
     return {
       all: messages.length + photos.length + reminders.length,
@@ -209,7 +209,7 @@ export function FeedPage({ householdId }: Props) {
       case 'school':
         return messages.filter((m) => m.service === 'iskole')
       case 'kindergarten':
-        return messages.filter((m) => m.service === 'kidplan')
+        return messages.filter((m) => m.service === 'kidplan' || m.service === 'mykid')
       case 'photos':
       case 'reminders':
         return []
