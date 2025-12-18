@@ -371,6 +371,13 @@ export class MyKidClient {
     )
 
     const html = await response.text()
+    this.log(`Newsletter list response: ${html.length} bytes`)
+
+    // Log a sample of the HTML for debugging
+    if (html.length > 0) {
+      this.log(`Newsletter HTML sample (first 500 chars): ${html.substring(0, 500).replace(/\s+/g, ' ')}`)
+    }
+
     return this.parseNewsletterList(html)
   }
 
@@ -379,34 +386,59 @@ export class MyKidClient {
    */
   private parseNewsletterList(html: string): MyKidNewsletterSummary[] {
     const newsletters: MyKidNewsletterSummary[] = []
-
-    // Pattern: onclick="showLocalNews(1977044)" or similar
-    const idPattern = /showLocalNews\((\d+)\)/g
     const ids = new Set<number>()
     let match
 
-    while ((match = idPattern.exec(html)) !== null) {
+    // Pattern 1: onclick="showLocalNews(1977044)"
+    const pattern1 = /showLocalNews\((\d+)\)/g
+    while ((match = pattern1.exec(html)) !== null) {
       ids.add(parseInt(match[1]))
     }
+    this.log(`Pattern showLocalNews: found ${ids.size} IDs`)
 
-    // Also try data attributes
-    const dataPattern = /data-newsid="(\d+)"/g
-    while ((match = dataPattern.exec(html)) !== null) {
+    // Pattern 2: data-newsid="12345"
+    const pattern2 = /data-newsid="(\d+)"/g
+    while ((match = pattern2.exec(html)) !== null) {
       ids.add(parseInt(match[1]))
+    }
+    this.log(`After data-newsid: total ${ids.size} IDs`)
+
+    // Pattern 3: news_id or newsid in any attribute
+    const pattern3 = /(?:news_id|newsid)[=:]["']?(\d+)/gi
+    while ((match = pattern3.exec(html)) !== null) {
+      ids.add(parseInt(match[1]))
+    }
+    this.log(`After news_id patterns: total ${ids.size} IDs`)
+
+    // Pattern 4: hent_news_letter_local with ID
+    const pattern4 = /hent_news_letter_local[^)]*?(\d{5,})/g
+    while ((match = pattern4.exec(html)) !== null) {
+      ids.add(parseInt(match[1]))
+    }
+    this.log(`After hent_news_letter_local: total ${ids.size} IDs`)
+
+    // Pattern 5: any 6-7 digit number that looks like a newsletter ID
+    // (be careful - only use if we found nothing else)
+    if (ids.size === 0) {
+      const pattern5 = /["'](\d{6,7})["']/g
+      while ((match = pattern5.exec(html)) !== null) {
+        ids.add(parseInt(match[1]))
+      }
+      this.log(`Fallback digit pattern: found ${ids.size} IDs`)
     }
 
     // Try to extract titles for each ID
     for (const id of ids) {
       // Look for title near the ID
       const titlePattern = new RegExp(
-        `(?:showLocalNews\\(${id}\\)|data-newsid="${id}")[^>]*>[\\s\\S]*?<[^>]*class="[^"]*title[^"]*"[^>]*>([^<]+)`,
+        `(?:showLocalNews\\(${id}\\)|data-newsid="${id}"|["']${id}["'])[^>]*>[\\s\\S]*?<[^>]*class="[^"]*title[^"]*"[^>]*>([^<]+)`,
         'i'
       )
       const titleMatch = html.match(titlePattern)
 
       // Look for date
       const datePattern = new RegExp(
-        `(?:showLocalNews\\(${id}\\)|id="${id}")[\\s\\S]*?(\\d{1,2}\\.\\d{1,2}\\.\\d{4})`,
+        `(?:showLocalNews\\(${id}\\)|id="${id}"|["']${id}["'])[\\s\\S]*?(\\d{1,2}\\.\\d{1,2}\\.\\d{4})`,
         'i'
       )
       const dateMatch = html.match(datePattern)
@@ -418,7 +450,7 @@ export class MyKidClient {
       })
     }
 
-    this.log(`Parsed ${newsletters.length} newsletters`)
+    this.log(`Parsed ${newsletters.length} newsletters from HTML`)
     return newsletters
   }
 

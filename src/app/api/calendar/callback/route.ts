@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     const tokens = await getTokensFromCode(code)
 
     if (!tokens.access_token || !tokens.refresh_token) {
-      console.error('Missing tokens:', tokens)
+      console.error('Missing tokens - access_token:', !!tokens.access_token, 'refresh_token:', !!tokens.refresh_token)
       return NextResponse.redirect(new URL('/admin?calendar_error=missing_tokens', request.url))
     }
 

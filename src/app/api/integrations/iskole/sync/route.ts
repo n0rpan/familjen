@@ -11,6 +11,7 @@ interface SyncResult {
   success: boolean
   error?: string
   messagesCount: number
+  eventsCount: number
 }
 
 /**
@@ -115,6 +116,7 @@ export async function POST(request: Request) {
 
     // Calculate totals
     const totalMessages = results.reduce((sum, r) => sum + r.messagesCount, 0)
+    const totalEvents = results.reduce((sum, r) => sum + r.eventsCount, 0)
     const successCount = results.filter((r) => r.success).length
     const failureCount = results.filter((r) => !r.success).length
 
@@ -126,6 +128,7 @@ export async function POST(request: Request) {
         integrationsSuccess: successCount,
         integrationsFailed: failureCount,
         messagesTotal: totalMessages,
+        eventsTotal: totalEvents,
       },
     })
   } catch (error) {
@@ -153,6 +156,7 @@ async function syncIntegration(
     displayName: integration.display_name,
     success: false,
     messagesCount: 0,
+    eventsCount: 0,
   }
 
   try {
@@ -378,6 +382,177 @@ async function syncIntegration(
 
       if (eventsError) {
         console.error('Error upserting calendar events:', eventsError)
+      } else {
+        result.eventsCount += eventsToUpsert.length
+      }
+    }
+
+    // Sync timetable (upcoming 2 weeks)
+    const timetableToUpsert: Array<{
+      integration_id: string
+      child_id: string | null
+      external_id: string
+      external_group_id: string | null
+      title: string
+      description: string | null
+      event_date: string
+      event_time: string | null
+      end_time: string | null
+      event_type: string
+      raw_data: unknown
+    }> = []
+
+    const twoWeeksFromNow = addDays(currentDate, 14)
+    const fromDateStr = currentDate.toISOString().split('T')[0].replace(/-/g, '')
+    const toDateStr = twoWeeksFromNow.toISOString().split('T')[0].replace(/-/g, '')
+
+    for (const child of children) {
+      const childIdStr = String(child.Elevnr)
+      const mappedChildId = childIdMap.get(childIdStr) || null
+
+      try {
+        const timetable = await client.getTimetable(
+          child.Elevnr,
+          child.Fylkeid,
+          child.Planperi,
+          child.Skoleid,
+          fromDateStr,
+          toDateStr
+        )
+
+        console.log(`[iSkole] Child ${child.Elevnr}: ${timetable.length} timetable entries`)
+
+        for (const entry of timetable) {
+          // Skip if not a school day or no subject
+          if (entry.Skoletype !== 'SD' || !entry.Fagnavn) continue
+
+          // Parse the date from Fradato (ISO timestamp)
+          const entryDate = new Date(entry.Fradato)
+          const eventDateStr = entryDate.toISOString().split('T')[0]
+
+          // Extract times
+          const eventTime = entry.Fradato ? new Date(entry.Fradato).toTimeString().slice(0, 5) : null
+          const endTime = entry.Tildato ? new Date(entry.Tildato).toTimeString().slice(0, 5) : null
+
+          // Build description with room and teacher
+          const descParts = []
+          if (entry.Romnr) descParts.push(`Rom: ${entry.Romnr}`)
+          if (entry.Faglaerer) descParts.push(`Lærer: ${entry.Faglaerer}`)
+          if (entry.Merknad) descParts.push(entry.Merknad)
+          const description = descParts.length > 0 ? descParts.join(' | ') : null
+
+          timetableToUpsert.push({
+            integration_id: integration.id,
+            child_id: mappedChildId,
+            external_id: `iskole_tt_${entry.Id}`,
+            external_group_id: childIdStr,
+            title: entry.Fagnavn,
+            description,
+            event_date: eventDateStr,
+            event_time: eventTime,
+            end_time: endTime,
+            event_type: 'school_class',
+            raw_data: entry,
+          })
+        }
+      } catch (ttError) {
+        console.error(`Error fetching timetable for child ${child.Elevnr}:`, ttError)
+      }
+    }
+
+    // Upsert timetable events
+    if (timetableToUpsert.length > 0) {
+      const { error: ttError } = await supabase
+        .from('external_events')
+        .upsert(timetableToUpsert, {
+          onConflict: 'integration_id,external_id',
+          ignoreDuplicates: false,
+        })
+
+      if (ttError) {
+        console.error('Error upserting timetable events:', ttError)
+      } else {
+        result.eventsCount += timetableToUpsert.length
+        console.log(`[iSkole] Synced ${timetableToUpsert.length} timetable events`)
+      }
+    }
+
+    // Sync absences (informational - show in Feed)
+    const absencesToUpsert: Array<{
+      integration_id: string
+      child_id: string | null
+      external_id: string
+      external_group_id: string | null
+      title: string
+      description: string | null
+      event_date: string
+      event_type: string
+      raw_data: unknown
+    }> = []
+
+    for (const child of children) {
+      const childIdStr = String(child.Elevnr)
+      const mappedChildId = childIdMap.get(childIdStr) || null
+
+      try {
+        const absences = await client.getAbsences(
+          child.Elevnr,
+          child.Fylkeid,
+          child.Planperi,
+          child.Skoleid
+        )
+
+        console.log(`[iSkole] Child ${child.Elevnr}: ${absences.length} absence records`)
+
+        for (const absence of absences) {
+          // Parse the date
+          const absenceDate = new Date(absence.Dato)
+          const eventDateStr = absenceDate.toISOString().split('T')[0]
+
+          // Build title based on absence type
+          const isFullDay = absence.Typefravaer === 'D'
+          const title = isFullDay
+            ? `Fravær: Hel dag`
+            : `Fravær: Time ${absence.Timenr} (${absence.Fag})`
+
+          // Build description
+          const descParts = []
+          if (absence.Minutter > 0) descParts.push(`${absence.Minutter} min`)
+          if (absence.Dokumentasjonstypetekst) descParts.push(absence.Dokumentasjonstypetekst)
+          if (absence.Merknad) descParts.push(absence.Merknad)
+          const description = descParts.length > 0 ? descParts.join(' | ') : null
+
+          absencesToUpsert.push({
+            integration_id: integration.id,
+            child_id: mappedChildId,
+            external_id: `iskole_abs_${absence.Id}`,
+            external_group_id: childIdStr,
+            title,
+            description,
+            event_date: eventDateStr,
+            event_type: 'school_absence',
+            raw_data: absence,
+          })
+        }
+      } catch (absError) {
+        console.error(`Error fetching absences for child ${child.Elevnr}:`, absError)
+      }
+    }
+
+    // Upsert absence events
+    if (absencesToUpsert.length > 0) {
+      const { error: absError } = await supabase
+        .from('external_events')
+        .upsert(absencesToUpsert, {
+          onConflict: 'integration_id,external_id',
+          ignoreDuplicates: false,
+        })
+
+      if (absError) {
+        console.error('Error upserting absence events:', absError)
+      } else {
+        result.eventsCount += absencesToUpsert.length
+        console.log(`[iSkole] Synced ${absencesToUpsert.length} absence events`)
       }
     }
 
