@@ -212,36 +212,95 @@ export class MyKidClient {
 
     this.log(`Found ${childIds.size} child IDs from topics`)
 
-    // Try to extract names from dashboard HTML
+    // Try to extract names - first from dashboard, then from newsletter page
     const children: MyKidChild[] = []
+    let needsNewsletterFetch = false
+
     for (const id of childIds) {
-      const name = this.extractChildNameFromDashboard(id) || `Barn ${id}`
-      children.push({ id, name })
+      const name = this.extractChildNameFromHtml(id, this.dashboardHtml)
+      if (name) {
+        children.push({ id, name })
+      } else {
+        needsNewsletterFetch = true
+        children.push({ id, name: '' }) // Placeholder
+      }
     }
 
-    this.log(`Returning ${children.length} children`)
+    // If we couldn't find names in dashboard, try fetching newsletter page
+    if (needsNewsletterFetch) {
+      this.log('Names not found in dashboard, fetching newsletter page...')
+      try {
+        const newsletterRes = await this.ajaxRequest('GET', '/nyhetsbrev')
+        if (newsletterRes.ok) {
+          const newsletterHtml = await newsletterRes.text()
+          this.log(`Newsletter page fetched: ${newsletterHtml.length} bytes`)
+
+          // Try to extract names from newsletter page
+          for (const child of children) {
+            if (!child.name) {
+              const name = this.extractChildNameFromHtml(child.id, newsletterHtml)
+              child.name = name || `Barn ${child.id}`
+            }
+          }
+        }
+      } catch (e) {
+        this.log(`Failed to fetch newsletter page: ${e}`)
+      }
+    }
+
+    // Ensure all children have names
+    for (const child of children) {
+      if (!child.name) {
+        child.name = `Barn ${child.id}`
+      }
+    }
+
+    this.log(`Returning ${children.length} children: ${children.map((c) => c.name).join(', ')}`)
     return children
   }
 
   /**
-   * Extract child name from dashboard HTML by looking near avatar URLs.
+   * Extract child name from HTML by looking for various patterns.
    */
-  private extractChildNameFromDashboard(childId: number): string | null {
-    if (!this.dashboardHtml) return null
+  private extractChildNameFromHtml(childId: number, html: string | null): string | null {
+    if (!html) return null
 
-    // Look for patterns near the child avatar URL
-    // Pattern: /_ajax/image/fetchimage/kid_avatar/{id}/... followed by name
     const patterns = [
-      // Look for name in data attributes or nearby text
+      // Pattern from newsletter: kid_avatar/123/50" /> <span class="dep-name">  Name  </span>
+      new RegExp(`kid_avatar/${childId}/[^>]*>\\s*<span[^>]*class="dep-name"[^>]*>\\s*([^<]+)`, 'i'),
+      // Alternative dep-name pattern: just find dep-name near the child ID
+      new RegExp(`${childId}[\\s\\S]{0,100}class="dep-name"[^>]*>\\s*([^<]+)`, 'i'),
+      // Child switcher dropdown option: <a href="/_ajax/avdelinger/bytt_barn/123/...">Name</a>
+      new RegExp(`bytt_barn/${childId}/[^"]*"[^>]*>\\s*([^<]+)`, 'i'),
+      // Option or list item with data attribute: data-id="123" or data-kid="123"
+      new RegExp(`data-(?:id|kid|child|childid)=["']${childId}["'][^>]*>\\s*([^<]+)`, 'i'),
+      // Avatar URL followed by name: kid_avatar/123/...">Name
       new RegExp(`kid_avatar/${childId}/[^"]*"[^>]*>\\s*([^<]+)`, 'i'),
-      new RegExp(`data-childid="${childId}"[^>]*>\\s*<[^>]*>\\s*([^<]+)`, 'i'),
+      // Link with child ID in href followed by img then span: href="...123..."...><img ...><span ...>Name
+      new RegExp(`href="[^"]*${childId}[^"]*"[^>]*>[\\s\\S]{0,200}<span[^>]*>\\s*([^<]+)`, 'i'),
+      // Value attribute: value="123">Name
+      new RegExp(`value=["']${childId}["'][^>]*>([^<]+)`, 'i'),
     ]
 
     for (const pattern of patterns) {
-      const match = this.dashboardHtml.match(pattern)
+      const match = html.match(pattern)
       if (match && match[1]?.trim()) {
-        return match[1].trim()
+        const name = match[1].trim()
+        // Skip if it looks like a number, URL, or HTML
+        if (!/^\d+$/.test(name) && !name.includes('/') && !name.includes('<') && name.length > 1) {
+          this.log(`Found name for child ${childId}: "${name}"`)
+          return name
+        }
       }
+    }
+
+    // Log a snippet of HTML around the child ID for debugging
+    const idx = html.indexOf(String(childId))
+    if (idx > -1) {
+      const snippet = html.substring(Math.max(0, idx - 50), idx + 200)
+      this.log(`Could not extract name for ${childId}. HTML snippet: ${snippet.replace(/\s+/g, ' ').substring(0, 250)}`)
+    } else {
+      this.log(`Child ID ${childId} not found in HTML`)
     }
 
     return null
