@@ -272,11 +272,11 @@ export default async function HomePage() {
         currentUserId={user.id}
       />
 
-      {/* Suggestion Banner - Shows pending suggestions from Spond etc. */}
-      <SuggestionBanner
+      {/* Suggestion Banner - Temporarily disabled for debugging */}
+      {/* <SuggestionBanner
         householdId={myMembership.household_id}
         children={children || []}
-      />
+      /> */}
 
       {/* Today's Overview */}
       <TodayOverview summary={todaySummary} />
