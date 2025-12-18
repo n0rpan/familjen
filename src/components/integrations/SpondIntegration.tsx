@@ -384,10 +384,11 @@ export function SpondIntegration({ householdId, children, members, onMessage }: 
         onMessage('error', data.error || 'Synkronisering feilet')
       } else {
         const { summary } = data
-        onMessage(
-          'success',
-          `Synkronisert: ${summary.eventsTotal} hendelser, ${summary.messagesTotal} meldinger`
-        )
+        let message = `Synkronisert: ${summary.eventsTotal} hendelser, ${summary.messagesTotal} meldinger`
+        if (summary.suggestionsCreated > 0) {
+          message += `, ${summary.suggestionsCreated} nye forslag`
+        }
+        onMessage('success', message)
         await loadIntegrations()
       }
     } catch (error) {

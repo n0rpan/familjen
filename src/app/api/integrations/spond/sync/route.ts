@@ -4,6 +4,7 @@ import { validateOrigin, isUserAdmin } from '@/lib/config'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 import { SpondClient, SpondAuthError, SpondError } from '@/lib/integrations/spond'
 import { formatDateISO, addDays } from '@/lib/utils'
+import { processMessagesWithAI } from '@/lib/integrations/ai-extraction'
 
 interface SyncResult {
   integrationId: string
@@ -147,6 +148,25 @@ export async function POST(request: Request) {
     const successCount = results.filter((r) => r.success).length
     const failureCount = results.filter((r) => !r.success).length
 
+    // Process messages with AI to extract suggestions
+    // Only do this if we have new messages and at least one successful sync
+    let aiExtractionResult = { processed: 0, suggestionsCreated: 0, errors: [] as string[] }
+    if (totalMessages > 0 && successCount > 0) {
+      try {
+        // Process messages for the synced integrations
+        const integrationIds = results.filter((r) => r.success).map((r) => r.integrationId)
+        for (const intId of integrationIds) {
+          const result = await processMessagesWithAI(supabase, membership.household_id, intId, 50)
+          aiExtractionResult.processed += result.processed
+          aiExtractionResult.suggestionsCreated += result.suggestionsCreated
+          aiExtractionResult.errors.push(...result.errors)
+        }
+      } catch (error) {
+        console.error('AI extraction error during sync:', error)
+        // Non-fatal - sync still succeeded
+      }
+    }
+
     return NextResponse.json({
       success: failureCount === 0,
       results: isAdmin ? results : results.map((r) => ({ ...r, error: r.error ? 'Sync failed' : undefined })),
@@ -156,6 +176,8 @@ export async function POST(request: Request) {
         integrationsFailed: failureCount,
         eventsTotal: totalEvents,
         messagesTotal: totalMessages,
+        messagesProcessed: aiExtractionResult.processed,
+        suggestionsCreated: aiExtractionResult.suggestionsCreated,
       },
     })
   } catch (error) {
