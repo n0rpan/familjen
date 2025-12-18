@@ -144,9 +144,9 @@ export function ISkoleIntegration({ householdId, children, onMessage }: Props) {
 
     setSaving(true)
     try {
-      // Create integration via RPC
+      // Create/update integration via RPC
       const { data: integrationData, error: integrationError } = await supabase.rpc(
-        'create_external_integration',
+        'upsert_external_integration',
         {
           p_household_id: householdId,
           p_service: 'iskole',
