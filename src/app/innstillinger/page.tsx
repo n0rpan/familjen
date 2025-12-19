@@ -98,11 +98,24 @@ export default function SettingsPage() {
       setUser(currentUser)
 
       // Find user's household via their membership (works for admins who can see multiple households)
-      const { data: myMembership } = await supabase
+      let { data: myMembership } = await supabase
         .from('household_members')
         .select('household_id')
         .eq('user_id', currentUser.id)
         .single()
+
+      // If no membership by user_id, try to claim a pending invite via RPC
+      // This handles the case where user navigates to settings before hitting home page
+      if (!myMembership) {
+        const { data: claimedInvite } = await supabase
+          .rpc('claim_invite_for_current_user')
+
+        if (claimedInvite && claimedInvite.length > 0) {
+          myMembership = {
+            household_id: claimedInvite[0].household_id
+          }
+        }
+      }
 
       if (!myMembership) {
         // No household - redirect to create page
