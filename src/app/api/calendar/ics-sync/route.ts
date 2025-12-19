@@ -207,20 +207,31 @@ async function syncMemberICS(
     const events = await fetchAndParseICS(member.ics_calendar_url, startDate, endDate)
 
     // Convert to member_events format
-    const eventsToUpsert = events.map((event) => ({
-      household_id: member.household_id,
-      member_id: member.id,
-      date: formatDateISO(event.startDate),
-      end_date: event.endDate.toDateString() !== event.startDate.toDateString()
-        ? formatDateISO(event.endDate)
-        : null,
-      title: event.summary.substring(0, 200), // Truncate long titles
-      event_type: inferEventType(event),
-      source: 'ics_calendar' as const,
-      source_email: null,
-      google_event_id: null,
-      ics_uid: event.uid,
-    }))
+    const eventsToUpsert = events.map((event) => {
+      // Format time as HH:MM:SS if not an all-day event
+      let eventTime: string | null = null
+      if (!event.isAllDay) {
+        const hours = event.startDate.getHours().toString().padStart(2, '0')
+        const minutes = event.startDate.getMinutes().toString().padStart(2, '0')
+        eventTime = `${hours}:${minutes}:00`
+      }
+
+      return {
+        household_id: member.household_id,
+        member_id: member.id,
+        date: formatDateISO(event.startDate),
+        end_date: event.endDate.toDateString() !== event.startDate.toDateString()
+          ? formatDateISO(event.endDate)
+          : null,
+        title: event.summary.substring(0, 200), // Truncate long titles
+        event_type: inferEventType(event),
+        event_time: eventTime,
+        source: 'ics_calendar' as const,
+        source_email: null,
+        google_event_id: null,
+        ics_uid: event.uid,
+      }
+    })
 
     // Delete old ICS events for this member that are no longer in the feed
     // Only delete events within our sync window

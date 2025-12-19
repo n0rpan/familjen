@@ -232,6 +232,7 @@ export interface MemberEvent {
   end_date: string | null  // For multi-day events
   title: string
   event_type: MemberEventType
+  event_time: string | null  // HH:MM:SS start time (from ICS DTSTART)
   source: 'manual' | 'google_calendar' | 'ics_calendar'
   source_email: string | null
   google_event_id: string | null

@@ -514,16 +514,22 @@ export const WeekGrid = memo(function WeekGrid({
                                     <button
                                       key={event.id}
                                       onClick={() => onEventClick?.(event)}
-                                      className="group flex items-center justify-center gap-1 px-2 py-1 rounded-lg text-xs transition-all hover:scale-105"
+                                      className="group flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-all hover:scale-105 text-left"
                                       style={{ background: config.bg }}
                                       title={event.title}
                                     >
-                                      <span>{config.icon}</span>
+                                      <span className="shrink-0">{config.icon}</span>
                                       <span
-                                        className="truncate max-w-[60px] hidden sm:inline"
+                                        className="truncate min-w-0"
                                         style={{ color: config.text }}
                                       >
-                                        {event.title}
+                                        {event.event_time && (
+                                          <span className="font-medium">
+                                            {event.event_time.substring(0, 5)}{' '}
+                                          </span>
+                                        )}
+                                        <span className="hidden sm:inline">{event.title}</span>
+                                        <span className="sm:hidden">{event.title.substring(0, 15)}{event.title.length > 15 ? '…' : ''}</span>
                                       </span>
                                     </button>
                                   )
