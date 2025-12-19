@@ -304,12 +304,17 @@ async function syncIntegration(
       raw_data: unknown
     }> = []
 
+    // Track all calendar event IDs we're upserting (for cleanup of stale events)
+    const validCalendarEventIds = new Set<string>()
+
     // Get current and next month
     const currentDate = new Date()
     const currentMonth = currentDate.getMonth() + 1 // 1-12
     const nextMonth = currentMonth === 12 ? 1 : currentMonth + 1
+    const currentYear = currentDate.getFullYear()
+    const nextMonthYear = currentMonth === 12 ? currentYear + 1 : currentYear
 
-    // Weekday names for extracting specific days
+    // Weekday names for extracting specific days (the API returns day-of-month in these fields)
     const weekdays = ['Mandag', 'Tirsdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lordag', 'Sondag'] as const
     const weekdayTypes = ['SkoletypeMandag', 'SkoletypeTirsdag', 'SkoletypeOnsdag', 'SkoletypeTorsdag', 'SkoletypeFredag', 'SkoletypeLordag', 'SkoletypeSondag'] as const
 
@@ -318,7 +323,12 @@ async function syncIntegration(
       const mappedChildId = childIdMap.get(childIdStr) || null
 
       // Fetch calendar for both months
-      for (const month of [currentMonth, nextMonth]) {
+      const monthsToFetch = [
+        { month: currentMonth, year: currentYear },
+        { month: nextMonth, year: nextMonthYear },
+      ]
+
+      for (const { month, year } of monthsToFetch) {
         try {
           const calendarDays = await client.getSchoolCalendar(
             month,
@@ -329,45 +339,83 @@ async function syncIntegration(
 
           // Process each week's data
           for (const week of calendarDays) {
-            // Parse the base date (first day of week - Monday)
+            // Parse the base date to get year and month context
             const baseDateStr = week.Dato // "20250113" format
             const baseYear = parseInt(baseDateStr.substring(0, 4))
-            const baseMonth = parseInt(baseDateStr.substring(4, 6)) - 1
-            const baseDay = parseInt(baseDateStr.substring(6, 8))
-            const baseDate = new Date(baseYear, baseMonth, baseDay)
+            const baseMonth = parseInt(baseDateStr.substring(4, 6)) - 1 // 0-indexed
 
             // Check each day of the week
+            // The API returns day-of-month in weekday fields (e.g., Mandag: "5" means the 5th)
+            // SkoletypeX contains the day type (FD=free, PD=planning, SD=school, null=no data)
             for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
               const dayTypeKey = weekdayTypes[dayIndex]
               const dayType = week[dayTypeKey]
+              const dayName = weekdays[dayIndex]
+              const dayOfMonth = week[dayName] // This is the actual day number (e.g., "5" for the 5th)
 
-              // Only sync FD (free day) and PD (planning day)
-              if (dayType === 'FD' || dayType === 'PD') {
-                const eventDate = new Date(baseDate)
-                eventDate.setDate(baseDate.getDate() + dayIndex)
-                const eventDateStr = eventDate.toISOString().split('T')[0]
+              // Skip if no day data or not a closure day
+              // Only sync FD (free day) and PD (planning day) for WEEKDAYS
+              // Skip weekends (Lordag=Saturday, Sondag=Sunday) as they're always free
+              if (!dayOfMonth || !dayType) continue
+              if (dayType !== 'FD' && dayType !== 'PD') continue
+              if (dayName === 'Lordag' || dayName === 'Sondag') continue
 
-                const title = dayType === 'FD' ? 'Skolefri' : 'Planleggingsdag'
-                const dayName = weekdays[dayIndex]
-                const dayContent = week[dayName]
+              // Parse the day of month
+              const dayNum = parseInt(dayOfMonth, 10)
+              if (isNaN(dayNum) || dayNum < 1 || dayNum > 31) continue
 
-                eventsToUpsert.push({
-                  integration_id: integration.id,
-                  child_id: mappedChildId,
-                  external_id: `iskole_cal_${child.Elevnr}_${eventDateStr}`,
-                  external_group_id: childIdStr,
-                  title,
-                  description: dayContent || null,
-                  event_date: eventDateStr,
-                  event_type: 'school_closure',
-                  raw_data: { week, dayIndex, dayType },
-                })
-              }
+              // Construct the actual date
+              const eventDate = new Date(baseYear, baseMonth, dayNum)
+              const eventDateStr = eventDate.toISOString().split('T')[0]
+
+              const title = dayType === 'FD' ? 'Skolefri' : 'Planleggingsdag'
+              const externalId = `iskole_cal_${child.Elevnr}_${eventDateStr}`
+              validCalendarEventIds.add(externalId)
+
+              eventsToUpsert.push({
+                integration_id: integration.id,
+                child_id: mappedChildId,
+                external_id: externalId,
+                external_group_id: childIdStr,
+                title,
+                description: null,
+                event_date: eventDateStr,
+                event_type: 'school_closure',
+                raw_data: { week, dayIndex, dayType, dayOfMonth },
+              })
             }
           }
         } catch (calError) {
           console.error(`Error fetching calendar for child ${child.Elevnr} month ${month}:`, calError)
         }
+      }
+    }
+
+    // Delete stale calendar events that are no longer in the API response
+    // Only delete events in the current sync window (current and next month)
+    const syncWindowStart = new Date(currentYear, currentMonth - 1, 1)
+    const syncWindowEnd = new Date(nextMonthYear, nextMonth, 0) // Last day of next month
+    const syncWindowStartStr = syncWindowStart.toISOString().split('T')[0]
+    const syncWindowEndStr = syncWindowEnd.toISOString().split('T')[0]
+
+    const { data: existingCalEvents } = await supabase
+      .from('external_events')
+      .select('id, external_id')
+      .eq('integration_id', integration.id)
+      .eq('event_type', 'school_closure')
+      .gte('event_date', syncWindowStartStr)
+      .lte('event_date', syncWindowEndStr)
+
+    if (existingCalEvents) {
+      const eventsToDelete = existingCalEvents.filter(
+        (e) => e.external_id?.startsWith('iskole_cal_') && !validCalendarEventIds.has(e.external_id)
+      )
+      if (eventsToDelete.length > 0) {
+        console.log(`[iSkole] Deleting ${eventsToDelete.length} stale calendar events`)
+        await supabase
+          .from('external_events')
+          .delete()
+          .in('id', eventsToDelete.map((e) => e.id))
       }
     }
 
