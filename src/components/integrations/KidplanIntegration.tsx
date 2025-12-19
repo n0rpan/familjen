@@ -321,6 +321,13 @@ export function KidplanIntegration({ householdId, children, onMessage }: Props) 
       if (!res.ok) {
         onMessage('error', data.error || 'Synkronisering feilet')
       } else {
+        // Run AI extraction on new messages
+        await fetch('/api/integrations/extract-actions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ integrationId }),
+        })
+
         const { summary } = data
         const message = `Synkronisert: ${summary.messagesTotal} meldinger, ${summary.photosTotal} bilder`
         onMessage('success', message)

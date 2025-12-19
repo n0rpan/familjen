@@ -170,11 +170,15 @@ export function FeedPage({ householdId }: Props) {
     setSyncing(true)
     try {
       // Sync all services in parallel
-      const [spondRes, kidplanRes, iskoleRes] = await Promise.allSettled([
+      await Promise.allSettled([
         fetch('/api/integrations/spond/sync', { method: 'POST' }),
         fetch('/api/integrations/kidplan/sync', { method: 'POST' }),
         fetch('/api/integrations/iskole/sync', { method: 'POST' }),
+        fetch('/api/integrations/mykid/sync', { method: 'POST' }),
       ])
+
+      // Run AI extraction on new messages
+      await fetch('/api/integrations/extract-actions', { method: 'POST' })
 
       // Reload data after sync
       await loadData()

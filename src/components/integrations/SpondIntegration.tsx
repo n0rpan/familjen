@@ -383,6 +383,13 @@ export function SpondIntegration({ householdId, children, members, onMessage }: 
       if (!res.ok) {
         onMessage('error', data.error || 'Synkronisering feilet')
       } else {
+        // Run AI extraction on new messages
+        await fetch('/api/integrations/extract-actions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ integrationId }),
+        })
+
         const { summary } = data
         let message = `Synkronisert: ${summary.eventsTotal} hendelser, ${summary.messagesTotal} meldinger`
         if (summary.suggestionsCreated > 0) {

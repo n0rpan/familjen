@@ -213,6 +213,13 @@ export function ISkoleIntegration({ householdId, children, onMessage }: Props) {
         return
       }
 
+      // Run AI extraction on new messages
+      await fetch('/api/integrations/extract-actions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ integrationId }),
+      })
+
       const { summary } = data
       onMessage(
         'success',

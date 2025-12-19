@@ -328,6 +328,13 @@ export function MyKidIntegration({ householdId, children, onMessage }: Props) {
       if (!res.ok) {
         onMessage('error', data.error || 'Synkronisering feilet')
       } else {
+        // Run AI extraction on new messages
+        await fetch('/api/integrations/extract-actions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ integrationId }),
+        })
+
         const { summary } = data
         const parts = []
         if (summary.eventsTotal > 0) parts.push(`${summary.eventsTotal} hendelser`)

@@ -72,11 +72,17 @@ export function MessageCard({ message }: Props) {
   // Service badge colors
   const serviceColors: Record<string, { bg: string; text: string; label: string }> = {
     spond: { bg: 'rgba(126, 182, 196, 0.2)', text: 'var(--color-sky)', label: 'Spond' },
-    kidplan: { bg: 'rgba(131, 166, 151, 0.2)', text: 'var(--color-sage)', label: 'Barnehage' },
-    iskole: { bg: 'rgba(178, 154, 198, 0.2)', text: 'var(--color-lavender)', label: 'Skole' },
+    kidplan: { bg: 'rgba(131, 166, 151, 0.2)', text: 'var(--color-sage)', label: 'Kidplan' },
+    iskole: { bg: 'rgba(178, 154, 198, 0.2)', text: 'var(--color-lavender)', label: 'iSkole' },
+    mykid: { bg: 'rgba(232, 180, 120, 0.2)', text: 'var(--color-honey)', label: 'MyKid' },
   }
 
   const serviceStyle = serviceColors[message.service] || serviceColors.spond
+
+  // Build badge label: "Service · ChildName" or just "Service"
+  const badgeLabel = message.child_name
+    ? `${serviceStyle.label} · ${message.child_name}`
+    : serviceStyle.label
 
   // Strip HTML tags for preview
   const stripHtml = (html: string) => {
@@ -99,16 +105,11 @@ export function MessageCard({ message }: Props) {
             className="text-xs px-2 py-0.5 rounded-full font-medium"
             style={{ background: serviceStyle.bg, color: serviceStyle.text }}
           >
-            {serviceStyle.label}
+            {badgeLabel}
           </span>
           {groupName && (
             <span className="text-xs" style={{ color: 'var(--muted)' }}>
               {groupName}
-            </span>
-          )}
-          {message.child_name && (
-            <span className="text-xs" style={{ color: 'var(--muted)' }}>
-              {message.child_name}
             </span>
           )}
         </div>
