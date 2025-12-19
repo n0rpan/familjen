@@ -4,6 +4,7 @@ import { WeekGrid } from '@/components/WeekGrid'
 import { UniversalAIInput } from '@/components/ai'
 import { SuggestionBanner } from '@/components/integrations/SuggestionReview'
 import { RecentPhotos } from '@/components/RecentPhotos'
+import { HomeRefreshWrapper } from '@/components/HomeRefreshWrapper'
 import { getHomePageData, getTodaySummary, getAttentionStatus } from '@/lib/data/home'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -180,14 +181,15 @@ export default async function HomePage() {
   const { attentionCount, isAllReady } = getAttentionStatus(homeData)
 
   return (
-    <div className="space-y-8 animate-fade-in">
-      {/* Today's Status Summary */}
-      <div
-        className="flex items-center gap-3 px-4 py-3 rounded-xl"
-        style={{
-          background: isAllReady ? 'rgba(131, 166, 151, 0.15)' : 'rgba(229, 185, 94, 0.15)',
-        }}
-      >
+    <HomeRefreshWrapper>
+      <div className="space-y-8 animate-fade-in">
+        {/* Today's Status Summary */}
+        <div
+          className="flex items-center gap-3 px-4 py-3 rounded-xl"
+          style={{
+            background: isAllReady ? 'rgba(131, 166, 151, 0.15)' : 'rgba(229, 185, 94, 0.15)',
+          }}
+        >
         {isAllReady ? (
           <>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-sage)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -257,5 +259,6 @@ export default async function HomePage() {
         />
       </div>
     </div>
+    </HomeRefreshWrapper>
   )
 }
