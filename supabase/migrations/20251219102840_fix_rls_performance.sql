@@ -68,7 +68,7 @@ CREATE POLICY "View allowed emails"
   USING (
     is_admin()
     OR invited_by_household_id = get_user_household_id()
-    OR LOWER(email) = LOWER((select auth.jwt()) ->> 'email')
+    OR LOWER(email) = LOWER((select auth.jwt() ->> 'email'))
   );
 
 -- ============================================================================
