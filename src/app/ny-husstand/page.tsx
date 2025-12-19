@@ -159,6 +159,22 @@ export default function CreateHouseholdPage() {
     setError(null)
 
     try {
+      // Verify our membership exists before trying to add children
+      // This catches any RLS timing issues
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error(t.errors.unauthorized)
+
+      const { data: membership } = await supabase
+        .from('household_members')
+        .select('household_id')
+        .eq('user_id', user.id)
+        .single()
+
+      if (!membership || membership.household_id !== householdId) {
+        console.error('Membership verification failed:', { membership, expectedHouseholdId: householdId })
+        throw new Error('Kunne ikke bekrefte husholdningsmedlemskap. Prøv å laste siden på nytt.')
+      }
+
       const childrenData = children.map(c => ({
         household_id: householdId,
         name: c.name.trim(),
@@ -170,7 +186,10 @@ export default function CreateHouseholdPage() {
       }))
 
       const { error: childError } = await supabase.from('children').insert(childrenData)
-      if (childError) throw new Error(t.errors.couldNotAddChild)
+      if (childError) {
+        console.error('Children insert error:', childError)
+        throw new Error(`${t.errors.couldNotAddChild}: ${childError.message}`)
+      }
 
       setStep('partner')
     } catch (err) {
