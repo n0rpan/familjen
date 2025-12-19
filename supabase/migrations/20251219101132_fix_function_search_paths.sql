@@ -24,10 +24,10 @@ ALTER FUNCTION public.get_household_calendar_tokens() SET search_path = '';
 -- Encryption functions
 ALTER FUNCTION public.get_encryption_key() SET search_path = '';
 ALTER FUNCTION public.encrypt_token(text) SET search_path = '';
-ALTER FUNCTION public.decrypt_token(bytea) SET search_path = '';
+ALTER FUNCTION public.decrypt_token(text) SET search_path = '';
 
 -- Integration functions
-ALTER FUNCTION public.upsert_external_integration(text, jsonb, text, jsonb) SET search_path = '';
+ALTER FUNCTION public.upsert_external_integration(uuid, text, text, json, text) SET search_path = '';
 ALTER FUNCTION public.get_integration_credentials(uuid) SET search_path = '';
 ALTER FUNCTION public.get_household_integrations() SET search_path = '';
 ALTER FUNCTION public.get_integration_mappings(uuid) SET search_path = '';
@@ -35,7 +35,7 @@ ALTER FUNCTION public.update_integration_sync_status(uuid, text, text) SET searc
 
 -- AI suggestions functions
 ALTER FUNCTION public.get_pending_suggestions_count() SET search_path = '';
-ALTER FUNCTION public.accept_suggestion(uuid, jsonb) SET search_path = '';
+ALTER FUNCTION public.accept_suggestion(uuid, text, date, time, uuid, text) SET search_path = '';
 ALTER FUNCTION public.dismiss_suggestion(uuid) SET search_path = '';
 
 -- Photo functions
@@ -51,4 +51,4 @@ ALTER FUNCTION public.user_has_wishlist_access(uuid) SET search_path = '';
 -- Household functions
 ALTER FUNCTION public.create_household_with_admin(text, text, text) SET search_path = '';
 ALTER FUNCTION public.create_household_with_admin(text, text, text, date, text) SET search_path = '';
-ALTER FUNCTION public.claim_invite_for_current_user(uuid) SET search_path = '';
+ALTER FUNCTION public.claim_invite_for_current_user() SET search_path = '';
