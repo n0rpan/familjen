@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
+import type { IntegrationChild } from './FeedPage'
 
 // Spond comment structure from raw_data
 interface SpondComment {
@@ -39,9 +40,10 @@ export interface FeedMessage {
 
 interface Props {
   message: FeedMessage
+  integrationChildren?: IntegrationChild[]
 }
 
-export function MessageCard({ message }: Props) {
+export function MessageCard({ message, integrationChildren = [] }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [showComments, setShowComments] = useState(false)
 
@@ -49,8 +51,35 @@ export function MessageCard({ message }: Props) {
   const spondData = message.service === 'spond' && message.raw_data
     ? (message.raw_data as SpondPostRaw)
     : null
-  const groupName = spondData?.group?.name || spondData?.subGroup?.name
+  const spondGroupName = spondData?.group?.name || spondData?.subGroup?.name
   const comments = spondData?.comments || []
+
+  // Get children and group name for this integration
+  const integrationContext = useMemo(() => {
+    // If message already has child_name from direct relation, use that
+    if (message.child_name) {
+      return { childNames: [message.child_name], groupName: null }
+    }
+
+    // Otherwise, look up children mapped to this integration
+    const childrenForIntegration = integrationChildren.filter(
+      (ic) => ic.integrationId === message.integration_id
+    )
+
+    if (childrenForIntegration.length === 0) {
+      return { childNames: [], groupName: null }
+    }
+
+    // Get unique child names and group name
+    const childNames = [...new Set(childrenForIntegration.map((ic) => ic.childName).filter(Boolean))]
+    // Use the first non-null group name (typically same for all children in same integration)
+    const groupName = childrenForIntegration.find((ic) => ic.groupName)?.groupName || null
+
+    return { childNames, groupName }
+  }, [message.integration_id, message.child_name, integrationChildren])
+
+  // Combine group names from Spond raw_data and integration mapping
+  const groupName = spondGroupName || integrationContext.groupName
 
   // Format date
   const formatDate = (dateStr: string) => {
@@ -79,9 +108,12 @@ export function MessageCard({ message }: Props) {
 
   const serviceStyle = serviceColors[message.service] || serviceColors.spond
 
-  // Build badge label: "Service · ChildName" or just "Service"
-  const badgeLabel = message.child_name
-    ? `${serviceStyle.label} · ${message.child_name}`
+  // Build badge label with child names from integration context
+  const childNamesDisplay = integrationContext.childNames.length > 0
+    ? integrationContext.childNames.join(', ')
+    : null
+  const badgeLabel = childNamesDisplay
+    ? `${serviceStyle.label} · ${childNamesDisplay}`
     : serviceStyle.label
 
   // Strip HTML tags for preview

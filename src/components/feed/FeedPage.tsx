@@ -8,6 +8,14 @@ import { PhotoGallery, type FeedPhoto } from './PhotoGallery'
 import { ReminderCard, type FeedReminder } from './ReminderCard'
 import { useLanguage } from '@/lib/i18n/context'
 
+// Integration children mapping (which children belong to which integrations)
+export interface IntegrationChild {
+  integrationId: string
+  childId: string
+  childName: string
+  groupName: string | null
+}
+
 interface Props {
   householdId: string
 }
@@ -22,6 +30,7 @@ export function FeedPage({ householdId }: Props) {
   const [messages, setMessages] = useState<FeedMessage[]>([])
   const [photos, setPhotos] = useState<FeedPhoto[]>([])
   const [reminders, setReminders] = useState<FeedReminder[]>([])
+  const [integrationChildren, setIntegrationChildren] = useState<IntegrationChild[]>([])
   const [syncing, setSyncing] = useState(false)
 
   // Load data
@@ -58,6 +67,32 @@ export function FeedPage({ householdId }: Props) {
       }))
 
       setMessages(transformedMessages)
+
+      // Load integration-children mappings (which children belong to which integrations)
+      const { data: integrationChildrenData } = await supabase
+        .from('external_integration_children')
+        .select(`
+          integration_id,
+          child_id,
+          external_group_name,
+          children(name),
+          external_integrations!inner(household_id)
+        `)
+        .eq('external_integrations.household_id', householdId)
+
+      const transformedIntegrationChildren: IntegrationChild[] = (integrationChildrenData || []).map((ic) => {
+        // children relation is a single object when joining on child_id
+        // Cast through unknown to handle Supabase's array type inference
+        const childData = ic.children as unknown as { name: string } | null
+        return {
+          integrationId: ic.integration_id,
+          childId: ic.child_id,
+          childName: childData?.name || '',
+          groupName: ic.external_group_name,
+        }
+      })
+
+      setIntegrationChildren(transformedIntegrationChildren)
 
       // Load photos
       const { data: photosData } = await supabase
@@ -379,7 +414,11 @@ export function FeedPage({ householdId }: Props) {
               )}
               <div className="space-y-3">
                 {filteredMessages.map((message) => (
-                  <MessageCard key={message.id} message={message} />
+                  <MessageCard
+                    key={message.id}
+                    message={message}
+                    integrationChildren={integrationChildren}
+                  />
                 ))}
               </div>
             </section>
