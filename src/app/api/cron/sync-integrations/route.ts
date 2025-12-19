@@ -5,6 +5,7 @@ import { KidplanClient, KidplanAuthError, KidplanError } from '@/lib/integration
 import { ISkoleClient, ISkoleAuthError, ISkoleError } from '@/lib/integrations/iskole'
 import { MyKidClient, MyKidAuthError, MyKidError } from '@/lib/integrations/mykid'
 import { formatDateISO, addDays } from '@/lib/utils'
+import { fetchAndParseICS, type ICSEvent } from '@/lib/ics-parser'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnySupabaseClient = SupabaseClient<any, any, any>
@@ -207,6 +208,10 @@ export async function GET(request: Request) {
       })
     }
 
+    // Sync ICS calendars for all members with ICS URLs
+    const icsResults = await syncAllICSCalendars(supabase)
+    console.log(`[Cron] ICS sync: ${icsResults.membersSuccess}/${icsResults.membersProcessed} success, ${icsResults.eventsTotal} events`)
+
     // Process AI extraction for new messages
     let suggestionsCreated = 0
     const unprocessedMessages = await supabase
@@ -282,6 +287,11 @@ export async function GET(request: Request) {
       eventsTotal: totalEvents,
       messagesTotal: totalMessages,
       suggestionsCreated,
+      icsCalendars: {
+        membersProcessed: icsResults.membersProcessed,
+        membersSuccess: icsResults.membersSuccess,
+        eventsTotal: icsResults.eventsTotal,
+      },
     })
   } catch (error) {
     console.error('[Cron] Sync error:', error)
@@ -1027,4 +1037,191 @@ async function syncMyKidIntegration(
     await updateSyncStatus(supabase, integration.id, 'error', result.error)
     return result
   }
+}
+
+// Sync window for ICS calendars: 90 days ahead
+const ICS_SYNC_DAYS_AHEAD = 90
+
+/**
+ * Sync all ICS calendars for members with ICS URLs.
+ */
+async function syncAllICSCalendars(
+  supabase: AnySupabaseClient
+): Promise<{
+  membersProcessed: number
+  membersSuccess: number
+  eventsTotal: number
+}> {
+  const result = {
+    membersProcessed: 0,
+    membersSuccess: 0,
+    eventsTotal: 0,
+  }
+
+  try {
+    // Get all members with ICS URLs
+    const { data: members, error: membersError } = await supabase
+      .from('household_members')
+      .select('id, name, ics_calendar_url, household_id')
+      .not('ics_calendar_url', 'is', null)
+
+    if (membersError || !members || members.length === 0) {
+      console.log('[Cron] No members with ICS calendars')
+      return result
+    }
+
+    result.membersProcessed = members.length
+    console.log(`[Cron] Found ${members.length} members with ICS calendars`)
+
+    // Sync each member
+    for (const member of members) {
+      try {
+        const eventsCount = await syncMemberICS(supabase, member)
+        result.membersSuccess++
+        result.eventsTotal += eventsCount
+
+        // Small delay between syncs to avoid rate limiting
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      } catch (error) {
+        console.error(`[Cron] ICS sync failed for ${member.name}:`, error)
+      }
+    }
+
+    return result
+  } catch (error) {
+    console.error('[Cron] ICS calendar sync error:', error)
+    return result
+  }
+}
+
+/**
+ * Sync ICS calendar for a single member.
+ */
+async function syncMemberICS(
+  supabase: AnySupabaseClient,
+  member: {
+    id: string
+    name: string
+    ics_calendar_url: string
+    household_id: string
+  }
+): Promise<number> {
+  try {
+    // Calculate date range
+    const startDate = new Date()
+    startDate.setHours(0, 0, 0, 0)
+    const endDate = addDays(startDate, ICS_SYNC_DAYS_AHEAD)
+
+    // Fetch and parse ICS
+    const events = await fetchAndParseICS(member.ics_calendar_url, startDate, endDate)
+
+    // Convert to member_events format
+    const eventsToUpsert = events.map((event) => ({
+      household_id: member.household_id,
+      member_id: member.id,
+      date: formatDateISO(event.startDate),
+      end_date: event.endDate.toDateString() !== event.startDate.toDateString()
+        ? formatDateISO(event.endDate)
+        : null,
+      title: event.summary.substring(0, 200),
+      event_type: inferEventType(event),
+      source: 'ics_calendar' as const,
+      source_email: null,
+      google_event_id: null,
+      ics_uid: event.uid,
+    }))
+
+    // Delete old ICS events for this member that are no longer in the feed
+    const currentUIDs = new Set(eventsToUpsert.map((e) => e.ics_uid))
+
+    const { data: existingEvents } = await supabase
+      .from('member_events')
+      .select('id, ics_uid, date')
+      .eq('member_id', member.id)
+      .eq('source', 'ics_calendar')
+      .gte('date', formatDateISO(startDate))
+      .lte('date', formatDateISO(endDate))
+
+    if (existingEvents) {
+      const eventsToDelete = existingEvents.filter(
+        (e: { ics_uid: string }) => e.ics_uid && !currentUIDs.has(e.ics_uid)
+      )
+      if (eventsToDelete.length > 0) {
+        await supabase
+          .from('member_events')
+          .delete()
+          .in('id', eventsToDelete.map((e: { id: string }) => e.id))
+      }
+    }
+
+    // Upsert events
+    if (eventsToUpsert.length > 0) {
+      const { error: upsertError } = await supabase
+        .from('member_events')
+        .upsert(eventsToUpsert, {
+          onConflict: 'household_id,member_id,date,ics_uid',
+          ignoreDuplicates: false,
+        })
+
+      if (upsertError) {
+        throw new Error(`Failed to upsert events: ${upsertError.message}`)
+      }
+    }
+
+    // Update sync status
+    await supabase
+      .from('household_members')
+      .update({
+        ics_last_sync_at: new Date().toISOString(),
+        ics_sync_error: null,
+      })
+      .eq('id', member.id)
+
+    return eventsToUpsert.length
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    console.error(`[Cron] ICS sync failed for ${member.name}:`, errorMessage)
+
+    // Update sync error
+    await supabase
+      .from('household_members')
+      .update({
+        ics_sync_error: errorMessage.substring(0, 500),
+      })
+      .eq('id', member.id)
+
+    throw error
+  }
+}
+
+/**
+ * Infer event type from ICS event content.
+ */
+function inferEventType(event: ICSEvent): 'work' | 'travel' | 'family' | 'other' {
+  const text = `${event.summary} ${event.description || ''} ${event.location || ''}`.toLowerCase()
+
+  if (
+    text.includes('flight') ||
+    text.includes('fly') ||
+    text.includes('reise') ||
+    text.includes('travel') ||
+    text.includes('trip') ||
+    text.includes('airport') ||
+    text.includes('hotel')
+  ) {
+    return 'travel'
+  }
+
+  if (
+    text.includes('family') ||
+    text.includes('familie') ||
+    text.includes('birthday') ||
+    text.includes('bursdag') ||
+    text.includes('wedding') ||
+    text.includes('bryllup')
+  ) {
+    return 'family'
+  }
+
+  return 'work'
 }
