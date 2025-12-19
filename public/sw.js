@@ -2,9 +2,9 @@
 // Handles PWA installation, push notifications, and asset caching
 // Uses stale-while-revalidate for fast repeat visits while ensuring fresh data
 
-const CACHE_NAME = 'familjen-v6'
+const CACHE_NAME = 'familjen-v7'
 const STATIC_CACHE = 'familjen-static-v5'
-const NAV_CACHE = 'familjen-nav-v2'
+const NAV_CACHE = 'familjen-nav-v3'
 
 // Max age for cached navigation responses (5 minutes)
 // After this, we'll still show cached but prioritize network
