@@ -199,10 +199,6 @@ export const nb: TranslationStrings = {
     addToShoppingList: 'Legg til i handleliste',
     ingredientsAdded: 'Ingredienser lagt til',
     noIngredients: 'Ingen ingredienser',
-    // DayView
-    selectPickerPrompt: 'Velg hvem som henter...',
-    notAssigned: 'Ikke tildelt',
-    mealPlaceholder: 'Hva skal vi spise?',
     // External suggestions
     suggestion: 'forslag',
     reviewSuggestions: 'Gå gjennom forslag fra aktivitetsgrupper',

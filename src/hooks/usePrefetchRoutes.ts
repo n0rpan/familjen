@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
  * This makes navigation to these routes feel instant.
  *
  * Usage:
- * usePrefetchRoutes(['/uke', '/handleliste', '/huskeliste'])
+ * usePrefetchRoutes(['/uke', '/handleliste', '/feed'])
  */
 export function usePrefetchRoutes(routes: string[]) {
   const router = useRouter()

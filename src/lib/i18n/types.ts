@@ -207,10 +207,6 @@ export interface TranslationStrings {
     addToShoppingList: string
     ingredientsAdded: string
     noIngredients: string
-    // DayView
-    selectPickerPrompt: string
-    notAssigned: string
-    mealPlaceholder: string
     // External suggestions
     suggestion: string
     reviewSuggestions: string

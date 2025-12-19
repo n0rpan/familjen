@@ -199,10 +199,6 @@ export const en: TranslationStrings = {
     addToShoppingList: 'Add to shopping list',
     ingredientsAdded: 'Ingredients added',
     noIngredients: 'No ingredients',
-    // DayView
-    selectPickerPrompt: 'Select who picks up...',
-    notAssigned: 'Not assigned',
-    mealPlaceholder: 'What should we eat?',
     // External suggestions
     suggestion: 'suggestion',
     reviewSuggestions: 'Review suggestions from activity groups',

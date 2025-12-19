@@ -199,10 +199,6 @@ export const sv: TranslationStrings = {
     addToShoppingList: 'Lägg till i inköpslistan',
     ingredientsAdded: 'Ingredienser tillagda',
     noIngredients: 'Inga ingredienser',
-    // DayView
-    selectPickerPrompt: 'Välj vem som hämtar...',
-    notAssigned: 'Inte tilldelad',
-    mealPlaceholder: 'Vad ska vi äta?',
     // External suggestions
     suggestion: 'förslag',
     reviewSuggestions: 'Granska förslag från aktivitetsgrupper',
