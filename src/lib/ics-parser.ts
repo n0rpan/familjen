@@ -386,13 +386,17 @@ function decodeICSValue(value: string): string {
 
 /**
  * Fetch and parse an ICS calendar from a URL.
+ * Supports both https:// and webcal:// URLs (webcal is converted to https).
  */
 export async function fetchAndParseICS(
   url: string,
   startDate: Date,
   endDate: Date
 ): Promise<ICSEvent[]> {
-  const response = await fetch(url, {
+  // Convert webcal:// to https:// (webcal is just a URI scheme convention for calendar apps)
+  const fetchUrl = url.replace(/^webcal:\/\//i, 'https://')
+
+  const response = await fetch(fetchUrl, {
     headers: {
       'Accept': 'text/calendar',
       'User-Agent': 'Familjen/1.0',
