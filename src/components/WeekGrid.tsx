@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, memo } from 'react'
+import { useMemo, memo, useState, useCallback } from 'react'
 import {
   getWeekDates,
   getWeekStart,
@@ -60,6 +60,21 @@ export const WeekGrid = memo(function WeekGrid({
   onExternalEventClick,
 }: WeekGridProps) {
   const { language, t } = useLanguage()
+
+  // State for expanded cells (tasks and events)
+  const [expandedCells, setExpandedCells] = useState<Set<string>>(new Set())
+
+  const toggleCellExpansion = useCallback((cellKey: string) => {
+    setExpandedCells(prev => {
+      const next = new Set(prev)
+      if (next.has(cellKey)) {
+        next.delete(cellKey)
+      } else {
+        next.add(cellKey)
+      }
+      return next
+    })
+  }, [])
 
   // Ensure weekStart is a Date object (may be serialized as string from server)
   const weekStart = useMemo(() => {
@@ -327,76 +342,98 @@ export const WeekGrid = memo(function WeekGrid({
                         )}
 
                         {/* Child tasks */}
-                        {tasks.length > 0 && (
-                          <div className="space-y-0.5 pt-1 border-t border-dashed" style={{ borderColor: 'var(--border)' }}>
-                            {tasks.slice(0, 2).map((task) => {
-                              const config = getTaskConfig(task.task_type as ChildTaskType)
-                              const isDone = task.status === 'done'
-                              return (
+                        {tasks.length > 0 && (() => {
+                          const taskCellKey = `tasks-${child.id}-${dateStr}`
+                          const isExpanded = expandedCells.has(taskCellKey)
+                          const displayTasks = isExpanded ? tasks : tasks.slice(0, 2)
+                          return (
+                            <div className="space-y-0.5 pt-1 border-t border-dashed" style={{ borderColor: 'var(--border)' }}>
+                              {displayTasks.map((task) => {
+                                const config = getTaskConfig(task.task_type as ChildTaskType)
+                                const isDone = task.status === 'done'
+                                return (
+                                  <button
+                                    key={task.id}
+                                    onClick={() => editable && onTaskToggle ? onTaskToggle(task.id, !isDone) : onTaskClick?.(task)}
+                                    className="w-full flex items-center gap-1 text-xs py-0.5 px-1 rounded transition-colors text-left touch-feedback"
+                                    style={{
+                                      background: isDone ? 'transparent' : 'rgba(229, 185, 94, 0.15)',
+                                      color: isDone ? 'var(--muted)' : 'var(--foreground)',
+                                      textDecoration: isDone ? 'line-through' : 'none',
+                                      opacity: isDone ? 0.6 : 1,
+                                    }}
+                                    title={task.notes || task.title}
+                                  >
+                                    <span className="flex-shrink-0">{config.icon}</span>
+                                    <span className="truncate">{task.title}</span>
+                                  </button>
+                                )
+                              })}
+                              {tasks.length > 2 && (
                                 <button
-                                  key={task.id}
-                                  onClick={() => editable && onTaskToggle ? onTaskToggle(task.id, !isDone) : onTaskClick?.(task)}
-                                  className="w-full flex items-center gap-1 text-xs py-0.5 px-1 rounded transition-colors text-left touch-feedback"
-                                  style={{
-                                    background: isDone ? 'transparent' : 'rgba(229, 185, 94, 0.15)',
-                                    color: isDone ? 'var(--muted)' : 'var(--foreground)',
-                                    textDecoration: isDone ? 'line-through' : 'none',
-                                    opacity: isDone ? 0.6 : 1,
-                                  }}
-                                  title={task.notes || task.title}
+                                  onClick={() => toggleCellExpansion(taskCellKey)}
+                                  className="text-xs hover:underline cursor-pointer"
+                                  style={{ color: 'var(--muted)' }}
                                 >
-                                  <span className="flex-shrink-0">{config.icon}</span>
-                                  <span className="truncate">{task.title}</span>
+                                  {isExpanded
+                                    ? t.week.showLess || 'Vis mindre'
+                                    : t.week.more.replace('{count}', String(tasks.length - 2))}
                                 </button>
-                              )
-                            })}
-                            {tasks.length > 2 && (
-                              <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                                {t.week.more.replace('{count}', String(tasks.length - 2))}
-                              </span>
-                            )}
-                          </div>
-                        )}
+                              )}
+                            </div>
+                          )
+                        })()}
 
                         {/* External events (Spond, Kidplan, etc.) */}
-                        {extEvents.length > 0 && (
-                          <div className="space-y-0.5 pt-1 border-t border-dashed" style={{ borderColor: 'rgba(126, 182, 196, 0.4)' }}>
-                            {extEvents.slice(0, 2).map((event) => {
-                              const closure = isSchoolClosure(event)
-                              return (
+                        {extEvents.length > 0 && (() => {
+                          const eventCellKey = `ext-${child.id}-${dateStr}`
+                          const isExpanded = expandedCells.has(eventCellKey)
+                          const displayEvents = isExpanded ? extEvents : extEvents.slice(0, 2)
+                          return (
+                            <div className="space-y-0.5 pt-1 border-t border-dashed" style={{ borderColor: 'rgba(126, 182, 196, 0.4)' }}>
+                              {displayEvents.map((event) => {
+                                const closure = isSchoolClosure(event)
+                                return (
+                                  <button
+                                    key={event.id}
+                                    onClick={() => onExternalEventClick?.(event)}
+                                    className="w-full flex items-center gap-1 text-xs py-0.5 px-1 rounded transition-colors text-left touch-feedback"
+                                    style={{
+                                      background: closure ? 'rgba(178, 154, 198, 0.2)' : 'rgba(126, 182, 196, 0.15)',
+                                      color: 'var(--foreground)',
+                                    }}
+                                    title={`[${getServiceBadge(event)}] ${event.title}${event.event_time ? ` kl ${event.event_time.substring(0, 5)}` : ''}`}
+                                  >
+                                    {closure ? (
+                                      <span className="flex-shrink-0">🏫</span>
+                                    ) : (
+                                      <span className="flex-shrink-0 text-[10px] px-1 rounded" style={{ background: 'var(--color-sky)', color: 'white' }}>
+                                        {getServiceBadge(event).substring(0, 1)}
+                                      </span>
+                                    )}
+                                    <span className="truncate">{event.title}</span>
+                                    {event.event_time && !closure && (
+                                      <span className="flex-shrink-0 text-[10px]" style={{ color: 'var(--muted)' }}>
+                                        {event.event_time.substring(0, 5)}
+                                      </span>
+                                    )}
+                                  </button>
+                                )
+                              })}
+                              {extEvents.length > 2 && (
                                 <button
-                                  key={event.id}
-                                  onClick={() => onExternalEventClick?.(event)}
-                                  className="w-full flex items-center gap-1 text-xs py-0.5 px-1 rounded transition-colors text-left touch-feedback"
-                                  style={{
-                                    background: closure ? 'rgba(178, 154, 198, 0.2)' : 'rgba(126, 182, 196, 0.15)',
-                                    color: 'var(--foreground)',
-                                  }}
-                                  title={`[${getServiceBadge(event)}] ${event.title}${event.event_time ? ` kl ${event.event_time.substring(0, 5)}` : ''}`}
+                                  onClick={() => toggleCellExpansion(eventCellKey)}
+                                  className="text-xs hover:underline cursor-pointer"
+                                  style={{ color: 'var(--muted)' }}
                                 >
-                                  {closure ? (
-                                    <span className="flex-shrink-0">🏫</span>
-                                  ) : (
-                                    <span className="flex-shrink-0 text-[10px] px-1 rounded" style={{ background: 'var(--color-sky)', color: 'white' }}>
-                                      {getServiceBadge(event).substring(0, 1)}
-                                    </span>
-                                  )}
-                                  <span className="truncate">{event.title}</span>
-                                  {event.event_time && !closure && (
-                                    <span className="flex-shrink-0 text-[10px]" style={{ color: 'var(--muted)' }}>
-                                      {event.event_time.substring(0, 5)}
-                                    </span>
-                                  )}
+                                  {isExpanded
+                                    ? t.week.showLess || 'Vis mindre'
+                                    : t.week.more.replace('{count}', String(extEvents.length - 2))}
                                 </button>
-                              )
-                            })}
-                            {extEvents.length > 2 && (
-                              <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                                {t.week.more.replace('{count}', String(extEvents.length - 2))}
-                              </span>
-                            )}
-                          </div>
-                        )}
+                              )}
+                            </div>
+                          )
+                        })()}
 
                         {/* Add task button (editable mode) */}
                         {editable && onAddTask && (
@@ -465,30 +502,46 @@ export const WeekGrid = memo(function WeekGrid({
                               : undefined,
                           }}
                         >
-                          {events.length > 0 ? (
-                            <div className="flex flex-col gap-1">
-                              {events.map((event) => {
-                                const config = getEventConfig(event.event_type as MemberEventType)
-                                return (
-                                  <button
-                                    key={event.id}
-                                    onClick={() => onEventClick?.(event)}
-                                    className="group flex items-center justify-center gap-1 px-2 py-1 rounded-lg text-xs transition-all hover:scale-105"
-                                    style={{ background: config.bg }}
-                                    title={event.title}
-                                  >
-                                    <span>{config.icon}</span>
-                                    <span
-                                      className="truncate max-w-[60px] hidden sm:inline"
-                                      style={{ color: config.text }}
+                          {events.length > 0 ? (() => {
+                            const memberEventKey = `member-${member.id}-${formatDateISO(date)}`
+                            const isExpanded = expandedCells.has(memberEventKey)
+                            const displayEvents = isExpanded ? events : events.slice(0, 2)
+                            return (
+                              <div className="flex flex-col gap-1">
+                                {displayEvents.map((event) => {
+                                  const config = getEventConfig(event.event_type as MemberEventType)
+                                  return (
+                                    <button
+                                      key={event.id}
+                                      onClick={() => onEventClick?.(event)}
+                                      className="group flex items-center justify-center gap-1 px-2 py-1 rounded-lg text-xs transition-all hover:scale-105"
+                                      style={{ background: config.bg }}
+                                      title={event.title}
                                     >
-                                      {event.title}
-                                    </span>
+                                      <span>{config.icon}</span>
+                                      <span
+                                        className="truncate max-w-[60px] hidden sm:inline"
+                                        style={{ color: config.text }}
+                                      >
+                                        {event.title}
+                                      </span>
+                                    </button>
+                                  )
+                                })}
+                                {events.length > 2 && (
+                                  <button
+                                    onClick={() => toggleCellExpansion(memberEventKey)}
+                                    className="text-xs hover:underline cursor-pointer"
+                                    style={{ color: 'var(--muted)' }}
+                                  >
+                                    {isExpanded
+                                      ? t.week.showLess || 'Vis mindre'
+                                      : t.week.more.replace('{count}', String(events.length - 2))}
                                   </button>
-                                )
-                              })}
-                            </div>
-                          ) : (
+                                )}
+                              </div>
+                            )
+                          })() : (
                             <span className="text-sm" style={{ color: 'var(--muted)', opacity: 0.3 }}>
                               -
                             </span>

@@ -179,6 +179,7 @@ export const nb: TranslationStrings = {
     sendToWorkCalendar: 'Send til jobbkalender',
     removeFromWorkCalendar: 'Fjern fra jobbkalender',
     more: '+{count} til',
+    showLess: 'Vis mindre',
     calendar: 'Kalender',
     // AI Modal
     aiModalTitle: 'AI Middagsforslag',

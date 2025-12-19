@@ -62,6 +62,9 @@ export interface HouseholdMember extends AuditFields {
   work_email: string | null  // For sending work calendar invites
   allergies: string[]  // List of allergies/dietary restrictions
   language_preference: Language | null  // User's preferred UI language
+  ics_calendar_url: string | null  // Published ICS calendar URL for syncing work calendar
+  ics_last_sync_at: string | null  // Last successful ICS sync timestamp
+  ics_sync_error: string | null  // Error from last failed ICS sync attempt
 }
 
 export interface Child extends AuditFields {
@@ -229,9 +232,10 @@ export interface MemberEvent {
   end_date: string | null  // For multi-day events
   title: string
   event_type: MemberEventType
-  source: 'manual' | 'google_calendar'
+  source: 'manual' | 'google_calendar' | 'ics_calendar'
   source_email: string | null
   google_event_id: string | null
+  ics_uid: string | null  // ICS event UID for deduplication
   created_at: string
   updated_at: string | null
 }

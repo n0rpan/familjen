@@ -187,6 +187,7 @@ export interface TranslationStrings {
     sendToWorkCalendar: string
     removeFromWorkCalendar: string
     more: string // "+{count} more"
+    showLess: string
     calendar: string
     // AI Modal
     aiModalTitle: string

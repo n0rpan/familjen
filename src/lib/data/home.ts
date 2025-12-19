@@ -73,7 +73,7 @@ export async function getHomePageData(
       .order('sort_order'),
     supabase
       .from('household_members')
-      .select('id, household_id, name, short_name, is_parent, is_household_admin, user_id, email, birth_date, work_email, allergies, language_preference, created_at, updated_at')
+      .select('id, household_id, name, short_name, is_parent, is_household_admin, user_id, email, birth_date, work_email, allergies, language_preference, ics_calendar_url, ics_last_sync_at, ics_sync_error, created_at, updated_at')
       .eq('household_id', householdId),
     supabase
       .from('pickups')
@@ -90,7 +90,7 @@ export async function getHomePageData(
     // Fetch events that overlap with this week
     supabase
       .from('member_events')
-      .select('id, household_id, member_id, date, end_date, title, event_type, source, source_email, google_event_id, created_at, updated_at')
+      .select('id, household_id, member_id, date, end_date, title, event_type, source, source_email, google_event_id, ics_uid, created_at, updated_at')
       .eq('household_id', householdId)
       .lte('date', weekEndStr)
       .or(`end_date.gte.${weekStartStr},end_date.is.null`),

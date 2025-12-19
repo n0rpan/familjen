@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/cleanup-photos",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/calendar/ics-sync",
+      "schedule": "0 * * * *"
     }
   ]
 }

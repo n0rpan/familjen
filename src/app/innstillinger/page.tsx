@@ -29,9 +29,10 @@ export default function SettingsPage() {
   // Current user's profile
   const [myProfile, setMyProfile] = useState<HouseholdMember | null>(null)
   const [editingProfile, setEditingProfile] = useState(false)
-  const [profileForm, setProfileForm] = useState({ name: '', short_name: '', birth_date: '', work_email: '', allergies: [] as string[] })
+  const [profileForm, setProfileForm] = useState({ name: '', short_name: '', birth_date: '', work_email: '', allergies: [] as string[], ics_calendar_url: '' })
   const [savingProfile, setSavingProfile] = useState(false)
   const [newProfileAllergy, setNewProfileAllergy] = useState('')
+  const [syncingICS, setSyncingICS] = useState(false)
 
   // Household admin features
   const [inviteEmail, setInviteEmail] = useState('')
@@ -146,6 +147,7 @@ export default function SettingsPage() {
           birth_date: myMember.birth_date || '',
           work_email: myMember.work_email || '',
           allergies: myMember.allergies || [],
+          ics_calendar_url: myMember.ics_calendar_url || '',
         })
       }
 
@@ -193,6 +195,7 @@ export default function SettingsPage() {
       birth_date: profileForm.birth_date || null,
       work_email: profileForm.work_email || null,
       allergies: profileForm.allergies,
+      ics_calendar_url: profileForm.ics_calendar_url || null,
     }
 
     // Optimistic update
@@ -210,6 +213,7 @@ export default function SettingsPage() {
         birth_date: profileForm.birth_date || null,
         work_email: profileForm.work_email || null,
         allergies: profileForm.allergies,
+        ics_calendar_url: profileForm.ics_calendar_url || null,
       })
       .eq('id', myProfile.id)
 
@@ -245,6 +249,42 @@ export default function SettingsPage() {
       ...profileForm,
       allergies: profileForm.allergies.filter(a => a !== allergy),
     })
+  }
+
+  // Sync ICS calendar
+  const syncICSCalendar = async () => {
+    if (!myProfile?.ics_calendar_url) return
+
+    setSyncingICS(true)
+    try {
+      const response = await fetch('/api/calendar/ics-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberId: myProfile.id }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Sync failed')
+      }
+
+      const result = await response.json()
+      if (result.results?.[0]?.success) {
+        showMessage('success', `Synkroniserte ${result.results[0].eventsCount} hendelser`)
+        // Reload to get updated sync status
+        await loadData()
+      } else if (result.results?.[0]?.error) {
+        throw new Error(result.results[0].error)
+      } else {
+        showMessage('success', 'Kalendersynk fullført')
+        await loadData()
+      }
+    } catch (error) {
+      console.error('ICS sync error:', error)
+      showMessage('error', error instanceof Error ? error.message : 'Kunne ikke synkronisere kalender')
+    } finally {
+      setSyncingICS(false)
+    }
   }
 
   // Invite user to household (avoid full reload)
@@ -688,6 +728,23 @@ export default function SettingsPage() {
                 </div>
               </div>
 
+              {/* ICS Calendar URL */}
+              <div>
+                <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>
+                  Kalender-URL (ICS)
+                </label>
+                <input
+                  type="url"
+                  value={profileForm.ics_calendar_url}
+                  onChange={(e) => setProfileForm({ ...profileForm, ics_calendar_url: e.target.value })}
+                  className="input"
+                  placeholder="https://outlook.office365.com/owa/calendar/..."
+                />
+                <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
+                  Publiser kalenderen din som ICS-fil for å vise møter i ukeoversikten
+                </p>
+              </div>
+
               {/* Allergies section */}
               <div>
                 <label className="block text-xs mb-2" style={{ color: 'var(--muted)' }}>{t.settings.memberAllergies}</label>
@@ -760,6 +817,7 @@ export default function SettingsPage() {
                       birth_date: myProfile.birth_date || '',
                       work_email: myProfile.work_email || '',
                       allergies: myProfile.allergies || [],
+                      ics_calendar_url: myProfile.ics_calendar_url || '',
                     })
                   }}
                   className="btn btn-secondary"
@@ -808,6 +866,47 @@ export default function SettingsPage() {
                   <p className="text-sm" style={{ color: 'var(--muted)' }}>{t.settings.noRegistered}</p>
                 )}
               </div>
+
+              {/* ICS Calendar display */}
+              {myProfile.ics_calendar_url && (
+                <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs mb-1" style={{ color: 'var(--muted)' }}>Kalender-URL (ICS)</p>
+                      <p className="text-sm font-medium truncate" style={{ color: 'var(--foreground)', maxWidth: '300px' }}>
+                        {myProfile.ics_calendar_url.replace(/https?:\/\//, '').split('/')[0]}
+                      </p>
+                      {myProfile.ics_last_sync_at && (
+                        <p className="text-xs mt-1" style={{ color: 'var(--color-sage)' }}>
+                          Sist synkronisert: {new Date(myProfile.ics_last_sync_at).toLocaleString('nb-NO')}
+                        </p>
+                      )}
+                      {myProfile.ics_sync_error && (
+                        <p className="text-xs mt-1" style={{ color: 'var(--color-coral)' }}>
+                          Feil: {myProfile.ics_sync_error}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={syncICSCalendar}
+                      disabled={syncingICS}
+                      className="btn btn-secondary text-sm"
+                    >
+                      {syncingICS ? (
+                        <span className="flex items-center gap-2">
+                          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                          </svg>
+                          Synkroniserer...
+                        </span>
+                      ) : (
+                        'Synk nå'
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           )}
 

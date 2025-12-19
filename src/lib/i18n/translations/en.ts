@@ -179,6 +179,7 @@ export const en: TranslationStrings = {
     sendToWorkCalendar: 'Send to work calendar',
     removeFromWorkCalendar: 'Remove from work calendar',
     more: '+{count} more',
+    showLess: 'Show less',
     calendar: 'Calendar',
     // AI Modal
     aiModalTitle: 'AI Meal Suggestions',
