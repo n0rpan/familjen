@@ -49,6 +49,5 @@ ALTER FUNCTION public.get_household_push_subscriptions(uuid) SET search_path = '
 ALTER FUNCTION public.user_has_wishlist_access(uuid) SET search_path = '';
 
 -- Household functions
-ALTER FUNCTION public.create_household_with_admin(text, text, text) SET search_path = '';
 ALTER FUNCTION public.create_household_with_admin(text, text, text, date, text) SET search_path = '';
 ALTER FUNCTION public.claim_invite_for_current_user() SET search_path = '';
