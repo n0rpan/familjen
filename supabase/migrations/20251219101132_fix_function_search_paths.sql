@@ -18,7 +18,7 @@ ALTER FUNCTION public.compute_jsonb_changes(jsonb, jsonb) SET search_path = '';
 
 -- Calendar functions
 ALTER FUNCTION public.get_connected_calendar_email() SET search_path = '';
-ALTER FUNCTION public.upsert_calendar_token(text, text, text, text) SET search_path = '';
+ALTER FUNCTION public.upsert_calendar_token(text, text, text, text, bigint) SET search_path = '';
 ALTER FUNCTION public.get_household_calendar_tokens() SET search_path = '';
 
 -- Encryption functions
