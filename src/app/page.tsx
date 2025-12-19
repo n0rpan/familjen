@@ -178,42 +178,69 @@ export default async function HomePage() {
   }
 
   // Calculate status for today using helper
-  const { attentionCount, isAllReady } = getAttentionStatus(homeData)
+  const { childrenWithoutPickup, noMeal, isAllReady } = getAttentionStatus(homeData)
+
+  // Build descriptive attention message
+  const getAttentionMessage = () => {
+    const hasPickupIssue = childrenWithoutPickup.length > 0
+    const hasMealIssue = noMeal
+
+    if (hasPickupIssue && hasMealIssue) {
+      // Both missing
+      if (childrenWithoutPickup.length === 1) {
+        return t.home.missingPickupForAndDinner.replace('{name}', childrenWithoutPickup[0].name)
+      }
+      return t.home.missingPickupAndDinner
+    } else if (hasPickupIssue) {
+      // Only pickup missing
+      if (childrenWithoutPickup.length === 1) {
+        return t.home.missingPickupFor.replace('{name}', childrenWithoutPickup[0].name)
+      }
+      return t.home.missingPickup
+    } else if (hasMealIssue) {
+      // Only meal missing
+      return t.home.missingDinner
+    }
+    return ''
+  }
 
   return (
     <HomeRefreshWrapper>
       <div className="space-y-8 animate-fade-in">
         {/* Today's Status Summary */}
-        <div
-          className="flex items-center gap-3 px-4 py-3 rounded-xl"
-          style={{
-            background: isAllReady ? 'rgba(131, 166, 151, 0.15)' : 'rgba(229, 185, 94, 0.15)',
-          }}
-        >
         {isAllReady ? (
-          <>
+          <div
+            className="flex items-center gap-3 px-4 py-3 rounded-xl"
+            style={{ background: 'rgba(131, 166, 151, 0.15)' }}
+          >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-sage)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="20 6 9 17 4 12"/>
             </svg>
             <span className="text-sm font-medium" style={{ color: 'var(--color-sage-dark, #5A7A57)' }}>
               {t.home.allReadyForToday}
             </span>
-          </>
+          </div>
         ) : (
-          <>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10"/>
-              <line x1="12" y1="8" x2="12" y2="12"/>
-              <line x1="12" y1="16" x2="12.01" y2="16"/>
+          <Link
+            href="/uke"
+            className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl transition-opacity hover:opacity-80"
+            style={{ background: 'rgba(229, 185, 94, 0.15)' }}
+          >
+            <div className="flex items-center gap-3">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+              <span className="text-sm font-medium" style={{ color: 'var(--color-honey-dark, #A68A3A)' }}>
+                {getAttentionMessage()}
+              </span>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 15 12 9 6"/>
             </svg>
-            <span className="text-sm font-medium" style={{ color: 'var(--color-honey-dark, #A68A3A)' }}>
-              {attentionCount === 1
-                ? t.home.thingNeedsAttention
-                : t.home.thingsNeedAttention.replace('{count}', String(attentionCount))}
-            </span>
-          </>
+          </Link>
         )}
-      </div>
 
       {/* Universal AI Input - At top on all screen sizes */}
       <UniversalAIInput

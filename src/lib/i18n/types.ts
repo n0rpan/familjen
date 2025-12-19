@@ -103,6 +103,11 @@ export interface TranslationStrings {
     allReadyForToday: string // "All ready for today"
     thingNeedsAttention: string // "1 thing needs attention"
     thingsNeedAttention: string // "{count} things need attention"
+    missingPickup: string // "Missing pickup"
+    missingPickupFor: string // "Missing pickup for {name}"
+    missingDinner: string // "Missing dinner plan"
+    missingPickupAndDinner: string // "Missing pickup and dinner"
+    missingPickupForAndDinner: string // "Missing pickup for {name} and dinner"
   }
 
   // Login page

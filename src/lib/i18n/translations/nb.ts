@@ -95,6 +95,11 @@ export const nb: TranslationStrings = {
     allReadyForToday: 'Alt klart for i dag',
     thingNeedsAttention: '1 ting trenger oppmerksomhet',
     thingsNeedAttention: '{count} ting trenger oppmerksomhet',
+    missingPickup: 'Mangler henting',
+    missingPickupFor: 'Mangler henting for {name}',
+    missingDinner: 'Mangler middagsplan',
+    missingPickupAndDinner: 'Mangler henting og middag',
+    missingPickupForAndDinner: 'Mangler henting for {name} og middag',
   },
 
   // Login page

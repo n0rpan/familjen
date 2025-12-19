@@ -95,6 +95,11 @@ export const en: TranslationStrings = {
     allReadyForToday: 'All ready for today',
     thingNeedsAttention: '1 thing needs attention',
     thingsNeedAttention: '{count} things need attention',
+    missingPickup: 'Missing pickup',
+    missingPickupFor: 'Missing pickup for {name}',
+    missingDinner: 'Missing dinner plan',
+    missingPickupAndDinner: 'Missing pickup and dinner',
+    missingPickupForAndDinner: 'Missing pickup for {name} and dinner',
   },
 
   // Login page

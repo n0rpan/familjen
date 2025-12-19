@@ -95,6 +95,11 @@ export const sv: TranslationStrings = {
     allReadyForToday: 'Allt klart för idag',
     thingNeedsAttention: '1 sak behöver uppmärksamhet',
     thingsNeedAttention: '{count} saker behöver uppmärksamhet',
+    missingPickup: 'Saknar hämtning',
+    missingPickupFor: 'Saknar hämtning för {name}',
+    missingDinner: 'Saknar middagsplan',
+    missingPickupAndDinner: 'Saknar hämtning och middag',
+    missingPickupForAndDinner: 'Saknar hämtning för {name} och middag',
   },
 
   // Login page
