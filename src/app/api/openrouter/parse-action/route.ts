@@ -24,7 +24,7 @@ const parseActionSchema = z.object({
 })
 
 // Response types
-export type ActionType = 'meal' | 'child_task' | 'member_event' | 'pickup'
+export type ActionType = 'meal' | 'child_task' | 'member_event' | 'pickup' | 'shopping_item'
 
 export interface ParsedAction {
   type: ActionType
@@ -180,23 +180,34 @@ function buildSystemPrompt(context: z.infer<typeof parseActionSchema>['context']
 
 HANDLINGSTYPER:
 
-1. "meal" - Middag/måltid
-   - Brukes når: "taco fredag", "pizza i morgen", "laks på lørdag"
+1. "meal" - Middag/måltid (til middagsplan)
+   - Brukes når: "taco fredag", "pizza i morgen", "laks på lørdag" (NB: bare når det skal på MIDDAGSPLANEN)
    - Data: { date, meal_name }
 
-2. "child_task" - Oppgave for barn
+2. "shopping_item" - Handlelistevare
+   - Brukes når: "kjøp melk", "legg til brød på handlelista", "vi trenger såpe"
+   - VIKTIG: Hvis brukeren sier "handleliste/handlelista/handle", bruk ALLTID denne typen
+   - Matvarer som skal KJØPES (ikke planlegges som middag) = shopping_item
+   - Data: { item_name, quantity? }
+
+3. "child_task" - Oppgave for barn
    - Brukes når: "Storm tannlege tirsdag", "Ylva må ha med gymtøy", "barnehagen stengt fredag"
    - task_type: "bring" (ta med), "appointment" (avtale), "activity" (aktivitet), "closure" (stengt), "reminder", "other"
    - Data: { date, time?, title, task_type, child_id?, child_name? }
 
-3. "member_event" - Hendelse for voksen
+4. "member_event" - Hendelse for voksen
    - Brukes når: "jeg er i Bergen onsdag", "pappa på jobbtur", "mamma på kurs"
    - Data: { date, end_date?, title, member_id?, member_name? }
 
-4. "pickup" - Endring av henting
+5. "pickup" - Endring av henting
    - Brukes når: "jeg henter Storm i morgen", "pappa henter begge på fredag"
    - operation: "modify" (alltid for pickup - endrer eksisterende)
    - Data: { date, child_id?, child_name?, picker_id?, picker_name? }
+
+VIKTIG FOR SHOPPING vs MEAL:
+- "legg laks til handlelista" = shopping_item (skal KJØPES)
+- "laks til middag fredag" = meal (skal PLANLEGGES som middag)
+- Når brukeren eksplisitt sier "handleliste/handlelista" = ALLTID shopping_item
 
 REGLER:
 
@@ -216,7 +227,7 @@ SVAR FORMAT (JSON):
 {
   "actions": [
     {
-      "type": "meal|child_task|member_event|pickup",
+      "type": "meal|shopping_item|child_task|member_event|pickup",
       "operation": "add|modify",
       "data": { ... },
       "display": {
@@ -238,6 +249,7 @@ SVAR FORMAT (JSON):
 
 IKONER:
 - meal: 🍕🌮🍝🍗🐟
+- shopping_item: 🛒🧴🥛🍞
 - child_task/bring: 🎒
 - child_task/appointment: 🏥🦷
 - child_task/activity: ⚽🎭🎨
