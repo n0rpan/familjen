@@ -273,7 +273,7 @@ export function UniversalAIInput({
             const { data: newList, error: createError } = await supabase
               .from('shopping_lists')
               .insert({ household_id: householdId, name: targetListName, sort_order: targetSortOrder })
-              .select('id')
+              .select('id, name')
               .single()
             if (createError) throw createError
             targetList = newList
