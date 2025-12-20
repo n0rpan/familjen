@@ -198,7 +198,7 @@ HANDLINGSTYPER:
 
 3. "child_task" - Oppgave for barn
    - Brukes når: "Storm tannlege tirsdag", "Ylva må ha med gymtøy", "barnehagen stengt fredag"
-   - task_type: "bring" (ta med), "appointment" (avtale), "activity" (aktivitet), "closure" (stengt), "reminder", "other"
+   - task_type: "bring" (ta med noe), "appointment" (tannlege, lege, møte), "reminder" (påminnelse, stengt, aktivitet), "other" (annet)
    - Data: { date, time?, title, task_type, child_id?, child_name? }
 
 4. "member_event" - Hendelse for voksen
@@ -259,8 +259,8 @@ IKONER:
 - shopping_item/other: 🔧💊🔌
 - child_task/bring: 🎒
 - child_task/appointment: 🏥🦷
-- child_task/activity: ⚽🎭🎨
-- child_task/closure: 🏠
+- child_task/reminder: 📌⚽🏠
+- child_task/other: 📝
 - member_event: ✈️💼🎓
 - pickup: 🚗
 

@@ -196,6 +196,7 @@ export function UniversalAIInput({
             household_id: householdId,
             date: action.data.date,
             custom_meal: action.data.meal_name,
+            recipe_id: null, // Clear recipe_id when setting custom meal (match UI behavior)
           }
           break
         }
