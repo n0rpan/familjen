@@ -240,29 +240,47 @@ export function UniversalAIInput({
         }
         case 'shopping_item': {
           // Shopping uses shopping_lists + shopping_list_items (same schema as handleliste page)
-          // First, get existing shopping list (first by sort_order)
-          let { data: defaultList } = await supabase
+          // Determine which list to use based on list_type (produce or other)
+          const listType = (action.data.list_type as string) || 'produce'
+          const isProduceList = listType === 'produce'
+          const targetListName = isProduceList ? t.shopping.aisles.produce : t.shopping.aisles.other
+          const targetSortOrder = isProduceList ? 0 : 1
+
+          // Try to find existing list by sort_order (produce=0, other=1)
+          let { data: targetList } = await supabase
             .from('shopping_lists')
-            .select('id')
+            .select('id, name')
             .eq('household_id', householdId)
-            .order('sort_order')
+            .eq('sort_order', targetSortOrder)
             .limit(1)
             .single()
 
-          if (!defaultList) {
-            // Create default list with translated name (matching handleliste page behavior)
+          // If no list with matching sort_order, try finding by name
+          if (!targetList) {
+            const { data: listByName } = await supabase
+              .from('shopping_lists')
+              .select('id, name')
+              .eq('household_id', householdId)
+              .eq('name', targetListName)
+              .limit(1)
+              .single()
+            targetList = listByName
+          }
+
+          // Create the list if it doesn't exist
+          if (!targetList) {
             const { data: newList, error: createError } = await supabase
               .from('shopping_lists')
-              .insert({ household_id: householdId, name: t.shopping.aisles.produce, sort_order: 0 })
+              .insert({ household_id: householdId, name: targetListName, sort_order: targetSortOrder })
               .select('id')
               .single()
             if (createError) throw createError
-            defaultList = newList
+            targetList = newList
           }
 
           table = 'shopping_list_items'
           record = {
-            list_id: defaultList.id,
+            list_id: targetList.id,
             name: action.data.item_name,
             quantity: action.data.quantity || null,
             is_bought: false,
