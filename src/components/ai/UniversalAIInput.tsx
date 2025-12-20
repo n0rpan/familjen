@@ -196,6 +196,7 @@ export function UniversalAIInput({
             household_id: householdId,
             date: action.data.date,
             custom_meal: action.data.meal_name,
+            recipe_id: null, // Clear recipe_id when setting custom meal (match UI behavior)
           }
           break
         }
@@ -239,12 +240,51 @@ export function UniversalAIInput({
           break
         }
         case 'shopping_item': {
-          table = 'shopping_list'
+          // Shopping uses shopping_lists + shopping_list_items (same schema as handleliste page)
+          // Determine which list to use based on list_type (produce or other)
+          const listType = (action.data.list_type as string) || 'produce'
+          const isProduceList = listType === 'produce'
+          const targetListName = isProduceList ? t.shopping.aisles.produce : t.shopping.aisles.other
+          const targetSortOrder = isProduceList ? 0 : 1
+
+          // Try to find existing list by sort_order (produce=0, other=1)
+          let { data: targetList } = await supabase
+            .from('shopping_lists')
+            .select('id, name')
+            .eq('household_id', householdId)
+            .eq('sort_order', targetSortOrder)
+            .limit(1)
+            .single()
+
+          // If no list with matching sort_order, try finding by name
+          if (!targetList) {
+            const { data: listByName } = await supabase
+              .from('shopping_lists')
+              .select('id, name')
+              .eq('household_id', householdId)
+              .eq('name', targetListName)
+              .limit(1)
+              .single()
+            targetList = listByName
+          }
+
+          // Create the list if it doesn't exist
+          if (!targetList) {
+            const { data: newList, error: createError } = await supabase
+              .from('shopping_lists')
+              .insert({ household_id: householdId, name: targetListName, sort_order: targetSortOrder })
+              .select('id, name')
+              .single()
+            if (createError) throw createError
+            targetList = newList
+          }
+
+          table = 'shopping_list_items'
           record = {
-            household_id: householdId,
-            item: action.data.item_name,
+            list_id: targetList.id,
+            name: action.data.item_name,
             quantity: action.data.quantity || null,
-            checked: false,
+            is_bought: false,
           }
           break
         }

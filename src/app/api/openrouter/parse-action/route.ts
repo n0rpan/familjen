@@ -188,11 +188,17 @@ HANDLINGSTYPER:
    - Brukes når: "kjøp melk", "legg til brød på handlelista", "vi trenger såpe"
    - VIKTIG: Hvis brukeren sier "handleliste/handlelista/handle", bruk ALLTID denne typen
    - Matvarer som skal KJØPES (ikke planlegges som middag) = shopping_item
-   - Data: { item_name, quantity? }
+   - list_type: "produce" (dagligvarer/mat) eller "other" (andre butikker/spesialvarer)
+   - Data: { item_name, quantity?, list_type }
+
+   VELG list_type:
+   - "produce": matvarer, dagligvarer, husholdning (melk, brød, såpe, toalettpapir)
+   - "other": spesialbutikker, byggevarer, apotek, elektronikk (skruer, medisin, kabler)
+   - Hvis usikker, sett needs_clarification med valg mellom listene
 
 3. "child_task" - Oppgave for barn
    - Brukes når: "Storm tannlege tirsdag", "Ylva må ha med gymtøy", "barnehagen stengt fredag"
-   - task_type: "bring" (ta med), "appointment" (avtale), "activity" (aktivitet), "closure" (stengt), "reminder", "other"
+   - task_type: "bring" (ta med noe), "appointment" (tannlege, lege, møte), "reminder" (påminnelse, stengt, aktivitet), "other" (annet)
    - Data: { date, time?, title, task_type, child_id?, child_name? }
 
 4. "member_event" - Hendelse for voksen
@@ -249,13 +255,27 @@ SVAR FORMAT (JSON):
 
 IKONER:
 - meal: 🍕🌮🍝🍗🐟
-- shopping_item: 🛒🧴🥛🍞
+- shopping_item/produce: 🛒🥛🍞🧴
+- shopping_item/other: 🔧💊🔌
 - child_task/bring: 🎒
 - child_task/appointment: 🏥🦷
-- child_task/activity: ⚽🎭🎨
-- child_task/closure: 🏠
+- child_task/reminder: 📌⚽🏠
+- child_task/other: 📝
 - member_event: ✈️💼🎓
 - pickup: 🚗
+
+NEEDS_CLARIFICATION FOR SHOPPING:
+Hvis du er usikker på hvilken liste, bruk dette format:
+{
+  "needs_clarification": {
+    "field": "list_type",
+    "question": "Hvilken liste skal varen på?",
+    "options": [
+      { "label": "Dagligvarer", "value": "produce" },
+      { "label": "Andre butikker", "value": "other" }
+    ]
+  }
+}
 
 VIKTIG:
 - Returner BARE gyldig JSON
