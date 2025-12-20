@@ -238,6 +238,16 @@ export function UniversalAIInput({
           }
           break
         }
+        case 'shopping_item': {
+          table = 'shopping_list'
+          record = {
+            household_id: householdId,
+            item: action.data.item_name,
+            quantity: action.data.quantity || null,
+            checked: false,
+          }
+          break
+        }
       }
 
       let result
