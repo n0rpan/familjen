@@ -239,8 +239,8 @@ export function UniversalAIInput({
           break
         }
         case 'shopping_item': {
-          // Shopping uses shopping_lists + shopping_list_items (new schema)
-          // First, get or create a default shopping list for this household
+          // Shopping uses shopping_lists + shopping_list_items (same schema as handleliste page)
+          // First, get existing shopping list (first by sort_order)
           let { data: defaultList } = await supabase
             .from('shopping_lists')
             .select('id')
@@ -250,10 +250,10 @@ export function UniversalAIInput({
             .single()
 
           if (!defaultList) {
-            // Create a default list if none exists
+            // Create default list with translated name (matching handleliste page behavior)
             const { data: newList, error: createError } = await supabase
               .from('shopping_lists')
-              .insert({ household_id: householdId, name: 'Dagligvarer', sort_order: 0 })
+              .insert({ household_id: householdId, name: t.shopping.aisles.produce, sort_order: 0 })
               .select('id')
               .single()
             if (createError) throw createError
