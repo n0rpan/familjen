@@ -339,7 +339,7 @@ export default function WeekEditPage() {
 
       // Upsert to avoid duplicates
       if (copyPickups.length > 0) {
-        await supabase.from('pickups').upsert(copyPickups, { onConflict: 'household_id,child_id,date' })
+        await supabase.from('pickups').upsert(copyPickups, { onConflict: 'child_id,date' })
       }
       if (copyMeals.length > 0) {
         await supabase.from('meals').upsert(copyMeals, { onConflict: 'household_id,date' })
@@ -425,7 +425,7 @@ export default function WeekEditPage() {
       // Upsert all pickups
       const { error } = await supabase
         .from('pickups')
-        .upsert(pickupRecords, { onConflict: 'household_id,child_id,date' })
+        .upsert(pickupRecords, { onConflict: 'child_id,date' })
 
       if (error) throw error
 
