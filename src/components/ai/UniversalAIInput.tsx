@@ -239,12 +239,33 @@ export function UniversalAIInput({
           break
         }
         case 'shopping_item': {
-          table = 'shopping_list'
+          // Shopping uses shopping_lists + shopping_list_items (new schema)
+          // First, get or create a default shopping list for this household
+          let { data: defaultList } = await supabase
+            .from('shopping_lists')
+            .select('id')
+            .eq('household_id', householdId)
+            .order('sort_order')
+            .limit(1)
+            .single()
+
+          if (!defaultList) {
+            // Create a default list if none exists
+            const { data: newList, error: createError } = await supabase
+              .from('shopping_lists')
+              .insert({ household_id: householdId, name: 'Dagligvarer', sort_order: 0 })
+              .select('id')
+              .single()
+            if (createError) throw createError
+            defaultList = newList
+          }
+
+          table = 'shopping_list_items'
           record = {
-            household_id: householdId,
-            item: action.data.item_name,
+            list_id: defaultList.id,
+            name: action.data.item_name,
             quantity: action.data.quantity || null,
-            checked: false,
+            is_bought: false,
           }
           break
         }
