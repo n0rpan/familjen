@@ -243,9 +243,10 @@ export function UniversalAIInput({
       let result
       if (action.type === 'pickup') {
         // Always upsert for pickups (one per child per day)
+        // Note: unique constraint is on (child_id, date)
         result = await supabase
           .from(table)
-          .upsert(record, { onConflict: 'household_id,child_id,date' })
+          .upsert(record, { onConflict: 'child_id,date' })
           .select('id')
           .single()
       } else if (action.type === 'meal') {
