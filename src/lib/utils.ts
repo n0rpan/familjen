@@ -160,3 +160,36 @@ export function formatWeekHeader(date: Date): string {
 export function cn(...classes: (string | boolean | undefined | null)[]): string {
   return classes.filter(Boolean).join(' ')
 }
+
+/**
+ * Holiday type for calendar events
+ */
+export interface Holiday {
+  date: string
+  name: string
+}
+
+/**
+ * Check if a date is a holiday
+ */
+export function isHoliday(date: Date | string, holidays: Holiday[]): boolean {
+  const dateStr = typeof date === 'string' ? date : formatDateISO(date)
+  return holidays.some(h => h.date === dateStr)
+}
+
+/**
+ * Get holiday name for a date, or null if not a holiday
+ */
+export function getHolidayName(date: Date | string, holidays: Holiday[]): string | null {
+  const dateStr = typeof date === 'string' ? date : formatDateISO(date)
+  const holiday = holidays.find(h => h.date === dateStr)
+  return holiday?.name || null
+}
+
+/**
+ * Check if a date is a non-working day (weekend or holiday)
+ */
+export function isNonWorkingDay(date: Date | string, holidays: Holiday[]): boolean {
+  const d = typeof date === 'string' ? new Date(date) : date
+  return isWeekend(d) || isHoliday(date, holidays)
+}

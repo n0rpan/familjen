@@ -10,6 +10,8 @@ import {
   isWeekend,
   formatWeekHeaderLocalized,
   cn,
+  getHolidayName,
+  type Holiday,
 } from '@/lib/utils'
 import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Recipe, MemberEvent, ChildTask, MemberEventType, ChildTaskType } from '@/lib/types'
 import { getChildColor, getEventConfig, getTaskConfig } from '@/lib/colors'
@@ -24,6 +26,7 @@ interface WeekGridProps {
   memberEvents?: MemberEvent[]  // Parent events (work trips, dinners, etc.)
   childTasks?: ChildTask[]  // Kid tasks (bring items, appointments, reminders)
   recipes?: Recipe[]  // For meal selector dropdown
+  holidays?: Holiday[]  // System and household holidays
   weekStart?: Date | string  // May be serialized as string from server
   editable?: boolean
   onPickupChange?: (childId: string, date: string, pickerId: string | null) => void
@@ -44,6 +47,7 @@ export function WeekGrid({
   memberEvents = [],
   childTasks = [],
   recipes = [],
+  holidays = [],
   weekStart: providedWeekStart,
   editable = false,
   onPickupChange,
@@ -184,6 +188,18 @@ export function WeekGrid({
                   >
                     {date.getDate()}.
                   </div>
+                  {(() => {
+                    const holidayName = getHolidayName(date, holidays)
+                    return holidayName ? (
+                      <div
+                        className="text-xs mt-1 truncate max-w-[80px]"
+                        style={{ color: 'var(--color-coral)' }}
+                        title={holidayName}
+                      >
+                        {holidayName}
+                      </div>
+                    ) : null
+                  })()}
                 </th>
               ))}
             </tr>

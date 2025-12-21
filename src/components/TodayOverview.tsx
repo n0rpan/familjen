@@ -1,6 +1,6 @@
 'use client'
 
-import { formatDateLocalized } from '@/lib/utils'
+import { formatDateLocalized, isWeekend, isHoliday, getHolidayName, type Holiday } from '@/lib/utils'
 import type { DaySummary, ChildTaskType, ReminderCategory } from '@/lib/types'
 import { getChildColor, getTaskConfig } from '@/lib/colors'
 import { useLanguage } from '@/lib/i18n/context'
@@ -18,11 +18,17 @@ const REMINDER_CATEGORY_ICONS: Record<ReminderCategory, string> = {
 interface TodayOverviewProps {
   summary: DaySummary | null
   loading?: boolean
+  holidays?: Holiday[]
 }
 
-export function TodayOverview({ summary, loading }: TodayOverviewProps) {
+export function TodayOverview({ summary, loading, holidays = [] }: TodayOverviewProps) {
   const today = new Date()
   const { language, t } = useLanguage()
+
+  // Check if today is a non-working day (weekend or holiday)
+  const isWeekendDay = isWeekend(today)
+  const holidayName = getHolidayName(today, holidays)
+  const isNonWorkingDay = isWeekendDay || !!holidayName
 
   if (loading) {
     return (
@@ -69,6 +75,9 @@ export function TodayOverview({ summary, loading }: TodayOverviewProps) {
           </h2>
           <p className="text-sm" style={{ color: 'var(--muted)' }}>
             {formatDateLocalized(today, language)}
+            {holidayName && (
+              <span style={{ color: 'var(--color-coral)' }}> • {holidayName}</span>
+            )}
           </p>
         </div>
       </div>
@@ -119,7 +128,9 @@ export function TodayOverview({ summary, loading }: TodayOverviewProps) {
                   className={`font-medium ${pickup.picker ? '' : 'opacity-50'}`}
                   style={{ color: pickup.picker ? 'var(--accent)' : 'var(--muted)' }}
                 >
-                  {pickup.picker ? t.home.picksUp.replace('{name}', pickup.picker.name) : t.week.noPickup}
+                  {pickup.picker
+                    ? t.home.picksUp.replace('{name}', pickup.picker.name)
+                    : (isNonWorkingDay ? '—' : t.week.noPickup)}
                 </span>
               </div>
             </div>

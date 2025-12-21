@@ -103,7 +103,7 @@ export default async function HomePage() {
   const weekEndStr = formatDateISO(weekEnd)
 
   // Fetch all data in parallel, filtering by household_id to prevent admin seeing other households
-  const [childrenResult, membersResult, pickupsResult, mealsResult, eventsResult, tasksResult, remindersResult] = await Promise.all([
+  const [childrenResult, membersResult, pickupsResult, mealsResult, eventsResult, tasksResult, remindersResult, holidaysResult] = await Promise.all([
     supabase.from('children').select('*').eq('household_id', myMembership.household_id).order('sort_order'),
     supabase.from('household_members').select('*').eq('household_id', myMembership.household_id),
     supabase.from('pickups').select(`*, child:children(*), picker:household_members(*)`).eq('household_id', myMembership.household_id).gte('date', weekStartStr).lte('date', weekEndStr),
@@ -114,6 +114,8 @@ export default async function HomePage() {
     supabase.from('child_tasks').select('*, child:children(*)').eq('household_id', myMembership.household_id).gte('date', weekStartStr).lte('date', weekEndStr).order('date').order('time'),
     // Fetch household reminders for this week
     supabase.from('household_reminders').select('*, assignee:household_members(*)').eq('household_id', myMembership.household_id).gte('date', weekStartStr).lte('date', weekEndStr).eq('status', 'open').order('date').order('time'),
+    // Fetch holidays (system-wide and household-specific)
+    supabase.from('calendar_events').select('date, name').or(`household_id.is.null,household_id.eq.${myMembership.household_id}`).gte('date', weekStartStr).lte('date', weekEndStr).eq('event_type', 'holiday'),
   ])
 
   // Check for errors
@@ -160,6 +162,7 @@ export default async function HomePage() {
   const memberEvents = eventsResult.data
   const childTasks = tasksResult.data || []
   const householdReminders = remindersResult.data || []
+  const holidays = holidaysResult.data || []
 
   // Get today's summary
   const todayPickups = pickups?.filter(p => p.date === todayStr) || []
@@ -223,7 +226,7 @@ export default async function HomePage() {
       />
 
       {/* Today's Overview */}
-      <TodayOverview summary={todaySummary} />
+      <TodayOverview summary={todaySummary} holidays={holidays} />
 
       {/* Week Grid */}
       <div>
@@ -245,6 +248,7 @@ export default async function HomePage() {
           pickups={pickups || []}
           meals={meals || []}
           memberEvents={memberEvents || []}
+          holidays={holidays}
           weekStart={weekStart}
         />
       </div>

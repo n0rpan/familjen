@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { WeekGrid } from '@/components/WeekGrid'
-import { formatDateISO, getWeekStart, addDays, formatWeekHeaderLocalized } from '@/lib/utils'
+import { formatDateISO, getWeekStart, addDays, formatWeekHeaderLocalized, type Holiday } from '@/lib/utils'
 import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Household, Recipe, MealSuggestion, MemberEvent, MemberEventType, ChildTask, ChildTaskType, RecipeIngredient } from '@/lib/types'
 import Link from 'next/link'
 import { AISuggestionModal } from '@/components/AISuggestionModal'
@@ -54,6 +54,7 @@ export default function WeekEditPage() {
 
   // Child tasks state
   const [childTasks, setChildTasks] = useState<ChildTask[]>([])
+  const [holidays, setHolidays] = useState<Holiday[]>([])
   const [showTaskModal, setShowTaskModal] = useState(false)
   const [editingTask, setEditingTask] = useState<ChildTask | null>(null)
   const [taskForm, setTaskForm] = useState({
@@ -139,7 +140,7 @@ export default function WeekEditPage() {
         const weekEndStr = formatDateISO(weekEnd)
 
         // Fetch all data in parallel, using the specific household_id to prevent admin seeing other households
-        const [householdResult, childrenResult, membersResult, pickupsResult, mealsResult, recipesResult, eventsResult, tasksResult] = await Promise.all([
+        const [householdResult, childrenResult, membersResult, pickupsResult, mealsResult, recipesResult, eventsResult, tasksResult, holidaysResult] = await Promise.all([
           supabase.from('households').select('*').eq('id', membership.household_id).single(),
           supabase.from('children').select('*').eq('household_id', membership.household_id).order('sort_order'),
           supabase.from('household_members').select('*').eq('household_id', membership.household_id),
@@ -150,6 +151,8 @@ export default function WeekEditPage() {
           supabase.from('member_events').select('*').eq('household_id', membership.household_id).lte('date', weekEndStr).or(`end_date.gte.${weekStartStr},end_date.is.null`),
           // Fetch child tasks for this week
           supabase.from('child_tasks').select('*').eq('household_id', membership.household_id).gte('date', weekStartStr).lte('date', weekEndStr).order('date').order('time'),
+          // Fetch holidays (system-wide and household-specific)
+          supabase.from('calendar_events').select('date, name').or(`household_id.is.null,household_id.eq.${membership.household_id}`).gte('date', weekStartStr).lte('date', weekEndStr).eq('event_type', 'holiday'),
         ])
 
         // Check for critical errors
@@ -172,6 +175,7 @@ export default function WeekEditPage() {
         setRecipes(recipesResult.data || [])
         setMemberEvents(eventsResult.data || [])
         setChildTasks(tasksResult.data || [])
+        setHolidays(holidaysResult.data || [])
 
         // Fetch week context for this week
         if (householdResult.data) {
@@ -1267,6 +1271,7 @@ export default function WeekEditPage() {
         meals={meals}
         memberEvents={memberEvents}
         recipes={recipes}
+        holidays={holidays}
         weekStart={weekStart}
         editable={true}
         onPickupChange={handlePickupChange}
