@@ -86,45 +86,30 @@ export async function syncHouseholdICS(
       }
     })
 
-    // Delete old ICS events for this household that are no longer in the feed
-    // Only delete events within our sync window
-    const currentUIDs = new Set(eventsToUpsert.map((e) => e.ics_uid))
-
-    const { data: existingEvents } = await supabase
+    // Delete ALL existing ICS events for this household within sync window
+    // Then insert fresh data from ICS feed (source of truth)
+    // Note: We can't use upsert with partial unique index, so we delete+insert instead
+    const { error: deleteError } = await supabase
       .from('household_events')
-      .select('id, ics_uid, event_date')
+      .delete()
       .eq('household_id', household.id)
       .eq('source', 'ics_calendar')
       .gte('event_date', formatDateISO(startDate))
       .lte('event_date', formatDateISO(endDate))
 
-    if (existingEvents) {
-      const eventsToDelete = existingEvents.filter(
-        (e: { ics_uid: string }) => e.ics_uid && !currentUIDs.has(e.ics_uid)
-      )
-      if (eventsToDelete.length > 0) {
-        await supabase
-          .from('household_events')
-          .delete()
-          .in(
-            'id',
-            eventsToDelete.map((e: { id: string }) => e.id)
-          )
-      }
+    if (deleteError) {
+      console.error(`[Household ICS] Delete error:`, deleteError)
     }
 
-    // Upsert events (use partial unique index on household_id, event_date, ics_uid)
+    // Insert all events from ICS feed
     if (eventsToUpsert.length > 0) {
-      for (const event of eventsToUpsert) {
-        const { error: upsertError } = await supabase.from('household_events').upsert(event, {
-          onConflict: 'household_id,event_date,ics_uid',
-          ignoreDuplicates: false,
-        })
+      const { error: insertError } = await supabase
+        .from('household_events')
+        .insert(eventsToUpsert)
 
-        if (upsertError) {
-          console.error(`[Household ICS] Upsert error for event:`, upsertError)
-          // Continue with other events
-        }
+      if (insertError) {
+        console.error(`[Household ICS] Insert error:`, insertError)
+        throw new Error(`Failed to insert events: ${insertError.message}`)
       }
     }
 
