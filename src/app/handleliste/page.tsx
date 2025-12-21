@@ -6,8 +6,14 @@ import type { ShoppingList, ShoppingListItem, Household } from '@/lib/types'
 import { useLanguage } from '@/lib/i18n/context'
 import { ListPageSkeleton } from '@/components/Skeleton'
 import { useMicroFeedback } from '@/hooks/useMicroFeedback'
-import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealtimeSubscription'
+import { useRealtimeSubscription } from '@/hooks/useRealtimeSubscription'
 import { useRealtimeOptional } from '@/lib/realtime/context'
+import { getCachedCategory, setCachedCategory } from '@/lib/shopping-category-cache'
+import { useUndoStack } from '@/hooks/useUndoStack'
+import { ShoppingItem } from '@/components/shopping/ShoppingItem'
+import { ShoppingUndoToast } from '@/components/shopping/ShoppingUndoToast'
+import { ShoppingSuggestions } from '@/components/shopping/ShoppingSuggestions'
+import type { ShoppingCategory } from '@/lib/constants'
 
 interface ListWithItems extends ShoppingList {
   items: ShoppingListItem[]
@@ -26,11 +32,55 @@ export default function ShoppingListPage() {
   // Micro-feedback for recently changed items
   const { markChanged, isRecentlyChanged } = useMicroFeedback(800)
 
+  // Mobile detection for swipe-to-delete
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    // Check for touch device (pointer: coarse means no fine pointer like mouse)
+    const mediaQuery = window.matchMedia('(pointer: coarse)')
+    setIsMobile(mediaQuery.matches)
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mediaQuery.addEventListener('change', handler)
+    return () => mediaQuery.removeEventListener('change', handler)
+  }, [])
+
   const supabase = useMemo(() => createClient(), [])
   const realtime = useRealtimeOptional()
 
   // Track items we're currently modifying to prevent double-updates
   const pendingChanges = useRef<Set<string>>(new Set())
+
+  // Undo stack for deleted items
+  const undoStack = useUndoStack<ShoppingListItem>({
+    expireMs: 5000,
+    onCommit: async (action) => {
+      // Actually delete from database when undo window expires
+      const item = action.data as ShoppingListItem
+      try {
+        await supabase.from('shopping_list_items').delete().eq('id', item.id)
+      } catch (error) {
+        console.error('Failed to delete item from database:', error)
+        // Item is already removed from UI - could show error toast here
+      } finally {
+        // Clean up pending status
+        pendingChanges.current.delete(item.id)
+      }
+    },
+  })
+
+  // Handle undo - restore item to UI and cancel the pending delete
+  const handleUndo = useCallback((actionId: string) => {
+    const action = undoStack.undo(actionId)
+    if (action) {
+      // Remove from pending changes (cancel the delete)
+      pendingChanges.current.delete(action.id)
+      // Restore item to UI
+      setLists(prev => prev.map(list =>
+        list.id === action.data.list_id
+          ? { ...list, items: [action.data, ...list.items] }
+          : list
+      ))
+    }
+  }, [undoStack])
 
   useEffect(() => {
     if (hasInitialized.current) return
@@ -75,62 +125,26 @@ export default function ShoppingListPage() {
 
       setHousehold(householdData)
 
-      // Get shopping lists
+      // Get shopping lists (only non-archived)
       let { data: listsData, error: listsError } = await supabase
         .from('shopping_lists')
         .select('*')
         .eq('household_id', householdData.id)
+        .eq('is_archived', false)
         .order('sort_order')
 
       if (listsError) throw new Error(t.errors.loadFailed)
 
-      // Create default lists if none exist, or clean up duplicates
+      // Create single "Handleliste" if no lists exist
       if (!listsData || listsData.length === 0) {
-        const defaultLists = [
-          { household_id: householdData.id, name: t.shopping.aisles.produce, sort_order: 0 },
-          { household_id: householdData.id, name: t.shopping.aisles.other, sort_order: 1 },
-        ]
-
-        const { data: newLists, error: createError } = await supabase
+        const { data: newList, error: createError } = await supabase
           .from('shopping_lists')
-          .insert(defaultLists)
+          .insert({ household_id: householdData.id, name: 'Handleliste', sort_order: 0 })
           .select()
+          .single()
 
         if (createError) throw new Error(t.errors.saveFailed)
-        listsData = newLists
-      } else {
-        // Check for and clean up duplicates
-        const dagligvarerLists = listsData.filter(l => l.name === 'Dagligvarer')
-        const andreLists = listsData.filter(l => l.name === 'Andre butikker')
-
-        if (dagligvarerLists.length > 1 || andreLists.length > 1) {
-          // Keep the oldest of each, delete the rest
-          const toDelete: string[] = []
-
-          if (dagligvarerLists.length > 1) {
-            dagligvarerLists.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-            toDelete.push(...dagligvarerLists.slice(1).map(l => l.id))
-          }
-
-          if (andreLists.length > 1) {
-            andreLists.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-            toDelete.push(...andreLists.slice(1).map(l => l.id))
-          }
-
-          if (toDelete.length > 0) {
-            // Delete items from duplicate lists first
-            await supabase.from('shopping_list_items').delete().in('list_id', toDelete)
-            // Delete duplicate lists
-            await supabase.from('shopping_lists').delete().in('id', toDelete)
-            // Refresh the list
-            const { data: freshLists } = await supabase
-              .from('shopping_lists')
-              .select('*')
-              .eq('household_id', householdData.id)
-              .order('sort_order')
-            listsData = freshLists || []
-          }
-        }
+        listsData = [newList]
       }
 
       // Get items for each list
@@ -175,11 +189,12 @@ export default function ShoppingListPage() {
     if (!household) return
 
     try {
-      // Refetch shopping lists with items
+      // Refetch shopping lists with items (only non-archived)
       const { data: listsData } = await supabase
         .from('shopping_lists')
         .select('*')
         .eq('household_id', household.id)
+        .eq('is_archived', false)
         .order('sort_order')
 
       if (!listsData) return
@@ -310,6 +325,10 @@ export default function ShoppingListPage() {
 
     const quantity = newItemQuantity[listId]?.trim() || null
 
+    // Check cache for category first
+    const cachedCategory = getCachedCategory(text)
+    const initialCategory: ShoppingCategory = cachedCategory ?? 'other'
+
     // Create a temporary ID for optimistic update
     const tempId = `temp-${Date.now()}`
     const newItem: ShoppingListItem = {
@@ -318,6 +337,7 @@ export default function ShoppingListPage() {
       name: text,
       quantity,
       is_bought: false,
+      category: initialCategory,
       source_recipe_id: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -340,6 +360,7 @@ export default function ShoppingListPage() {
         list_id: listId,
         name: text,
         quantity,
+        category: initialCategory,
       })
       .select()
       .single()
@@ -353,6 +374,43 @@ export default function ShoppingListPage() {
           ? { ...list, items: list.items.map(item => item.id === tempId ? data : item) }
           : list
       ))
+
+      // Fire-and-forget categorization if not cached
+      if (!cachedCategory) {
+        fetch('/api/openrouter/categorize-item', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ itemName: text }),
+        })
+          .then(res => res.ok ? res.json() : null)
+          .then(catData => {
+            if (catData?.category && catData.category !== initialCategory) {
+              // Cache the result
+              setCachedCategory(text, catData.category)
+              // Update the item in database
+              supabase
+                .from('shopping_list_items')
+                .update({ category: catData.category })
+                .eq('id', data.id)
+                .then(() => {
+                  // Update local state (realtime may also update this)
+                  setLists(prev => prev.map(list =>
+                    list.id === listId
+                      ? {
+                          ...list,
+                          items: list.items.map(item =>
+                            item.id === data.id ? { ...item, category: catData.category } : item
+                          ),
+                        }
+                      : list
+                  ))
+                })
+            }
+          })
+          .catch(() => {
+            // Ignore categorization failures silently
+          })
+      }
     } else if (error) {
       // Remove optimistic item on error
       setLists(prev => prev.map(list =>
@@ -385,21 +443,35 @@ export default function ShoppingListPage() {
       .eq('id', itemId)
   }
 
-  const deleteItem = async (itemId: string) => {
-    // Mark as pending to prevent duplicate handling from realtime
+  const deleteItem = useCallback((itemId: string) => {
+    // Mark as pending to prevent realtime from re-processing
     pendingChanges.current.add(itemId)
 
-    // Optimistic update
-    setLists(prev =>
-      prev.map(list => ({
+    // Find the item before removing it
+    let deletedItem: ShoppingListItem | undefined
+    setLists(prev => {
+      for (const list of prev) {
+        const item = list.items.find(i => i.id === itemId)
+        if (item) {
+          deletedItem = item
+          break
+        }
+      }
+      return prev.map(list => ({
         ...list,
         items: list.items.filter(item => item.id !== itemId),
       }))
-    )
+    })
 
-    // Persist to database
-    await supabase.from('shopping_list_items').delete().eq('id', itemId)
-  }
+    // Add to undo stack (actual delete happens after 5s if not undone)
+    if (deletedItem) {
+      undoStack.push({
+        id: itemId,
+        data: deletedItem,
+        description: deletedItem.name,
+      })
+    }
+  }, [undoStack])
 
   const clearBoughtItems = async (listId: string) => {
     const list = lists.find(l => l.id === listId)
@@ -428,6 +500,64 @@ export default function ShoppingListPage() {
       addItem(listId)
     }
   }
+
+  // Add item from suggestions (with category already set)
+  const addSuggestionItem = useCallback(async (name: string, quantity: string | null, category: ShoppingCategory) => {
+    // Find the first (main) list
+    const mainList = lists[0]
+    if (!mainList) return
+
+    // Create a temporary ID for optimistic update
+    const tempId = `temp-${Date.now()}`
+    const newItem: ShoppingListItem = {
+      id: tempId,
+      list_id: mainList.id,
+      name,
+      quantity,
+      is_bought: false,
+      category,
+      source_recipe_id: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+
+    // Optimistic update
+    setLists(prev => prev.map(list =>
+      list.id === mainList.id
+        ? { ...list, items: [newItem, ...list.items] }
+        : list
+    ))
+
+    // Insert and get the real ID
+    const { data, error } = await supabase
+      .from('shopping_list_items')
+      .insert({
+        list_id: mainList.id,
+        name,
+        quantity,
+        category,
+      })
+      .select()
+      .single()
+
+    if (data) {
+      // Mark as pending to prevent duplicate handling from realtime
+      pendingChanges.current.add(data.id)
+      // Replace temp item with real one
+      setLists(prev => prev.map(list =>
+        list.id === mainList.id
+          ? { ...list, items: list.items.map(item => item.id === tempId ? data : item) }
+          : list
+      ))
+    } else if (error) {
+      // Remove optimistic item on error
+      setLists(prev => prev.map(list =>
+        list.id === mainList.id
+          ? { ...list, items: list.items.filter(item => item.id !== tempId) }
+          : list
+      ))
+    }
+  }, [lists, supabase])
 
   if (loading) {
     return <ListPageSkeleton />
@@ -593,36 +723,15 @@ export default function ShoppingListPage() {
                   <>
                     {/* Unbought items */}
                     {unboughtItems.map(item => (
-                      <div
+                      <ShoppingItem
                         key={item.id}
-                        className={`flex items-center gap-3 p-3 group touch-feedback ${isRecentlyChanged(item.id) ? 'highlight-save' : ''}`}
-                      >
-                        <button
-                          onClick={() => toggleBought(item.id, item.is_bought)}
-                          className="w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-colors hover:bg-[var(--sand)]"
-                          style={{ borderColor: 'var(--border)' }}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <span className="text-sm" style={{ color: 'var(--foreground)' }}>
-                            {item.name}
-                          </span>
-                          {item.quantity && (
-                            <span className="text-xs ml-2" style={{ color: 'var(--muted)' }}>
-                              ({item.quantity})
-                            </span>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => deleteItem(item.id)}
-                          className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50"
-                          style={{ color: 'var(--muted)' }}
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <line x1="18" y1="6" x2="6" y2="18"/>
-                            <line x1="6" y1="6" x2="18" y2="18"/>
-                          </svg>
-                        </button>
-                      </div>
+                        item={item}
+                        isBought={false}
+                        isRecentlyChanged={isRecentlyChanged(item.id)}
+                        onToggle={toggleBought}
+                        onDelete={deleteItem}
+                        isMobile={isMobile}
+                      />
                     ))}
 
                     {/* Bought items (collapsed section) */}
@@ -634,43 +743,15 @@ export default function ShoppingListPage() {
                           </span>
                         </div>
                         {boughtItems.map(item => (
-                          <div
+                          <ShoppingItem
                             key={item.id}
-                            className={`flex items-center gap-3 px-3 py-2 group touch-feedback ${isRecentlyChanged(item.id) ? 'highlight-save' : ''}`}
-                          >
-                            <button
-                              onClick={() => toggleBought(item.id, item.is_bought)}
-                              className={`w-6 h-6 rounded-lg flex items-center justify-center ${isRecentlyChanged(item.id) ? 'just-checked' : ''}`}
-                              style={{ background: 'var(--color-sage)' }}
-                            >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
-                                <polyline points="20 6 9 17 4 12"/>
-                              </svg>
-                            </button>
-                            <div className="flex-1 min-w-0">
-                              <span
-                                className="text-sm line-through"
-                                style={{ color: 'var(--muted)' }}
-                              >
-                                {item.name}
-                              </span>
-                              {item.quantity && (
-                                <span className="text-xs ml-2" style={{ color: 'var(--muted)' }}>
-                                  ({item.quantity})
-                                </span>
-                              )}
-                            </div>
-                            <button
-                              onClick={() => deleteItem(item.id)}
-                              className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50"
-                              style={{ color: 'var(--muted)' }}
-                            >
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <line x1="18" y1="6" x2="6" y2="18"/>
-                                <line x1="6" y1="6" x2="18" y2="18"/>
-                              </svg>
-                            </button>
-                          </div>
+                            item={item}
+                            isBought={true}
+                            isRecentlyChanged={isRecentlyChanged(item.id)}
+                            onToggle={toggleBought}
+                            onDelete={deleteItem}
+                            isMobile={isMobile}
+                          />
                         ))}
                       </div>
                     )}
@@ -681,6 +762,19 @@ export default function ShoppingListPage() {
           )
         })}
       </div>
+
+      {/* Smart suggestions based on planned meals */}
+      <ShoppingSuggestions
+        onAddItem={addSuggestionItem}
+        refreshTrigger={lists[0]?.items.length}
+      />
+
+      {/* Undo toast for deleted items */}
+      <ShoppingUndoToast
+        action={undoStack.peek()}
+        onUndo={handleUndo}
+        expireMs={5000}
+      />
     </div>
   )
 }

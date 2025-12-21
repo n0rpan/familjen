@@ -24,7 +24,7 @@ const parseActionSchema = z.object({
 })
 
 // Response types
-export type ActionType = 'meal' | 'child_task' | 'member_event' | 'pickup' | 'shopping_item'
+export type ActionType = 'meal' | 'child_task' | 'member_event' | 'pickup' | 'shopping_item' | 'household_event'
 
 export type ActionOperation = 'add' | 'modify' | 'delete' | 'complete' | 'edit'
 
@@ -188,13 +188,14 @@ OPERASJONER:
 - "complete" - Marker som ferdig/kjøpt (KUN for child_task og shopping_item)
 
 STØTTEDE OPERASJONER PER TYPE:
-| Type          | add | modify | edit | delete | complete |
-|---------------|-----|--------|------|--------|----------|
-| meal          | ✓   | -      | ✓    | ✓      | -        |
-| shopping_item | ✓   | -      | ✓    | ✓      | ✓        |
-| child_task    | ✓   | -      | ✓    | ✓      | ✓        |
-| member_event  | ✓   | -      | ✓    | ✓      | -        |
-| pickup        | -   | ✓      | -    | ✓      | -        |
+| Type            | add | modify | edit | delete | complete |
+|-----------------|-----|--------|------|--------|----------|
+| meal            | ✓   | -      | ✓    | ✓      | -        |
+| shopping_item   | ✓   | -      | ✓    | ✓      | ✓        |
+| child_task      | ✓   | -      | ✓    | ✓      | ✓        |
+| member_event    | ✓   | -      | ✓    | ✓      | -        |
+| pickup          | -   | ✓      | -    | ✓      | -        |
+| household_event | ✓   | -      | ✓    | ✓      | -        |
 
 VIKTIG:
 - Bruk ALDRI "complete" for meal, member_event eller pickup!
@@ -240,7 +241,18 @@ HANDLINGSTYPER:
    - Data for add: { date, end_date?, title, event_type, member_id?, member_name? }
    - Data for edit: { original_title, new_title?, new_date?, new_end_date?, new_event_type?, member_id? }
 
-5. "pickup" - Endring av henting
+5. "household_event" - Familiehendelse (gjelder hele familien)
+   - Brukes når: "hyttetur neste helg", "familiedag lørdag", "besøk av besteforeldre", "vi drar på ferie"
+   - VIKTIG: Bruk dette når hendelsen gjelder HELE familien, ikke bare én person
+   - operation: "add" (ny familiehendelse), "edit" (endre), "delete" (slett/avlys)
+   - Data for add: { date, end_date?, title, time?, location? }
+   - Data for edit: { original_title, new_title?, new_date?, new_end_date?, new_time?, new_location? }
+   - Eksempler på familiehendelser:
+     - "hyttetur fredag til søndag" → date=fredag, end_date=søndag
+     - "familiedag på lørdag" → date=lørdag
+     - "ferie neste uke" → date=mandag, end_date=søndag
+
+6. "pickup" - Endring av henting
    - Brukes når: "jeg henter Storm i morgen", "pappa henter begge på fredag"
    - operation: "modify" (endre hvem som henter), "delete" (ingen henter / avlys henting)
    - Data: { date, child_id?, child_name?, picker_id?, picker_name? }
@@ -297,7 +309,7 @@ SVAR FORMAT (JSON):
 {
   "actions": [
     {
-      "type": "meal|shopping_item|child_task|member_event|pickup",
+      "type": "meal|shopping_item|child_task|member_event|household_event|pickup",
       "operation": "add|modify|edit|delete|complete",
       "data": { ... },
       "display": {
@@ -326,6 +338,7 @@ IKONER:
 - child_task/reminder: 📌⚽🏠
 - child_task/other: 📝
 - member_event: ✈️💼🎓
+- household_event: 🏠🏕️🎄👨‍👩‍👧‍👦
 - pickup: 🚗
 
 FOR DELETE-OPERASJONER: Bruk 🗑️ først, så relevant ikon (f.eks. "🗑️🍕" for slett middag)

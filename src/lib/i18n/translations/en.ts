@@ -55,6 +55,7 @@ export const en: TranslationStrings = {
     saving: 'Saving...',
     pending: 'pending',
     syncing: 'Syncing',
+    sync: 'Sync',
     offline: 'Offline',
     backOnline: 'Back online',
     creating: 'Creating...',
@@ -188,6 +189,8 @@ export const en: TranslationStrings = {
     more: '+{count} more',
     showLess: 'Show less',
     calendar: 'Calendar',
+    family: 'Family',
+    familyEvent: 'Family event',
     // AI Modal
     aiModalTitle: 'AI Meal Suggestions',
     suggestions: 'suggestions',
@@ -271,6 +274,11 @@ export const en: TranslationStrings = {
     shareNamesWithAi: 'Share children names with AI',
     shareNamesEnabled: 'AI can see children names for personalized suggestions (e.g. "Emma likes...")',
     shareNamesDisabled: 'AI only sees "Child 1", "Child 2" etc. with age and allergies',
+    // Family calendar settings
+    familyCalendar: 'Family calendar',
+    familyCalendarUrl: 'ICS calendar URL',
+    familyCalendarHint: 'Connect a shared family calendar',
+    lastSynced: 'Last synced',
   },
 
   // Recipes page
@@ -316,6 +324,29 @@ export const en: TranslationStrings = {
     quantity: 'Qty',
     groceries: 'Groceries',
     otherStores: 'Other stores',
+    // View toggle
+    viewMode: 'View',
+    newestFirst: 'Newest first',
+    byCategory: 'By category',
+    // Filters
+    filterAll: 'All',
+    filterGroceries: 'Groceries',
+    filterHome: 'Home',
+    filterOther: 'Other',
+    // Duplicate handling
+    alreadyOnList: 'is already on the list',
+    changeQuantity: 'Change quantity?',
+    // Undo
+    itemRemoved: 'removed',
+    undo: 'Undo',
+    // Accessibility
+    markAsBought: 'Mark as bought',
+    markAsNotBought: 'Mark as not bought',
+    deleteItemLabel: 'Delete {name}',
+    // Suggestions
+    suggestions: 'Suggestions',
+    basedOnMeals: 'Based on {count} planned meals',
+    planMealsForSuggestions: 'Plan meals in the week planner for better suggestions',
     aisles: {
       produce: 'Produce',
       dairy: 'Dairy',
@@ -324,6 +355,8 @@ export const en: TranslationStrings = {
       pantry: 'Pantry',
       beverages: 'Beverages',
       household: 'Household',
+      home: 'Home',
+      electronics: 'Electronics',
       other: 'Other',
     },
   },
@@ -482,6 +515,7 @@ export const en: TranslationStrings = {
     couldNotAddChild: 'Couldn\'t add the child. Try again?',
     aiSuggestionFailed: 'AI suggestions didn\'t work this time. Try again?',
     calendarSyncFailed: 'Calendar sync hit a snag. Try syncing again.',
+    invalidUrl: 'Invalid calendar URL. Use https:// or webcal://',
   },
 
   // Success messages
@@ -495,6 +529,7 @@ export const en: TranslationStrings = {
     childAdded: 'Child added',
     recipeAdded: 'Recipe added',
     calendarSynced: 'Calendar synced',
+    syncedEvents: 'Synced {count} events',
   },
 
   // Remember page

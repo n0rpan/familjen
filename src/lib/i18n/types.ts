@@ -63,6 +63,7 @@ export interface TranslationStrings {
     saving: string
     pending: string
     syncing: string
+    sync: string
     offline: string
     backOnline: string
     creating: string
@@ -196,6 +197,8 @@ export interface TranslationStrings {
     more: string // "+{count} more"
     showLess: string
     calendar: string
+    family: string  // "Familien" - Family row label
+    familyEvent: string  // "Familiehendelse" - Family event
     // AI Modal
     aiModalTitle: string
     suggestions: string
@@ -279,6 +282,11 @@ export interface TranslationStrings {
     shareNamesWithAi: string
     shareNamesEnabled: string
     shareNamesDisabled: string
+    // Family calendar settings
+    familyCalendar: string
+    familyCalendarUrl: string
+    familyCalendarHint: string
+    lastSynced: string
   }
 
   // Recipes page
@@ -324,6 +332,29 @@ export interface TranslationStrings {
     quantity: string // Short "Qty"
     groceries: string // List name
     otherStores: string // List name
+    // View modes
+    viewMode: string
+    newestFirst: string
+    byCategory: string
+    // Filters
+    filterAll: string
+    filterGroceries: string
+    filterHome: string
+    filterOther: string
+    // Duplicate prevention
+    alreadyOnList: string
+    changeQuantity: string
+    // Undo
+    itemRemoved: string
+    undo: string
+    // Accessibility
+    markAsBought: string
+    markAsNotBought: string
+    deleteItemLabel: string
+    // Suggestions
+    suggestions: string
+    basedOnMeals: string
+    planMealsForSuggestions: string
     aisles: {
       produce: string
       dairy: string
@@ -332,6 +363,8 @@ export interface TranslationStrings {
       pantry: string
       beverages: string
       household: string
+      home: string
+      electronics: string
       other: string
     }
   }
@@ -491,6 +524,7 @@ export interface TranslationStrings {
     couldNotAddChild: string
     aiSuggestionFailed: string
     calendarSyncFailed: string
+    invalidUrl: string
   }
 
   // Success messages
@@ -504,6 +538,7 @@ export interface TranslationStrings {
     childAdded: string
     recipeAdded: string
     calendarSynced: string
+    syncedEvents: string
   }
 
   // Remember page (Huskeliste)

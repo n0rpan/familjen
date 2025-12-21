@@ -55,6 +55,7 @@ export const sv: TranslationStrings = {
     saving: 'Sparar...',
     pending: 'väntar',
     syncing: 'Synkroniserar',
+    sync: 'Synkronisera',
     offline: 'Offline',
     backOnline: 'Online igen',
     creating: 'Skapar...',
@@ -188,6 +189,8 @@ export const sv: TranslationStrings = {
     more: '+{count} till',
     showLess: 'Visa mindre',
     calendar: 'Kalender',
+    family: 'Familjen',
+    familyEvent: 'Familjehändelse',
     // AI Modal
     aiModalTitle: 'AI Middagsförslag',
     suggestions: 'förslag',
@@ -271,6 +274,11 @@ export const sv: TranslationStrings = {
     shareNamesWithAi: 'Dela barnens namn med AI',
     shareNamesEnabled: 'AI kan se barnens namn för personliga förslag (t.ex. "Emma gillar...")',
     shareNamesDisabled: 'AI ser endast "Barn 1", "Barn 2" osv. med ålder och allergier',
+    // Family calendar settings
+    familyCalendar: 'Familjekalender',
+    familyCalendarUrl: 'ICS-kalender URL',
+    familyCalendarHint: 'Anslut en delad familjekalender',
+    lastSynced: 'Senast synkroniserad',
   },
 
   // Recipes page
@@ -316,6 +324,29 @@ export const sv: TranslationStrings = {
     quantity: 'Ant.',
     groceries: 'Dagligvaror',
     otherStores: 'Andra butiker',
+    // View toggle
+    viewMode: 'Visning',
+    newestFirst: 'Senaste först',
+    byCategory: 'Efter kategori',
+    // Filters
+    filterAll: 'Allt',
+    filterGroceries: 'Dagligvaror',
+    filterHome: 'Hem',
+    filterOther: 'Annat',
+    // Duplicate handling
+    alreadyOnList: 'finns redan på listan',
+    changeQuantity: 'Ändra antal?',
+    // Undo
+    itemRemoved: 'borttagen',
+    undo: 'Ångra',
+    // Accessibility
+    markAsBought: 'Markera som köpt',
+    markAsNotBought: 'Markera som ej köpt',
+    deleteItemLabel: 'Radera {name}',
+    // Suggestions
+    suggestions: 'Förslag',
+    basedOnMeals: 'Baserat på {count} planerade måltider',
+    planMealsForSuggestions: 'Planera måltider i veckoplaneraren för bättre förslag',
     aisles: {
       produce: 'Frukt och grönt',
       dairy: 'Mejeri',
@@ -324,6 +355,8 @@ export const sv: TranslationStrings = {
       pantry: 'Skafferivaror',
       beverages: 'Drycker',
       household: 'Hushåll',
+      home: 'Hem',
+      electronics: 'Elektronik',
       other: 'Annat',
     },
   },
@@ -482,6 +515,7 @@ export const sv: TranslationStrings = {
     couldNotAddChild: 'Kunde inte lägga till barnet. Försök igen?',
     aiSuggestionFailed: 'AI-förslagen fungerade inte den här gången. Försök igen?',
     calendarSyncFailed: 'Kalendersynk stötte på problem. Prova att synka igen.',
+    invalidUrl: 'Ogiltig kalender-URL. Använd https:// eller webcal://',
   },
 
   // Success messages
@@ -495,6 +529,7 @@ export const sv: TranslationStrings = {
     childAdded: 'Barn tillagt',
     recipeAdded: 'Recept tillagt',
     calendarSynced: 'Kalender synkroniserad',
+    syncedEvents: 'Synkroniserade {count} händelser',
   },
 
   // Remember page (Kom-ihåg-lista)

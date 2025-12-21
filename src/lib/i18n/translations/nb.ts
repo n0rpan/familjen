@@ -55,6 +55,7 @@ export const nb: TranslationStrings = {
     saving: 'Lagrer...',
     pending: 'venter',
     syncing: 'Synkroniserer',
+    sync: 'Synkroniser',
     offline: 'Frakoblet',
     backOnline: 'Tilkoblet igjen',
     creating: 'Oppretter...',
@@ -188,6 +189,8 @@ export const nb: TranslationStrings = {
     more: '+{count} til',
     showLess: 'Vis mindre',
     calendar: 'Kalender',
+    family: 'Familien',
+    familyEvent: 'Familiehendelse',
     // AI Modal
     aiModalTitle: 'AI Middagsforslag',
     suggestions: 'forslag',
@@ -271,6 +274,11 @@ export const nb: TranslationStrings = {
     shareNamesWithAi: 'Del barnas navn med AI',
     shareNamesEnabled: 'AI får se barnas navn for personlige forslag (f.eks. "Emma liker...")',
     shareNamesDisabled: 'AI ser kun "Barn 1", "Barn 2" osv. med alder og allergier',
+    // Family calendar settings
+    familyCalendar: 'Familiekalender',
+    familyCalendarUrl: 'ICS-kalender URL',
+    familyCalendarHint: 'Koble til en delt familiekalender',
+    lastSynced: 'Sist synkronisert',
   },
 
   // Recipes page
@@ -316,6 +324,29 @@ export const nb: TranslationStrings = {
     quantity: 'Ant.',
     groceries: 'Dagligvarer',
     otherStores: 'Andre butikker',
+    // View toggle
+    viewMode: 'Visning',
+    newestFirst: 'Nyeste først',
+    byCategory: 'Etter kategori',
+    // Filters
+    filterAll: 'Alt',
+    filterGroceries: 'Dagligvarer',
+    filterHome: 'Hjem',
+    filterOther: 'Annet',
+    // Duplicate handling
+    alreadyOnList: 'er allerede på listen',
+    changeQuantity: 'Endre antall?',
+    // Undo
+    itemRemoved: 'fjernet',
+    undo: 'Angre',
+    // Accessibility
+    markAsBought: 'Marker som kjøpt',
+    markAsNotBought: 'Marker som ikke kjøpt',
+    deleteItemLabel: 'Slett {name}',
+    // Suggestions
+    suggestions: 'Forslag',
+    basedOnMeals: 'Basert på {count} planlagte måltider',
+    planMealsForSuggestions: 'Planlegg måltider i ukeplanleggeren for bedre forslag',
     aisles: {
       produce: 'Frukt og grønt',
       dairy: 'Meieri',
@@ -324,6 +355,8 @@ export const nb: TranslationStrings = {
       pantry: 'Tørrvarer',
       beverages: 'Drikkevarer',
       household: 'Husholdning',
+      home: 'Hjem',
+      electronics: 'Elektronikk',
       other: 'Annet',
     },
   },
@@ -482,6 +515,7 @@ export const nb: TranslationStrings = {
     couldNotAddChild: 'Klarte ikke legge til barnet. Prøv igjen?',
     aiSuggestionFailed: 'AI-forslagene fungerte ikke denne gangen. Prøv igjen?',
     calendarSyncFailed: 'Kalendersynk traff en hindring. Prøv å synke igjen.',
+    invalidUrl: 'Ugyldig kalender-URL. Bruk https:// eller webcal://',
   },
 
   // Success messages
@@ -495,6 +529,7 @@ export const nb: TranslationStrings = {
     childAdded: 'Barn lagt til',
     recipeAdded: 'Oppskrift lagt til',
     calendarSynced: 'Kalender synkronisert',
+    syncedEvents: 'Synkroniserte {count} hendelser',
   },
 
   // Remember page (Huskeliste)

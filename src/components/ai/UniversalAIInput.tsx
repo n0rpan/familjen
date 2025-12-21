@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import type { ParsedAction, ActionType, ActionOperation } from '@/app/api/openrouter/parse-action/route'
 import { formatDateISO } from '@/lib/utils'
+import { getCachedCategory, setCachedCategory } from '@/lib/shopping-category-cache'
+import type { ShoppingCategory } from '@/lib/constants'
 
 interface Child {
   id: string
@@ -418,12 +420,50 @@ export function UniversalAIInput({
             targetList = newList
           }
 
+          // Get category for the item (from cache or API)
+          const itemName = preparedAction.data.item_name as string
+          const cachedCategory = getCachedCategory(itemName)
+          let category: ShoppingCategory = cachedCategory ?? 'other'
+
+          // If not in cache, try the categorization API
+          if (!cachedCategory) {
+            try {
+              const catResponse = await fetch('/api/openrouter/categorize-item', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ itemName }),
+              })
+              if (catResponse.ok) {
+                const catData = await catResponse.json()
+                category = catData.category as ShoppingCategory
+                // Cache the result for future use
+                setCachedCategory(itemName, category)
+              }
+            } catch {
+              // Fallback to 'other' if API fails
+            }
+          }
+
           table = 'shopping_list_items'
           record = {
             list_id: targetList.id,
-            name: preparedAction.data.item_name,
+            name: itemName,
             quantity: preparedAction.data.quantity || null,
             is_bought: false,
+            category,
+          }
+          break
+        }
+        case 'household_event': {
+          table = 'household_events'
+          record = {
+            household_id: householdId,
+            title: preparedAction.data.title,
+            event_date: preparedAction.data.date,
+            end_date: preparedAction.data.end_date || null,
+            event_time: preparedAction.data.time || null,
+            location: preparedAction.data.location || null,
+            source: 'manual',
           }
           break
         }
@@ -632,6 +672,29 @@ export function UniversalAIInput({
           }
           break
         }
+        case 'household_event': {
+          let fetchQuery = supabase
+            .from('household_events')
+            .select('*')
+            .eq('household_id', householdId)
+
+          if (action.data.title) {
+            fetchQuery = fetchQuery.ilike('title', `%${action.data.title as string}%`)
+          }
+          if (action.data.date) {
+            fetchQuery = fetchQuery.eq('event_date', action.data.date as string)
+          }
+
+          const { data: events } = await fetchQuery.order('event_date', { ascending: true }).limit(5)
+          if (events) {
+            matches = events.map(event => ({
+              id: event.id,
+              label: event.title,
+              sublabel: `${formatDisplayDate(event.event_date)}${event.end_date && event.end_date !== event.event_date ? ` til ${formatDisplayDate(event.end_date)}` : ''}`,
+            }))
+          }
+          break
+        }
       }
 
       if (matches.length === 0) {
@@ -747,6 +810,20 @@ export function UniversalAIInput({
           deletedRecord = item
 
           await supabase.from('shopping_list_items').delete().eq('id', recordId)
+          break
+        }
+        case 'household_event': {
+          table = 'household_events'
+          const { data: householdEvent } = await supabase
+            .from('household_events')
+            .select('*')
+            .eq('id', recordId)
+            .single()
+
+          if (!householdEvent) throw new Error('Household event not found')
+          deletedRecord = householdEvent
+
+          await supabase.from('household_events').delete().eq('id', recordId)
           break
         }
         default:
@@ -1085,6 +1162,27 @@ export function UniversalAIInput({
           }
           break
         }
+        case 'household_event': {
+          table = 'household_events'
+          let fetchQuery = supabase
+            .from('household_events')
+            .select('*')
+            .eq('household_id', householdId)
+
+          if (action.data.original_title) {
+            fetchQuery = fetchQuery.ilike('title', `%${action.data.original_title as string}%`)
+          }
+
+          const { data: events } = await fetchQuery.order('event_date', { ascending: true }).limit(5)
+          if (events) {
+            matches = events.map(event => ({
+              id: event.id,
+              label: event.title,
+              sublabel: `${formatDisplayDate(event.event_date)}${event.end_date && event.end_date !== event.event_date ? ` til ${formatDisplayDate(event.end_date)}` : ''}`,
+            }))
+          }
+          break
+        }
         default:
           setError(t.errors.generic || 'Denne typen kan ikke redigeres')
           return
@@ -1196,6 +1294,30 @@ export function UniversalAIInput({
           previousState = { name: item.name, quantity: item.quantity }
           if (action.data.new_item_name) updates.name = action.data.new_item_name
           if (action.data.new_quantity) updates.quantity = action.data.new_quantity
+          break
+        }
+        case 'household_event': {
+          table = 'household_events'
+          const { data: householdEvent } = await supabase
+            .from('household_events')
+            .select('*')
+            .eq('id', recordId)
+            .single()
+
+          if (!householdEvent) throw new Error('Household event not found')
+
+          previousState = {
+            title: householdEvent.title,
+            event_date: householdEvent.event_date,
+            end_date: householdEvent.end_date,
+            event_time: householdEvent.event_time,
+            location: householdEvent.location,
+          }
+          if (action.data.new_title) updates.title = action.data.new_title
+          if (action.data.new_date) updates.event_date = action.data.new_date
+          if (action.data.new_end_date) updates.end_date = action.data.new_end_date
+          if (action.data.new_time) updates.event_time = action.data.new_time
+          if (action.data.new_location) updates.location = action.data.new_location
           break
         }
         default:

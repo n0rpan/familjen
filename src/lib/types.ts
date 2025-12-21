@@ -12,6 +12,9 @@ import type {
   CalendarEventType,
   MemberEventType,
   RecurrenceType,
+  ShoppingCategory,
+  ShoppingFilter,
+  ShoppingViewMode,
 } from './constants'
 
 // Re-export shared types from constants (single source of truth)
@@ -28,6 +31,9 @@ export type {
   CalendarEventType,
   MemberEventType,
   RecurrenceType,
+  ShoppingCategory,
+  ShoppingFilter,
+  ShoppingViewMode,
 }
 
 // Audit fields shared by most entities
@@ -40,13 +46,17 @@ interface AuditFields {
 export interface Household extends AuditFields {
   id: string
   name: string | null
-  ical_calendar_url?: string | null  // Optional: not in all environments
-  ical_username?: string | null  // Optional: not in all environments
-  ical_password_encrypted?: string | null  // Optional: not fetched in UI queries
+  ical_calendar_url?: string | null  // Optional: not in all environments (legacy)
+  ical_username?: string | null  // Optional: not in all environments (legacy)
+  ical_password_encrypted?: string | null  // Optional: not fetched in UI queries (legacy)
+  ics_calendar_url?: string | null  // Shared family ICS calendar URL
+  ics_last_sync_at?: string | null  // Last successful household ICS sync
+  ics_sync_error?: string | null  // Error from last failed sync
   openrouter_api_key_encrypted?: string | null  // Optional: not fetched in UI queries
   ai_meal_context: string | null  // Default AI preferences for meal suggestions
   share_names_with_ai: boolean  // When false, anonymize children names in AI prompts
   external_integrations_enabled: boolean  // Allow household to connect Spond, Kidplan, iSkole
+  shopping_settings?: ShoppingSettings | null  // Shopping list preferences
 }
 
 export interface HouseholdMember extends AuditFields {
@@ -142,6 +152,7 @@ export interface DaySummary {
   meal: MealWithRecipe | null
   tasks: ChildTaskWithChild[]
   reminders?: HouseholdReminderWithAssignee[]
+  householdEvents?: HouseholdEvent[]
 }
 
 // Admin types
@@ -192,6 +203,7 @@ export interface ShoppingList {
   household_id: string
   name: string
   sort_order: number
+  is_archived: boolean
   created_at: string
   updated_at: string
 }
@@ -202,13 +214,31 @@ export interface ShoppingListItem {
   name: string
   quantity: string | null
   is_bought: boolean
+  category: ShoppingCategory  // AI-assigned category
   source_recipe_id: string | null
   created_at: string
   updated_at: string
+  updated_by?: string | null  // For realtime sync
 }
 
 export interface ShoppingListWithItems extends ShoppingList {
   items: ShoppingListItem[]
+}
+
+// Shopping settings stored in households.shopping_settings
+export interface ShoppingSettings {
+  categoryOrder?: ShoppingCategory[]
+  defaultView?: ShoppingViewMode
+  filters?: Record<string, ShoppingCategory[]>  // Custom filter definitions
+}
+
+// Duplicate check result from check_shopping_duplicate function
+export interface ShoppingDuplicateMatch {
+  id: string
+  name: string
+  quantity: string | null
+  list_id: string
+  similarity_score: number
 }
 
 export interface CalendarEvent {
@@ -243,6 +273,24 @@ export interface MemberEvent {
 
 export interface MemberEventWithMember extends MemberEvent {
   member: HouseholdMember
+}
+
+// Household events (shared family calendar events)
+export interface HouseholdEvent {
+  id: string
+  household_id: string
+  title: string
+  description: string | null
+  event_date: string  // ISO date string YYYY-MM-DD
+  end_date: string | null  // For multi-day events
+  event_time: string | null  // null = all-day
+  end_time: string | null
+  location: string | null
+  source: 'manual' | 'ics_calendar'
+  ics_uid: string | null
+  is_redistributed: boolean
+  created_at: string
+  updated_at: string | null
 }
 
 // External events (from Spond, Kidplan, iSkole)
