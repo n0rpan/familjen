@@ -1,6 +1,6 @@
 'use client'
 
-import { formatDateLocalized, formatDateISO, isWeekend, isHoliday, getHolidayName, type Holiday } from '@/lib/utils'
+import { formatDateLocalized, formatDateISO, isWeekend, isHoliday, getHolidayName, getHolidayEmoji, type Holiday } from '@/lib/utils'
 import type { DaySummary, ChildTaskType, ReminderCategory } from '@/lib/types'
 import { getChildColor, getTaskConfig } from '@/lib/colors'
 import { useLanguage } from '@/lib/i18n/context'
@@ -66,7 +66,7 @@ export function TodayOverview({ summary, loading, holidays = [] }: TodayOverview
             border: `1px solid ${isBirthday ? 'rgba(167, 139, 250, 0.3)' : 'rgba(232, 120, 109, 0.3)'}`,
           }}
         >
-          <span className="text-2xl">{isBirthday ? '🎂' : '🎄'}</span>
+          <span className="text-2xl">{getHolidayEmoji(holiday)}</span>
           <div className="flex-1">
             <span
               className="font-semibold"

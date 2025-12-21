@@ -68,7 +68,7 @@ export const sv: TranslationStrings = {
     monthsShort: ['jan', 'feb', 'mar', 'apr', 'maj', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'],
     weekLabel: 'Vecka',
     weekFormat: 'Vecka {week}, {year}',
-    birthday: 'fyller år',
+    birthday: '{name} fyller år',
   },
 
   // Home page

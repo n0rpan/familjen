@@ -10,7 +10,7 @@ import {
   isWeekend,
   formatWeekHeaderLocalized,
   cn,
-  getHolidayName,
+  getHoliday,
   type Holiday,
 } from '@/lib/utils'
 import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Recipe, MemberEvent, ChildTask, MemberEventType, ChildTaskType } from '@/lib/types'
@@ -189,14 +189,14 @@ export function WeekGrid({
                     {date.getDate()}.
                   </div>
                   {(() => {
-                    const holidayName = getHolidayName(date, holidays)
-                    return holidayName ? (
+                    const holiday = getHoliday(date, holidays)
+                    return holiday ? (
                       <div
                         className="text-xs mt-1 truncate max-w-[80px]"
-                        style={{ color: 'var(--color-coral)' }}
-                        title={holidayName}
+                        style={{ color: holiday.type === 'birthday' ? '#a78bfa' : 'var(--color-coral)' }}
+                        title={holiday.name}
                       >
-                        {holidayName}
+                        {holiday.name}
                       </div>
                     ) : null
                   })()}

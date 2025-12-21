@@ -171,6 +171,46 @@ export interface Holiday {
 }
 
 /**
+ * Get an appropriate emoji for a holiday based on its name
+ */
+export function getHolidayEmoji(holiday: Holiday): string {
+  if (holiday.type === 'birthday') return '🎂'
+
+  const name = holiday.name.toLowerCase()
+
+  // Christmas
+  if (name.includes('jul') || name.includes('christmas')) return '🎄'
+
+  // New Year
+  if (name.includes('nyttår') || name.includes('new year') || name.includes('nyår')) return '🎆'
+
+  // Easter
+  if (name.includes('påske') || name.includes('easter') || name.includes('påsk') ||
+      name.includes('langfredag') || name.includes('skjærtorsdag') ||
+      name.includes('good friday') || name.includes('långfredag')) return '🐣'
+
+  // Constitution Day / National Days
+  if (name.includes('17. mai') || name.includes('17 mai') || name.includes('grunnlov') ||
+      name.includes('nationaldag') || name.includes('national day') ||
+      name.includes('6. juni') || name.includes('6 juni')) return '🎊'
+
+  // May Day / Labor Day
+  if (name.includes('1. mai') || name.includes('1 mai') || name.includes('arbeid') ||
+      name.includes('may day') || name.includes('labor') || name.includes('första maj')) return '🌷'
+
+  // Ascension / Pentecost
+  if (name.includes('himmelfart') || name.includes('ascension') ||
+      name.includes('pinse') || name.includes('pentecost') || name.includes('pingst')) return '✨'
+
+  // Midsummer
+  if (name.includes('sankthans') || name.includes('midsommar') || name.includes('midsummer') ||
+      name.includes('jonsok')) return '🌻'
+
+  // Default celebration emoji
+  return '🎊'
+}
+
+/**
  * Check if a date is a holiday
  */
 export function isHoliday(date: Date | string, holidays: Holiday[]): boolean {
@@ -179,11 +219,18 @@ export function isHoliday(date: Date | string, holidays: Holiday[]): boolean {
 }
 
 /**
+ * Get holiday for a date, or null if not a holiday
+ */
+export function getHoliday(date: Date | string, holidays: Holiday[]): Holiday | null {
+  const dateStr = typeof date === 'string' ? date : formatDateISO(date)
+  return holidays.find(h => h.date === dateStr) || null
+}
+
+/**
  * Get holiday name for a date, or null if not a holiday
  */
 export function getHolidayName(date: Date | string, holidays: Holiday[]): string | null {
-  const dateStr = typeof date === 'string' ? date : formatDateISO(date)
-  const holiday = holidays.find(h => h.date === dateStr)
+  const holiday = getHoliday(date, holidays)
   return holiday?.name || null
 }
 

@@ -68,7 +68,7 @@ export const en: TranslationStrings = {
     monthsShort: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
     weekLabel: 'Week',
     weekFormat: 'Week {week}, {year}',
-    birthday: "'s birthday",
+    birthday: "{name}'s birthday",
   },
 
   // Home page

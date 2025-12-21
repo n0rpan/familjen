@@ -179,7 +179,7 @@ export default async function HomePage() {
       if (thisYearBirthday >= weekStartStr && thisYearBirthday <= weekEndStr) {
         birthdays.push({
           date: thisYearBirthday,
-          name: `${member.name} ${t.date.birthday}`,
+          name: t.date.birthday.replace('{name}', member.name),
           type: 'birthday',
         })
       }
@@ -194,7 +194,7 @@ export default async function HomePage() {
       if (thisYearBirthday >= weekStartStr && thisYearBirthday <= weekEndStr) {
         birthdays.push({
           date: thisYearBirthday,
-          name: `${child.name} ${t.date.birthday}`,
+          name: t.date.birthday.replace('{name}', child.name),
           type: 'birthday',
         })
       }
