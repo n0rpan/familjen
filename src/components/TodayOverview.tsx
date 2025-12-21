@@ -1,6 +1,6 @@
 'use client'
 
-import { formatDateLocalized } from '@/lib/utils'
+import { formatDateLocalized, formatDateISO, isWeekend, getHoliday, getHolidayEmoji, type Holiday } from '@/lib/utils'
 import type { DaySummary, ChildTaskType, ReminderCategory } from '@/lib/types'
 import { getChildColor, getTaskConfig } from '@/lib/colors'
 import { useLanguage } from '@/lib/i18n/context'
@@ -18,11 +18,18 @@ const REMINDER_CATEGORY_ICONS: Record<ReminderCategory, string> = {
 interface TodayOverviewProps {
   summary: DaySummary | null
   loading?: boolean
+  holidays?: Holiday[]
 }
 
-export function TodayOverview({ summary, loading }: TodayOverviewProps) {
+export function TodayOverview({ summary, loading, holidays = [] }: TodayOverviewProps) {
   const today = new Date()
   const { language, t } = useLanguage()
+
+  // Get holiday/birthday for today
+  const holiday = getHoliday(today, holidays)
+  const isBirthday = holiday?.type === 'birthday'
+  const isWeekendDay = isWeekend(today)
+  const isNonWorkingDay = isWeekendDay || !!holiday
 
   if (loading) {
     return (
@@ -40,11 +47,49 @@ export function TodayOverview({ summary, loading }: TodayOverviewProps) {
     )
   }
 
+  // Format birthday name with translation
+  const getHolidayDisplayName = () => {
+    if (!holiday) return ''
+    if (isBirthday) {
+      return t.date.birthday.replace('{name}', holiday.name)
+    }
+    return holiday.name
+  }
+
   return (
     <div
       className="rounded-2xl p-6 md:p-8"
       style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
     >
+      {/* Holiday/Birthday Banner */}
+      {holiday && (
+        <div
+          className="flex items-center gap-3 p-4 rounded-xl mb-6 -mt-2"
+          style={{
+            background: isBirthday
+              ? 'linear-gradient(135deg, rgba(167, 139, 250, 0.15), rgba(229, 185, 94, 0.15))'
+              : 'linear-gradient(135deg, rgba(232, 120, 109, 0.15), rgba(229, 185, 94, 0.15))',
+            border: `1px solid ${isBirthday ? 'rgba(167, 139, 250, 0.3)' : 'rgba(232, 120, 109, 0.3)'}`,
+          }}
+        >
+          <span className="text-2xl">{getHolidayEmoji(holiday)}</span>
+          <div className="flex-1">
+            <span
+              className="font-semibold"
+              style={{ color: isBirthday ? '#a78bfa' : 'var(--color-coral)' }}
+            >
+              {getHolidayDisplayName()}
+            </span>
+            {isBirthday && (
+              <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                {t.home.birthdayWishes}
+              </p>
+            )}
+          </div>
+          <span className="text-2xl">{isBirthday ? '🎉' : '✨'}</span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <div
@@ -119,7 +164,9 @@ export function TodayOverview({ summary, loading }: TodayOverviewProps) {
                   className={`font-medium ${pickup.picker ? '' : 'opacity-50'}`}
                   style={{ color: pickup.picker ? 'var(--accent)' : 'var(--muted)' }}
                 >
-                  {pickup.picker ? t.home.picksUp.replace('{name}', pickup.picker.name) : t.week.noPickup}
+                  {pickup.picker
+                    ? t.home.picksUp.replace('{name}', pickup.picker.name)
+                    : (isNonWorkingDay ? '—' : t.week.noPickup)}
                 </span>
               </div>
             </div>

@@ -10,6 +10,8 @@ import {
   isWeekend,
   formatWeekHeaderLocalized,
   cn,
+  getHoliday,
+  type Holiday,
 } from '@/lib/utils'
 import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Recipe, MemberEvent, ChildTask, MemberEventType, ChildTaskType, ExternalEvent } from '@/lib/types'
 import { getChildColor, getEventConfig, getTaskConfig } from '@/lib/colors'
@@ -24,6 +26,7 @@ interface WeekGridProps {
   memberEvents?: MemberEvent[]  // Parent events (work trips, dinners, etc.)
   childTasks?: ChildTask[]  // Kid tasks (bring items, appointments, reminders)
   externalEvents?: ExternalEvent[]  // External events from Spond, Kidplan, etc.
+  holidays?: Holiday[]  // System and household holidays
   recipes?: Recipe[]  // For meal selector dropdown
   weekStart?: Date | string  // May be serialized as string from server
   editable?: boolean
@@ -46,6 +49,7 @@ export const WeekGrid = memo(function WeekGrid({
   memberEvents = [],
   childTasks = [],
   externalEvents = [],
+  holidays = [],
   recipes = [],
   weekStart: providedWeekStart,
   editable = false,
@@ -234,6 +238,18 @@ export const WeekGrid = memo(function WeekGrid({
                   >
                     {date.getDate()}.
                   </div>
+                  {(() => {
+                    const holiday = getHoliday(date, holidays)
+                    return holiday ? (
+                      <div
+                        className="text-xs mt-1 truncate max-w-[80px]"
+                        style={{ color: holiday.type === 'birthday' ? '#a78bfa' : 'var(--color-coral)' }}
+                        title={holiday.type === 'birthday' ? t.date.birthday.replace('{name}', holiday.name) : holiday.name}
+                      >
+                        {holiday.type === 'birthday' ? t.date.birthday.replace('{name}', holiday.name) : holiday.name}
+                      </div>
+                    ) : null
+                  })()}
                 </th>
               ))}
             </tr>
