@@ -234,7 +234,8 @@ function SuggestionReviewModal({
           p_title: editForm.title,
           p_date: editForm.date || null,
           p_time: timeValue,
-          p_child_id: editForm.child_id || null,
+          p_child_id: editForm.target_type === 'child' ? editForm.child_id : null,
+          p_member_id: editForm.target_type === 'member' ? editForm.member_id : null,
         })
         error = result.error
       } else {
@@ -391,10 +392,10 @@ function SuggestionReviewModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="fixed inset-0" style={{ background: 'rgba(0, 0, 0, 0.5)' }} onClick={onClose} />
       <div
-        className="relative w-full max-w-lg rounded-2xl overflow-hidden overflow-y-auto animate-fade-in my-auto"
+        className="relative w-full max-w-lg rounded-2xl overflow-y-auto animate-fade-in"
         style={{ background: 'var(--card)', border: '1px solid var(--border)', maxHeight: 'calc(100vh - 2rem)' }}
       >
         {/* Header */}
@@ -564,19 +565,61 @@ function SuggestionReviewModal({
               </div>
               <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: 'var(--muted)' }}>
-                  {t.week.selectChild}
+                  {editForm.target_type === 'child' ? t.week.selectChild : t.week.selectMember}
                 </label>
-                <select
-                  value={editForm.child_id}
-                  onChange={(e) => setEditForm({ ...editForm, child_id: e.target.value })}
-                  className="input text-sm"
-                >
-                  {children.map((child) => (
-                    <option key={child.id} value={child.id}>
-                      {child.name}
-                    </option>
-                  ))}
-                </select>
+                {/* Target type toggle */}
+                <div className="flex gap-2 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditForm({ ...editForm, target_type: 'child' })}
+                    className="flex-1 px-3 py-1.5 rounded-lg text-xs transition-colors"
+                    style={{
+                      background: editForm.target_type === 'child' ? 'var(--accent)' : 'var(--background)',
+                      color: editForm.target_type === 'child' ? 'white' : 'var(--foreground)',
+                      border: `1px solid ${editForm.target_type === 'child' ? 'var(--accent)' : 'var(--border)'}`,
+                    }}
+                  >
+                    Barn
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditForm({ ...editForm, target_type: 'member' })}
+                    className="flex-1 px-3 py-1.5 rounded-lg text-xs transition-colors"
+                    style={{
+                      background: editForm.target_type === 'member' ? 'var(--accent)' : 'var(--background)',
+                      color: editForm.target_type === 'member' ? 'white' : 'var(--foreground)',
+                      border: `1px solid ${editForm.target_type === 'member' ? 'var(--accent)' : 'var(--border)'}`,
+                    }}
+                  >
+                    Voksen
+                  </button>
+                </div>
+                {/* Child or member selector based on target_type */}
+                {editForm.target_type === 'child' ? (
+                  <select
+                    value={editForm.child_id}
+                    onChange={(e) => setEditForm({ ...editForm, child_id: e.target.value })}
+                    className="input text-sm"
+                  >
+                    {children.map((child) => (
+                      <option key={child.id} value={child.id}>
+                        {child.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <select
+                    value={editForm.member_id}
+                    onChange={(e) => setEditForm({ ...editForm, member_id: e.target.value })}
+                    className="input text-sm"
+                  >
+                    {members.map((member) => (
+                      <option key={member.id} value={member.id}>
+                        {member.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: 'var(--muted)' }}>

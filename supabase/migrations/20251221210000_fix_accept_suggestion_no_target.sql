@@ -8,7 +8,8 @@ CREATE OR REPLACE FUNCTION accept_household_ics_suggestion(
   p_title TEXT DEFAULT NULL,
   p_date DATE DEFAULT NULL,
   p_time TIME DEFAULT NULL,
-  p_child_id UUID DEFAULT NULL
+  p_child_id UUID DEFAULT NULL,
+  p_member_id UUID DEFAULT NULL
 ) RETURNS UUID AS $$
 DECLARE
   v_suggestion external_suggestions%ROWTYPE;
@@ -18,6 +19,7 @@ DECLARE
   v_reviewer_id UUID;
   v_event_id UUID;
   v_final_child_id UUID;
+  v_final_member_id UUID;
   v_task_type TEXT;
 BEGIN
   v_user_id := auth.uid();
@@ -52,8 +54,13 @@ BEGIN
     v_event_id := v_suggestion.source_household_event_id;
   END IF;
 
-  -- Determine final child_id (user override takes precedence)
-  v_final_child_id := COALESCE(p_child_id, v_suggestion.suggested_child_id);
+  -- Determine final child_id and member_id (user override takes precedence)
+  -- If user explicitly selected a child, use that; if they selected a member, child is null
+  v_final_child_id := CASE
+    WHEN p_member_id IS NOT NULL THEN NULL  -- User chose member, clear child
+    ELSE COALESCE(p_child_id, v_suggestion.suggested_child_id)
+  END;
+  v_final_member_id := COALESCE(p_member_id, v_suggestion.target_member_id);
 
   -- Map suggested_type to valid child_tasks type
   -- AI uses: 'task', 'event', 'reminder'
@@ -87,12 +94,12 @@ BEGIN
       created_task_id = v_created_id
     WHERE id = p_suggestion_id;
 
-  ELSIF v_suggestion.target_member_id IS NOT NULL THEN
+  ELSIF v_final_member_id IS NOT NULL THEN
     -- Create member event
     INSERT INTO member_events (household_id, member_id, date, title, event_type, source)
     VALUES (
       v_household_id,
-      v_suggestion.target_member_id,
+      v_final_member_id,
       COALESCE(p_date, v_suggestion.suggested_date),
       COALESCE(p_title, v_suggestion.suggested_title),
       'other',
@@ -125,4 +132,4 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
-GRANT EXECUTE ON FUNCTION accept_household_ics_suggestion(UUID, TEXT, DATE, TIME, UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION accept_household_ics_suggestion(UUID, TEXT, DATE, TIME, UUID, UUID) TO authenticated;
