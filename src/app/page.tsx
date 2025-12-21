@@ -254,6 +254,7 @@ export default async function HomePage() {
       <SuggestionBanner
         householdId={myMembership.household_id}
         children={children || []}
+        members={members || []}
       />
 
       {/* Today's Overview */}
