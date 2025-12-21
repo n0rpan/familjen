@@ -3,7 +3,7 @@
 -- Safe to re-run: uses IF NOT EXISTS, IF EXISTS, and checks for existing state
 
 -- =============================================================================
--- PART 1: SCHEMA CHANGES
+-- PART 1: SCHEMA CHANGES 
 -- =============================================================================
 
 -- 1.1 Add category column to shopping_list_items
