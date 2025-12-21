@@ -341,6 +341,7 @@ export const nb: TranslationStrings = {
     // Undo
     itemRemoved: 'fjernet',
     undo: 'Angre',
+    deleteFailedRetrying: 'kunne ikke slettes, prøver igjen...',
     // Accessibility
     markAsBought: 'Marker som kjøpt',
     markAsNotBought: 'Marker som ikke kjøpt',

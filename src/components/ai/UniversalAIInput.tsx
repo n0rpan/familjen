@@ -381,39 +381,24 @@ export function UniversalAIInput({
           break
         }
         case 'shopping_item': {
-          // Shopping uses shopping_lists + shopping_list_items (same schema as handleliste page)
-          // Determine which list to use based on list_type (produce or other)
-          const listType = (preparedAction.data.list_type as string) || 'produce'
-          const isProduceList = listType === 'produce'
-          const targetListName = isProduceList ? t.shopping.aisles.produce : t.shopping.aisles.other
-          const targetSortOrder = isProduceList ? 0 : 1
+          // Shopping uses a single unified list with per-item categories
+          // Always use the main list (sort_order=0, typically "Handleliste")
 
-          // Try to find existing list by sort_order (produce=0, other=1)
+          // Try to find the main list (sort_order=0)
           let { data: targetList } = await supabase
             .from('shopping_lists')
             .select('id, name')
             .eq('household_id', householdId)
-            .eq('sort_order', targetSortOrder)
+            .eq('is_archived', false)
+            .order('sort_order')
             .limit(1)
             .single()
 
-          // If no list with matching sort_order, try finding by name
-          if (!targetList) {
-            const { data: listByName } = await supabase
-              .from('shopping_lists')
-              .select('id, name')
-              .eq('household_id', householdId)
-              .eq('name', targetListName)
-              .limit(1)
-              .single()
-            targetList = listByName
-          }
-
-          // Create the list if it doesn't exist
+          // Create the main list if it doesn't exist
           if (!targetList) {
             const { data: newList, error: createError } = await supabase
               .from('shopping_lists')
-              .insert({ household_id: householdId, name: targetListName, sort_order: targetSortOrder })
+              .insert({ household_id: householdId, name: 'Handleliste', sort_order: 0 })
               .select('id, name')
               .single()
             if (createError) throw createError

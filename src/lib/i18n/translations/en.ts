@@ -341,6 +341,7 @@ export const en: TranslationStrings = {
     // Undo
     itemRemoved: 'removed',
     undo: 'Undo',
+    deleteFailedRetrying: 'could not be deleted, retrying...',
     // Accessibility
     markAsBought: 'Mark as bought',
     markAsNotBought: 'Mark as not bought',

@@ -349,6 +349,7 @@ export interface TranslationStrings {
     // Undo
     itemRemoved: string
     undo: string
+    deleteFailedRetrying: string
     // Accessibility
     markAsBought: string
     markAsNotBought: string

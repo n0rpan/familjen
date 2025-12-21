@@ -341,6 +341,7 @@ export const sv: TranslationStrings = {
     // Undo
     itemRemoved: 'borttagen',
     undo: 'Ångra',
+    deleteFailedRetrying: 'kunde inte raderas, försöker igen...',
     // Accessibility
     markAsBought: 'Markera som köpt',
     markAsNotBought: 'Markera som ej köpt',

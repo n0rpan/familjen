@@ -27,6 +27,11 @@ export default function ShoppingListPage() {
   const [lists, setLists] = useState<ListWithItems[]>([])
   const [newItemText, setNewItemText] = useState<Record<string, string>>({})
   const [newItemQuantity, setNewItemQuantity] = useState<Record<string, string>>({})
+  const [duplicateWarning, setDuplicateWarning] = useState<{
+    listId: string
+    matches: Array<{ id: string; name: string; quantity: string | null }>
+  } | null>(null)
+  const duplicateCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasInitialized = useRef(false)
 
   // Micro-feedback for recently changed items
@@ -49,20 +54,26 @@ export default function ShoppingListPage() {
   // Track items we're currently modifying to prevent double-updates
   const pendingChanges = useRef<Set<string>>(new Set())
 
-  // Undo stack for deleted items
+  // Undo stack for deleted items with retry on failure
   const undoStack = useUndoStack<ShoppingListItem>({
     expireMs: 5000,
+    maxRetries: 3,
+    retryDelayMs: 2000,
     onCommit: async (action) => {
       // Actually delete from database when undo window expires
-      const item = action.data as ShoppingListItem
+      const item = action.data
       try {
-        await supabase.from('shopping_list_items').delete().eq('id', item.id)
+        const { error } = await supabase.from('shopping_list_items').delete().eq('id', item.id)
+        if (error) {
+          console.error('Failed to delete item from database:', error)
+          return false // Signal failure for retry
+        }
+        // Clean up pending status on success
+        pendingChanges.current.delete(item.id)
+        return true
       } catch (error) {
         console.error('Failed to delete item from database:', error)
-        // Item is already removed from UI - could show error toast here
-      } finally {
-        // Clean up pending status
-        pendingChanges.current.delete(item.id)
+        return false // Signal failure for retry
       }
     },
   })
@@ -81,6 +92,52 @@ export default function ShoppingListPage() {
       ))
     }
   }, [undoStack])
+
+  // Check for duplicate items (debounced)
+  const checkDuplicates = useCallback((listId: string, text: string) => {
+    // Clear previous timer
+    if (duplicateCheckTimer.current) {
+      clearTimeout(duplicateCheckTimer.current)
+    }
+
+    // Clear warning if text is short
+    if (text.length < 2) {
+      setDuplicateWarning(null)
+      return
+    }
+
+    // Debounce the check
+    duplicateCheckTimer.current = setTimeout(async () => {
+      try {
+        const { data } = await supabase.rpc('check_shopping_duplicate', {
+          p_item_name: text,
+          p_similarity_threshold: 0.6,
+        })
+
+        if (data && data.length > 0) {
+          setDuplicateWarning({
+            listId,
+            matches: data.map((d: { id: string; name: string; quantity: string | null }) => ({
+              id: d.id,
+              name: d.name,
+              quantity: d.quantity,
+            })),
+          })
+        } else {
+          setDuplicateWarning(null)
+        }
+      } catch {
+        // Ignore errors - function might not exist yet
+        setDuplicateWarning(null)
+      }
+    }, 300)
+  }, [supabase])
+
+  // Handle input change with duplicate checking
+  const handleItemTextChange = useCallback((listId: string, text: string) => {
+    setNewItemText(prev => ({ ...prev, [listId]: text }))
+    checkDuplicates(listId, text)
+  }, [checkDuplicates])
 
   useEffect(() => {
     if (hasInitialized.current) return
@@ -352,6 +409,7 @@ export default function ShoppingListPage() {
 
     setNewItemText(prev => ({ ...prev, [listId]: '' }))
     setNewItemQuantity(prev => ({ ...prev, [listId]: '' }))
+    setDuplicateWarning(null)
 
     // Insert and get the real ID
     const { data, error } = await supabase
@@ -669,7 +727,7 @@ export default function ShoppingListPage() {
                   <input
                     type="text"
                     value={newItemText[list.id] || ''}
-                    onChange={e => setNewItemText(prev => ({ ...prev, [list.id]: e.target.value }))}
+                    onChange={e => handleItemTextChange(list.id, e.target.value)}
                     onKeyDown={e => handleKeyDown(e, list.id)}
                     placeholder={t.shopping.itemPlaceholder}
                     className="input text-sm"
@@ -696,6 +754,39 @@ export default function ShoppingListPage() {
                     </svg>
                   </button>
                 </div>
+
+                {/* Duplicate warning */}
+                {duplicateWarning?.listId === list.id && duplicateWarning.matches.length > 0 && (
+                  <div
+                    className="mt-2 p-2 rounded-lg text-xs"
+                    style={{
+                      background: 'rgba(214, 180, 112, 0.15)',
+                      border: '1px solid rgba(214, 180, 112, 0.3)',
+                      color: 'var(--foreground)',
+                    }}
+                  >
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="12" y1="8" x2="12" y2="12"/>
+                        <line x1="12" y1="16" x2="12.01" y2="16"/>
+                      </svg>
+                      <span style={{ color: 'var(--color-honey)' }}>{t.shopping.alreadyOnList}:</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {duplicateWarning.matches.slice(0, 3).map(match => (
+                        <span
+                          key={match.id}
+                          className="px-2 py-0.5 rounded"
+                          style={{ background: 'var(--background)' }}
+                        >
+                          {match.name}
+                          {match.quantity && <span className="ml-1 opacity-60">({match.quantity})</span>}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Items list */}
@@ -774,6 +865,8 @@ export default function ShoppingListPage() {
         action={undoStack.peek()}
         onUndo={handleUndo}
         expireMs={5000}
+        failedActions={undoStack.failedActions}
+        onDismissFailed={undoStack.dismissFailed}
       />
     </div>
   )

@@ -9,9 +9,19 @@ interface ShoppingUndoToastProps {
   action: UndoableAction<ShoppingListItem> | undefined
   onUndo: (actionId: string) => void
   expireMs?: number
+  /** Failed actions that need retry */
+  failedActions?: UndoableAction<ShoppingListItem>[]
+  /** Callback when user dismisses a failed action */
+  onDismissFailed?: (actionId: string) => void
 }
 
-export function ShoppingUndoToast({ action, onUndo, expireMs = 5000 }: ShoppingUndoToastProps) {
+export function ShoppingUndoToast({
+  action,
+  onUndo,
+  expireMs = 5000,
+  failedActions = [],
+  onDismissFailed,
+}: ShoppingUndoToastProps) {
   const { t } = useLanguage()
   const [remainingTime, setRemainingTime] = useState(expireMs)
 
@@ -38,11 +48,82 @@ export function ShoppingUndoToast({ action, onUndo, expireMs = 5000 }: ShoppingU
     return () => clearInterval(interval)
   }, [action, expireMs])
 
-  if (!action) {
+  // Show failed action toast if there are any
+  const failedAction = failedActions[0]
+
+  if (!action && !failedAction) {
     return null
   }
 
   const progress = remainingTime / expireMs
+
+  // Show failed action toast
+  if (failedAction) {
+    return (
+      <div
+        className="fixed z-[100] pointer-events-auto animate-toast-in"
+        style={{
+          bottom: 'calc(env(safe-area-inset-bottom, 0px) + 80px)',
+          left: '16px',
+          right: '16px',
+        }}
+      >
+        <div
+          className="flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg mx-auto"
+          style={{
+            background: 'var(--card)',
+            border: '1px solid var(--color-coral)',
+            maxWidth: '360px',
+          }}
+          role="alert"
+          aria-live="assertive"
+        >
+          {/* Error icon */}
+          <div className="shrink-0 animate-pulse">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--color-coral)"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+          </div>
+
+          {/* Message */}
+          <p className="flex-1 text-sm" style={{ color: 'var(--foreground)' }}>
+            <span className="font-medium">{failedAction.data.name}</span>
+            {' '}{t.shopping.deleteFailedRetrying ?? 'kunne ikke slettes, prøver igjen...'}
+          </p>
+
+          {/* Dismiss button */}
+          {onDismissFailed && (
+            <button
+              onClick={() => onDismissFailed(failedAction.id)}
+              className="shrink-0 p-1.5 rounded-lg transition-colors hover:bg-[var(--sand)]"
+              style={{ color: 'var(--muted)' }}
+              aria-label={t.common.dismiss}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  if (!action) {
+    return null
+  }
 
   return (
     <div
