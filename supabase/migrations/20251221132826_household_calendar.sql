@@ -52,7 +52,8 @@ CREATE POLICY "Users view own household events"
 DROP POLICY IF EXISTS "Users manage own household events" ON household_events;
 CREATE POLICY "Users manage own household events"
   ON household_events FOR ALL TO authenticated
-  USING (household_id = get_user_household_id());
+  USING (household_id = get_user_household_id())
+  WITH CHECK (household_id = get_user_household_id());
 
 -- ============================================================================
 -- 3. Extend external_suggestions for household ICS suggestions
