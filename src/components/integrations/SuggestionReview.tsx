@@ -198,10 +198,12 @@ function SuggestionReviewModal({
   const initEditForm = (suggestion: ExternalSuggestion) => {
     const hasChild = !!suggestion.suggested_child_id
     const hasMember = !!suggestion.target_member_id
+    // Time input expects HH:MM, but DB stores HH:MM:SS - truncate if needed
+    const timeForInput = suggestion.suggested_time?.substring(0, 5) || ''
     setEditForm({
       title: suggestion.suggested_title,
       date: suggestion.suggested_date || '',
-      time: suggestion.suggested_time || '',
+      time: timeForInput,
       child_id: suggestion.suggested_child_id || children[0]?.id || '',
       member_id: suggestion.target_member_id || members[0]?.id || '',
       target_type: hasMember && !hasChild ? 'member' : 'child',
@@ -222,11 +224,16 @@ function SuggestionReviewModal({
 
       if (currentSuggestion.source_type === 'household_ics') {
         // Use household ICS specific RPC
+        // Time might be HH:MM or HH:MM:SS - normalize to HH:MM:SS
+        let timeValue = null
+        if (editForm.time) {
+          timeValue = editForm.time.length === 5 ? `${editForm.time}:00` : editForm.time
+        }
         const result = await supabase.rpc('accept_household_ics_suggestion', {
           p_suggestion_id: currentSuggestion.id,
           p_title: editForm.title,
           p_date: editForm.date || null,
-          p_time: editForm.time ? `${editForm.time}:00` : null,
+          p_time: timeValue,
           p_child_id: editForm.child_id || null,
         })
         error = result.error
