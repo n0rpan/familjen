@@ -26,6 +26,7 @@ export interface HouseholdEventExtractionResult {
 interface HouseholdEventForProcessing {
   id: string
   household_id: string
+  ics_uid: string | null
   title: string
   description: string | null
   event_date: string
@@ -59,7 +60,7 @@ export async function processHouseholdEventsWithAI(
   // Get unprocessed household events (not yet redistributed)
   const { data: events, error: eventsError } = await supabase
     .from('household_events')
-    .select('id, household_id, title, description, event_date, end_date, event_time, location')
+    .select('id, household_id, ics_uid, title, description, event_date, end_date, event_time, location')
     .eq('household_id', householdId)
     .eq('is_redistributed', false)
     .eq('source', 'ics_calendar')
@@ -121,11 +122,12 @@ export async function processHouseholdEventsWithAI(
       const assignment = await analyzeEventWithAI(event, familyMembers, model)
 
       if (assignment && assignment.confidence >= 0.5) {
-        // Create suggestion
+        // Create suggestion with ics_uid for persistent linking across re-syncs
         const { error: insertError } = await supabase.from('external_suggestions').insert({
           household_id: householdId,
           source_type: 'household_ics',
           source_household_event_id: event.id,
+          source_ics_uid: event.ics_uid,
           suggested_type: assignment.suggested_type,
           suggested_child_id: assignment.target_type === 'child' ? assignment.target_id : null,
           target_member_id: assignment.target_type === 'member' ? assignment.target_id : null,

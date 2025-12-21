@@ -235,7 +235,7 @@ function SuggestionReviewModal({
           p_suggestion_id: currentSuggestion.id,
           p_title: editForm.title,
           p_date: editForm.date || null,
-          p_time: editForm.time || null,
+          p_time: editForm.time ? `${editForm.time}:00` : null,
           p_child_id: editForm.child_id || null,
           p_type: editForm.type,
         })
