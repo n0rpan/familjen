@@ -1,11 +1,14 @@
 -- Fix: Handle suggestions without valid target gracefully
 -- Instead of raising exception, mark as dismissed when no child/member target
+-- Also add p_child_id parameter to allow user override of AI suggestion
+-- And map suggested_type to valid child_tasks types
 
 CREATE OR REPLACE FUNCTION accept_household_ics_suggestion(
   p_suggestion_id UUID,
   p_title TEXT DEFAULT NULL,
   p_date DATE DEFAULT NULL,
-  p_time TIME DEFAULT NULL
+  p_time TIME DEFAULT NULL,
+  p_child_id UUID DEFAULT NULL
 ) RETURNS UUID AS $$
 DECLARE
   v_suggestion external_suggestions%ROWTYPE;
@@ -14,6 +17,8 @@ DECLARE
   v_user_id UUID;
   v_reviewer_id UUID;
   v_event_id UUID;
+  v_final_child_id UUID;
+  v_task_type TEXT;
 BEGIN
   v_user_id := auth.uid();
   v_household_id := get_user_household_id();
@@ -47,16 +52,29 @@ BEGIN
     v_event_id := v_suggestion.source_household_event_id;
   END IF;
 
+  -- Determine final child_id (user override takes precedence)
+  v_final_child_id := COALESCE(p_child_id, v_suggestion.suggested_child_id);
+
+  -- Map suggested_type to valid child_tasks type
+  -- AI uses: 'task', 'event', 'reminder'
+  -- child_tasks expects: 'bring', 'appointment', 'reminder', 'activity', 'closure', 'other'
+  v_task_type := CASE v_suggestion.suggested_type
+    WHEN 'task' THEN 'other'
+    WHEN 'event' THEN 'closure'  -- Calendar events like "stengt" are typically closures
+    WHEN 'reminder' THEN 'reminder'
+    ELSE 'other'
+  END;
+
   -- Create child_task or member_event based on target
-  IF v_suggestion.suggested_child_id IS NOT NULL THEN
+  IF v_final_child_id IS NOT NULL THEN
     -- Create child task
     INSERT INTO child_tasks (household_id, child_id, date, time, task_type, title, status, source)
     VALUES (
       v_household_id,
-      v_suggestion.suggested_child_id,
+      v_final_child_id,
       COALESCE(p_date, v_suggestion.suggested_date),
       COALESCE(p_time, v_suggestion.suggested_time),
-      COALESCE(v_suggestion.suggested_type, 'other'),
+      v_task_type,
       COALESCE(p_title, v_suggestion.suggested_title),
       'open',
       'ai_suggested'
@@ -107,4 +125,4 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
-GRANT EXECUTE ON FUNCTION accept_household_ics_suggestion(UUID, TEXT, DATE, TIME) TO authenticated;
+GRANT EXECUTE ON FUNCTION accept_household_ics_suggestion(UUID, TEXT, DATE, TIME, UUID) TO authenticated;

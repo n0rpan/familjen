@@ -227,6 +227,7 @@ function SuggestionReviewModal({
           p_title: editForm.title,
           p_date: editForm.date || null,
           p_time: editForm.time ? `${editForm.time}:00` : null,
+          p_child_id: editForm.child_id || null,
         })
         error = result.error
       } else {
@@ -383,11 +384,11 @@ function SuggestionReviewModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0" style={{ background: 'rgba(0, 0, 0, 0.5)' }} onClick={onClose} />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+      <div className="fixed inset-0" style={{ background: 'rgba(0, 0, 0, 0.5)' }} onClick={onClose} />
       <div
-        className="relative w-full max-w-lg rounded-2xl overflow-hidden animate-fade-in"
-        style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+        className="relative w-full max-w-lg rounded-2xl overflow-hidden overflow-y-auto animate-fade-in my-auto"
+        style={{ background: 'var(--card)', border: '1px solid var(--border)', maxHeight: 'calc(100vh - 2rem)' }}
       >
         {/* Header */}
         <div
