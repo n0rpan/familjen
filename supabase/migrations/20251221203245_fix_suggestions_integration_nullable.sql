@@ -5,6 +5,10 @@
 ALTER TABLE external_suggestions
   ALTER COLUMN integration_id DROP NOT NULL;
 
+-- Drop the original unnamed constraint from base migration
+-- (PostgreSQL auto-named it external_suggestions_check)
+ALTER TABLE external_suggestions DROP CONSTRAINT IF EXISTS external_suggestions_check;
+
 -- Update the source constraint to reflect all valid source combinations
 ALTER TABLE external_suggestions DROP CONSTRAINT IF EXISTS external_suggestions_source_check;
 ALTER TABLE external_suggestions ADD CONSTRAINT external_suggestions_source_check
