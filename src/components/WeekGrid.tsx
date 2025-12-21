@@ -345,15 +345,36 @@ export const WeekGrid = memo(function WeekGrid({
                           </>
                         ) : (
                           <div className="text-center">
-                            <span
-                              className="text-sm font-medium"
-                              style={{
-                                color: pickup?.picker ? 'var(--foreground)' : 'var(--muted)',
-                                opacity: pickup?.picker ? 1 : 0.5,
-                              }}
-                            >
-                              {pickup?.picker?.short_name || pickup?.picker?.name || '-'}
-                            </span>
+                            {(() => {
+                              const holiday = getHoliday(date, holidays)
+                              const isNonWorkingDay = isWeekend(date) || !!holiday
+                              const hasPicker = !!pickup?.picker
+
+                              if (hasPicker) {
+                                return (
+                                  <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                                    {pickup.picker?.short_name || pickup.picker?.name}
+                                  </span>
+                                )
+                              }
+
+                              // No picker assigned
+                              if (isNonWorkingDay) {
+                                // Weekend/holiday - just show dash, no warning
+                                return (
+                                  <span className="text-sm" style={{ color: 'var(--muted)', opacity: 0.5 }}>
+                                    —
+                                  </span>
+                                )
+                              }
+
+                              // Weekday without pickup - show warning
+                              return (
+                                <span className="text-xs" style={{ color: 'var(--color-coral)', opacity: 0.8 }}>
+                                  {t.week.noPickup}
+                                </span>
+                              )
+                            })()}
                           </div>
                         )}
 
