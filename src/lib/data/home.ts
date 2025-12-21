@@ -1,5 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js'
-import { formatDateISO, addDays, type Holiday } from '@/lib/utils'
+import { formatDateISO, addDays, isWeekend, getHoliday, type Holiday } from '@/lib/utils'
 import type {
   Child,
   HouseholdMember,
@@ -272,11 +272,17 @@ export function getTodaySummary(data: HomePageData) {
  * Calculate attention items for today
  */
 export function getAttentionStatus(data: HomePageData) {
+  const today = new Date(data.todayStr)
   const todayPickups = data.pickups.filter(p => p.date === data.todayStr)
   const todayMeal = data.meals.find(m => m.date === data.todayStr) || null
   const todayTasks = data.childTasks.filter(t => t.date === data.todayStr)
 
-  const childrenWithoutPickup = data.children.filter(child =>
+  // Check if today is a non-working day (weekend or holiday)
+  const holiday = getHoliday(today, data.holidays)
+  const isNonWorkingDay = isWeekend(today) || !!holiday
+
+  // Only flag missing pickups on working days
+  const childrenWithoutPickup = isNonWorkingDay ? [] : data.children.filter(child =>
     !todayPickups.some(p => p.child_id === child.id && p.picker_id)
   )
   const noMeal = !todayMeal?.recipe_id && !todayMeal?.custom_meal
