@@ -44,9 +44,19 @@ export function useRealtimeSubscription<T extends object>({
   const [isConnected, setIsConnected] = useState(false)
   const [lastEvent, setLastEvent] = useState<RealtimeEvent | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [isVisible, setIsVisible] = useState(true)
 
   const channelRef = useRef<RealtimeChannel | null>(null)
   const supabaseRef = useRef(createClient())
+
+  // Pause subscriptions when page is hidden to save battery/data
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      setIsVisible(document.visibilityState === 'visible')
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [])
 
   // Store callbacks in refs to avoid re-subscribing when they change
   const callbacksRef = useRef({ onInsert, onUpdate, onDelete, onAny })
@@ -92,7 +102,14 @@ export function useRealtimeSubscription<T extends object>({
   }, [])
 
   useEffect(() => {
-    if (!enabled) {
+    // Only subscribe when enabled AND visible (pause when backgrounded)
+    if (!enabled || !isVisible) {
+      // Clean up existing subscription if we're pausing
+      if (channelRef.current) {
+        supabaseRef.current.removeChannel(channelRef.current)
+        channelRef.current = null
+        setIsConnected(false)
+      }
       return
     }
 
@@ -150,7 +167,7 @@ export function useRealtimeSubscription<T extends object>({
       }
       setIsConnected(false)
     }
-  }, [table, schema, filter, enabled, handleChange])
+  }, [table, schema, filter, enabled, isVisible, handleChange])
 
   return {
     isConnected,

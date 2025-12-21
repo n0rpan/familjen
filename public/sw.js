@@ -2,13 +2,16 @@
 // Handles PWA installation, push notifications, and asset caching
 // Uses stale-while-revalidate for fast repeat visits while ensuring fresh data
 
-const CACHE_NAME = 'familjen-v7'
-const STATIC_CACHE = 'familjen-static-v5'
-const NAV_CACHE = 'familjen-nav-v3'
+const CACHE_NAME = 'familjen-v8'
+const STATIC_CACHE = 'familjen-static-v6'
+const NAV_CACHE = 'familjen-nav-v4'
 
-// Max age for cached navigation responses (5 minutes)
+// Max age for cached navigation responses (2 minutes for faster updates)
 // After this, we'll still show cached but prioritize network
-const NAV_CACHE_MAX_AGE = 5 * 60 * 1000
+const NAV_CACHE_MAX_AGE = 2 * 60 * 1000
+
+// Race timeout when cache is stale (300ms for faster perceived load)
+const STALE_RACE_TIMEOUT = 300
 
 // Static assets to cache immediately on install
 const STATIC_ASSETS = [
@@ -31,21 +34,31 @@ self.addEventListener('install', (event) => {
   // This prevents automatic reloads when new SW is detected
 })
 
-// Activate event - clean up old caches
+// Activate event - clean up old caches and enable navigation preload
 self.addEventListener('activate', (event) => {
   console.log('[SW] Activating service worker...')
   const currentCaches = [CACHE_NAME, STATIC_CACHE, NAV_CACHE]
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames
-          .filter((name) => !currentCaches.includes(name))
-          .map((name) => {
-            console.log('[SW] Deleting old cache:', name)
-            return caches.delete(name)
-          })
-      )
-    })
+    Promise.all([
+      // Clean up old caches
+      caches.keys().then((cacheNames) => {
+        return Promise.all(
+          cacheNames
+            .filter((name) => !currentCaches.includes(name))
+            .map((name) => {
+              console.log('[SW] Deleting old cache:', name)
+              return caches.delete(name)
+            })
+        )
+      }),
+      // Enable navigation preload for faster TTFB
+      (async () => {
+        if (self.registration.navigationPreload) {
+          await self.registration.navigationPreload.enable()
+          console.log('[SW] Navigation preload enabled')
+        }
+      })(),
+    ])
   )
   // Only claim clients on first install (when there's no existing controller)
   // On updates, the page will reload itself after user clicks "Update"
@@ -98,37 +111,63 @@ self.addEventListener('fetch', (event) => {
   }
 
   // For navigation requests - stale-while-revalidate for instant repeat visits
-  // Always fetches fresh in background to ensure data is never truly stale
+  // Uses navigation preload for faster TTFB when available
   if (request.mode === 'navigate') {
     event.respondWith(
       (async () => {
         const cache = await caches.open(NAV_CACHE)
         const cachedResponse = await cache.match(request)
 
-        // Start network fetch immediately (don't wait for cache check)
-        const networkPromise = fetch(request)
-          .then(async (response) => {
-            if (response.ok) {
+        // Helper to check if response should be cached
+        const shouldCache = (response) => {
+          if (!response.ok) return false
+          const cacheControl = response.headers.get('Cache-Control') || ''
+          // Skip caching if server says no-store or private
+          if (cacheControl.includes('no-store') || cacheControl.includes('private')) {
+            return false
+          }
+          return true
+        }
+
+        // Helper to broadcast update to clients
+        const broadcastUpdate = (url) => {
+          self.clients.matchAll({ type: 'window' }).then((clients) => {
+            clients.forEach((client) => {
+              client.postMessage({ type: 'NAV_UPDATED', url })
+            })
+          })
+        }
+
+        // Use navigation preload if available, otherwise regular fetch
+        const networkPromise = (async () => {
+          try {
+            // Prefer preloadResponse for faster TTFB
+            const preloadResponse = await event.preloadResponse
+            const response = preloadResponse || await fetch(request)
+
+            if (shouldCache(response)) {
               // Store response with timestamp for freshness checking
               const responseToCache = response.clone()
               const headers = new Headers(responseToCache.headers)
               headers.set('sw-cache-time', Date.now().toString())
 
               const body = await responseToCache.blob()
-              const cachedResponse = new Response(body, {
+              const cachedResponseToStore = new Response(body, {
                 status: responseToCache.status,
                 statusText: responseToCache.statusText,
                 headers: headers
               })
 
-              await cache.put(request, cachedResponse)
+              await cache.put(request, cachedResponseToStore)
+              // Broadcast to clients that nav cache was updated
+              broadcastUpdate(request.url)
             }
             return response
-          })
-          .catch((error) => {
+          } catch (error) {
             console.log('[SW] Network fetch failed:', error)
             return null
-          })
+          }
+        })()
 
         // If we have a cached response, check its age
         if (cachedResponse) {
@@ -142,10 +181,10 @@ self.addEventListener('fetch', (event) => {
             return cachedResponse
           } else {
             // Cache is stale - try to get network response first
-            // but if network is slow (>1s), serve stale cache
+            // but if network is slow, serve stale cache
             console.log('[SW] Cache stale, racing network for:', request.url)
             const timeoutPromise = new Promise((resolve) => {
-              setTimeout(() => resolve(cachedResponse), 1000)
+              setTimeout(() => resolve(cachedResponse), STALE_RACE_TIMEOUT)
             })
 
             const result = await Promise.race([networkPromise, timeoutPromise])

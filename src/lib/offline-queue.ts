@@ -17,18 +17,45 @@ export interface PendingChange {
 }
 
 let dbInstance: IDBDatabase | null = null
+let dbPromise: Promise<IDBDatabase> | null = null
 
-// Open IndexedDB
+// Open IndexedDB (singleton with connection pooling)
 async function openDB(): Promise<IDBDatabase> {
   if (dbInstance) return dbInstance
+  if (dbPromise) return dbPromise
 
-  return new Promise((resolve, reject) => {
+  dbPromise = new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      reject(new Error('IndexedDB not available'))
+      return
+    }
+
     const request = indexedDB.open(DB_NAME, DB_VERSION)
 
-    request.onerror = () => reject(request.error)
+    request.onerror = () => {
+      dbPromise = null
+      reject(request.error)
+    }
     request.onsuccess = () => {
-      dbInstance = request.result
-      resolve(request.result)
+      const db = request.result
+      dbInstance = db
+
+      // Handle connection close (database deleted, version change, etc.)
+      db.onclose = () => {
+        console.log('[OfflineQueue] IndexedDB connection closed, will reopen on next use')
+        dbInstance = null
+        dbPromise = null
+      }
+
+      // Handle version change (another tab upgraded the database)
+      db.onversionchange = () => {
+        console.log('[OfflineQueue] IndexedDB version change detected, closing connection')
+        db.close()
+        dbInstance = null
+        dbPromise = null
+      }
+
+      resolve(db)
     }
 
     request.onupgradeneeded = (event) => {
@@ -40,6 +67,8 @@ async function openDB(): Promise<IDBDatabase> {
       }
     }
   })
+
+  return dbPromise
 }
 
 // Add a change to the queue

@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { WeekGrid } from '@/components/WeekGrid'
 import { formatDateISO, getWeekStart, addDays, formatWeekHeaderLocalized, type Holiday } from '@/lib/utils'
-import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Household, Recipe, MealSuggestion, MemberEvent, MemberEventType, HouseholdEvent, ChildTask, ChildTaskType, RecipeIngredient, Pickup, Meal, ExternalEvent } from '@/lib/types'
+import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Household, Recipe, MealSuggestion, MemberEvent, MemberEventType, HouseholdEvent, ChildTask, ChildTaskType, RecipeIngredient, Pickup, Meal, ExternalEvent, WeekCacheData } from '@/lib/types'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { RecentChanges } from '@/components/RecentChanges'
@@ -15,6 +15,8 @@ import 'react-day-picker/style.css'
 import { WeekPageSkeleton } from '@/components/Skeleton'
 import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealtimeSubscription'
 import { useRealtimeOptional } from '@/lib/realtime/context'
+import { getCachedWeekData, getWeekCacheKey, prefetchWeekData } from '@/lib/prefetch/fetchers'
+import { setCache } from '@/lib/cache'
 
 // Dynamic imports for code splitting
 const DayPicker = dynamic(
@@ -115,6 +117,9 @@ export default function WeekEditPage() {
   // Track pending changes to prevent duplicate handling
   const pendingChanges = useRef<Set<string>>(new Set())
 
+  // Track last weekOffset to reset cache flag on week change
+  const lastWeekOffsetRef = useRef(weekOffset)
+
   const { weekStart, weekEnd } = useMemo(() => {
     const start = addDays(getWeekStart(new Date()), weekOffset * 7)
     const end = addDays(start, 6)
@@ -145,9 +150,15 @@ export default function WeekEditPage() {
     }
   }, [showWeekPicker])
 
+  // Track householdId for cache operations
+  const householdIdRef = useRef<string | null>(null)
+  // Track if we've shown cached data to prevent re-showing skeleton
+  const hasShownCacheRef = useRef(false)
+
   useEffect(() => {
+    let cancelled = false
+
     const loadData = async () => {
-      setLoading(true)
       setError(null)
 
       try {
@@ -168,6 +179,43 @@ export default function WeekEditPage() {
           setLoading(false)
           return
         }
+
+        if (cancelled) return
+
+        householdIdRef.current = membership.household_id
+
+        // Check cache first for instant display (before network fetch)
+        if (!hasShownCacheRef.current) {
+          try {
+            const cached = await getCachedWeekData(membership.household_id, weekOffset)
+            if (cached && !cancelled) {
+              // Populate state from cache immediately (no skeleton!)
+              setHousehold(cached.household)
+              setChildren(cached.children)
+              setMembers(cached.members)
+              setPickups(cached.pickups)
+              setMeals(cached.meals)
+              setRecipes(cached.recipes)
+              setMemberEvents(cached.memberEvents)
+              setHouseholdEvents(cached.householdEvents)
+              setChildTasks(cached.childTasks)
+              setExternalEvents(cached.externalEvents)
+              setHolidays(cached.holidays)
+              setWeekContext(cached.weekContext)
+              setLoading(false)
+              hasShownCacheRef.current = true
+            }
+          } catch (err) {
+            console.warn('[Week] Cache check failed:', err)
+          }
+        }
+
+        // Still show loading if no cache was found
+        if (!hasShownCacheRef.current && !household) {
+          setLoading(true)
+        }
+
+        if (cancelled) return
 
         const weekStartStr = formatDateISO(weekStart)
         const weekEndStr = formatDateISO(weekEnd)
@@ -263,6 +311,7 @@ export default function WeekEditPage() {
         ])
 
         // Fetch week context for this week
+        let weekContextValue = ''
         if (householdResult.data) {
           const { data: contextData } = await supabase
             .from('week_contexts')
@@ -270,20 +319,90 @@ export default function WeekEditPage() {
             .eq('household_id', householdResult.data.id)
             .eq('week_start', weekStartStr)
             .maybeSingle()
-          setWeekContext(contextData?.context || '')
+          weekContextValue = contextData?.context || ''
+          setWeekContext(weekContextValue)
         }
+
+        // Update cache with fresh data
+        const allHolidays = [
+          ...rawHolidays.map(h => ({ ...h, type: 'holiday' as const })),
+          ...birthdays,
+        ]
+        const cacheData: WeekCacheData = {
+          household: householdResult.data,
+          children: childrenResult.data || [],
+          members: membersResult.data || [],
+          pickups: pickupsResult.data || [],
+          meals: mealsResult.data || [],
+          recipes: recipesResult.data || [],
+          memberEvents: eventsResult.data || [],
+          householdEvents: householdEventsResult.data || [],
+          childTasks: tasksResult.data || [],
+          externalEvents: externalEventsResult.data || [],
+          holidays: allHolidays,
+          weekContext: weekContextValue,
+          weekStartStr,
+          weekEndStr,
+          timestamp: Date.now(),
+        }
+        const cacheKey = getWeekCacheKey(membership.household_id, weekOffset)
+        setCache(cacheKey, cacheData).catch(err => {
+          console.warn('[Week] Failed to update cache:', err)
+        })
       } catch (err) {
         console.error('Week edit page error:', err)
         setError(err instanceof Error ? err.message : t.errors.generic)
       } finally {
-        setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+        }
       }
     }
 
+    // Reset cache flag when week changes
+    if (lastWeekOffsetRef.current !== weekOffset) {
+      hasShownCacheRef.current = false
+      lastWeekOffsetRef.current = weekOffset
+    }
+
     loadData()
-  }, [supabase, weekStart, weekEnd, reloadTrigger])
+
+    return () => {
+      cancelled = true
+    }
+  }, [supabase, weekStart, weekEnd, reloadTrigger, weekOffset])
 
   const triggerReload = () => setReloadTrigger(prev => prev + 1)
+
+  // Prefetch adjacent weeks for instant navigation
+  const hasPrefetchedRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (!household || loading) return
+
+    // Prefetch previous and next weeks in background
+    const prefetchAdjacent = async () => {
+      const prevKey = `${household.id}:${weekOffset - 1}`
+      const nextKey = `${household.id}:${weekOffset + 1}`
+
+      // Bound set size to prevent memory leak
+      if (hasPrefetchedRef.current.size > 20) {
+        hasPrefetchedRef.current.clear()
+      }
+
+      if (!hasPrefetchedRef.current.has(prevKey)) {
+        hasPrefetchedRef.current.add(prevKey)
+        prefetchWeekData(household.id, weekOffset - 1).catch(() => {})
+      }
+      if (!hasPrefetchedRef.current.has(nextKey)) {
+        hasPrefetchedRef.current.add(nextKey)
+        prefetchWeekData(household.id, weekOffset + 1).catch(() => {})
+      }
+    }
+
+    // Delay prefetch to not compete with main content
+    const timer = setTimeout(prefetchAdjacent, 1000)
+    return () => clearTimeout(timer)
+  }, [household, weekOffset, loading])
 
   // Refetch data when app returns to foreground (catches changes missed while backgrounded)
   useEffect(() => {

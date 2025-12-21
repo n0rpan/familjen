@@ -386,6 +386,52 @@ export function ListPageSkeleton() {
   )
 }
 
+// Feed page skeleton - matches /feed layout
+export function FeedPageSkeleton() {
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <Skeleton height={32} width={100} borderRadius={12} className="mb-2" />
+        <Skeleton height={18} width={320} borderRadius={8} />
+      </div>
+
+      {/* Filter tabs */}
+      <div className="flex gap-2 overflow-hidden">
+        {['Alt', 'Spond', 'Skole', 'Barnehage', 'Bilder'].map((_, i) => (
+          <Skeleton key={i} height={36} width={80 + i * 10} borderRadius={18} />
+        ))}
+      </div>
+
+      {/* Feed items */}
+      <div className="space-y-4">
+        {[1, 2, 3, 4].map((i) => (
+          <div
+            key={i}
+            className="rounded-2xl p-5"
+            style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+          >
+            {/* Source badge and date */}
+            <div className="flex items-center justify-between mb-3">
+              <Skeleton height={24} width={80} borderRadius={12} />
+              <Skeleton height={14} width={60} borderRadius={6} />
+            </div>
+            {/* Title */}
+            <Skeleton height={20} width="70%" borderRadius={8} className="mb-2" />
+            {/* Content */}
+            <SkeletonText lines={2} />
+            {/* Child badge */}
+            <div className="mt-3 flex items-center gap-2">
+              <SkeletonCircle size={24} />
+              <Skeleton height={14} width={60} borderRadius={6} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // Wizard skeleton (for multi-step forms)
 export function WizardSkeleton() {
   return (

@@ -1,5 +1,5 @@
 /* Familjen Design System - Scandinavian Warmth */
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap');
+/* Fonts loaded via next/font in layout.tsx for better performance */
 
 @import "tailwindcss";
 
@@ -28,9 +28,9 @@
   --accent: var(--color-coral);
   --accent-hover: var(--color-coral-dark);
 
-  /* Typography */
-  --font-display: 'Fraunces', Georgia, serif;
-  --font-body: 'Outfit', system-ui, sans-serif;
+  /* Typography - uses CSS variables from next/font (defined in layout.tsx) */
+  --font-display: var(--font-fraunces), Georgia, serif;
+  --font-body: var(--font-outfit), system-ui, sans-serif;
 
   /* Spacing */
   --radius: 16px;
@@ -373,6 +373,25 @@ input:focus, select:focus, textarea:focus {
 @keyframes slide-in-right {
   from { transform: translateX(20px); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slide-out-right {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(20px); opacity: 0; }
+}
+
+@keyframes slide-in-left {
+  from { transform: translateX(-20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* Back navigation: slide in from left */
+[data-transition-direction="back"]::view-transition-old(page-content) {
+  animation: slide-out-right 0.25s ease-out forwards;
+}
+
+[data-transition-direction="back"]::view-transition-new(page-content) {
+  animation: slide-in-left 0.25s ease-out forwards;
 }
 
 /* Card alt background for skeleton items */

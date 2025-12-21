@@ -11,6 +11,56 @@ type TransitionLinkProps = ComponentProps<typeof Link> & {
 // Check if View Transitions API is supported
 const supportsViewTransitions = typeof document !== 'undefined' && 'startViewTransition' in document
 
+// Navigation history helpers
+const NAV_STACK_KEY = 'familjen-nav-stack'
+const MAX_STACK_SIZE = 20
+
+function getNavStack(): string[] {
+  if (typeof sessionStorage === 'undefined') return []
+  try {
+    return JSON.parse(sessionStorage.getItem(NAV_STACK_KEY) || '[]')
+  } catch {
+    return []
+  }
+}
+
+function pushToNavStack(path: string): void {
+  if (typeof sessionStorage === 'undefined') return
+  const stack = getNavStack()
+  // Remove if already exists (we're revisiting)
+  const existingIndex = stack.lastIndexOf(path)
+  if (existingIndex !== -1) {
+    stack.splice(existingIndex)
+  }
+  stack.push(path)
+  // Keep stack bounded
+  while (stack.length > MAX_STACK_SIZE) {
+    stack.shift()
+  }
+  sessionStorage.setItem(NAV_STACK_KEY, JSON.stringify(stack))
+}
+
+function isBackNavigation(targetPath: string): boolean {
+  const stack = getNavStack()
+  if (stack.length < 2) return false
+  // If the target is the previous page in our stack, it's a back navigation
+  const currentIndex = stack.length - 1
+  const targetIndex = stack.lastIndexOf(targetPath)
+  return targetIndex !== -1 && targetIndex < currentIndex
+}
+
+function setTransitionDirection(direction: 'forward' | 'back'): void {
+  if (typeof document !== 'undefined') {
+    document.documentElement.dataset.transitionDirection = direction
+  }
+}
+
+function clearTransitionDirection(): void {
+  if (typeof document !== 'undefined') {
+    delete document.documentElement.dataset.transitionDirection
+  }
+}
+
 export function TransitionLink({
   href,
   children,
@@ -52,15 +102,27 @@ export function TransitionLink({
 
       e.preventDefault()
 
+      // Determine navigation direction
+      const targetPath = href.split('?')[0] // Normalize path without query
+      const isBack = isBackNavigation(targetPath)
+      setTransitionDirection(isBack ? 'back' : 'forward')
+
       // Start view transition
-      const transition = (document as Document & { startViewTransition?: (callback: () => void) => void }).startViewTransition?.(() => {
+      const transition = (document as Document & { startViewTransition?: (callback: () => void) => { finished: Promise<void> } }).startViewTransition?.(() => {
         router.push(href)
+        // Update nav stack after navigation
+        pushToNavStack(targetPath)
       })
 
-      // Optional: wait for transition to complete
-      transition?.finished?.catch(() => {
-        // View transition was skipped, navigation still happened
-      })
+      // Clear direction after transition completes
+      transition?.finished
+        ?.then(() => {
+          clearTransitionDirection()
+        })
+        ?.catch(() => {
+          // View transition was skipped, still clean up
+          clearTransitionDirection()
+        })
     },
     [router, href, viewTransition, onClick]
   )
@@ -76,3 +138,6 @@ export function TransitionLink({
     </Link>
   )
 }
+
+// Export for use in AppShell popstate handler
+export { setTransitionDirection, clearTransitionDirection }

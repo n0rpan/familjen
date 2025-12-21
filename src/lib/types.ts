@@ -36,6 +36,34 @@ export type {
   ShoppingViewMode,
 }
 
+import type { Holiday } from './utils'
+
+// Forward declaration for types defined below (avoid circular reference)
+export interface WeekCacheData {
+  household: Household | null
+  children: Child[]
+  members: HouseholdMember[]
+  pickups: PickupWithDetails[]
+  meals: MealWithRecipe[]
+  recipes: Recipe[]
+  memberEvents: MemberEvent[]
+  householdEvents: HouseholdEvent[]
+  childTasks: ChildTask[]
+  externalEvents: ExternalEvent[]
+  holidays: Holiday[]
+  weekContext: string
+  weekStartStr: string
+  weekEndStr: string
+  timestamp: number
+}
+
+// Shopping list cache data
+export interface ShoppingCacheData {
+  lists: ShoppingList[]
+  items: ShoppingListItem[]
+  timestamp: number
+}
+
 // Audit fields shared by most entities
 interface AuditFields {
   created_at: string

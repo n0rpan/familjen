@@ -2,6 +2,7 @@
 
 import { useRouter, usePathname } from 'next/navigation'
 import { useCallback, useState, useRef, useEffect } from 'react'
+import { setTransitionDirection, clearTransitionDirection } from './TransitionLink'
 
 interface AppShellProps {
   children: React.ReactNode
@@ -117,6 +118,19 @@ export function AppShell({ children }: AppShellProps) {
     pullDistanceRef.current = 0
     setIsRefreshing(false)
   }, [pathname])
+
+  // Handle browser back button / iOS swipe back for view transitions
+  useEffect(() => {
+    const handlePopstate = () => {
+      // Browser back/forward always triggers with 'back' direction for consistent UX
+      setTransitionDirection('back')
+      // Clear after a short delay (after transition starts)
+      setTimeout(clearTransitionDirection, 300)
+    }
+
+    window.addEventListener('popstate', handlePopstate)
+    return () => window.removeEventListener('popstate', handlePopstate)
+  }, [])
 
   const progress = Math.min(pullDistance / threshold, 1)
 

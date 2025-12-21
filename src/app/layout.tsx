@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Outfit, Fraunces } from "next/font/google";
 import "./globals.css";
 import { Header } from "@/components/Header";
 import { LanguageProvider } from "@/lib/i18n/context";
@@ -8,6 +9,21 @@ import { UpdatePrompt } from "@/components/UpdatePrompt";
 import { AppShell } from "@/components/AppShell";
 import { OfflineIndicator } from "@/components/OfflineIndicator";
 import { RealtimeWrapper } from "@/components/RealtimeWrapper";
+
+// Self-hosted fonts with next/font for better performance (no render-blocking)
+const outfit = Outfit({
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700'],
+  variable: '--font-outfit',
+  display: 'swap',
+});
+
+const fraunces = Fraunces({
+  subsets: ['latin'],
+  weight: ['400', '500', '600'],
+  variable: '--font-fraunces',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: "Familjen",
@@ -45,15 +61,15 @@ export default async function RootLayout({
   const language = await getLanguageFromCookieOrBrowser()
 
   return (
-    <html lang={language}>
-      <body className="antialiased grain app-shell" style={{ background: 'var(--background)' }}>
+    <html lang={language} className={`${outfit.variable} ${fraunces.variable}`}>
+      <body className="antialiased grain app-shell font-sans" style={{ background: 'var(--background)' }}>
         <LanguageProvider initialLanguage={language}>
           <RealtimeWrapper>
             <OfflineIndicator />
             <Header />
             <div className="app-shell-content pt-mobile-header">
               <AppShell>
-                <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-24 md:pb-6 relative z-0">
+                <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-24 md:pb-6 relative z-0" style={{ viewTransitionName: 'page-content' }}>
                   {children}
                 </main>
               </AppShell>

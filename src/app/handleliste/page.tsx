@@ -14,6 +14,13 @@ import { ShoppingItem } from '@/components/shopping/ShoppingItem'
 import { ShoppingUndoToast } from '@/components/shopping/ShoppingUndoToast'
 import { ShoppingSuggestions } from '@/components/shopping/ShoppingSuggestions'
 import type { ShoppingCategory } from '@/lib/constants'
+import {
+  getCachedShoppingData,
+  fetchAndCacheShoppingData,
+  getShoppingCacheKey,
+} from '@/lib/prefetch/fetchers'
+import { setCache } from '@/lib/cache'
+import type { ShoppingCacheData } from '@/lib/types'
 
 interface ListWithItems extends ShoppingList {
   items: ShoppingListItem[]
@@ -142,11 +149,27 @@ export default function ShoppingListPage() {
   useEffect(() => {
     if (hasInitialized.current) return
     hasInitialized.current = true
-    loadData()
+
+    let cancelled = false
+    loadData(cancelled, (cb) => { if (!cancelled) cb() })
+
+    return () => { cancelled = true }
   }, [])
 
-  const loadData = async () => {
-    setLoading(true)
+  // Retry handler for error state (no cancellation needed - user-initiated)
+  const handleRetry = useCallback(() => {
+    loadData(false, (cb) => cb())
+  }, [])
+
+  // Helper to combine lists with items
+  const combineListsWithItems = (listsData: ShoppingList[], itemsData: ShoppingListItem[]): ListWithItems[] => {
+    return listsData.map(list => ({
+      ...list,
+      items: itemsData.filter(item => item.list_id === list.id),
+    }))
+  }
+
+  const loadData = async (cancelled: boolean, safeSetState: (cb: () => void) => void) => {
     setError(null)
 
     try {
@@ -156,11 +179,15 @@ export default function ShoppingListPage() {
         throw new Error(t.errors.unauthorized)
       }
 
+      if (cancelled) return
+
       const { data: membership } = await supabase
         .from('household_members')
         .select('household_id')
         .eq('user_id', user.id)
         .maybeSingle()
+
+      if (cancelled) return
 
       if (!membership) {
         setHousehold(null)
@@ -180,7 +207,34 @@ export default function ShoppingListPage() {
         throw new Error(t.errors.couldNotLoadHousehold)
       }
 
+      if (cancelled) return
+
       setHousehold(householdData)
+
+      // Try to load from cache first for instant display
+      const cachedData = await getCachedShoppingData(householdData.id)
+      if (cachedData && cachedData.lists.length > 0) {
+        // Show cached data immediately
+        const listsWithItems = combineListsWithItems(cachedData.lists, cachedData.items)
+        setLists(listsWithItems)
+        setLoading(false)
+
+        // Fetch fresh data in background (with unmount protection)
+        fetchAndCacheShoppingData(householdData.id)
+          .then((freshData) => {
+            safeSetState(() => {
+              const freshListsWithItems = combineListsWithItems(freshData.lists, freshData.items)
+              setLists(freshListsWithItems)
+            })
+          })
+          .catch((err) => {
+            console.warn('[Shopping] Background refresh failed:', err)
+          })
+        return
+      }
+
+      // No cache or empty - fetch fresh data
+      setLoading(true)
 
       // Get shopping lists (only non-archived)
       let { data: listsData, error: listsError } = await supabase
@@ -214,12 +268,16 @@ export default function ShoppingListPage() {
       if (itemsError) throw new Error(t.errors.loadFailed)
 
       // Combine lists with their items
-      const listsWithItems: ListWithItems[] = listsData.map(list => ({
-        ...list,
-        items: (itemsData || []).filter(item => item.list_id === list.id),
-      }))
-
+      const listsWithItems = combineListsWithItems(listsData, itemsData || [])
       setLists(listsWithItems)
+
+      // Cache the data
+      const cacheData: ShoppingCacheData = {
+        lists: listsData,
+        items: itemsData || [],
+        timestamp: Date.now(),
+      }
+      await setCache(getShoppingCacheKey(householdData.id), cacheData)
     } catch (err) {
       console.error('Shopping list error:', err)
       setError(err instanceof Error ? err.message : t.errors.generic)
@@ -231,49 +289,56 @@ export default function ShoppingListPage() {
   // Refetch data when app returns to foreground (catches changes missed while backgrounded)
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && hasInitialized.current) {
-        // Silently refresh data without showing loading state
+      if (document.visibilityState === 'visible' && hasInitialized.current && household) {
+        // Fetch fresh data and update cache
         refreshData()
       }
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
-  }, [])
+  }, [household])
 
   // Silent refresh that doesn't show loading spinner
   const refreshData = async () => {
     if (!household) return
 
     try {
-      // Refetch shopping lists with items (only non-archived)
-      const { data: listsData } = await supabase
-        .from('shopping_lists')
-        .select('*')
-        .eq('household_id', household.id)
-        .eq('is_archived', false)
-        .order('sort_order')
-
-      if (!listsData) return
-
-      // Get items for each list
-      const { data: allItems } = await supabase
-        .from('shopping_list_items')
-        .select('*')
-        .in('list_id', listsData.map(l => l.id))
-        .order('created_at', { ascending: true })
-
-      // Combine lists with items
-      const listsWithItems: ListWithItems[] = listsData.map(list => ({
-        ...list,
-        items: (allItems || []).filter(item => item.list_id === list.id)
-      }))
-
+      // Fetch fresh data and update cache
+      const freshData = await fetchAndCacheShoppingData(household.id)
+      const listsWithItems = combineListsWithItems(freshData.lists, freshData.items)
       setLists(listsWithItems)
     } catch {
       // Silent fail - user can pull to refresh if needed
     }
   }
+
+  // Sync state to cache when lists change (debounced to avoid excessive writes)
+  const cacheDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!household || lists.length === 0) return
+
+    // Debounce cache writes to avoid excessive IndexedDB operations
+    if (cacheDebounceRef.current) {
+      clearTimeout(cacheDebounceRef.current)
+    }
+    cacheDebounceRef.current = setTimeout(async () => {
+      const allItems = lists.flatMap(l => l.items)
+      const listsOnly = lists.map(({ items: _, ...list }) => list as ShoppingList)
+      const cacheData: ShoppingCacheData = {
+        lists: listsOnly,
+        items: allItems,
+        timestamp: Date.now(),
+      }
+      await setCache(getShoppingCacheKey(household.id), cacheData)
+    }, 500)
+
+    return () => {
+      if (cacheDebounceRef.current) {
+        clearTimeout(cacheDebounceRef.current)
+      }
+    }
+  }, [household, lists])
 
   // Get list IDs for filtering realtime events
   const listIds = useMemo(() => lists.map(l => l.id), [lists])
@@ -641,7 +706,7 @@ export default function ShoppingListPage() {
           <h2 className="text-2xl font-semibold font-display mb-3" style={{ color: 'var(--foreground)' }}>
             {error}
           </h2>
-          <button onClick={loadData} className="btn btn-primary">
+          <button onClick={handleRetry} className="btn btn-primary">
             {t.common.retry}
           </button>
         </div>

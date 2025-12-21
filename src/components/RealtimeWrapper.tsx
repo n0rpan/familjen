@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { RealtimeProvider } from '@/lib/realtime/context'
 import { RealtimeToastContainer } from '@/components/RealtimeToast'
 import type { HouseholdMember } from '@/lib/types'
+import { prefetchWeekData, prefetchShoppingData, prefetchRecipesData } from '@/lib/prefetch/fetchers'
+import { useBackgroundSync } from '@/hooks/useBackgroundSync'
 
 interface RealtimeWrapperProps {
   children: React.ReactNode
@@ -15,8 +17,27 @@ export function RealtimeWrapper({ children }: RealtimeWrapperProps) {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [members, setMembers] = useState<HouseholdMember[]>([])
   const [isLoaded, setIsLoaded] = useState(false)
+  const hasPrefetchedRef = useRef(false)
 
   const supabase = useMemo(() => createClient(), [])
+
+  // Process offline queue when back online
+  useBackgroundSync()
+
+  // Prefetch critical data after householdId is known
+  useEffect(() => {
+    if (householdId && !hasPrefetchedRef.current) {
+      hasPrefetchedRef.current = true
+      // Prefetch in background (fire and forget)
+      Promise.all([
+        prefetchWeekData(householdId, 0),      // Current week
+        prefetchShoppingData(householdId),     // Shopping list
+        prefetchRecipesData(householdId),      // Recipes
+      ]).catch((err) => {
+        console.warn('[RealtimeWrapper] Background prefetch failed:', err)
+      })
+    }
+  }, [householdId])
 
   useEffect(() => {
     let mounted = true
