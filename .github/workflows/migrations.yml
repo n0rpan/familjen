@@ -19,5 +19,11 @@ jobs:
         with:
           version: latest
 
+      - name: Repair orphaned migration versions
+        run: |
+          # Mark orphaned versions as reverted (versions in remote but not in local files)
+          # This handles cases where migrations were renamed or combined
+          supabase migration repair --status reverted 20251221 --db-url "${{ secrets.SUPABASE_DB_URL }}" 2>/dev/null || true
+
       - name: Push migrations to production
         run: supabase db push --db-url "${{ secrets.SUPABASE_DB_URL }}"
