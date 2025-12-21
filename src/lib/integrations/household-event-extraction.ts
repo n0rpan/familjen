@@ -122,6 +122,29 @@ export async function processHouseholdEventsWithAI(
       const assignment = await analyzeEventWithAI(event, familyMembers, model)
 
       if (assignment && assignment.confidence >= 0.5) {
+        // Skip household-level events - they don't need redistribution to individuals
+        // (e.g., family vacations, holidays)
+        if (assignment.target_type === 'household') {
+          console.log(`[HouseholdEventExtraction] Skipping household-level event: ${event.title}`)
+          await supabase
+            .from('household_events')
+            .update({ is_redistributed: true })
+            .eq('id', event.id)
+          result.processed++
+          continue
+        }
+
+        // Skip if we couldn't find a target_id (name matching failed)
+        if (!assignment.target_id) {
+          console.log(`[HouseholdEventExtraction] No target_id found for: ${event.title}`)
+          await supabase
+            .from('household_events')
+            .update({ is_redistributed: true })
+            .eq('id', event.id)
+          result.processed++
+          continue
+        }
+
         // Create suggestion with ics_uid for persistent linking across re-syncs
         const { error: insertError } = await supabase.from('external_suggestions').insert({
           household_id: householdId,
