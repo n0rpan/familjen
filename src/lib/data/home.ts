@@ -1,5 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js'
-import { formatDateISO, addDays } from '@/lib/utils'
+import { formatDateISO, addDays, type Holiday } from '@/lib/utils'
 import type {
   Child,
   HouseholdMember,
@@ -28,10 +28,13 @@ export interface HomePageData {
   memberEvents: MemberEvent[]
   childTasks: ChildTaskWithChild[]
   householdReminders: HouseholdReminderWithAssignee[]
+  holidays: Holiday[]
   recentPhotos: HomePagePhoto[]
   weekStart: Date
   weekEnd: Date
   todayStr: string
+  weekStartStr: string
+  weekEndStr: string
 }
 
 export interface HomePageDataResult {
@@ -64,6 +67,7 @@ export async function getHomePageData(
     eventsResult,
     tasksResult,
     remindersResult,
+    holidaysResult,
     photosResult,
   ] = await Promise.all([
     supabase
@@ -113,6 +117,14 @@ export async function getHomePageData(
       .eq('status', 'open')
       .order('date')
       .order('time'),
+    // Fetch holidays (system-wide and household-specific)
+    supabase
+      .from('calendar_events')
+      .select('date, name')
+      .or(`household_id.is.null,household_id.eq.${householdId}`)
+      .gte('date', weekStartStr)
+      .lte('date', weekEndStr)
+      .eq('event_type', 'holiday'),
     // Fetch recent photos from integrations
     supabase
       .from('external_photos')
@@ -123,7 +135,11 @@ export async function getHomePageData(
       .limit(4),
   ])
 
-  // Check for errors (include all results)
+  // Check for errors (holidaysResult is non-critical)
+  if (holidaysResult.error) {
+    console.warn('Non-critical: Could not load holidays', holidaysResult.error)
+  }
+
   const queryError =
     childrenResult.error ||
     membersResult.error ||
@@ -138,6 +154,47 @@ export async function getHomePageData(
     console.error('Error loading home page data:', queryError)
     return { data: null, error: new Error(queryError.message) }
   }
+
+  // Generate birthdays from members and children with birth_date
+  const currentYear = today.getFullYear()
+  const birthdays: Holiday[] = []
+
+  // Add member birthdays
+  membersResult.data?.forEach(member => {
+    if (member.birth_date) {
+      const birthDate = new Date(member.birth_date)
+      const thisYearBirthday = `${currentYear}-${String(birthDate.getMonth() + 1).padStart(2, '0')}-${String(birthDate.getDate()).padStart(2, '0')}`
+      if (thisYearBirthday >= weekStartStr && thisYearBirthday <= weekEndStr) {
+        birthdays.push({
+          date: thisYearBirthday,
+          name: member.name,  // Will be formatted with translation in component
+          type: 'birthday',
+        })
+      }
+    }
+  })
+
+  // Add children birthdays
+  childrenResult.data?.forEach(child => {
+    if (child.birth_date) {
+      const birthDate = new Date(child.birth_date)
+      const thisYearBirthday = `${currentYear}-${String(birthDate.getMonth() + 1).padStart(2, '0')}-${String(birthDate.getDate()).padStart(2, '0')}`
+      if (thisYearBirthday >= weekStartStr && thisYearBirthday <= weekEndStr) {
+        birthdays.push({
+          date: thisYearBirthday,
+          name: child.name,  // Will be formatted with translation in component
+          type: 'birthday',
+        })
+      }
+    }
+  })
+
+  // Merge holidays and birthdays
+  const rawHolidays = holidaysResult.data || []
+  const holidays: Holiday[] = [
+    ...rawHolidays.map(h => ({ ...h, type: 'holiday' as const })),
+    ...birthdays,
+  ]
 
   // Transform photos data - filter out pending and generate signed URLs
   const actualPhotos = (photosResult.data || []).filter(
@@ -181,10 +238,13 @@ export async function getHomePageData(
       memberEvents: (eventsResult.data || []) as MemberEvent[],
       childTasks: (tasksResult.data || []) as ChildTaskWithChild[],
       householdReminders: (remindersResult.data || []) as HouseholdReminderWithAssignee[],
+      holidays,
       recentPhotos,
       weekStart,
       weekEnd,
       todayStr,
+      weekStartStr,
+      weekEndStr,
     },
     error: null,
   }

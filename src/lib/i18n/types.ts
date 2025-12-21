@@ -80,6 +80,7 @@ export interface TranslationStrings {
     monthsShort: string[]
     weekLabel: string // "Uke" / "Vecka" / "Week"
     weekFormat: string // "Uke {week}, {year}"
+    birthday: string // "{name} fyller år" / "{name}'s birthday"
   }
 
   // Home page
@@ -100,6 +101,7 @@ export interface TranslationStrings {
     everyoneHome: string
     memberAway: string
     membersAway: string
+    birthdayWishes: string // "Happy birthday!" / "Gratulerer med dagen!"
     allReadyForToday: string // "All ready for today"
     thingNeedsAttention: string // "1 thing needs attention"
     thingsNeedAttention: string // "{count} things need attention"

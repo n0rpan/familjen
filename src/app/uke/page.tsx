@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { WeekGrid } from '@/components/WeekGrid'
-import { formatDateISO, getWeekStart, addDays, formatWeekHeaderLocalized } from '@/lib/utils'
+import { formatDateISO, getWeekStart, addDays, formatWeekHeaderLocalized, type Holiday } from '@/lib/utils'
 import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Household, Recipe, MealSuggestion, MemberEvent, MemberEventType, ChildTask, ChildTaskType, RecipeIngredient, Pickup, Meal, ExternalEvent } from '@/lib/types'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
@@ -70,6 +70,9 @@ export default function WeekEditPage() {
 
   // External events state (from Spond, etc.)
   const [externalEvents, setExternalEvents] = useState<ExternalEvent[]>([])
+
+  // Holidays state (system + birthdays)
+  const [holidays, setHolidays] = useState<Holiday[]>([])
   const [editingTask, setEditingTask] = useState<ChildTask | null>(null)
   const [taskForm, setTaskForm] = useState({
     child_id: '',
@@ -158,7 +161,7 @@ export default function WeekEditPage() {
         const weekEndStr = formatDateISO(weekEnd)
 
         // Fetch all data in parallel, using the specific household_id to prevent admin seeing other households
-        const [householdResult, childrenResult, membersResult, pickupsResult, mealsResult, recipesResult, eventsResult, tasksResult, externalEventsResult] = await Promise.all([
+        const [householdResult, childrenResult, membersResult, pickupsResult, mealsResult, recipesResult, eventsResult, tasksResult, externalEventsResult, holidaysResult] = await Promise.all([
           supabase.from('households').select('id, name, ai_meal_context, share_names_with_ai, external_integrations_enabled, created_at').eq('id', membership.household_id).single(),
           supabase.from('children').select('*').eq('household_id', membership.household_id).order('sort_order'),
           supabase.from('household_members').select('*').eq('household_id', membership.household_id),
@@ -171,6 +174,8 @@ export default function WeekEditPage() {
           supabase.from('child_tasks').select('*').eq('household_id', membership.household_id).gte('date', weekStartStr).lte('date', weekEndStr).order('date').order('time'),
           // Fetch external events (from Spond, etc.) - join with integrations to get service info
           supabase.from('external_events').select(`*, integration:external_integrations!inner(service, display_name, household_id)`).eq('external_integrations.household_id', membership.household_id).eq('is_hidden', false).gte('event_date', weekStartStr).lte('event_date', weekEndStr).order('event_date').order('event_time'),
+          // Fetch holidays (system-wide and household-specific)
+          supabase.from('calendar_events').select('date, name').or(`household_id.is.null,household_id.eq.${membership.household_id}`).gte('date', weekStartStr).lte('date', weekEndStr).eq('event_type', 'holiday'),
         ])
 
         // Check for critical errors
@@ -185,6 +190,11 @@ export default function WeekEditPage() {
         if (eventsResult.error) throw new Error(t.errors.couldNotLoadEvents)
         if (tasksResult.error) throw new Error(t.errors.couldNotLoadTasks)
 
+        // Non-critical: holidays
+        if (holidaysResult.error) {
+          console.warn('Non-critical: Could not load holidays', holidaysResult.error)
+        }
+
         setHousehold(householdResult.data)
         setChildren(childrenResult.data || [])
         setMembers(membersResult.data || [])
@@ -194,6 +204,47 @@ export default function WeekEditPage() {
         setMemberEvents(eventsResult.data || [])
         setChildTasks(tasksResult.data || [])
         setExternalEvents(externalEventsResult.data || [])
+
+        // Generate birthdays from members and children with birth_date
+        const currentYear = new Date().getFullYear()
+        const birthdays: Holiday[] = []
+
+        // Add member birthdays
+        membersResult.data?.forEach(member => {
+          if (member.birth_date) {
+            const birthDate = new Date(member.birth_date)
+            const thisYearBirthday = `${currentYear}-${String(birthDate.getMonth() + 1).padStart(2, '0')}-${String(birthDate.getDate()).padStart(2, '0')}`
+            if (thisYearBirthday >= weekStartStr && thisYearBirthday <= weekEndStr) {
+              birthdays.push({
+                date: thisYearBirthday,
+                name: member.name,
+                type: 'birthday',
+              })
+            }
+          }
+        })
+
+        // Add children birthdays
+        childrenResult.data?.forEach(child => {
+          if (child.birth_date) {
+            const birthDate = new Date(child.birth_date)
+            const thisYearBirthday = `${currentYear}-${String(birthDate.getMonth() + 1).padStart(2, '0')}-${String(birthDate.getDate()).padStart(2, '0')}`
+            if (thisYearBirthday >= weekStartStr && thisYearBirthday <= weekEndStr) {
+              birthdays.push({
+                date: thisYearBirthday,
+                name: child.name,
+                type: 'birthday',
+              })
+            }
+          }
+        })
+
+        // Merge holidays and birthdays
+        const rawHolidays = holidaysResult.data || []
+        setHolidays([
+          ...rawHolidays.map(h => ({ ...h, type: 'holiday' as const })),
+          ...birthdays,
+        ])
 
         // Fetch week context for this week
         if (householdResult.data) {
@@ -1478,6 +1529,7 @@ export default function WeekEditPage() {
         meals={meals}
         memberEvents={memberEvents}
         externalEvents={externalEvents}
+        holidays={holidays}
         recipes={recipes}
         weekStart={weekStart}
         editable={true}

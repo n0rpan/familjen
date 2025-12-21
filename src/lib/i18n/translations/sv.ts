@@ -72,6 +72,7 @@ export const sv: TranslationStrings = {
     monthsShort: ['jan', 'feb', 'mar', 'apr', 'maj', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'],
     weekLabel: 'Vecka',
     weekFormat: 'Vecka {week}, {year}',
+    birthday: '{name} fyller år',
   },
 
   // Home page
@@ -92,6 +93,7 @@ export const sv: TranslationStrings = {
     everyoneHome: 'Alla är hemma',
     memberAway: '{name} är borta',
     membersAway: '{count} är borta',
+    birthdayWishes: 'Grattis på födelsedagen!',
     allReadyForToday: 'Allt klart för idag',
     thingNeedsAttention: '1 sak behöver uppmärksamhet',
     thingsNeedAttention: '{count} saker behöver uppmärksamhet',

@@ -160,3 +160,84 @@ export function formatWeekHeader(date: Date): string {
 export function cn(...classes: (string | boolean | undefined | null)[]): string {
   return classes.filter(Boolean).join(' ')
 }
+
+/**
+ * Holiday/special day type for calendar events
+ */
+export interface Holiday {
+  date: string
+  name: string
+  type?: 'holiday' | 'birthday'  // Default is 'holiday'
+}
+
+/**
+ * Get an appropriate emoji for a holiday based on its name
+ */
+export function getHolidayEmoji(holiday: Holiday): string {
+  if (holiday.type === 'birthday') return '🎂'
+
+  const name = holiday.name.toLowerCase()
+
+  // Christmas
+  if (name.includes('jul') || name.includes('christmas')) return '🎄'
+
+  // New Year
+  if (name.includes('nyttår') || name.includes('new year') || name.includes('nyår')) return '🎆'
+
+  // Easter
+  if (name.includes('påske') || name.includes('easter') || name.includes('påsk') ||
+      name.includes('langfredag') || name.includes('skjærtorsdag') ||
+      name.includes('good friday') || name.includes('långfredag')) return '🐣'
+
+  // Constitution Day / National Days
+  if (name.includes('17. mai') || name.includes('17 mai') || name.includes('grunnlov') ||
+      name.includes('nationaldag') || name.includes('national day') ||
+      name.includes('6. juni') || name.includes('6 juni')) return '🎊'
+
+  // May Day / Labor Day
+  if (name.includes('1. mai') || name.includes('1 mai') || name.includes('arbeid') ||
+      name.includes('may day') || name.includes('labor') || name.includes('första maj')) return '🌷'
+
+  // Ascension / Pentecost
+  if (name.includes('himmelfart') || name.includes('ascension') ||
+      name.includes('pinse') || name.includes('pentecost') || name.includes('pingst')) return '✨'
+
+  // Midsummer
+  if (name.includes('sankthans') || name.includes('midsommar') || name.includes('midsummer') ||
+      name.includes('jonsok')) return '🌻'
+
+  // Default celebration emoji
+  return '🎊'
+}
+
+/**
+ * Check if a date is a holiday
+ */
+export function isHoliday(date: Date | string, holidays: Holiday[]): boolean {
+  const dateStr = typeof date === 'string' ? date : formatDateISO(date)
+  return holidays.some(h => h.date === dateStr)
+}
+
+/**
+ * Get holiday for a date, or null if not a holiday
+ */
+export function getHoliday(date: Date | string, holidays: Holiday[]): Holiday | null {
+  const dateStr = typeof date === 'string' ? date : formatDateISO(date)
+  return holidays.find(h => h.date === dateStr) || null
+}
+
+/**
+ * Get holiday name for a date, or null if not a holiday
+ */
+export function getHolidayName(date: Date | string, holidays: Holiday[]): string | null {
+  const holiday = getHoliday(date, holidays)
+  return holiday?.name || null
+}
+
+/**
+ * Check if a date is a non-working day (weekend or holiday)
+ */
+export function isNonWorkingDay(date: Date | string, holidays: Holiday[]): boolean {
+  const d = typeof date === 'string' ? new Date(date) : date
+  return isWeekend(d) || isHoliday(date, holidays)
+}

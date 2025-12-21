@@ -137,7 +137,7 @@ export default async function HomePage() {
     )
   }
 
-  const { children, members, pickups, meals, memberEvents, childTasks, householdReminders, recentPhotos, weekStart } = homeData
+  const { children, members, pickups, meals, memberEvents, childTasks, householdReminders, holidays, recentPhotos, weekStart } = homeData
   const todaySummary = getTodaySummary(homeData)
 
   // Check if we have any data set up
@@ -257,7 +257,7 @@ export default async function HomePage() {
       />
 
       {/* Today's Overview */}
-      <TodayOverview summary={todaySummary} />
+      <TodayOverview summary={todaySummary} holidays={holidays} />
 
       {/* Recent Photos */}
       {recentPhotos.length > 0 && <RecentPhotos photos={recentPhotos} />}
@@ -282,6 +282,7 @@ export default async function HomePage() {
           pickups={pickups || []}
           meals={meals || []}
           memberEvents={memberEvents || []}
+          holidays={holidays}
           weekStart={weekStart}
         />
       </div>
