@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Disable X-Powered-By header to reduce fingerprinting
+  poweredByHeader: false,
+
   // Optimize images
   images: {
     formats: ['image/avif', 'image/webp'],
@@ -29,6 +32,30 @@ const nextConfig: NextConfig = {
 
   // Security headers
   async headers() {
+    // Build CSP directives
+    const cspDirectives = [
+      "default-src 'self'",
+      // Next.js requires unsafe-inline and unsafe-eval for hydration/HMR
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      // Tailwind and inline styles
+      "style-src 'self' 'unsafe-inline'",
+      // Images from self, data URIs, blobs, and HTTPS (Supabase signed URLs)
+      "img-src 'self' data: blob: https:",
+      "font-src 'self'",
+      // API connections: self, Supabase, OpenRouter, Google
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://openrouter.ai https://accounts.google.com https://www.googleapis.com",
+      // Web workers for SW
+      "worker-src 'self'",
+      // Manifest for PWA
+      "manifest-src 'self'",
+      // No iframes
+      "frame-ancestors 'none'",
+      // Form submissions only to self
+      "form-action 'self'",
+      // Base URI restriction
+      "base-uri 'self'",
+    ].join('; ')
+
     return [
       {
         source: '/:path*',
@@ -46,12 +73,16 @@ const nextConfig: NextConfig = {
             value: 'strict-origin-when-cross-origin',
           },
           {
-            key: 'X-XSS-Protection',
-            value: '1; mode=block',
-          },
-          {
             key: 'Permissions-Policy',
             value: 'camera=(), microphone=(), geolocation=()',
+          },
+          {
+            key: 'Strict-Transport-Security',
+            value: 'max-age=31536000; includeSubDomains',
+          },
+          {
+            key: 'Content-Security-Policy',
+            value: cspDirectives,
           },
         ],
       },
