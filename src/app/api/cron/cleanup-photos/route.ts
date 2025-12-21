@@ -25,11 +25,13 @@ function verifyCronRequest(request: Request): boolean {
 /**
  * GET /api/cron/cleanup-photos
  *
- * Scheduled cleanup of expired photos from external integrations.
+ * Scheduled cleanup of expired photos and orphaned data.
  * Called by Vercel Cron at 06:00 UTC daily (after sync at 05:00).
  *
- * Photos have a 1-year retention period set via expires_at.
- * This job deletes expired photo records and their storage files.
+ * Cleans up:
+ * 1. Photos with expired retention (1 year)
+ * 2. Orphaned pickups (picker_id is null, date in past)
+ * 3. Bought shopping items older than 7 days
  */
 export async function GET(request: Request) {
   // Verify cron authorization
@@ -37,7 +39,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  console.log('[Cron] Starting photo cleanup')
+  console.log('[Cron] Starting cleanup job')
 
   // Use service role client to bypass RLS
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -115,15 +117,80 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Failed to delete photo records' }, { status: 500 })
     }
 
-    console.log(`[Cron] Cleanup complete: ${expiredPhotos.length} photos deleted, ${storageFilesDeleted} storage files removed`)
+    console.log(`[Cron] Photo cleanup: ${expiredPhotos.length} photos deleted, ${storageFilesDeleted} storage files removed`)
+
+    // --- Cleanup orphaned pickups ---
+    // Pickups with picker_id = null are from AI "delete" operations (soft delete for undo)
+    // Clean up past dates where undo window has expired
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yesterdayStr = yesterday.toISOString().split('T')[0]
+
+    const { data: orphanedPickups, error: pickupFetchError } = await supabase
+      .from('pickups')
+      .select('id')
+      .is('picker_id', null)
+      .lt('date', yesterdayStr)
+      .limit(500)
+
+    let pickupsDeleted = 0
+    if (pickupFetchError) {
+      console.error('[Cron] Error fetching orphaned pickups:', pickupFetchError)
+    } else if (orphanedPickups && orphanedPickups.length > 0) {
+      const { error: pickupDeleteError } = await supabase
+        .from('pickups')
+        .delete()
+        .in('id', orphanedPickups.map(p => p.id))
+
+      if (pickupDeleteError) {
+        console.error('[Cron] Error deleting orphaned pickups:', pickupDeleteError)
+      } else {
+        pickupsDeleted = orphanedPickups.length
+        console.log(`[Cron] Deleted ${pickupsDeleted} orphaned pickups`)
+      }
+    }
+
+    // --- Cleanup old bought shopping items ---
+    // Items marked as bought more than 7 days ago
+    const sevenDaysAgo = new Date()
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+    const sevenDaysAgoStr = sevenDaysAgo.toISOString()
+
+    const { data: boughtItems, error: shoppingFetchError } = await supabase
+      .from('shopping_list_items')
+      .select('id')
+      .eq('is_bought', true)
+      .lt('updated_at', sevenDaysAgoStr)
+      .limit(500)
+
+    let shoppingItemsDeleted = 0
+    if (shoppingFetchError) {
+      console.error('[Cron] Error fetching old bought items:', shoppingFetchError)
+    } else if (boughtItems && boughtItems.length > 0) {
+      const { error: shoppingDeleteError } = await supabase
+        .from('shopping_list_items')
+        .delete()
+        .in('id', boughtItems.map(i => i.id))
+
+      if (shoppingDeleteError) {
+        console.error('[Cron] Error deleting bought items:', shoppingDeleteError)
+      } else {
+        shoppingItemsDeleted = boughtItems.length
+        console.log(`[Cron] Deleted ${shoppingItemsDeleted} old bought shopping items`)
+      }
+    }
+
+    console.log('[Cron] Cleanup job complete')
 
     return NextResponse.json({
       success: true,
       photosDeleted: expiredPhotos.length,
       storageFilesDeleted,
+      pickupsDeleted,
+      shoppingItemsDeleted,
     })
   } catch (error) {
-    console.error('[Cron] Photo cleanup error:', error)
+    console.error('[Cron] Cleanup error:', error)
     return NextResponse.json({ error: 'Cleanup failed' }, { status: 500 })
   }
 }

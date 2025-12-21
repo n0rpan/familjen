@@ -624,10 +624,17 @@ export const en: TranslationStrings = {
     inputPlaceholder: 'Meal, pickup, task...',
     add: 'Add',
     change: 'Change',
+    delete: 'Delete',
+    complete: 'Done',
     added: 'Added',
     changed: 'Changed',
+    edit: 'Edit',
+    edited: 'Edited',
+    deleted: 'Deleted',
+    completed: 'Marked as done',
     undo: 'Undo',
     parsing: 'Parsing...',
+    confirmDelete: 'Are you sure you want to delete this?',
   },
 
   notifications: {

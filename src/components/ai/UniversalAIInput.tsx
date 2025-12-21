@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
-import type { ParsedAction, ActionType } from '@/app/api/openrouter/parse-action/route'
+import type { ParsedAction, ActionType, ActionOperation } from '@/app/api/openrouter/parse-action/route'
 import { formatDateISO } from '@/lib/utils'
 
 interface Child {
@@ -26,10 +26,19 @@ interface UniversalAIInputProps {
   onActionExecuted?: () => void
 }
 
+// Store original data for undo support
+interface UndoData {
+  type: 'add' | 'delete' | 'complete' | 'edit'
+  table: string
+  recordId?: string // For add operations (delete this record to undo)
+  deletedRecords?: Record<string, unknown>[] // For delete operations (re-insert these to undo)
+  completedRecords?: { id: string; previousState: Record<string, unknown> }[] // For complete operations (restore previous state)
+  editedRecords?: { id: string; previousState: Record<string, unknown> }[] // For edit operations (restore previous state)
+}
+
 interface ExecutedAction {
   action: ParsedAction
-  table: string
-  recordId: string
+  undoData: UndoData
   timestamp: number
 }
 
@@ -172,11 +181,11 @@ export function UniversalAIInput({
       needsClarification: undefined,
     }
 
-    // If it's a modification, ask for confirmation
-    if (updatedAction.operation === 'modify') {
+    // If it's a modification or delete, ask for confirmation
+    if (updatedAction.operation === 'modify' || updatedAction.operation === 'delete') {
       setPendingConfirmation(updatedAction)
     } else {
-      // Execute immediately for additions
+      // Execute immediately for additions and completions
       executeAction(updatedAction)
     }
 
@@ -184,18 +193,149 @@ export function UniversalAIInput({
     setParsedActions(prev => prev.filter(a => a !== action))
   }, [])
 
+  // Infer child_id from child_name if needed
+  const inferChildId = useCallback((action: ParsedAction): string | null => {
+    if (action.data.child_id) return action.data.child_id as string
+
+    if (action.data.child_name) {
+      const childName = (action.data.child_name as string).toLowerCase()
+      const matchedChild = children.find(c =>
+        c.name.toLowerCase().includes(childName) ||
+        childName.includes(c.name.toLowerCase())
+      )
+      if (matchedChild) return matchedChild.id
+    }
+    return null
+  }, [children])
+
+  // Infer member_id from member_name if needed
+  const inferMemberId = useCallback((action: ParsedAction): string | null => {
+    if (action.data.member_id) return action.data.member_id as string
+
+    if (action.data.member_name) {
+      const memberName = (action.data.member_name as string).toLowerCase()
+      const matchedMember = members.find(m =>
+        m.name.toLowerCase().includes(memberName) ||
+        memberName.includes(m.name.toLowerCase())
+      )
+      if (matchedMember) return matchedMember.id
+    }
+    return null
+  }, [members])
+
+  // Validate action and return clarification if needed
+  // This runs for ALL operations (add, edit, delete, complete)
+  const validateAndPrepareAction = useCallback((action: ParsedAction): ParsedAction | null => {
+    const updatedAction = { ...action, data: { ...action.data } }
+
+    switch (action.type) {
+      case 'child_task': {
+        // For all operations, try to infer child_id if not already set
+        const childId = inferChildId(action)
+        if (childId) {
+          updatedAction.data.child_id = childId
+        } else if (action.operation === 'add') {
+          // Only require child clarification for add operations
+          // For edit/delete/complete, we search by title and show matches
+          return {
+            ...updatedAction,
+            needsClarification: {
+              field: 'child_id',
+              question: 'Hvilke barn gjelder dette?',
+              options: children.map(c => ({ label: c.name, value: c.id })),
+            },
+          }
+        }
+        break
+      }
+      case 'pickup': {
+        // Pickup always requires child_id for all operations
+        const childId = inferChildId(action)
+        if (!childId) {
+          const questionMap: Record<string, string> = {
+            add: 'Hvem skal hentes?',
+            modify: 'Hvem sin henting skal endres?',
+            delete: 'Hvem sin henting skal fjernes?',
+          }
+          return {
+            ...updatedAction,
+            needsClarification: {
+              field: 'child_id',
+              question: questionMap[action.operation] || 'Hvem gjelder dette?',
+              options: children.map(c => ({ label: c.name, value: c.id })),
+            },
+          }
+        }
+        updatedAction.data.child_id = childId
+
+        // For add/modify, also infer picker_id if needed
+        if (action.operation === 'add' || action.operation === 'modify') {
+          const pickerId = inferMemberId(action) || currentMember?.id
+          updatedAction.data.picker_id = pickerId
+        }
+        break
+      }
+      case 'member_event': {
+        // For all operations, try to infer member_id
+        const memberId = inferMemberId(action)
+        if (memberId) {
+          updatedAction.data.member_id = memberId
+        } else if (action.operation === 'add') {
+          // For add, default to current user
+          updatedAction.data.member_id = currentMember?.id
+        }
+        // For edit/delete, we search by title and show matches with member context
+        break
+      }
+    }
+
+    return updatedAction
+  }, [children, currentMember, inferChildId, inferMemberId])
+
   const executeAction = useCallback(async (action: ParsedAction) => {
     try {
+      // Validate and prepare action (infer IDs, check required fields)
+      const preparedAction = validateAndPrepareAction(action)
+      if (!preparedAction) {
+        setError(t.errors.invalidInput || 'Ugyldig handling')
+        return
+      }
+
+      // If validation resulted in needing clarification, show it instead of executing
+      if (preparedAction.needsClarification && !action.needsClarification) {
+        setParsedActions(prev => prev.map(a => a === action ? preparedAction : a))
+        return
+      }
+
+      // Handle DELETE operations
+      if (preparedAction.operation === 'delete') {
+        await executeDelete(preparedAction)
+        return
+      }
+
+      // Handle COMPLETE operations
+      if (preparedAction.operation === 'complete') {
+        await executeComplete(preparedAction)
+        return
+      }
+
+      // Handle EDIT operations
+      if (preparedAction.operation === 'edit') {
+        await executeEdit(preparedAction)
+        return
+      }
+
+      // Handle ADD/MODIFY operations (existing logic)
       let table = ''
       let record: Record<string, unknown> = {}
 
-      switch (action.type) {
+      switch (preparedAction.type) {
         case 'meal': {
           table = 'meals'
           record = {
             household_id: householdId,
-            date: action.data.date,
-            custom_meal: action.data.meal_name,
+            date: preparedAction.data.date,
+            custom_meal: preparedAction.data.meal_name,
             recipe_id: null, // Clear recipe_id when setting custom meal (match UI behavior)
           }
           break
@@ -204,25 +344,25 @@ export function UniversalAIInput({
           table = 'child_tasks'
           record = {
             household_id: householdId,
-            child_id: action.data.child_id,
-            date: action.data.date,
-            time: action.data.time || null,
-            title: action.data.title,
-            task_type: action.data.task_type || 'reminder',
+            child_id: preparedAction.data.child_id,
+            date: preparedAction.data.date,
+            time: preparedAction.data.time || null,
+            title: preparedAction.data.title,
+            task_type: preparedAction.data.task_type || 'reminder',
+            status: 'open', // Match UI behavior
             source: 'ai_suggested',
           }
           break
         }
         case 'member_event': {
           table = 'member_events'
-          const memberId = action.data.member_id || currentMember?.id
           record = {
             household_id: householdId,
-            member_id: memberId,
-            date: action.data.date,
-            end_date: action.data.end_date || action.data.date,
-            title: action.data.title,
-            event_type: 'work',
+            member_id: preparedAction.data.member_id,
+            date: preparedAction.data.date,
+            end_date: preparedAction.data.end_date || preparedAction.data.date,
+            title: preparedAction.data.title,
+            event_type: preparedAction.data.event_type || 'other', // Use AI-inferred type
             source: 'ai_suggested',
           }
           break
@@ -230,19 +370,18 @@ export function UniversalAIInput({
         case 'pickup': {
           table = 'pickups'
           // For pickup modifications, we need to upsert
-          const pickerId = action.data.picker_id || currentMember?.id
           record = {
             household_id: householdId,
-            child_id: action.data.child_id,
-            date: action.data.date,
-            picker_id: pickerId,
+            child_id: preparedAction.data.child_id,
+            date: preparedAction.data.date,
+            picker_id: preparedAction.data.picker_id,
           }
           break
         }
         case 'shopping_item': {
           // Shopping uses shopping_lists + shopping_list_items (same schema as handleliste page)
           // Determine which list to use based on list_type (produce or other)
-          const listType = (action.data.list_type as string) || 'produce'
+          const listType = (preparedAction.data.list_type as string) || 'produce'
           const isProduceList = listType === 'produce'
           const targetListName = isProduceList ? t.shopping.aisles.produce : t.shopping.aisles.other
           const targetSortOrder = isProduceList ? 0 : 1
@@ -282,8 +421,8 @@ export function UniversalAIInput({
           table = 'shopping_list_items'
           record = {
             list_id: targetList.id,
-            name: action.data.item_name,
-            quantity: action.data.quantity || null,
+            name: preparedAction.data.item_name,
+            quantity: preparedAction.data.quantity || null,
             is_bought: false,
           }
           break
@@ -291,7 +430,7 @@ export function UniversalAIInput({
       }
 
       let result
-      if (action.type === 'pickup') {
+      if (preparedAction.type === 'pickup') {
         // Always upsert for pickups (one per child per day)
         // Note: unique constraint is on (child_id, date)
         result = await supabase
@@ -299,7 +438,7 @@ export function UniversalAIInput({
           .upsert(record, { onConflict: 'child_id,date' })
           .select('id')
           .single()
-      } else if (action.type === 'meal') {
+      } else if (preparedAction.type === 'meal') {
         // Upsert for meals (one per day)
         result = await supabase
           .from(table)
@@ -323,9 +462,12 @@ export function UniversalAIInput({
 
       // Track executed action for undo
       setExecutedActions(prev => [...prev, {
-        action,
-        table,
-        recordId: result.data.id,
+        action: preparedAction,
+        undoData: {
+          type: 'add',
+          table,
+          recordId: result.data.id,
+        },
         timestamp: Date.now(),
       }])
 
@@ -340,19 +482,820 @@ export function UniversalAIInput({
       console.error('Execute action error:', err)
       setError(t.errors.saveFailed)
     }
-  }, [householdId, currentMember, supabase, t, onActionExecuted, router])
+  }, [householdId, supabase, t, onActionExecuted, router, validateAndPrepareAction])
+
+  // Execute DELETE operation with disambiguation
+  const executeDelete = useCallback(async (action: ParsedAction) => {
+    try {
+      // If we already have a specific record_id from clarification, use it directly
+      if (action.data.record_id) {
+        await executeDeleteById(action)
+        return
+      }
+
+      // Otherwise, search for matches and handle disambiguation
+      let matches: Array<{ id: string; label: string; sublabel: string }> = []
+
+      switch (action.type) {
+        case 'meal': {
+          // Meals are unique per date, so execute directly
+          const date = action.data.date as string
+          const { data: meals } = await supabase
+            .from('meals')
+            .select('*, recipes(name)')
+            .eq('household_id', householdId)
+            .eq('date', date)
+            .limit(1)
+
+          if (meals && meals.length > 0) {
+            // Single meal per date - execute directly
+            await executeDeleteById({ ...action, data: { ...action.data, record_id: meals[0].id } })
+            return
+          }
+          break
+        }
+        case 'child_task': {
+          let fetchQuery = supabase
+            .from('child_tasks')
+            .select('*, children(name)')
+            .eq('household_id', householdId)
+
+          if (action.data.title) {
+            fetchQuery = fetchQuery.ilike('title', `%${action.data.title as string}%`)
+          }
+          if (action.data.date) {
+            fetchQuery = fetchQuery.eq('date', action.data.date as string)
+          }
+          // Infer child_id if we have child_name
+          const childId = inferChildId(action)
+          if (childId) {
+            fetchQuery = fetchQuery.eq('child_id', childId)
+          }
+
+          const { data: tasks } = await fetchQuery.order('date', { ascending: true }).limit(5)
+          if (tasks) {
+            matches = tasks.map(task => ({
+              id: task.id,
+              label: task.title,
+              sublabel: `${(task.children as { name: string } | null)?.name || ''} - ${formatDisplayDate(task.date)}${task.time ? ` kl ${task.time}` : ''}`,
+            }))
+          }
+          break
+        }
+        case 'member_event': {
+          let fetchQuery = supabase
+            .from('member_events')
+            .select('*, household_members(name)')
+            .eq('household_id', householdId)
+
+          if (action.data.title) {
+            fetchQuery = fetchQuery.ilike('title', `%${action.data.title as string}%`)
+          }
+          if (action.data.date) {
+            fetchQuery = fetchQuery.eq('date', action.data.date as string)
+          }
+          // Infer member_id if we have member_name
+          const memberId = inferMemberId(action)
+          if (memberId) {
+            fetchQuery = fetchQuery.eq('member_id', memberId)
+          }
+
+          const { data: events } = await fetchQuery.order('date', { ascending: true }).limit(5)
+          if (events) {
+            matches = events.map(event => ({
+              id: event.id,
+              label: event.title,
+              sublabel: `${(event.household_members as { name: string } | null)?.name || ''} - ${formatDisplayDate(event.date)}${event.end_date && event.end_date !== event.date ? ` til ${formatDisplayDate(event.end_date)}` : ''}`,
+            }))
+          }
+          break
+        }
+        case 'pickup': {
+          // Pickups are unique per child+date - infer child and execute directly
+          const childId = inferChildId(action)
+          if (!childId) {
+            // Need clarification for child
+            const clarificationAction: ParsedAction = {
+              ...action,
+              needsClarification: {
+                field: 'child_id',
+                question: 'Hvem sin henting skal fjernes?',
+                options: children.map(c => ({ label: c.name, value: c.id })),
+              },
+            }
+            setParsedActions(prev => prev.map(a => a === action ? clarificationAction : a))
+            return
+          }
+
+          const { data: pickups } = await supabase
+            .from('pickups')
+            .select('*')
+            .eq('household_id', householdId)
+            .eq('child_id', childId)
+            .eq('date', action.data.date as string)
+            .limit(1)
+
+          if (pickups && pickups.length > 0) {
+            await executeDeleteById({ ...action, data: { ...action.data, record_id: pickups[0].id, child_id: childId } })
+            return
+          }
+          break
+        }
+        case 'shopping_item': {
+          const { data: lists } = await supabase
+            .from('shopping_lists')
+            .select('id, name')
+            .eq('household_id', householdId)
+
+          if (lists && lists.length > 0) {
+            const listIds = lists.map(l => l.id)
+            const listNameMap = Object.fromEntries(lists.map(l => [l.id, l.name]))
+
+            let fetchQuery = supabase
+              .from('shopping_list_items')
+              .select('*')
+              .in('list_id', listIds)
+              .eq('is_bought', false) // Prefer unbought items
+
+            if (action.data.item_name) {
+              fetchQuery = fetchQuery.ilike('name', `%${action.data.item_name as string}%`)
+            }
+
+            const { data: items } = await fetchQuery.limit(5)
+            if (items) {
+              matches = items.map(item => ({
+                id: item.id,
+                label: item.name,
+                sublabel: listNameMap[item.list_id] || '',
+              }))
+            }
+          }
+          break
+        }
+      }
+
+      if (matches.length === 0) {
+        setError(t.errors.notFound || 'Fant ingen elementer å slette')
+        return
+      }
+
+      if (matches.length === 1) {
+        // Single match - execute directly
+        await executeDeleteById({ ...action, data: { ...action.data, record_id: matches[0].id } })
+      } else {
+        // Multiple matches - ask for clarification
+        const clarificationAction: ParsedAction = {
+          ...action,
+          needsClarification: {
+            field: 'record_id',
+            question: 'Hvilken vil du slette?',
+            options: matches.map(m => ({
+              label: m.label,
+              value: m.id,
+            })),
+          },
+          display: {
+            ...action.display,
+            subtitle: matches.map(m => m.sublabel).join(' | '),
+          },
+        }
+        setParsedActions(prev => prev.map(a => a === action ? clarificationAction : a))
+      }
+    } catch (err) {
+      console.error('Delete search error:', err)
+      setError(t.errors.saveFailed)
+    }
+  }, [householdId, supabase, t, children, inferChildId, inferMemberId])
+
+  // Execute DELETE when we have the specific record ID
+  const executeDeleteById = useCallback(async (action: ParsedAction) => {
+    try {
+      const recordId = action.data.record_id as string
+      let table = ''
+      let deletedRecord: Record<string, unknown> | null = null
+
+      switch (action.type) {
+        case 'meal': {
+          table = 'meals'
+          const { data: meal } = await supabase
+            .from('meals')
+            .select('*')
+            .eq('id', recordId)
+            .single()
+
+          if (!meal) throw new Error('Meal not found')
+          deletedRecord = meal
+
+          await supabase.from('meals').delete().eq('id', recordId)
+          break
+        }
+        case 'child_task': {
+          table = 'child_tasks'
+          const { data: task } = await supabase
+            .from('child_tasks')
+            .select('*')
+            .eq('id', recordId)
+            .single()
+
+          if (!task) throw new Error('Task not found')
+          deletedRecord = task
+
+          await supabase.from('child_tasks').delete().eq('id', recordId)
+          break
+        }
+        case 'member_event': {
+          table = 'member_events'
+          const { data: event } = await supabase
+            .from('member_events')
+            .select('*')
+            .eq('id', recordId)
+            .single()
+
+          if (!event) throw new Error('Event not found')
+          deletedRecord = event
+
+          await supabase.from('member_events').delete().eq('id', recordId)
+          break
+        }
+        case 'pickup': {
+          table = 'pickups'
+          const { data: pickup } = await supabase
+            .from('pickups')
+            .select('*')
+            .eq('id', recordId)
+            .single()
+
+          if (!pickup) throw new Error('Pickup not found')
+          deletedRecord = pickup
+
+          // For pickup, we clear picker_id instead of deleting
+          await supabase
+            .from('pickups')
+            .update({ picker_id: null })
+            .eq('id', recordId)
+          break
+        }
+        case 'shopping_item': {
+          table = 'shopping_list_items'
+          const { data: item } = await supabase
+            .from('shopping_list_items')
+            .select('*')
+            .eq('id', recordId)
+            .single()
+
+          if (!item) throw new Error('Item not found')
+          deletedRecord = item
+
+          await supabase.from('shopping_list_items').delete().eq('id', recordId)
+          break
+        }
+        default:
+          throw new Error('Unsupported type')
+      }
+
+      // Track as executed with undo data
+      setExecutedActions(prev => [...prev, {
+        action,
+        undoData: {
+          type: 'delete',
+          table,
+          deletedRecords: deletedRecord ? [deletedRecord] : [],
+        },
+        timestamp: Date.now(),
+      }])
+
+      setParsedActions(prev => prev.filter(a => a !== action))
+      setPendingConfirmation(null)
+      onActionExecuted?.()
+      router.refresh()
+    } catch (err) {
+      console.error('Delete error:', err)
+      setError(t.errors.saveFailed)
+    }
+  }, [supabase, t, onActionExecuted, router])
+
+  // Execute COMPLETE operation with disambiguation
+  const executeComplete = useCallback(async (action: ParsedAction) => {
+    try {
+      // If we already have a specific record_id from clarification, use it directly
+      if (action.data.record_id) {
+        await executeCompleteById(action)
+        return
+      }
+
+      // Otherwise, search for matches and handle disambiguation
+      let matches: Array<{ id: string; label: string; sublabel: string }> = []
+
+      switch (action.type) {
+        case 'child_task': {
+          let fetchQuery = supabase
+            .from('child_tasks')
+            .select('*, children(name)')
+            .eq('household_id', householdId)
+            .eq('status', 'open')
+
+          if (action.data.title) {
+            fetchQuery = fetchQuery.ilike('title', `%${action.data.title as string}%`)
+          }
+          if (action.data.date) {
+            fetchQuery = fetchQuery.eq('date', action.data.date as string)
+          }
+          // Infer child_id if we have child_name
+          const childId = inferChildId(action)
+          if (childId) {
+            fetchQuery = fetchQuery.eq('child_id', childId)
+          }
+
+          const { data: tasks } = await fetchQuery.order('date', { ascending: true }).limit(5)
+          if (tasks) {
+            matches = tasks.map(task => ({
+              id: task.id,
+              label: task.title,
+              sublabel: `${(task.children as { name: string } | null)?.name || ''} - ${formatDisplayDate(task.date)}${task.time ? ` kl ${task.time}` : ''}`,
+            }))
+          }
+          break
+        }
+        case 'shopping_item': {
+          const { data: lists } = await supabase
+            .from('shopping_lists')
+            .select('id, name')
+            .eq('household_id', householdId)
+
+          if (lists && lists.length > 0) {
+            const listIds = lists.map(l => l.id)
+            const listNameMap = Object.fromEntries(lists.map(l => [l.id, l.name]))
+
+            let fetchQuery = supabase
+              .from('shopping_list_items')
+              .select('*')
+              .in('list_id', listIds)
+              .eq('is_bought', false)
+
+            if (action.data.item_name) {
+              fetchQuery = fetchQuery.ilike('name', `%${action.data.item_name as string}%`)
+            }
+
+            const { data: items } = await fetchQuery.limit(5)
+            if (items) {
+              matches = items.map(item => ({
+                id: item.id,
+                label: item.name,
+                sublabel: listNameMap[item.list_id] || '',
+              }))
+            }
+          }
+          break
+        }
+        default:
+          setError(t.errors.generic || 'Denne typen kan ikke merkes som ferdig')
+          return
+      }
+
+      if (matches.length === 0) {
+        setError(t.errors.notFound || 'Fant ingen elementer å markere som ferdig')
+        return
+      }
+
+      if (matches.length === 1) {
+        // Single match - execute directly
+        await executeCompleteById({ ...action, data: { ...action.data, record_id: matches[0].id } })
+      } else {
+        // Multiple matches - ask for clarification
+        const clarificationAction: ParsedAction = {
+          ...action,
+          needsClarification: {
+            field: 'record_id',
+            question: 'Hvilken vil du markere som ferdig?',
+            options: matches.map(m => ({
+              label: m.label,
+              value: m.id,
+            })),
+          },
+          display: {
+            ...action.display,
+            subtitle: matches.map(m => m.sublabel).join(' | '),
+          },
+        }
+        setParsedActions(prev => prev.map(a => a === action ? clarificationAction : a))
+      }
+    } catch (err) {
+      console.error('Complete search error:', err)
+      setError(t.errors.saveFailed)
+    }
+  }, [householdId, supabase, t, inferChildId])
+
+  // Execute COMPLETE when we have the specific record ID
+  const executeCompleteById = useCallback(async (action: ParsedAction) => {
+    try {
+      const recordId = action.data.record_id as string
+      let table = ''
+      let previousState: Record<string, unknown> = {}
+
+      switch (action.type) {
+        case 'child_task': {
+          table = 'child_tasks'
+          const { data: task } = await supabase
+            .from('child_tasks')
+            .select('*')
+            .eq('id', recordId)
+            .single()
+
+          if (!task) throw new Error('Task not found')
+          previousState = { status: task.status, completed_at: task.completed_at }
+
+          await supabase
+            .from('child_tasks')
+            .update({ status: 'done', completed_at: new Date().toISOString() })
+            .eq('id', recordId)
+          break
+        }
+        case 'shopping_item': {
+          table = 'shopping_list_items'
+          const { data: item } = await supabase
+            .from('shopping_list_items')
+            .select('*')
+            .eq('id', recordId)
+            .single()
+
+          if (!item) throw new Error('Item not found')
+          previousState = { is_bought: item.is_bought }
+
+          await supabase
+            .from('shopping_list_items')
+            .update({ is_bought: true })
+            .eq('id', recordId)
+          break
+        }
+        default:
+          throw new Error('Unsupported type')
+      }
+
+      // Track as executed with undo data
+      setExecutedActions(prev => [...prev, {
+        action,
+        undoData: {
+          type: 'complete',
+          table,
+          completedRecords: [{ id: recordId, previousState }],
+        },
+        timestamp: Date.now(),
+      }])
+
+      setParsedActions(prev => prev.filter(a => a !== action))
+      setPendingConfirmation(null)
+      onActionExecuted?.()
+      router.refresh()
+    } catch (err) {
+      console.error('Complete error:', err)
+      setError(t.errors.saveFailed)
+    }
+  }, [supabase, t, onActionExecuted, router])
+
+  // Helper to format date for display
+  const formatDisplayDate = (dateStr: string) => {
+    const date = new Date(dateStr)
+    const weekdays = t.date?.weekdaysShort || ['søn', 'man', 'tir', 'ons', 'tor', 'fre', 'lør']
+    return `${weekdays[date.getDay()]} ${date.getDate()}/${date.getMonth() + 1}`
+  }
+
+  // Execute EDIT operation with disambiguation
+  const executeEdit = useCallback(async (action: ParsedAction) => {
+    try {
+      // If we already have a specific record_id from clarification, use it directly
+      if (action.data.record_id) {
+        await executeEditById(action)
+        return
+      }
+
+      // Otherwise, search for matches and handle disambiguation
+      let matches: Array<{ id: string; label: string; sublabel: string }> = []
+      let table = ''
+
+      switch (action.type) {
+        case 'child_task': {
+          table = 'child_tasks'
+          let fetchQuery = supabase
+            .from('child_tasks')
+            .select('*, children(name)')
+            .eq('household_id', householdId)
+            .eq('status', 'open') // Prefer open tasks
+
+          if (action.data.original_title) {
+            fetchQuery = fetchQuery.ilike('title', `%${action.data.original_title as string}%`)
+          }
+          if (action.data.child_id) {
+            fetchQuery = fetchQuery.eq('child_id', action.data.child_id as string)
+          } else if (action.data.child_name) {
+            // Try to infer child_id from name
+            const childId = inferChildId(action)
+            if (childId) {
+              fetchQuery = fetchQuery.eq('child_id', childId)
+            }
+          }
+
+          const { data: tasks } = await fetchQuery.order('date', { ascending: true }).limit(5)
+          if (tasks) {
+            matches = tasks.map(task => ({
+              id: task.id,
+              label: task.title,
+              sublabel: `${(task.children as { name: string } | null)?.name || ''} - ${formatDisplayDate(task.date)}${task.time ? ` kl ${task.time}` : ''}`,
+            }))
+          }
+          break
+        }
+        case 'member_event': {
+          table = 'member_events'
+          let fetchQuery = supabase
+            .from('member_events')
+            .select('*, household_members(name)')
+            .eq('household_id', householdId)
+
+          if (action.data.original_title) {
+            fetchQuery = fetchQuery.ilike('title', `%${action.data.original_title as string}%`)
+          }
+          if (action.data.member_id) {
+            fetchQuery = fetchQuery.eq('member_id', action.data.member_id as string)
+          } else if (action.data.member_name) {
+            const memberId = inferMemberId(action)
+            if (memberId) {
+              fetchQuery = fetchQuery.eq('member_id', memberId)
+            }
+          }
+
+          const { data: events } = await fetchQuery.order('date', { ascending: true }).limit(5)
+          if (events) {
+            matches = events.map(event => ({
+              id: event.id,
+              label: event.title,
+              sublabel: `${(event.household_members as { name: string } | null)?.name || ''} - ${formatDisplayDate(event.date)}${event.end_date && event.end_date !== event.date ? ` til ${formatDisplayDate(event.end_date)}` : ''}`,
+            }))
+          }
+          break
+        }
+        case 'meal': {
+          table = 'meals'
+          const date = (action.data.original_date || action.data.date || formatDateISO(new Date())) as string
+
+          const { data: meals } = await supabase
+            .from('meals')
+            .select('*, recipes(name)')
+            .eq('household_id', householdId)
+            .eq('date', date)
+            .limit(1)
+
+          if (meals) {
+            matches = meals.map(meal => ({
+              id: meal.id,
+              label: meal.custom_meal || (meal.recipes as { name: string } | null)?.name || 'Middag',
+              sublabel: formatDisplayDate(meal.date),
+            }))
+          }
+          break
+        }
+        case 'shopping_item': {
+          table = 'shopping_list_items'
+          const { data: lists } = await supabase
+            .from('shopping_lists')
+            .select('id, name')
+            .eq('household_id', householdId)
+
+          if (lists && lists.length > 0) {
+            const listIds = lists.map(l => l.id)
+            const listNameMap = Object.fromEntries(lists.map(l => [l.id, l.name]))
+
+            let fetchQuery = supabase
+              .from('shopping_list_items')
+              .select('*')
+              .in('list_id', listIds)
+              .eq('is_bought', false) // Prefer unbought items
+
+            if (action.data.original_item_name || action.data.item_name) {
+              fetchQuery = fetchQuery.ilike('name', `%${(action.data.original_item_name || action.data.item_name) as string}%`)
+            }
+
+            const { data: items } = await fetchQuery.limit(5)
+            if (items) {
+              matches = items.map(item => ({
+                id: item.id,
+                label: item.name,
+                sublabel: listNameMap[item.list_id] || '',
+              }))
+            }
+          }
+          break
+        }
+        default:
+          setError(t.errors.generic || 'Denne typen kan ikke redigeres')
+          return
+      }
+
+      if (matches.length === 0) {
+        setError(t.errors.notFound || 'Fant ingen elementer å redigere')
+        return
+      }
+
+      if (matches.length === 1) {
+        // Single match - execute directly
+        await executeEditById({ ...action, data: { ...action.data, record_id: matches[0].id } })
+      } else {
+        // Multiple matches - ask for clarification
+        const clarificationAction: ParsedAction = {
+          ...action,
+          needsClarification: {
+            field: 'record_id',
+            question: 'Hvilken vil du endre?',
+            options: matches.map(m => ({
+              label: m.label,
+              value: m.id,
+            })),
+          },
+          display: {
+            ...action.display,
+            subtitle: matches.map(m => m.sublabel).join(' | '),
+          },
+        }
+        setParsedActions(prev => prev.map(a => a === action ? clarificationAction : a))
+      }
+    } catch (err) {
+      console.error('Edit search error:', err)
+      setError(t.errors.saveFailed)
+    }
+  }, [householdId, supabase, t, inferChildId, inferMemberId])
+
+  // Execute edit when we have the specific record ID
+  const executeEditById = useCallback(async (action: ParsedAction) => {
+    try {
+      const recordId = action.data.record_id as string
+      let table = ''
+      let previousState: Record<string, unknown> = {}
+      const updates: Record<string, unknown> = {}
+
+      switch (action.type) {
+        case 'child_task': {
+          table = 'child_tasks'
+          const { data: task } = await supabase
+            .from('child_tasks')
+            .select('*')
+            .eq('id', recordId)
+            .single()
+
+          if (!task) throw new Error('Task not found')
+
+          previousState = { title: task.title, date: task.date, time: task.time }
+          if (action.data.new_title) updates.title = action.data.new_title
+          if (action.data.new_date) updates.date = action.data.new_date
+          if (action.data.new_time) updates.time = action.data.new_time
+          break
+        }
+        case 'member_event': {
+          table = 'member_events'
+          const { data: event } = await supabase
+            .from('member_events')
+            .select('*')
+            .eq('id', recordId)
+            .single()
+
+          if (!event) throw new Error('Event not found')
+
+          previousState = { title: event.title, date: event.date, end_date: event.end_date, event_type: event.event_type }
+          if (action.data.new_title) updates.title = action.data.new_title
+          if (action.data.new_date) updates.date = action.data.new_date
+          if (action.data.new_end_date) updates.end_date = action.data.new_end_date
+          if (action.data.new_event_type) updates.event_type = action.data.new_event_type
+          break
+        }
+        case 'meal': {
+          table = 'meals'
+          const { data: meal } = await supabase
+            .from('meals')
+            .select('*')
+            .eq('id', recordId)
+            .single()
+
+          if (!meal) throw new Error('Meal not found')
+
+          previousState = { date: meal.date, custom_meal: meal.custom_meal, recipe_id: meal.recipe_id }
+          if (action.data.new_meal_name) {
+            updates.custom_meal = action.data.new_meal_name
+            updates.recipe_id = null // Clear recipe when setting custom meal (match UI behavior)
+          }
+          if (action.data.new_date) updates.date = action.data.new_date
+          break
+        }
+        case 'shopping_item': {
+          table = 'shopping_list_items'
+          const { data: item } = await supabase
+            .from('shopping_list_items')
+            .select('*')
+            .eq('id', recordId)
+            .single()
+
+          if (!item) throw new Error('Item not found')
+
+          previousState = { name: item.name, quantity: item.quantity }
+          if (action.data.new_item_name) updates.name = action.data.new_item_name
+          if (action.data.new_quantity) updates.quantity = action.data.new_quantity
+          break
+        }
+        default:
+          throw new Error('Unsupported type')
+      }
+
+      if (Object.keys(updates).length === 0) {
+        setError('Ingen endringer spesifisert')
+        return
+      }
+
+      await supabase.from(table).update(updates).eq('id', recordId)
+
+      // Track as executed with undo data
+      setExecutedActions(prev => [...prev, {
+        action,
+        undoData: {
+          type: 'edit',
+          table,
+          editedRecords: [{ id: recordId, previousState }],
+        },
+        timestamp: Date.now(),
+      }])
+
+      setParsedActions(prev => prev.filter(a => a !== action))
+      setPendingConfirmation(null)
+      onActionExecuted?.()
+      router.refresh()
+    } catch (err) {
+      console.error('Edit error:', err)
+      setError(t.errors.saveFailed)
+    }
+  }, [supabase, t, onActionExecuted, router])
 
   const handleUndo = useCallback(async (executed: ExecutedAction) => {
     try {
-      const { error } = await supabase
-        .from(executed.table)
-        .delete()
-        .eq('id', executed.recordId)
+      const { undoData } = executed
 
-      if (error) {
-        console.error('Undo failed:', error)
-        setError('Kunne ikke angre')
-        return
+      switch (undoData.type) {
+        case 'add': {
+          // Undo add = delete the record we created
+          if (undoData.recordId) {
+            const { error } = await supabase
+              .from(undoData.table)
+              .delete()
+              .eq('id', undoData.recordId)
+            if (error) throw error
+          }
+          break
+        }
+        case 'delete': {
+          // Undo delete = re-insert the deleted records
+          if (undoData.deletedRecords && undoData.deletedRecords.length > 0) {
+            // Special case for pickup: we just cleared picker_id, so restore it
+            if (executed.action.type === 'pickup') {
+              for (const record of undoData.deletedRecords) {
+                await supabase
+                  .from('pickups')
+                  .update({ picker_id: record.picker_id })
+                  .eq('id', record.id)
+              }
+            } else {
+              // For other types, re-insert the records
+              // Remove 'id' and timestamps that will be regenerated
+              const recordsToInsert = undoData.deletedRecords.map(r => {
+                const { id, created_at, updated_at, ...rest } = r as Record<string, unknown>
+                return rest
+              })
+              const { error } = await supabase
+                .from(undoData.table)
+                .insert(recordsToInsert)
+              if (error) throw error
+            }
+          }
+          break
+        }
+        case 'complete': {
+          // Undo complete = restore previous state
+          if (undoData.completedRecords && undoData.completedRecords.length > 0) {
+            for (const record of undoData.completedRecords) {
+              await supabase
+                .from(undoData.table)
+                .update(record.previousState)
+                .eq('id', record.id)
+            }
+          }
+          break
+        }
+        case 'edit': {
+          // Undo edit = restore previous state
+          if (undoData.editedRecords && undoData.editedRecords.length > 0) {
+            for (const record of undoData.editedRecords) {
+              await supabase
+                .from(undoData.table)
+                .update(record.previousState)
+                .eq('id', record.id)
+            }
+          }
+          break
+        }
       }
 
       setExecutedActions(prev => prev.filter(e => e !== executed))
@@ -360,9 +1303,9 @@ export function UniversalAIInput({
       router.refresh()
     } catch (err) {
       console.error('Undo error:', err)
-      setError('Kunne ikke angre')
+      setError(t.errors.generic || 'Kunne ikke angre')
     }
-  }, [supabase, onActionExecuted, router])
+  }, [supabase, t, onActionExecuted, router])
 
   const handleActionClick = useCallback((action: ParsedAction) => {
     if (action.needsClarification) {
@@ -370,9 +1313,11 @@ export function UniversalAIInput({
       return
     }
 
-    if (action.operation === 'modify') {
+    // Require confirmation for modify, edit, and delete operations
+    if (action.operation === 'modify' || action.operation === 'delete' || action.operation === 'edit') {
       setPendingConfirmation(action)
     } else {
+      // Execute immediately for add and complete
       executeAction(action)
     }
   }, [executeAction])
@@ -478,7 +1423,7 @@ export function UniversalAIInput({
           {executedActions.map((executed, index) => (
             <SuccessCard
               key={index}
-              action={executed.action}
+              executed={executed}
               onUndo={() => handleUndo(executed)}
               t={t}
             />
@@ -566,26 +1511,64 @@ function ActionCard({ action, onClarify, onClick, isPendingConfirmation, onConfi
           )}
         </div>
 
-        {/* Quick action button (only if no clarification needed and not a modification) */}
-        {!needsClarification && !isPendingConfirmation && action.operation !== 'modify' && (
-          <button
-            onClick={onClick}
-            className="px-4 py-2 rounded-lg font-medium text-sm transition-colors"
-            style={{ background: 'var(--accent)', color: 'white' }}
-          >
-            {t.ai?.add || 'Legg til'}
-          </button>
-        )}
+        {/* Quick action button - different styling per operation type */}
+        {!needsClarification && !isPendingConfirmation && (
+          <>
+            {/* Add operation */}
+            {action.operation === 'add' && (
+              <button
+                onClick={onClick}
+                className="px-4 py-2 rounded-lg font-medium text-sm transition-colors"
+                style={{ background: 'var(--accent)', color: 'white' }}
+              >
+                {t.ai?.add || 'Legg til'}
+              </button>
+            )}
 
-        {/* For modifications, show "Endre" button */}
-        {!needsClarification && !isPendingConfirmation && action.operation === 'modify' && (
-          <button
-            onClick={onClick}
-            className="px-4 py-2 rounded-lg font-medium text-sm transition-colors"
-            style={{ background: 'var(--color-honey)', color: 'white' }}
-          >
-            {t.ai?.change || 'Endre'}
-          </button>
+            {/* Modify operation */}
+            {action.operation === 'modify' && (
+              <button
+                onClick={onClick}
+                className="px-4 py-2 rounded-lg font-medium text-sm transition-colors"
+                style={{ background: 'var(--color-honey)', color: 'white' }}
+              >
+                {t.ai?.change || 'Endre'}
+              </button>
+            )}
+
+            {/* Edit operation */}
+            {action.operation === 'edit' && (
+              <button
+                onClick={onClick}
+                className="px-4 py-2 rounded-lg font-medium text-sm transition-colors"
+                style={{ background: 'var(--color-lavender)', color: 'white' }}
+              >
+                {t.ai?.edit || 'Rediger'}
+              </button>
+            )}
+
+            {/* Delete operation */}
+            {action.operation === 'delete' && (
+              <button
+                onClick={onClick}
+                className="px-4 py-2 rounded-lg font-medium text-sm transition-colors"
+                style={{ background: 'var(--color-coral)', color: 'white' }}
+              >
+                {t.ai?.delete || 'Slett'}
+              </button>
+            )}
+
+            {/* Complete operation */}
+            {action.operation === 'complete' && (
+              <button
+                onClick={onClick}
+                className="px-4 py-2 rounded-lg font-medium text-sm transition-colors"
+                style={{ background: 'var(--color-sage)', color: 'white' }}
+              >
+                {t.ai?.complete || 'Ferdig'}
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -593,24 +1576,75 @@ function ActionCard({ action, onClarify, onClick, isPendingConfirmation, onConfi
 }
 
 interface SuccessCardProps {
-  action: ParsedAction
+  executed: ExecutedAction
   onUndo: () => void
   t: ReturnType<typeof useLanguage>['t']
 }
 
-function SuccessCard({ action, onUndo, t }: SuccessCardProps) {
+function SuccessCard({ executed, onUndo, t }: SuccessCardProps) {
+  const { action, undoData } = executed
+
+  // Get operation-appropriate status message
+  const getStatusMessage = () => {
+    switch (action.operation) {
+      case 'add':
+        return t.ai?.added || 'Lagt til'
+      case 'modify':
+        return t.ai?.changed || 'Endret'
+      case 'edit':
+        return t.ai?.edited || 'Redigert'
+      case 'delete':
+        return t.ai?.deleted || 'Slettet'
+      case 'complete':
+        return t.ai?.completed || 'Markert som ferdig'
+      default:
+        return t.ai?.added || 'Lagt til'
+    }
+  }
+
+  // Get count of affected records for multi-record operations
+  const getAffectedCount = () => {
+    if (undoData.deletedRecords && undoData.deletedRecords.length > 1) {
+      return ` (${undoData.deletedRecords.length})`
+    }
+    if (undoData.completedRecords && undoData.completedRecords.length > 1) {
+      return ` (${undoData.completedRecords.length})`
+    }
+    return ''
+  }
+
+  // Different styling based on operation type
+  const isDelete = action.operation === 'delete'
+  const isEdit = action.operation === 'edit'
+  const bgColor = isDelete
+    ? 'rgba(232, 120, 109, 0.15)'
+    : isEdit
+      ? 'rgba(174, 156, 200, 0.15)'
+      : 'rgba(134, 168, 128, 0.15)'
+  const borderColor = isDelete
+    ? 'var(--color-coral)'
+    : isEdit
+      ? 'var(--color-lavender)'
+      : 'var(--color-sage)'
+  const textColor = isDelete
+    ? 'var(--color-coral)'
+    : isEdit
+      ? 'var(--color-lavender)'
+      : 'var(--color-sage)'
+  const icon = isDelete ? '🗑️' : isEdit ? '✏️' : '✓'
+
   return (
     <div
       className="p-3 rounded-xl flex items-center gap-3"
       style={{
-        background: 'rgba(134, 168, 128, 0.15)',
-        border: '1px solid var(--color-sage)',
+        background: bgColor,
+        border: `1px solid ${borderColor}`,
       }}
     >
-      <span className="text-lg">✓</span>
+      <span className="text-lg">{icon}</span>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium" style={{ color: 'var(--color-sage)' }}>
-          {t.ai?.added || 'Lagt til'}: {action.display.title}
+        <p className="text-sm font-medium" style={{ color: textColor }}>
+          {getStatusMessage()}{getAffectedCount()}: {action.display.title}
         </p>
         <p className="text-xs" style={{ color: 'var(--muted)' }}>
           {action.display.subtitle}

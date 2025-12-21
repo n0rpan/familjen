@@ -26,9 +26,11 @@ const parseActionSchema = z.object({
 // Response types
 export type ActionType = 'meal' | 'child_task' | 'member_event' | 'pickup' | 'shopping_item'
 
+export type ActionOperation = 'add' | 'modify' | 'delete' | 'complete' | 'edit'
+
 export interface ParsedAction {
   type: ActionType
-  operation: 'add' | 'modify'
+  operation: ActionOperation
   data: Record<string, unknown>
   display: {
     title: string
@@ -157,7 +159,7 @@ export async function POST(request: Request) {
 
     const actions: ParsedAction[] = (parsed.actions || []).map((a) => ({
       type: a.type as ActionType,
-      operation: (a.operation || 'add') as 'add' | 'modify',
+      operation: (a.operation || 'add') as ActionOperation,
       data: a.data || {},
       display: {
         title: a.display?.title || '',
@@ -178,16 +180,39 @@ export async function POST(request: Request) {
 function buildSystemPrompt(context: z.infer<typeof parseActionSchema>['context']): string {
   return `Du er en assistent for en norsk familieplanleggingsapp. Din oppgave er å tolke brukerens naturlige språk og returnere strukturerte handlinger.
 
+OPERASJONER:
+- "add" - Legg til ny (standard for de fleste handlinger)
+- "modify" - Endre eksisterende (brukes KUN for pickup - hvem som henter)
+- "edit" - Rediger eksisterende element (endre tid, dato, tittel, etc.)
+- "delete" - Fjern/slett eksisterende (KREVER BEKREFTELSE fra bruker)
+- "complete" - Marker som ferdig/kjøpt (KUN for child_task og shopping_item)
+
+STØTTEDE OPERASJONER PER TYPE:
+| Type          | add | modify | edit | delete | complete |
+|---------------|-----|--------|------|--------|----------|
+| meal          | ✓   | -      | ✓    | ✓      | -        |
+| shopping_item | ✓   | -      | ✓    | ✓      | ✓        |
+| child_task    | ✓   | -      | ✓    | ✓      | ✓        |
+| member_event  | ✓   | -      | ✓    | ✓      | -        |
+| pickup        | -   | ✓      | -    | ✓      | -        |
+
+VIKTIG:
+- Bruk ALDRI "complete" for meal, member_event eller pickup!
+- Bruk "modify" KUN for pickup (endre hvem som henter)
+- Bruk "edit" for å endre egenskaper på eksisterende elementer
+
 HANDLINGSTYPER:
 
 1. "meal" - Middag/måltid (til middagsplan)
    - Brukes når: "taco fredag", "pizza i morgen", "laks på lørdag" (NB: bare når det skal på MIDDAGSPLANEN)
+   - operation: "add" (ny middag), "delete" (fjern middag)
    - Data: { date, meal_name }
 
 2. "shopping_item" - Handlelistevare
    - Brukes når: "kjøp melk", "legg til brød på handlelista", "vi trenger såpe"
    - VIKTIG: Hvis brukeren sier "handleliste/handlelista/handle", bruk ALLTID denne typen
    - Matvarer som skal KJØPES (ikke planlegges som middag) = shopping_item
+   - operation: "add" (ny vare), "delete" (fjern vare), "complete" (kjøpt/avhuket)
    - list_type: "produce" (dagligvarer/mat) eller "other" (andre butikker/spesialvarer)
    - Data: { item_name, quantity?, list_type }
 
@@ -198,22 +223,61 @@ HANDLINGSTYPER:
 
 3. "child_task" - Oppgave for barn
    - Brukes når: "Storm tannlege tirsdag", "Ylva må ha med gymtøy", "barnehagen stengt fredag"
-   - task_type: "bring" (ta med noe), "appointment" (tannlege, lege, møte), "reminder" (påminnelse, stengt, aktivitet), "other" (annet)
-   - Data: { date, time?, title, task_type, child_id?, child_name? }
+   - operation: "add" (ny oppgave), "edit" (endre oppgave), "delete" (slett oppgave), "complete" (ferdig/gjort)
+   - task_type: "bring" (ta med noe), "appointment" (tannlege, lege, møte), "reminder" (påminnelse), "activity" (aktivitet, kurs, trening), "closure" (stengt, fri, ferie), "other" (annet)
+   - Data for add: { date, time?, title, task_type, child_id?, child_name? }
+   - Data for edit: { original_title, new_title?, new_date?, new_time?, child_id? }
+   - VIKTIG: child_id er PÅKREVD for add. Hvis barn ikke er spesifisert, sett needs_clarification med barneliste
 
 4. "member_event" - Hendelse for voksen
    - Brukes når: "jeg er i Bergen onsdag", "pappa på jobbtur", "mamma på kurs"
-   - Data: { date, end_date?, title, member_id?, member_name? }
+   - operation: "add" (ny hendelse), "edit" (endre hendelse), "delete" (avlys/slett hendelse)
+   - event_type: Velg basert på innhold:
+     - "work": jobb, jobbtur, jobbmøte, konferanse, arbeid, kunde, prosjekt
+     - "travel": reise, reiser, fly, tog, ferie, tur, weekend, utland
+     - "family": familie, besøk, bursdag, selskap, bryllup, dåp
+     - "other": kurs, trening, aktivitet, lege, tannlege, frisør, møte (ikke jobb)
+   - Data for add: { date, end_date?, title, event_type, member_id?, member_name? }
+   - Data for edit: { original_title, new_title?, new_date?, new_end_date?, new_event_type?, member_id? }
 
 5. "pickup" - Endring av henting
    - Brukes når: "jeg henter Storm i morgen", "pappa henter begge på fredag"
-   - operation: "modify" (alltid for pickup - endrer eksisterende)
+   - operation: "modify" (endre hvem som henter), "delete" (ingen henter / avlys henting)
    - Data: { date, child_id?, child_name?, picker_id?, picker_name? }
 
 VIKTIG FOR SHOPPING vs MEAL:
 - "legg laks til handlelista" = shopping_item (skal KJØPES)
 - "laks til middag fredag" = meal (skal PLANLEGGES som middag)
 - Når brukeren eksplisitt sier "handleliste/handlelista" = ALLTID shopping_item
+
+SLETT-OPERASJONER (operation: "delete"):
+Nøkkelord: "fjern", "slett", "avlys", "dropp", "ikke", "ta bort"
+- "fjern taco fra fredag" → meal, delete, date=fredag
+- "slett tannlege tirsdag" → child_task, delete, title=tannlege, date=tirsdag
+- "fjern melk fra handlelista" → shopping_item, delete, item_name=melk
+- "avlys jobbtur onsdag" → member_event, delete, title=jobbtur, date=onsdag
+- "ingen henter Storm fredag" → pickup, delete, child_name=Storm, date=fredag
+
+FERDIG-OPERASJONER (operation: "complete"):
+Nøkkelord: "ferdig", "gjort", "kjøpt", "har med", "ok", "check", "huket av"
+- "ferdig med gymtøy" → child_task, complete, title=gymtøy
+- "Storm har med sekk" → child_task, complete, child_name=Storm
+- "kjøpt melk" → shopping_item, complete, item_name=melk
+- "melk ok" → shopping_item, complete, item_name=melk
+
+REDIGER-OPERASJONER (operation: "edit"):
+Nøkkelord: "endre", "flytt", "oppdater", "til kl", "i stedet for", "bytt"
+- "endre tannlege til kl 14" → child_task, edit, original_title=tannlege, new_time=14:00
+- "flytt middag til lørdag" → meal, edit, new_date=lørdag (flytter dagens middag)
+- "flytt tannlege til onsdag" → child_task, edit, original_title=tannlege, new_date=onsdag
+- "endre jobbtur til torsdag-fredag" → member_event, edit, original_title=jobbtur, new_date=torsdag, new_end_date=fredag
+- "endre Storm sin tannlege" → child_task, edit, original_title=tannlege, child_name=Storm
+
+VIKTIG FOR EDIT:
+- Bruk original_title for å finne elementet som skal redigeres
+- Inkluder child_name/member_name hvis nevnt for å hjelpe med å finne riktig element
+- Sett bare de feltene som skal endres (new_title, new_date, new_time, etc.)
+- Koden vil søke etter treff og spørre brukeren hvis flere elementer matcher
 
 REGLER:
 
@@ -234,7 +298,7 @@ SVAR FORMAT (JSON):
   "actions": [
     {
       "type": "meal|shopping_item|child_task|member_event|pickup",
-      "operation": "add|modify",
+      "operation": "add|modify|edit|delete|complete",
       "data": { ... },
       "display": {
         "title": "Kort beskrivelse",
@@ -264,6 +328,10 @@ IKONER:
 - member_event: ✈️💼🎓
 - pickup: 🚗
 
+FOR DELETE-OPERASJONER: Bruk 🗑️ først, så relevant ikon (f.eks. "🗑️🍕" for slett middag)
+FOR COMPLETE-OPERASJONER: Bruk ✅ først, så relevant ikon (f.eks. "✅🛒" for kjøpt vare)
+FOR EDIT-OPERASJONER: Bruk ✏️ først, så relevant ikon (f.eks. "✏️🦷" for endre tannlege-tid)
+
 NEEDS_CLARIFICATION FOR SHOPPING:
 Hvis du er usikker på hvilken liste, bruk dette format:
 {
@@ -273,6 +341,30 @@ Hvis du er usikker på hvilken liste, bruk dette format:
     "options": [
       { "label": "Dagligvarer", "value": "produce" },
       { "label": "Andre butikker", "value": "other" }
+    ]
+  }
+}
+
+NEEDS_CLARIFICATION FOR CHILD_TASK:
+Når barn ikke er spesifisert for child_task (add), MÅ du sette needs_clarification:
+{
+  "needs_clarification": {
+    "field": "child_id",
+    "question": "Hvilke barn gjelder dette?",
+    "options": [
+      // Liste over alle barn fra konteksten
+    ]
+  }
+}
+
+NEEDS_CLARIFICATION FOR PICKUP:
+Når barn ikke er spesifisert for pickup, MÅ du sette needs_clarification:
+{
+  "needs_clarification": {
+    "field": "child_id",
+    "question": "Hvem skal hentes?",
+    "options": [
+      // Liste over alle barn fra konteksten
     ]
   }
 }

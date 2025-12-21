@@ -624,10 +624,17 @@ export const sv: TranslationStrings = {
     inputPlaceholder: 'Middag, hämtning, uppgift...',
     add: 'Lägg till',
     change: 'Ändra',
+    delete: 'Radera',
+    complete: 'Klar',
     added: 'Tillagt',
     changed: 'Ändrat',
+    edit: 'Redigera',
+    edited: 'Redigerat',
+    deleted: 'Raderat',
+    completed: 'Markerat som klart',
     undo: 'Ångra',
     parsing: 'Tolkar...',
+    confirmDelete: 'Är du säker på att du vill ta bort detta?',
   },
 
   notifications: {

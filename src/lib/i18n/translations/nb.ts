@@ -624,10 +624,17 @@ export const nb: TranslationStrings = {
     inputPlaceholder: 'Middag, henting, oppgave...',
     add: 'Legg til',
     change: 'Endre',
+    delete: 'Slett',
+    complete: 'Ferdig',
     added: 'Lagt til',
     changed: 'Endret',
+    edit: 'Rediger',
+    edited: 'Redigert',
+    deleted: 'Slettet',
+    completed: 'Markert som ferdig',
     undo: 'Angre',
     parsing: 'Tolker...',
+    confirmDelete: 'Er du sikker på at du vil slette dette?',
   },
 
   notifications: {

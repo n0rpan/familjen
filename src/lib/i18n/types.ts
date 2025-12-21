@@ -646,10 +646,17 @@ export interface TranslationStrings {
     inputPlaceholder: string
     add: string
     change: string
+    delete: string
+    complete: string
     added: string
     changed: string
+    edit: string
+    edited: string
+    deleted: string
+    completed: string
     undo: string
     parsing: string
+    confirmDelete: string
   }
 
   // Push Notifications
