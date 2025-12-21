@@ -385,6 +385,47 @@ function decodeICSValue(value: string): string {
 }
 
 /**
+ * Validate ICS URL to prevent SSRF attacks.
+ * Only allows https:// and webcal:// protocols, blocks internal IPs and localhost.
+ */
+function validateICSUrl(url: string): void {
+  const fetchUrl = url.replace(/^webcal:\/\//i, 'https://')
+
+  // Check protocol
+  if (!fetchUrl.startsWith('https://')) {
+    throw new Error('ICS URL must use https:// or webcal:// protocol')
+  }
+
+  const parsed = new URL(fetchUrl)
+  const hostname = parsed.hostname.toLowerCase()
+
+  // Block localhost
+  if (hostname === 'localhost' || hostname.endsWith('.local')) {
+    throw new Error('ICS URL cannot point to localhost')
+  }
+
+  // Block private/internal IPs
+  const ipMatch = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
+  if (ipMatch) {
+    const [, a, b] = ipMatch.map(Number)
+    if (
+      a === 127 ||                          // 127.x.x.x
+      a === 10 ||                           // 10.x.x.x
+      (a === 172 && b >= 16 && b <= 31) ||  // 172.16-31.x.x
+      (a === 192 && b === 168) ||           // 192.168.x.x
+      (a === 169 && b === 254)              // 169.254.x.x (link-local + AWS metadata)
+    ) {
+      throw new Error('ICS URL cannot point to internal addresses')
+    }
+  }
+
+  // Block IPv6 localhost
+  if (hostname === '::1' || hostname.startsWith('fe80:')) {
+    throw new Error('ICS URL cannot point to internal addresses')
+  }
+}
+
+/**
  * Fetch and parse an ICS calendar from a URL.
  * Supports both https:// and webcal:// URLs (webcal is converted to https).
  */
@@ -393,6 +434,9 @@ export async function fetchAndParseICS(
   startDate: Date,
   endDate: Date
 ): Promise<ICSEvent[]> {
+  // Validate URL to prevent SSRF
+  validateICSUrl(url)
+
   // Convert webcal:// to https:// (webcal is just a URI scheme convention for calendar apps)
   const fetchUrl = url.replace(/^webcal:\/\//i, 'https://')
 
