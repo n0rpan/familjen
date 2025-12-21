@@ -155,16 +155,6 @@ export async function getHomePageData(
     console.warn('Non-critical: Could not load household events', householdEventsResult.error)
   }
 
-  // Debug: Log household events query result
-  console.log('[Home] Household events query:', {
-    householdId,
-    weekStartStr,
-    weekEndStr,
-    count: householdEventsResult.data?.length || 0,
-    error: householdEventsResult.error,
-    data: householdEventsResult.data?.slice(0, 3), // First 3 events for debugging
-  })
-
   const queryError =
     childrenResult.error ||
     membersResult.error ||

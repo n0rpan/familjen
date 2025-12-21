@@ -214,6 +214,7 @@ export const nb: TranslationStrings = {
     reviewSuggestions: 'Gå gjennom forslag fra aktivitetsgrupper',
     remaining: 'igjen',
     originalMessage: 'Opprinnelig melding',
+    calendarEvent: 'Kalenderhendelse',
     aiSuggestion: 'AI-forslag',
     confidence: 'Sikkerhet',
     noMoreSuggestions: 'Ingen flere forslag',

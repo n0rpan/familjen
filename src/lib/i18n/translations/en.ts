@@ -214,6 +214,7 @@ export const en: TranslationStrings = {
     reviewSuggestions: 'Review suggestions from activity groups',
     remaining: 'remaining',
     originalMessage: 'Original message',
+    calendarEvent: 'Calendar event',
     aiSuggestion: 'AI suggestion',
     confidence: 'Confidence',
     noMoreSuggestions: 'No more suggestions',

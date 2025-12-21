@@ -214,6 +214,7 @@ export const sv: TranslationStrings = {
     reviewSuggestions: 'Granska förslag från aktivitetsgrupper',
     remaining: 'kvar',
     originalMessage: 'Ursprungligt meddelande',
+    calendarEvent: 'Kalenderhändelse',
     aiSuggestion: 'AI-förslag',
     confidence: 'Säkerhet',
     noMoreSuggestions: 'Inga fler förslag',

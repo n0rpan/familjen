@@ -222,6 +222,7 @@ export interface TranslationStrings {
     reviewSuggestions: string
     remaining: string
     originalMessage: string
+    calendarEvent: string
     aiSuggestion: string
     confidence: string
     noMoreSuggestions: string

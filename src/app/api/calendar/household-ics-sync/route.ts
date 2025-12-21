@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { validateOrigin } from '@/lib/config'
 import { syncHouseholdICS, type HouseholdICSSyncResult } from '@/lib/household-ics-sync'
+import { processHouseholdEventsWithAI } from '@/lib/integrations/household-event-extraction'
 
 /**
  * POST /api/calendar/household-ics-sync
@@ -79,9 +80,22 @@ export async function POST(request: Request) {
       ics_calendar_url: household.ics_calendar_url,
     })
 
+    // Process events with AI to create suggestions (fire and forget for faster response)
+    let suggestionsCreated = 0
+    if (result.success && result.eventsCount > 0) {
+      try {
+        const aiResult = await processHouseholdEventsWithAI(supabase, household.id)
+        suggestionsCreated = aiResult.suggestionsCreated
+      } catch (aiError) {
+        console.error('[Household ICS] AI extraction error:', aiError)
+        // Don't fail the sync if AI extraction fails
+      }
+    }
+
     return NextResponse.json({
       success: result.success,
       eventsCount: result.eventsCount,
+      suggestionsCreated,
       error: result.error,
     })
   } catch (error) {
@@ -128,8 +142,10 @@ async function syncAllHouseholds(): Promise<NextResponse> {
 
   console.log(`[Household ICS Cron] Found ${households.length} households with ICS calendars`)
 
-  // Sync each household
+  // Sync each household and process with AI
   const results: HouseholdICSSyncResult[] = []
+  let totalSuggestions = 0
+
   for (const household of households) {
     const result = await syncHouseholdICS(supabase, {
       id: household.id,
@@ -137,6 +153,18 @@ async function syncAllHouseholds(): Promise<NextResponse> {
       ics_calendar_url: household.ics_calendar_url!,
     })
     results.push(result)
+
+    // Process events with AI
+    if (result.success && result.eventsCount > 0) {
+      try {
+        const aiResult = await processHouseholdEventsWithAI(supabase, household.id)
+        totalSuggestions += aiResult.suggestionsCreated
+        console.log(`[Household ICS Cron] ${household.name}: ${aiResult.suggestionsCreated} suggestions created`)
+      } catch (aiError) {
+        console.error(`[Household ICS Cron] AI extraction error for ${household.name}:`, aiError)
+      }
+    }
+
     // Small delay between syncs to avoid rate limiting
     await new Promise((resolve) => setTimeout(resolve, 500))
   }
@@ -144,7 +172,7 @@ async function syncAllHouseholds(): Promise<NextResponse> {
   const successCount = results.filter((r) => r.success).length
   const totalEvents = results.reduce((sum, r) => sum + r.eventsCount, 0)
 
-  console.log(`[Household ICS Cron] Sync complete: ${successCount}/${households.length} success, ${totalEvents} events`)
+  console.log(`[Household ICS Cron] Sync complete: ${successCount}/${households.length} success, ${totalEvents} events, ${totalSuggestions} suggestions`)
 
   return NextResponse.json({
     success: true,
@@ -152,6 +180,7 @@ async function syncAllHouseholds(): Promise<NextResponse> {
     householdsSuccess: successCount,
     householdsFailed: households.length - successCount,
     eventsTotal: totalEvents,
+    suggestionsTotal: totalSuggestions,
   })
 }
 

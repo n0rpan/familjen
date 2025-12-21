@@ -3,15 +3,18 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
-import type { Child } from '@/lib/types'
+import type { Child, HouseholdMember } from '@/lib/types'
 
 interface ExternalSuggestion {
   id: string
   household_id: string
-  integration_id: string
+  integration_id: string | null
   source_message_id: string | null
+  source_type: 'external_message' | 'external_event' | 'household_ics'
+  source_household_event_id: string | null
   suggested_type: 'task' | 'event' | 'reminder'
   suggested_child_id: string | null
+  target_member_id: string | null
   suggested_date: string | null
   suggested_time: string | null
   suggested_title: string
@@ -25,6 +28,13 @@ interface ExternalSuggestion {
     sender_name: string | null
     message_date: string
   } | null
+  source_household_event?: {
+    title: string
+    description: string | null
+    event_date: string
+    event_time: string | null
+    location: string | null
+  } | null
   integration?: {
     service: string
     display_name: string
@@ -34,6 +44,7 @@ interface ExternalSuggestion {
 interface SuggestionReviewProps {
   householdId: string
   children: Child[]
+  members?: HouseholdMember[]
   onSuggestionAccepted?: () => void
 }
 
@@ -43,6 +54,7 @@ interface SuggestionReviewProps {
 export function SuggestionBanner({
   householdId,
   children,
+  members = [],
   onSuggestionAccepted,
 }: SuggestionReviewProps) {
   const { t } = useLanguage()
@@ -115,6 +127,7 @@ export function SuggestionBanner({
         <SuggestionReviewModal
           householdId={householdId}
           children={children}
+          members={members}
           onClose={handleModalClose}
         />
       )}
@@ -128,10 +141,12 @@ export function SuggestionBanner({
 function SuggestionReviewModal({
   householdId,
   children,
+  members = [],
   onClose,
 }: {
   householdId: string
   children: Child[]
+  members?: HouseholdMember[]
   onClose: () => void
 }) {
   const { t } = useLanguage()
@@ -145,6 +160,8 @@ function SuggestionReviewModal({
     date: '',
     time: '',
     child_id: '',
+    member_id: '',
+    target_type: 'child' as 'child' | 'member',
     type: 'task' as 'task' | 'event' | 'reminder',
   })
 
@@ -158,6 +175,7 @@ function SuggestionReviewModal({
         .select(`
           *,
           source_message:external_messages(body, sender_name, message_date),
+          source_household_event:household_events(title, description, event_date, event_time, location),
           integration:external_integrations(service, display_name)
         `)
         .eq('household_id', householdId)
@@ -178,11 +196,15 @@ function SuggestionReviewModal({
   }, [supabase, householdId])
 
   const initEditForm = (suggestion: ExternalSuggestion) => {
+    const hasChild = !!suggestion.suggested_child_id
+    const hasMember = !!suggestion.target_member_id
     setEditForm({
       title: suggestion.suggested_title,
       date: suggestion.suggested_date || '',
       time: suggestion.suggested_time || '',
       child_id: suggestion.suggested_child_id || children[0]?.id || '',
+      member_id: suggestion.target_member_id || members[0]?.id || '',
+      target_type: hasMember && !hasChild ? 'member' : 'child',
       type: suggestion.suggested_type,
     })
     setEditMode(false)
@@ -196,15 +218,29 @@ function SuggestionReviewModal({
     setSaving(true)
 
     try {
-      // Call the accept_suggestion RPC function
-      const { error } = await supabase.rpc('accept_suggestion', {
-        p_suggestion_id: currentSuggestion.id,
-        p_title: editForm.title,
-        p_date: editForm.date || null,
-        p_time: editForm.time || null,
-        p_child_id: editForm.child_id || null,
-        p_type: editForm.type,
-      })
+      let error = null
+
+      if (currentSuggestion.source_type === 'household_ics') {
+        // Use household ICS specific RPC
+        const result = await supabase.rpc('accept_household_ics_suggestion', {
+          p_suggestion_id: currentSuggestion.id,
+          p_title: editForm.title,
+          p_date: editForm.date || null,
+          p_time: editForm.time ? `${editForm.time}:00` : null,
+        })
+        error = result.error
+      } else {
+        // Use standard accept_suggestion RPC
+        const result = await supabase.rpc('accept_suggestion', {
+          p_suggestion_id: currentSuggestion.id,
+          p_title: editForm.title,
+          p_date: editForm.date || null,
+          p_time: editForm.time || null,
+          p_child_id: editForm.child_id || null,
+          p_type: editForm.type,
+        })
+        error = result.error
+      }
 
       if (error) {
         console.error('Error accepting suggestion:', error)
@@ -282,11 +318,15 @@ function SuggestionReviewModal({
     return 'var(--color-coral)'
   }
 
-  const getServiceBadge = (service: string | undefined) => {
-    switch (service?.toLowerCase()) {
+  const getServiceBadge = (suggestion: ExternalSuggestion) => {
+    if (suggestion.source_type === 'household_ics') {
+      return t.settings.familyCalendar || 'Familiekalender'
+    }
+    switch (suggestion.integration?.service?.toLowerCase()) {
       case 'spond': return 'Spond'
       case 'kidplan': return 'Kidplan'
       case 'iskole': return 'iSkole'
+      case 'mykid': return 'MyKid'
       default: return 'Ekstern'
     }
   }
@@ -357,9 +397,9 @@ function SuggestionReviewModal({
           <div className="flex items-center gap-3">
             <span
               className="px-2 py-1 rounded text-xs font-medium"
-              style={{ background: 'var(--color-sky)', color: 'white' }}
+              style={{ background: currentSuggestion.source_type === 'household_ics' ? 'var(--color-lavender)' : 'var(--color-sky)', color: 'white' }}
             >
-              {getServiceBadge(currentSuggestion.integration?.service)}
+              {getServiceBadge(currentSuggestion)}
             </span>
             <span className="text-sm" style={{ color: 'var(--muted)' }}>
               {remaining} {remaining === 1 ? t.week.remaining : t.week.remaining}
@@ -402,6 +442,49 @@ function SuggestionReviewModal({
                 ? currentSuggestion.source_message.body.substring(0, 300) + '...'
                 : currentSuggestion.source_message.body}
             </p>
+          </div>
+        )}
+
+        {/* Source household event */}
+        {currentSuggestion.source_household_event && (
+          <div className="px-6 py-4" style={{ background: 'var(--background)' }}>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-medium" style={{ color: 'var(--muted)' }}>
+                {t.week.calendarEvent || 'Kalenderhendelse'}
+              </span>
+            </div>
+            <div
+              className="text-sm p-3 rounded-lg space-y-1"
+              style={{
+                background: 'var(--card)',
+                border: '1px solid var(--border)',
+                color: 'var(--foreground)',
+              }}
+            >
+              <div className="font-medium">{currentSuggestion.source_household_event.title}</div>
+              <div className="flex flex-wrap gap-2 text-xs" style={{ color: 'var(--muted)' }}>
+                <span>
+                  {new Date(currentSuggestion.source_household_event.event_date).toLocaleDateString('nb-NO', {
+                    weekday: 'short',
+                    day: 'numeric',
+                    month: 'short',
+                  })}
+                </span>
+                {currentSuggestion.source_household_event.event_time && (
+                  <span>kl. {currentSuggestion.source_household_event.event_time.substring(0, 5)}</span>
+                )}
+                {currentSuggestion.source_household_event.location && (
+                  <span>@ {currentSuggestion.source_household_event.location}</span>
+                )}
+              </div>
+              {currentSuggestion.source_household_event.description && (
+                <p className="text-xs pt-1" style={{ color: 'var(--muted)' }}>
+                  {currentSuggestion.source_household_event.description.length > 200
+                    ? currentSuggestion.source_household_event.description.substring(0, 200) + '...'
+                    : currentSuggestion.source_household_event.description}
+                </p>
+              )}
+            </div>
           </div>
         )}
 
@@ -563,6 +646,14 @@ function SuggestionReviewModal({
                     style={{ background: 'var(--background)', color: 'var(--foreground)' }}
                   >
                     {children.find(c => c.id === currentSuggestion.suggested_child_id)?.name || 'Barn'}
+                  </span>
+                )}
+                {currentSuggestion.target_member_id && !currentSuggestion.suggested_child_id && (
+                  <span
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs"
+                    style={{ background: 'var(--background)', color: 'var(--foreground)' }}
+                  >
+                    {members.find(m => m.id === currentSuggestion.target_member_id)?.name || 'Voksen'}
                   </span>
                 )}
               </div>
