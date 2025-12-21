@@ -165,7 +165,44 @@ export default async function HomePage() {
   const memberEvents = eventsResult.data
   const childTasks = tasksResult.data || []
   const householdReminders = remindersResult.data || []
-  const holidays = holidaysResult.data || []
+  const rawHolidays = holidaysResult.data || []
+
+  // Generate birthdays from members and children with birth_date
+  const currentYear = today.getFullYear()
+  const birthdays: { date: string; name: string; type: 'birthday' }[] = []
+
+  // Add member birthdays
+  members?.forEach(member => {
+    if (member.birth_date) {
+      const birthDate = new Date(member.birth_date)
+      const thisYearBirthday = `${currentYear}-${String(birthDate.getMonth() + 1).padStart(2, '0')}-${String(birthDate.getDate()).padStart(2, '0')}`
+      if (thisYearBirthday >= weekStartStr && thisYearBirthday <= weekEndStr) {
+        birthdays.push({
+          date: thisYearBirthday,
+          name: `${member.name} ${t.date.birthday}`,
+          type: 'birthday',
+        })
+      }
+    }
+  })
+
+  // Add children birthdays
+  children?.forEach(child => {
+    if (child.birth_date) {
+      const birthDate = new Date(child.birth_date)
+      const thisYearBirthday = `${currentYear}-${String(birthDate.getMonth() + 1).padStart(2, '0')}-${String(birthDate.getDate()).padStart(2, '0')}`
+      if (thisYearBirthday >= weekStartStr && thisYearBirthday <= weekEndStr) {
+        birthdays.push({
+          date: thisYearBirthday,
+          name: `${child.name} ${t.date.birthday}`,
+          type: 'birthday',
+        })
+      }
+    }
+  })
+
+  // Merge holidays and birthdays
+  const holidays = [...rawHolidays.map(h => ({ ...h, type: 'holiday' as const })), ...birthdays]
 
   // Get today's summary
   const todayPickups = pickups?.filter(p => p.date === todayStr) || []

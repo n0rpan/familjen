@@ -1,6 +1,6 @@
 'use client'
 
-import { formatDateLocalized, isWeekend, isHoliday, getHolidayName, type Holiday } from '@/lib/utils'
+import { formatDateLocalized, formatDateISO, isWeekend, isHoliday, getHolidayName, type Holiday } from '@/lib/utils'
 import type { DaySummary, ChildTaskType, ReminderCategory } from '@/lib/types'
 import { getChildColor, getTaskConfig } from '@/lib/colors'
 import { useLanguage } from '@/lib/i18n/context'
@@ -46,11 +46,44 @@ export function TodayOverview({ summary, loading, holidays = [] }: TodayOverview
     )
   }
 
+  // Get holiday info for banner
+  const holiday = holidays.find(h => h.date === formatDateISO(today))
+  const isBirthday = holiday?.type === 'birthday'
+
   return (
     <div
       className="rounded-2xl p-6 md:p-8"
       style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
     >
+      {/* Holiday/Birthday Banner */}
+      {holiday && (
+        <div
+          className="flex items-center gap-3 p-4 rounded-xl mb-6 -mt-2"
+          style={{
+            background: isBirthday
+              ? 'linear-gradient(135deg, rgba(167, 139, 250, 0.15), rgba(229, 185, 94, 0.15))'
+              : 'linear-gradient(135deg, rgba(232, 120, 109, 0.15), rgba(229, 185, 94, 0.15))',
+            border: `1px solid ${isBirthday ? 'rgba(167, 139, 250, 0.3)' : 'rgba(232, 120, 109, 0.3)'}`,
+          }}
+        >
+          <span className="text-2xl">{isBirthday ? '🎂' : '🎄'}</span>
+          <div className="flex-1">
+            <span
+              className="font-semibold"
+              style={{ color: isBirthday ? '#a78bfa' : 'var(--color-coral)' }}
+            >
+              {holiday.name}
+            </span>
+            {isBirthday && (
+              <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                {t.home.birthdayWishes || 'Gratulerer med dagen!'}
+              </p>
+            )}
+          </div>
+          <span className="text-2xl">{isBirthday ? '🎉' : '✨'}</span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <div

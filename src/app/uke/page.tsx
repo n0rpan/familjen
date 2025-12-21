@@ -179,7 +179,44 @@ export default function WeekEditPage() {
         setRecipes(recipesResult.data || [])
         setMemberEvents(eventsResult.data || [])
         setChildTasks(tasksResult.data || [])
-        setHolidays(holidaysResult.data || [])
+
+        // Generate birthdays from members and children with birth_date
+        const currentYear = new Date().getFullYear()
+        const birthdays: { date: string; name: string; type: 'birthday' }[] = []
+
+        // Add member birthdays
+        membersResult.data?.forEach(member => {
+          if (member.birth_date) {
+            const birthDate = new Date(member.birth_date)
+            const thisYearBirthday = `${currentYear}-${String(birthDate.getMonth() + 1).padStart(2, '0')}-${String(birthDate.getDate()).padStart(2, '0')}`
+            if (thisYearBirthday >= weekStartStr && thisYearBirthday <= weekEndStr) {
+              birthdays.push({
+                date: thisYearBirthday,
+                name: `${member.name} ${t.date.birthday}`,
+                type: 'birthday',
+              })
+            }
+          }
+        })
+
+        // Add children birthdays
+        childrenResult.data?.forEach(child => {
+          if (child.birth_date) {
+            const birthDate = new Date(child.birth_date)
+            const thisYearBirthday = `${currentYear}-${String(birthDate.getMonth() + 1).padStart(2, '0')}-${String(birthDate.getDate()).padStart(2, '0')}`
+            if (thisYearBirthday >= weekStartStr && thisYearBirthday <= weekEndStr) {
+              birthdays.push({
+                date: thisYearBirthday,
+                name: `${child.name} ${t.date.birthday}`,
+                type: 'birthday',
+              })
+            }
+          }
+        })
+
+        // Merge holidays and birthdays
+        const rawHolidays = holidaysResult.data || []
+        setHolidays([...rawHolidays.map(h => ({ ...h, type: 'holiday' as const })), ...birthdays])
 
         // Fetch week context for this week
         if (householdResult.data) {

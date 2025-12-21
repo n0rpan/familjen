@@ -162,11 +162,12 @@ export function cn(...classes: (string | boolean | undefined | null)[]): string 
 }
 
 /**
- * Holiday type for calendar events
+ * Holiday/special day type for calendar events
  */
 export interface Holiday {
   date: string
   name: string
+  type?: 'holiday' | 'birthday'  // Default is 'holiday'
 }
 
 /**

@@ -76,6 +76,7 @@ export interface TranslationStrings {
     monthsShort: string[]
     weekLabel: string // "Uke" / "Vecka" / "Week"
     weekFormat: string // "Uke {week}, {year}"
+    birthday: string // "fyller år" / "'s birthday"
   }
 
   // Home page
@@ -96,6 +97,7 @@ export interface TranslationStrings {
     everyoneHome: string
     memberAway: string
     membersAway: string
+    birthdayWishes: string
   }
 
   // Login page

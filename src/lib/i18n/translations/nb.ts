@@ -68,6 +68,7 @@ export const nb: TranslationStrings = {
     monthsShort: ['jan', 'feb', 'mar', 'apr', 'mai', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'des'],
     weekLabel: 'Uke',
     weekFormat: 'Uke {week}, {year}',
+    birthday: 'fyller år',
   },
 
   // Home page
@@ -88,6 +89,7 @@ export const nb: TranslationStrings = {
     everyoneHome: 'Alle er hjemme',
     memberAway: '{name} er borte',
     membersAway: '{count} er borte',
+    birthdayWishes: 'Gratulerer med dagen!',
   },
 
   // Login page

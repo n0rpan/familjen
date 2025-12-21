@@ -68,6 +68,7 @@ export const en: TranslationStrings = {
     monthsShort: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
     weekLabel: 'Week',
     weekFormat: 'Week {week}, {year}',
+    birthday: "'s birthday",
   },
 
   // Home page
@@ -88,6 +89,7 @@ export const en: TranslationStrings = {
     everyoneHome: 'Everyone is home',
     memberAway: '{name} is away',
     membersAway: '{count} are away',
+    birthdayWishes: 'Happy birthday!',
   },
 
   // Login page
