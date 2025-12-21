@@ -3,6 +3,9 @@
 -- Also add p_child_id parameter to allow user override of AI suggestion
 -- And map suggested_type to valid child_tasks types
 
+-- Drop old 4-param function signature to avoid conflicts
+DROP FUNCTION IF EXISTS accept_household_ics_suggestion(UUID, TEXT, DATE, TIME);
+
 CREATE OR REPLACE FUNCTION accept_household_ics_suggestion(
   p_suggestion_id UUID,
   p_title TEXT DEFAULT NULL,
@@ -67,7 +70,7 @@ BEGIN
   -- child_tasks expects: 'bring', 'appointment', 'reminder', 'activity', 'closure', 'other'
   v_task_type := CASE v_suggestion.suggested_type
     WHEN 'task' THEN 'other'
-    WHEN 'event' THEN 'closure'  -- Calendar events like "stengt" are typically closures
+    WHEN 'event' THEN 'activity'  -- Calendar events (sports, meetings, etc.)
     WHEN 'reminder' THEN 'reminder'
     ELSE 'other'
   END;

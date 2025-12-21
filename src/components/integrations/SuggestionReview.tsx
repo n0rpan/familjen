@@ -395,7 +395,7 @@ function SuggestionReviewModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="fixed inset-0" style={{ background: 'rgba(0, 0, 0, 0.5)' }} onClick={onClose} />
       <div
-        className="relative w-full max-w-lg rounded-2xl overflow-y-auto animate-fade-in"
+        className="relative w-full max-w-lg rounded-2xl overflow-y-auto overflow-x-hidden animate-fade-in"
         style={{ background: 'var(--card)', border: '1px solid var(--border)', maxHeight: 'calc(100vh - 2rem)' }}
       >
         {/* Header */}
@@ -472,13 +472,15 @@ function SuggestionReviewModal({
             >
               <div className="font-medium">{currentSuggestion.source_household_event.title}</div>
               <div className="flex flex-wrap gap-2 text-xs" style={{ color: 'var(--muted)' }}>
-                <span>
-                  {new Date(currentSuggestion.source_household_event.event_date).toLocaleDateString('nb-NO', {
-                    weekday: 'short',
-                    day: 'numeric',
-                    month: 'short',
-                  })}
-                </span>
+                {currentSuggestion.source_household_event.event_date && (
+                  <span>
+                    {new Date(currentSuggestion.source_household_event.event_date).toLocaleDateString('nb-NO', {
+                      weekday: 'short',
+                      day: 'numeric',
+                      month: 'short',
+                    })}
+                  </span>
+                )}
                 {currentSuggestion.source_household_event.event_time && (
                   <span>kl. {currentSuggestion.source_household_event.event_time.substring(0, 5)}</span>
                 )}
@@ -567,58 +569,72 @@ function SuggestionReviewModal({
                 <label className="block text-xs font-medium mb-1" style={{ color: 'var(--muted)' }}>
                   {editForm.target_type === 'child' ? t.week.selectChild : t.week.selectMember}
                 </label>
-                {/* Target type toggle */}
-                <div className="flex gap-2 mb-2">
-                  <button
-                    type="button"
-                    onClick={() => setEditForm({ ...editForm, target_type: 'child' })}
-                    className="flex-1 px-3 py-1.5 rounded-lg text-xs transition-colors"
-                    style={{
-                      background: editForm.target_type === 'child' ? 'var(--accent)' : 'var(--background)',
-                      color: editForm.target_type === 'child' ? 'white' : 'var(--foreground)',
-                      border: `1px solid ${editForm.target_type === 'child' ? 'var(--accent)' : 'var(--border)'}`,
-                    }}
-                  >
-                    Barn
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditForm({ ...editForm, target_type: 'member' })}
-                    className="flex-1 px-3 py-1.5 rounded-lg text-xs transition-colors"
-                    style={{
-                      background: editForm.target_type === 'member' ? 'var(--accent)' : 'var(--background)',
-                      color: editForm.target_type === 'member' ? 'white' : 'var(--foreground)',
-                      border: `1px solid ${editForm.target_type === 'member' ? 'var(--accent)' : 'var(--border)'}`,
-                    }}
-                  >
-                    Voksen
-                  </button>
-                </div>
+                {/* Target type toggle - only show if both arrays have items */}
+                {(children.length > 0 && members.length > 0) && (
+                  <div className="flex gap-2 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditForm({ ...editForm, target_type: 'child' })}
+                      className="flex-1 px-3 py-1.5 rounded-lg text-xs transition-colors"
+                      style={{
+                        background: editForm.target_type === 'child' ? 'var(--accent)' : 'var(--background)',
+                        color: editForm.target_type === 'child' ? 'white' : 'var(--foreground)',
+                        border: `1px solid ${editForm.target_type === 'child' ? 'var(--accent)' : 'var(--border)'}`,
+                      }}
+                    >
+                      {t.week.targetChild}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditForm({ ...editForm, target_type: 'member' })}
+                      className="flex-1 px-3 py-1.5 rounded-lg text-xs transition-colors"
+                      style={{
+                        background: editForm.target_type === 'member' ? 'var(--accent)' : 'var(--background)',
+                        color: editForm.target_type === 'member' ? 'white' : 'var(--foreground)',
+                        border: `1px solid ${editForm.target_type === 'member' ? 'var(--accent)' : 'var(--border)'}`,
+                      }}
+                    >
+                      {t.week.targetAdult}
+                    </button>
+                  </div>
+                )}
                 {/* Child or member selector based on target_type */}
                 {editForm.target_type === 'child' ? (
-                  <select
-                    value={editForm.child_id}
-                    onChange={(e) => setEditForm({ ...editForm, child_id: e.target.value })}
-                    className="input text-sm"
-                  >
-                    {children.map((child) => (
-                      <option key={child.id} value={child.id}>
-                        {child.name}
-                      </option>
-                    ))}
-                  </select>
+                  children.length > 0 ? (
+                    <select
+                      value={editForm.child_id}
+                      onChange={(e) => setEditForm({ ...editForm, child_id: e.target.value })}
+                      className="input text-sm"
+                    >
+                      {children.map((child) => (
+                        <option key={child.id} value={child.id}>
+                          {child.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="text-sm py-2" style={{ color: 'var(--muted)' }}>
+                      {t.common.noResults}
+                    </p>
+                  )
                 ) : (
-                  <select
-                    value={editForm.member_id}
-                    onChange={(e) => setEditForm({ ...editForm, member_id: e.target.value })}
-                    className="input text-sm"
-                  >
-                    {members.map((member) => (
-                      <option key={member.id} value={member.id}>
-                        {member.name}
-                      </option>
-                    ))}
-                  </select>
+                  members.length > 0 ? (
+                    <select
+                      value={editForm.member_id}
+                      onChange={(e) => setEditForm({ ...editForm, member_id: e.target.value })}
+                      className="input text-sm"
+                    >
+                      {members.map((member) => (
+                        <option key={member.id} value={member.id}>
+                          {member.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="text-sm py-2" style={{ color: 'var(--muted)' }}>
+                      {t.common.noResults}
+                    </p>
+                  )
                 )}
               </div>
               <div>

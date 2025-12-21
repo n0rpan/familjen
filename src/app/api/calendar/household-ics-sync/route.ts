@@ -189,8 +189,13 @@ async function syncAllHouseholds(): Promise<NextResponse> {
  *
  * Get ICS sync status for current user's household.
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    // Validate origin for security consistency
+    if (!validateOrigin(request)) {
+      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+    }
+
     const supabase = await createClient()
 
     // Verify user is authenticated

@@ -162,6 +162,8 @@ export interface TranslationStrings {
     selectPicker: string
     selectChild: string
     selectMember: string
+    targetChild: string
+    targetAdult: string
     aiSuggestions: string
     getAiSuggestions: string
     generating: string

@@ -154,6 +154,8 @@ export const en: TranslationStrings = {
     selectPicker: 'Select who picks up',
     selectChild: 'Select child',
     selectMember: 'Select person',
+    targetChild: 'Child',
+    targetAdult: 'Adult',
     aiSuggestions: 'AI suggestions',
     getAiSuggestions: 'Suggest meals with AI',
     generating: 'Generating...',

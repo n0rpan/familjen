@@ -154,6 +154,8 @@ export const nb: TranslationStrings = {
     selectPicker: 'Velg hvem som henter',
     selectChild: 'Velg barn',
     selectMember: 'Velg person',
+    targetChild: 'Barn',
+    targetAdult: 'Voksen',
     aiSuggestions: 'AI-forslag',
     getAiSuggestions: 'Foreslå middager med AI',
     generating: 'Genererer...',

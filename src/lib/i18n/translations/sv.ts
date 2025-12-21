@@ -154,6 +154,8 @@ export const sv: TranslationStrings = {
     selectPicker: 'Välj vem som hämtar',
     selectChild: 'Välj barn',
     selectMember: 'Välj person',
+    targetChild: 'Barn',
+    targetAdult: 'Vuxen',
     aiSuggestions: 'AI-förslag',
     getAiSuggestions: 'Föreslå middagar med AI',
     generating: 'Genererar...',
