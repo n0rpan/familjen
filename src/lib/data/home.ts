@@ -147,9 +147,12 @@ export async function getHomePageData(
       .limit(4),
   ])
 
-  // Check for errors (holidaysResult is non-critical)
+  // Check for non-critical errors (page still loads if these fail)
   if (holidaysResult.error) {
     console.warn('Non-critical: Could not load holidays', holidaysResult.error)
+  }
+  if (householdEventsResult.error) {
+    console.warn('Non-critical: Could not load household events', householdEventsResult.error)
   }
 
   const queryError =
@@ -158,7 +161,6 @@ export async function getHomePageData(
     pickupsResult.error ||
     mealsResult.error ||
     eventsResult.error ||
-    householdEventsResult.error ||
     tasksResult.error ||
     remindersResult.error ||
     photosResult.error
