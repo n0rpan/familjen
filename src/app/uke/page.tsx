@@ -166,6 +166,10 @@ export default function WeekEditPage() {
         if (recipesResult.error) throw new Error(t.errors.couldNotLoadRecipes)
         if (eventsResult.error) throw new Error(t.errors.couldNotLoadEvents)
         if (tasksResult.error) throw new Error(t.errors.couldNotLoadTasks)
+        // Non-critical: holidays are optional
+        if (holidaysResult.error) {
+          console.warn('Non-critical: Could not load holidays', holidaysResult.error)
+        }
 
         setHousehold(householdResult.data)
         setChildren(childrenResult.data || [])

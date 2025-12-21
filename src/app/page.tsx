@@ -118,7 +118,10 @@ export default async function HomePage() {
     supabase.from('calendar_events').select('date, name').or(`household_id.is.null,household_id.eq.${myMembership.household_id}`).gte('date', weekStartStr).lte('date', weekEndStr).eq('event_type', 'holiday'),
   ])
 
-  // Check for errors
+  // Check for errors (holidaysResult errors are non-critical, just log them)
+  if (holidaysResult.error) {
+    console.warn('Non-critical: Could not load holidays', holidaysResult.error)
+  }
   const queryError = childrenResult.error || membersResult.error || pickupsResult.error || mealsResult.error || eventsResult.error || tasksResult.error || remindersResult.error
   if (queryError) {
     console.error('Error loading home page data:', queryError)
