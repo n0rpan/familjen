@@ -287,6 +287,7 @@ export interface TranslationStrings {
     familyCalendarUrl: string
     familyCalendarHint: string
     lastSynced: string
+    noEventsInCalendar: string
   }
 
   // Recipes page

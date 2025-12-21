@@ -47,6 +47,7 @@ export default function SettingsPage() {
   const [syncingFamilyCalendar, setSyncingFamilyCalendar] = useState(false)
   const [familyCalendarLastSync, setFamilyCalendarLastSync] = useState<string | null>(null)
   const [familyCalendarError, setFamilyCalendarError] = useState<string | null>(null)
+  const [familyCalendarEventCount, setFamilyCalendarEventCount] = useState<number>(0)
 
   // New item forms
   const [newMember, setNewMember] = useState({ name: '', short_name: '', is_parent: false, email: '', birth_date: '', work_email: '' })
@@ -149,6 +150,13 @@ export default function SettingsPage() {
       setFamilyCalendarUrl(householdData?.ics_calendar_url || '')
       setFamilyCalendarLastSync(householdData?.ics_last_sync_at || null)
       setFamilyCalendarError(householdData?.ics_sync_error || null)
+
+      // Fetch household event count
+      const { count: eventCount } = await supabase
+        .from('household_events')
+        .select('*', { count: 'exact', head: true })
+        .eq('household_id', householdData.id)
+      setFamilyCalendarEventCount(eventCount || 0)
 
       // Load members and children - explicitly filter by household_id for admins who can see all
       const [membersResult, childrenResult] = await Promise.all([
@@ -399,6 +407,7 @@ export default function SettingsPage() {
         showMessage('success', successMsg)
         setFamilyCalendarLastSync(new Date().toISOString())
         setFamilyCalendarError(null)
+        setFamilyCalendarEventCount(result.eventsCount || 0)
       } else if (result.error) {
         setFamilyCalendarError(result.error)
         throw new Error(result.error)
@@ -1487,6 +1496,15 @@ export default function SettingsPage() {
                       {t.settings.lastSynced || 'Sist synkronisert'}: {new Date(familyCalendarLastSync).toLocaleString(language === 'en' ? 'en-GB' : language === 'sv' ? 'sv-SE' : 'nb-NO')}
                     </span>
                   )}
+                </div>
+              )}
+
+              {/* Event count display */}
+              {familyCalendarUrl && (
+                <div className="text-xs" style={{ color: familyCalendarEventCount > 0 ? 'var(--color-sage)' : 'var(--muted)' }}>
+                  {familyCalendarEventCount > 0
+                    ? `${familyCalendarEventCount} ${familyCalendarEventCount === 1 ? (t.home.event || 'hendelse') : (t.home.events || 'hendelser')} i kalenderen`
+                    : (t.settings.noEventsInCalendar || 'Ingen hendelser funnet i kalenderen')}
                 </div>
               )}
 

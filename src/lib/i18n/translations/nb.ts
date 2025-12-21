@@ -279,6 +279,7 @@ export const nb: TranslationStrings = {
     familyCalendarUrl: 'ICS-kalender URL',
     familyCalendarHint: 'Koble til en delt familiekalender',
     lastSynced: 'Sist synkronisert',
+    noEventsInCalendar: 'Ingen hendelser funnet i kalenderen',
   },
 
   // Recipes page

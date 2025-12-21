@@ -279,6 +279,7 @@ export const sv: TranslationStrings = {
     familyCalendarUrl: 'ICS-kalender URL',
     familyCalendarHint: 'Anslut en delad familjekalender',
     lastSynced: 'Senast synkroniserad',
+    noEventsInCalendar: 'Inga händelser hittades i kalendern',
   },
 
   // Recipes page

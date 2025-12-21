@@ -279,6 +279,7 @@ export const en: TranslationStrings = {
     familyCalendarUrl: 'ICS calendar URL',
     familyCalendarHint: 'Connect a shared family calendar',
     lastSynced: 'Last synced',
+    noEventsInCalendar: 'No events found in calendar',
   },
 
   // Recipes page
