@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { WeekGrid } from '@/components/WeekGrid'
 import { formatDateISO, getWeekStart, addDays, formatWeekHeaderLocalized, type Holiday } from '@/lib/utils'
-import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Household, Recipe, MealSuggestion, MemberEvent, MemberEventType, ChildTask, ChildTaskType, RecipeIngredient, Pickup, Meal, ExternalEvent } from '@/lib/types'
+import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Household, Recipe, MealSuggestion, MemberEvent, MemberEventType, HouseholdEvent, ChildTask, ChildTaskType, RecipeIngredient, Pickup, Meal, ExternalEvent } from '@/lib/types'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { RecentChanges } from '@/components/RecentChanges'
@@ -54,6 +54,7 @@ export default function WeekEditPage() {
 
   // Member events state
   const [memberEvents, setMemberEvents] = useState<MemberEvent[]>([])
+  const [householdEvents, setHouseholdEvents] = useState<HouseholdEvent[]>([])
   const [showEventModal, setShowEventModal] = useState(false)
   const [editingEvent, setEditingEvent] = useState<MemberEvent | null>(null)
   const [eventForm, setEventForm] = useState({
@@ -62,6 +63,17 @@ export default function WeekEditPage() {
     event_type: 'other' as MemberEventType,
     date: '',
     end_date: '',
+  })
+
+  // Household event modal state
+  const [showHouseholdEventModal, setShowHouseholdEventModal] = useState(false)
+  const [editingHouseholdEvent, setEditingHouseholdEvent] = useState<HouseholdEvent | null>(null)
+  const [householdEventForm, setHouseholdEventForm] = useState({
+    title: '',
+    date: '',
+    end_date: '',
+    time: '',
+    location: '',
   })
 
   // Child tasks state
@@ -161,7 +173,7 @@ export default function WeekEditPage() {
         const weekEndStr = formatDateISO(weekEnd)
 
         // Fetch all data in parallel, using the specific household_id to prevent admin seeing other households
-        const [householdResult, childrenResult, membersResult, pickupsResult, mealsResult, recipesResult, eventsResult, tasksResult, externalEventsResult, holidaysResult] = await Promise.all([
+        const [householdResult, childrenResult, membersResult, pickupsResult, mealsResult, recipesResult, eventsResult, householdEventsResult, tasksResult, externalEventsResult, holidaysResult] = await Promise.all([
           supabase.from('households').select('id, name, ai_meal_context, share_names_with_ai, external_integrations_enabled, created_at').eq('id', membership.household_id).single(),
           supabase.from('children').select('*').eq('household_id', membership.household_id).order('sort_order'),
           supabase.from('household_members').select('*').eq('household_id', membership.household_id),
@@ -170,6 +182,8 @@ export default function WeekEditPage() {
           supabase.from('recipes').select('*').eq('household_id', membership.household_id).order('name'),
           // Fetch events that overlap with this week (start <= weekEnd AND (end >= weekStart OR end IS NULL))
           supabase.from('member_events').select('*').eq('household_id', membership.household_id).lte('date', weekEndStr).or(`end_date.gte.${weekStartStr},end_date.is.null`),
+          // Fetch household events that overlap with this week
+          supabase.from('household_events').select('*').eq('household_id', membership.household_id).lte('event_date', weekEndStr).or(`end_date.gte.${weekStartStr},end_date.is.null`).order('event_date').order('event_time'),
           // Fetch child tasks for this week
           supabase.from('child_tasks').select('*').eq('household_id', membership.household_id).gte('date', weekStartStr).lte('date', weekEndStr).order('date').order('time'),
           // Fetch external events (from Spond, etc.) - join with integrations to get service info
@@ -188,6 +202,7 @@ export default function WeekEditPage() {
         if (mealsResult.error) throw new Error(t.errors.couldNotLoadMeals)
         if (recipesResult.error) throw new Error(t.errors.couldNotLoadRecipes)
         if (eventsResult.error) throw new Error(t.errors.couldNotLoadEvents)
+        if (householdEventsResult.error) console.warn('Non-critical: Could not load household events', householdEventsResult.error)
         if (tasksResult.error) throw new Error(t.errors.couldNotLoadTasks)
 
         // Non-critical: holidays
@@ -202,6 +217,7 @@ export default function WeekEditPage() {
         setMeals(mealsResult.data || [])
         setRecipes(recipesResult.data || [])
         setMemberEvents(eventsResult.data || [])
+        setHouseholdEvents(householdEventsResult.data || [])
         setChildTasks(tasksResult.data || [])
         setExternalEvents(externalEventsResult.data || [])
 
@@ -429,6 +445,34 @@ export default function WeekEditPage() {
     triggerReload()
   }, [realtime, members])
 
+  // Realtime handlers for household events
+  const handleHouseholdEventRealtime = useCallback((
+    eventType: 'INSERT' | 'UPDATE' | 'DELETE',
+    newRecord: HouseholdEvent | null,
+    oldRecord: HouseholdEvent | null
+  ) => {
+    const record = newRecord || oldRecord
+    if (!record) return
+
+    // Skip if this is our own change
+    if (pendingChanges.current.has(record.id)) {
+      pendingChanges.current.delete(record.id)
+      return
+    }
+
+    // Show toast for new events from other users
+    const updatedBy = (newRecord as unknown as { updated_by?: string })?.updated_by
+    if (realtime && eventType === 'INSERT' && newRecord && !realtime.isOwnChange(updatedBy)) {
+      realtime.showToast(
+        `${realtime.getMemberName(updatedBy)} la til familiehendelse: ${newRecord.title}`,
+        'info'
+      )
+    }
+
+    // Reload data
+    triggerReload()
+  }, [realtime])
+
   // Subscribe to realtime changes
   useRealtimeSubscription<Pickup>({
     table: 'pickups',
@@ -455,6 +499,13 @@ export default function WeekEditPage() {
     table: 'member_events',
     filter: household?.id ? createHouseholdFilter(household.id) : undefined,
     onAny: (event) => handleEventRealtime(event.eventType, event.new as MemberEvent | null, event.old as MemberEvent | null),
+    enabled: !loading && !!household?.id,
+  })
+
+  useRealtimeSubscription<HouseholdEvent>({
+    table: 'household_events',
+    filter: household?.id ? createHouseholdFilter(household.id) : undefined,
+    onAny: (event) => handleHouseholdEventRealtime(event.eventType, event.new as HouseholdEvent | null, event.old as HouseholdEvent | null),
     enabled: !loading && !!household?.id,
   })
 
@@ -811,6 +862,116 @@ export default function WeekEditPage() {
       triggerReload()
     } catch (err) {
       console.error('Error deleting event:', err)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Household event handlers
+  const openHouseholdEventModal = (event?: HouseholdEvent) => {
+    if (event) {
+      setEditingHouseholdEvent(event)
+      setHouseholdEventForm({
+        title: event.title,
+        date: event.event_date,
+        end_date: event.end_date || '',
+        time: event.event_time?.substring(0, 5) || '',
+        location: event.location || '',
+      })
+    } else {
+      setEditingHouseholdEvent(null)
+      setHouseholdEventForm({
+        title: '',
+        date: formatDateISO(weekStart),
+        end_date: '',
+        time: '',
+        location: '',
+      })
+    }
+    setShowHouseholdEventModal(true)
+  }
+
+  const closeHouseholdEventModal = () => {
+    setShowHouseholdEventModal(false)
+    setEditingHouseholdEvent(null)
+    setHouseholdEventForm({
+      title: '',
+      date: '',
+      end_date: '',
+      time: '',
+      location: '',
+    })
+  }
+
+  const saveHouseholdEvent = async () => {
+    if (!household || !householdEventForm.title || !householdEventForm.date) return
+
+    // Don't allow editing ICS-synced events
+    if (editingHouseholdEvent?.source === 'ics_calendar') {
+      showMessage('error', 'ICS-synced events cannot be edited')
+      return
+    }
+
+    setSaving(true)
+
+    try {
+      if (editingHouseholdEvent) {
+        // Update existing
+        await supabase
+          .from('household_events')
+          .update({
+            title: householdEventForm.title,
+            event_date: householdEventForm.date,
+            end_date: householdEventForm.end_date || null,
+            event_time: householdEventForm.time ? `${householdEventForm.time}:00` : null,
+            location: householdEventForm.location || null,
+          })
+          .eq('id', editingHouseholdEvent.id)
+      } else {
+        // Create new
+        await supabase
+          .from('household_events')
+          .insert({
+            household_id: household.id,
+            title: householdEventForm.title,
+            event_date: householdEventForm.date,
+            end_date: householdEventForm.end_date || null,
+            event_time: householdEventForm.time ? `${householdEventForm.time}:00` : null,
+            location: householdEventForm.location || null,
+            source: 'manual',
+          })
+      }
+
+      closeHouseholdEventModal()
+      triggerReload()
+    } catch (err) {
+      console.error('Error saving household event:', err)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const deleteHouseholdEvent = async () => {
+    if (!editingHouseholdEvent) return
+
+    // Don't allow deleting ICS-synced events
+    if (editingHouseholdEvent.source === 'ics_calendar') {
+      showMessage('error', 'ICS-synced events cannot be deleted')
+      return
+    }
+
+    setSaving(true)
+
+    try {
+      await supabase
+        .from('household_events')
+        .delete()
+        .eq('id', editingHouseholdEvent.id)
+
+      closeHouseholdEventModal()
+      triggerReload()
+    } catch (err) {
+      console.error('Error deleting household event:', err)
     } finally {
       setSaving(false)
     }
@@ -1528,6 +1689,7 @@ export default function WeekEditPage() {
         pickups={pickups}
         meals={meals}
         memberEvents={memberEvents}
+        householdEvents={householdEvents}
         externalEvents={externalEvents}
         holidays={holidays}
         recipes={recipes}
@@ -1541,6 +1703,7 @@ export default function WeekEditPage() {
         onTaskToggle={handleTaskToggle}
         onTaskClick={handleTaskClick}
         onAddTask={handleAddTask}
+        onHouseholdEventClick={openHouseholdEventModal}
       />
 
       {/* Tips */}
@@ -1786,6 +1949,156 @@ export default function WeekEditPage() {
                 >
                   {saving ? t.common.loading : t.common.save}
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Household Event Modal */}
+      {showHouseholdEventModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0"
+            style={{ background: 'rgba(0, 0, 0, 0.5)' }}
+            onClick={closeHouseholdEventModal}
+          />
+
+          {/* Modal */}
+          <div
+            className="relative w-full max-w-md rounded-2xl p-6 space-y-5 animate-fade-in"
+            style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
+                {editingHouseholdEvent ? t.week.editEvent : t.week.familyEvent}
+              </h2>
+              <button
+                onClick={closeHouseholdEventModal}
+                className="p-2 rounded-lg transition-colors"
+                style={{ color: 'var(--muted)' }}
+                aria-label={t.common.close}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/>
+                  <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+
+            {/* ICS source warning */}
+            {editingHouseholdEvent?.source === 'ics_calendar' && (
+              <div
+                className="flex items-center gap-2 p-3 rounded-lg text-sm"
+                style={{ background: 'rgba(167, 139, 250, 0.15)', color: 'var(--foreground)' }}
+              >
+                <span>📅</span>
+                <span>This event is synced from an external calendar and cannot be edited.</span>
+              </div>
+            )}
+
+            {/* Form */}
+            <div className="space-y-4">
+              {/* Title */}
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
+                  {t.week.eventTitle}
+                </label>
+                <input
+                  type="text"
+                  value={householdEventForm.title}
+                  onChange={(e) => setHouseholdEventForm({ ...householdEventForm, title: e.target.value })}
+                  className="input"
+                  placeholder={t.week.familyEvent}
+                  disabled={editingHouseholdEvent?.source === 'ics_calendar'}
+                />
+              </div>
+
+              {/* Date */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
+                    {t.week.startDate}
+                  </label>
+                  <input
+                    type="date"
+                    value={householdEventForm.date}
+                    onChange={(e) => setHouseholdEventForm({ ...householdEventForm, date: e.target.value })}
+                    className="input"
+                    disabled={editingHouseholdEvent?.source === 'ics_calendar'}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
+                    {t.week.endDate} <span style={{ color: 'var(--muted)' }}>({t.common.optional})</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={householdEventForm.end_date}
+                    onChange={(e) => setHouseholdEventForm({ ...householdEventForm, end_date: e.target.value })}
+                    className="input"
+                    min={householdEventForm.date}
+                    disabled={editingHouseholdEvent?.source === 'ics_calendar'}
+                  />
+                </div>
+              </div>
+
+              {/* Time (optional) */}
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
+                  {t.week.taskTime} <span style={{ color: 'var(--muted)' }}>({t.common.optional})</span>
+                </label>
+                <input
+                  type="time"
+                  value={householdEventForm.time}
+                  onChange={(e) => setHouseholdEventForm({ ...householdEventForm, time: e.target.value })}
+                  className="input"
+                  disabled={editingHouseholdEvent?.source === 'ics_calendar'}
+                />
+              </div>
+
+              {/* Location (optional) */}
+              {editingHouseholdEvent?.location && (
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
+                    📍 {editingHouseholdEvent.location}
+                  </label>
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-between pt-2">
+              <div>
+                {editingHouseholdEvent && editingHouseholdEvent.source !== 'ics_calendar' && (
+                  <button
+                    onClick={deleteHouseholdEvent}
+                    disabled={saving}
+                    className="px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+                    style={{ color: 'var(--color-coral)' }}
+                  >
+                    {t.common.delete}
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={closeHouseholdEventModal}
+                  className="btn btn-secondary"
+                >
+                  {editingHouseholdEvent?.source === 'ics_calendar' ? t.common.close : t.common.cancel}
+                </button>
+                {editingHouseholdEvent?.source !== 'ics_calendar' && (
+                  <button
+                    onClick={saveHouseholdEvent}
+                    disabled={saving || !householdEventForm.title || !householdEventForm.date}
+                    className="btn btn-primary"
+                  >
+                    {saving ? t.common.loading : t.common.save}
+                  </button>
+                )}
               </div>
             </div>
           </div>

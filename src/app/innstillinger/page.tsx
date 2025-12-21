@@ -41,6 +41,13 @@ export default function SettingsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
 
+  // Family calendar settings
+  const [familyCalendarUrl, setFamilyCalendarUrl] = useState('')
+  const [savingFamilyCalendar, setSavingFamilyCalendar] = useState(false)
+  const [syncingFamilyCalendar, setSyncingFamilyCalendar] = useState(false)
+  const [familyCalendarLastSync, setFamilyCalendarLastSync] = useState<string | null>(null)
+  const [familyCalendarError, setFamilyCalendarError] = useState<string | null>(null)
+
   // New item forms
   const [newMember, setNewMember] = useState({ name: '', short_name: '', is_parent: false, email: '', birth_date: '', work_email: '' })
   const [newChild, setNewChild] = useState<{ name: string; location_name: string; location_type: 'school' | 'kindergarten'; birth_date: string; color: ChildColor }>({
@@ -126,7 +133,7 @@ export default function SettingsPage() {
       // Now get the household by ID (exclude encrypted fields)
       const { data: householdData, error: householdError } = await supabase
         .from('households')
-        .select('id, name, ai_meal_context, share_names_with_ai, external_integrations_enabled, created_at')
+        .select('id, name, ai_meal_context, share_names_with_ai, external_integrations_enabled, created_at, ics_calendar_url, ics_last_sync_at, ics_sync_error')
         .eq('id', myMembership.household_id)
         .single()
 
@@ -137,6 +144,11 @@ export default function SettingsPage() {
       setHousehold(householdData)
       setAiMealContext(householdData?.ai_meal_context || '')
       setShareNamesWithAi(householdData?.share_names_with_ai ?? true)
+
+      // Initialize family calendar settings
+      setFamilyCalendarUrl(householdData?.ics_calendar_url || '')
+      setFamilyCalendarLastSync(householdData?.ics_last_sync_at || null)
+      setFamilyCalendarError(householdData?.ics_sync_error || null)
 
       // Load members and children - explicitly filter by household_id for admins who can see all
       const [membersResult, childrenResult] = await Promise.all([
@@ -297,6 +309,110 @@ export default function SettingsPage() {
       showMessage('error', error instanceof Error ? error.message : 'Kunne ikke synkronisere kalender')
     } finally {
       setSyncingICS(false)
+    }
+  }
+
+  // Validate ICS URL format
+  const isValidIcsUrl = (url: string): boolean => {
+    if (!url.trim()) return true // Empty is valid (clears the URL)
+    try {
+      const testUrl = url.trim().replace(/^webcal:\/\//i, 'https://')
+      const parsed = new URL(testUrl)
+      // Must use https:// or webcal://
+      if (!['https:', 'webcals:'].includes(parsed.protocol) && !url.toLowerCase().startsWith('webcal://')) {
+        return false
+      }
+      // Basic check for .ics extension or calendar paths
+      const path = parsed.pathname.toLowerCase()
+      const isCalendarUrl = path.endsWith('.ics') ||
+        path.includes('calendar') ||
+        path.includes('ical') ||
+        parsed.hostname.includes('calendar') ||
+        parsed.hostname.includes('google')
+      return isCalendarUrl || path.length > 1 // Allow if it has a path
+    } catch {
+      return false
+    }
+  }
+
+  // Save family calendar URL
+  const saveFamilyCalendar = async () => {
+    if (!household) return
+
+    const trimmedUrl = familyCalendarUrl.trim()
+
+    // Validate URL format before saving
+    if (trimmedUrl && !isValidIcsUrl(trimmedUrl)) {
+      setFamilyCalendarError(t.errors.invalidUrl || 'Ugyldig kalender-URL. Bruk https:// eller webcal://')
+      showMessage('error', t.errors.invalidUrl || 'Ugyldig kalender-URL')
+      return
+    }
+
+    setSavingFamilyCalendar(true)
+    setFamilyCalendarError(null)
+
+    try {
+      const { error } = await supabase
+        .from('households')
+        .update({ ics_calendar_url: trimmedUrl || null })
+        .eq('id', household.id)
+
+      if (error) throw error
+
+      showMessage('success', t.success.saved)
+
+      // If URL was cleared, reset sync status
+      if (!trimmedUrl) {
+        setFamilyCalendarLastSync(null)
+      }
+    } catch (error) {
+      console.error('Save family calendar error:', error)
+      showMessage('error', t.errors.saveFailed)
+    } finally {
+      setSavingFamilyCalendar(false)
+    }
+  }
+
+  // Sync family calendar
+  const syncFamilyCalendar = async () => {
+    if (!household?.id || !familyCalendarUrl) return
+
+    setSyncingFamilyCalendar(true)
+    setFamilyCalendarError(null)
+
+    try {
+      const response = await fetch('/api/calendar/household-ics-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ householdId: household.id }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || t.errors.saveFailed)
+      }
+
+      if (result.success) {
+        const successMsg = t.success.syncedEvents?.replace('{count}', String(result.eventsCount)) ||
+          `Synkroniserte ${result.eventsCount} familiehendelser`
+        showMessage('success', successMsg)
+        setFamilyCalendarLastSync(new Date().toISOString())
+        setFamilyCalendarError(null)
+      } else if (result.error) {
+        setFamilyCalendarError(result.error)
+        throw new Error(result.error)
+      } else {
+        showMessage('success', t.success.saved)
+        setFamilyCalendarLastSync(new Date().toISOString())
+      }
+    } catch (error) {
+      console.error('Family calendar sync error:', error)
+      const errorMessage = error instanceof Error ? error.message : t.errors.saveFailed
+      setFamilyCalendarError(errorMessage)
+      showMessage('error', errorMessage)
+    } finally {
+      setSyncingFamilyCalendar(false)
     }
   }
 
@@ -1294,6 +1410,93 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+
+          {/* Family Calendar Settings */}
+          <div className="pt-6 mb-6" style={{ borderTop: '1px solid var(--border)' }}>
+            <div className="flex items-center gap-2 mb-4">
+              <div
+                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                style={{ background: 'rgba(167, 139, 250, 0.2)' }}
+              >
+                <span className="text-sm">🏠</span>
+              </div>
+              <div>
+                <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                  {t.settings.familyCalendar || 'Familiekalender'}
+                </p>
+                <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                  {t.settings.familyCalendarHint || 'Koble til en delt familiekalender'}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm mb-1" style={{ color: 'var(--foreground)' }}>
+                  {t.settings.familyCalendarUrl || 'ICS-kalender URL'}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={familyCalendarUrl}
+                    onChange={(e) => setFamilyCalendarUrl(e.target.value)}
+                    placeholder="https://calendar.google.com/calendar/ical/..."
+                    className="input"
+                    style={{ flex: '1 1 auto', minWidth: 0 }}
+                  />
+                  <button
+                    onClick={saveFamilyCalendar}
+                    disabled={savingFamilyCalendar}
+                    className="btn btn-primary"
+                  >
+                    {savingFamilyCalendar ? t.common.saving : t.common.save}
+                  </button>
+                </div>
+              </div>
+
+              {familyCalendarUrl && (
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={syncFamilyCalendar}
+                    disabled={syncingFamilyCalendar}
+                    className="btn btn-secondary text-sm"
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                  >
+                    {syncingFamilyCalendar ? (
+                      <>
+                        <svg width="14" height="14" className="animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                        </svg>
+                        {t.common.syncing || 'Synkroniserer...'}
+                      </>
+                    ) : (
+                      <>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                          <path d="M21 2v6h-6"/>
+                          <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+                          <path d="M3 22v-6h6"/>
+                          <path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+                        </svg>
+                        {t.common.sync || 'Synkroniser'}
+                      </>
+                    )}
+                  </button>
+
+                  {familyCalendarLastSync && (
+                    <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                      {t.settings.lastSynced || 'Sist synkronisert'}: {new Date(familyCalendarLastSync).toLocaleString(language === 'en' ? 'en-GB' : language === 'sv' ? 'sv-SE' : 'nb-NO')}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {familyCalendarError && (
+                <div className="p-3 rounded-lg text-sm" style={{ background: 'rgba(232, 120, 109, 0.1)', color: 'var(--color-coral)' }}>
+                  {familyCalendarError}
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Delete household */}
           <div className="pt-6" style={{ borderTop: '1px solid var(--border)' }}>

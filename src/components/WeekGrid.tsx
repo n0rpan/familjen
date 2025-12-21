@@ -13,7 +13,7 @@ import {
   getHoliday,
   type Holiday,
 } from '@/lib/utils'
-import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Recipe, MemberEvent, ChildTask, MemberEventType, ChildTaskType, ExternalEvent } from '@/lib/types'
+import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Recipe, MemberEvent, HouseholdEvent, ChildTask, MemberEventType, ChildTaskType, ExternalEvent } from '@/lib/types'
 import { getChildColor, getEventConfig, getTaskConfig } from '@/lib/colors'
 import { MealSelector } from './MealSelector'
 import { useLanguage } from '@/lib/i18n/context'
@@ -24,6 +24,7 @@ interface WeekGridProps {
   pickups: PickupWithDetails[]
   meals: MealWithRecipe[]
   memberEvents?: MemberEvent[]  // Parent events (work trips, dinners, etc.)
+  householdEvents?: HouseholdEvent[]  // Family/household calendar events
   childTasks?: ChildTask[]  // Kid tasks (bring items, appointments, reminders)
   externalEvents?: ExternalEvent[]  // External events from Spond, Kidplan, etc.
   holidays?: Holiday[]  // System and household holidays
@@ -34,6 +35,7 @@ interface WeekGridProps {
   onMealChange?: (date: string, mealName: string | null, recipeId?: string) => void
   onRequestAISuggestion?: (date: string) => void  // Per-day AI suggestion
   onEventClick?: (event: MemberEvent) => void  // Click to edit event
+  onHouseholdEventClick?: (event: HouseholdEvent) => void  // Click household event
   onWorkCalendarSync?: (pickupId: string, sync: boolean) => void  // Toggle work calendar invite
   onTaskToggle?: (taskId: string, done: boolean) => void  // Mark task done/undone
   onTaskClick?: (task: ChildTask) => void  // Click to edit task
@@ -47,6 +49,7 @@ export const WeekGrid = memo(function WeekGrid({
   pickups,
   meals,
   memberEvents = [],
+  householdEvents = [],
   childTasks = [],
   externalEvents = [],
   holidays = [],
@@ -57,6 +60,7 @@ export const WeekGrid = memo(function WeekGrid({
   onMealChange,
   onRequestAISuggestion,
   onEventClick,
+  onHouseholdEventClick,
   onWorkCalendarSync,
   onTaskToggle,
   onTaskClick,
@@ -125,6 +129,26 @@ export const WeekGrid = memo(function WeekGrid({
     return map
   }, [memberEvents])
 
+  // Group household events by date (for multi-day events, add to each day)
+  const householdEventsByDate = useMemo(() => {
+    const map = new Map<string, HouseholdEvent[]>()
+    householdEvents.forEach((event) => {
+      const startDate = new Date(event.event_date)
+      const endDate = event.end_date ? new Date(event.end_date) : startDate
+
+      // Add event to each day it spans
+      const current = new Date(startDate)
+      while (current <= endDate) {
+        const key = formatDateISO(current)
+        const existing = map.get(key) || []
+        existing.push(event)
+        map.set(key, existing)
+        current.setDate(current.getDate() + 1)
+      }
+    })
+    return map
+  }, [householdEvents])
+
   // Get parent members who might have events (is_parent = true or has events)
   const parentMembers = useMemo(() => {
     const memberIds = new Set(memberEvents.map(e => e.member_id))
@@ -166,6 +190,10 @@ export const WeekGrid = memo(function WeekGrid({
 
   const getEventsForMemberDate = (memberId: string, date: Date) => {
     return eventsByMemberDate.get(`${memberId}-${formatDateISO(date)}`) || []
+  }
+
+  const getHouseholdEventsForDate = (date: Date) => {
+    return householdEventsByDate.get(formatDateISO(date)) || []
   }
 
   const getTasksForChildDate = (childId: string, date: Date) => {
@@ -493,8 +521,8 @@ export const WeekGrid = memo(function WeekGrid({
               </tr>
             ))}
 
-            {/* Parent events rows */}
-            {parentMembers.length > 0 && (
+            {/* Calendar section (Family + Parent events) */}
+            {(householdEvents.length > 0 || parentMembers.length > 0) && (
               <>
                 {/* Separator row */}
                 <tr>
@@ -506,6 +534,97 @@ export const WeekGrid = memo(function WeekGrid({
                     {t.week.calendar}
                   </td>
                 </tr>
+
+                {/* Family/Household events row - only show if there are events */}
+                {householdEvents.length > 0 && (
+                  <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td className="p-3">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-7 h-7 rounded-full flex items-center justify-center text-sm"
+                          style={{
+                            background: 'rgba(167, 139, 250, 0.2)',
+                            color: '#a78bfa'
+                          }}
+                        >
+                          🏠
+                        </div>
+                        <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                          {t.week.family || 'Familien'}
+                        </span>
+                      </div>
+                    </td>
+                    {weekDates.map((date, i) => {
+                      const events = getHouseholdEventsForDate(date)
+
+                      return (
+                        <td
+                          key={i}
+                          className="p-2 text-center"
+                          style={{
+                            background: isToday(date)
+                              ? 'rgba(167, 139, 250, 0.08)'
+                              : isWeekend(date)
+                              ? 'var(--background)'
+                              : undefined,
+                          }}
+                        >
+                          {events.length > 0 ? (() => {
+                            const cellKey = `household-${formatDateISO(date)}`
+                            const isExpanded = expandedCells.has(cellKey)
+                            const displayEvents = isExpanded ? events : events.slice(0, 2)
+                            return (
+                              <div className="flex flex-col gap-1">
+                                {displayEvents.map((event) => (
+                                  <button
+                                    key={event.id}
+                                    onClick={() => onHouseholdEventClick?.(event)}
+                                    className="group flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-all hover:scale-105 text-left"
+                                    style={{
+                                      background: 'rgba(167, 139, 250, 0.2)',
+                                      opacity: event.is_redistributed ? 0.5 : 1,
+                                    }}
+                                    title={event.title}
+                                  >
+                                    <span className="shrink-0">🏠</span>
+                                    <span
+                                      className="truncate min-w-0"
+                                      style={{ color: '#a78bfa' }}
+                                    >
+                                      {event.event_time && (
+                                        <span className="font-medium">
+                                          {event.event_time.substring(0, 5)}{' '}
+                                        </span>
+                                      )}
+                                      <span className="hidden sm:inline">{event.title}</span>
+                                      <span className="sm:hidden">{event.title.substring(0, 15)}{event.title.length > 15 ? '…' : ''}</span>
+                                    </span>
+                                    {event.is_redistributed && (
+                                      <span className="shrink-0 text-[10px]" title="Redistribuert">↗</span>
+                                    )}
+                                  </button>
+                                ))}
+                                {events.length > 2 && (
+                                  <button
+                                    onClick={() => toggleCellExpansion(cellKey)}
+                                    className="text-xs hover:underline cursor-pointer"
+                                    style={{ color: 'var(--muted)' }}
+                                  >
+                                    {isExpanded
+                                      ? t.week.showLess || 'Vis mindre'
+                                      : `+${events.length - 2}`}
+                                  </button>
+                                )}
+                              </div>
+                            )
+                          })() : null}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                )}
+
+                {/* Parent events rows */}
                 {parentMembers.map((member) => (
                   <tr key={`event-${member.id}`} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td className="p-3">

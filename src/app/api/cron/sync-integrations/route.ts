@@ -6,6 +6,7 @@ import { ISkoleClient, ISkoleAuthError, ISkoleError } from '@/lib/integrations/i
 import { MyKidClient, MyKidAuthError, MyKidError } from '@/lib/integrations/mykid'
 import { formatDateISO, addDays } from '@/lib/utils'
 import { fetchAndParseICS, type ICSEvent } from '@/lib/ics-parser'
+import { syncHouseholdICS as syncHouseholdICSShared } from '@/lib/household-ics-sync'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnySupabaseClient = SupabaseClient<any, any, any>
@@ -211,6 +212,10 @@ export async function GET(request: Request) {
     // Sync ICS calendars for all members with ICS URLs
     const icsResults = await syncAllICSCalendars(supabase)
     console.log(`[Cron] ICS sync: ${icsResults.membersSuccess}/${icsResults.membersProcessed} success, ${icsResults.eventsTotal} events`)
+
+    // Sync household ICS calendars (shared family calendars)
+    const householdIcsResults = await syncAllHouseholdICSCalendars(supabase)
+    console.log(`[Cron] Household ICS sync: ${householdIcsResults.householdsSuccess}/${householdIcsResults.householdsProcessed} success, ${householdIcsResults.eventsTotal} events`)
 
     // Process AI extraction for new messages
     let suggestionsCreated = 0
@@ -1235,4 +1240,64 @@ function inferEventType(event: ICSEvent): 'work' | 'travel' | 'family' | 'other'
   }
 
   return 'work'
+}
+
+/**
+ * Sync all household ICS calendars (shared family calendars).
+ */
+async function syncAllHouseholdICSCalendars(
+  supabase: AnySupabaseClient
+): Promise<{
+  householdsProcessed: number
+  householdsSuccess: number
+  eventsTotal: number
+}> {
+  const result = {
+    householdsProcessed: 0,
+    householdsSuccess: 0,
+    eventsTotal: 0,
+  }
+
+  try {
+    // Get all households with ICS URLs
+    const { data: households, error: householdsError } = await supabase
+      .from('households')
+      .select('id, name, ics_calendar_url')
+      .not('ics_calendar_url', 'is', null)
+
+    if (householdsError || !households || households.length === 0) {
+      console.log('[Cron] No households with ICS calendars')
+      return result
+    }
+
+    result.householdsProcessed = households.length
+    console.log(`[Cron] Found ${households.length} households with ICS calendars`)
+
+    // Sync each household using shared utility
+    for (const household of households) {
+      try {
+        const syncResult = await syncHouseholdICSShared(supabase, {
+          id: household.id,
+          name: household.name || 'Household',
+          ics_calendar_url: household.ics_calendar_url,
+        })
+        if (syncResult.success) {
+          result.householdsSuccess++
+          result.eventsTotal += syncResult.eventsCount
+        } else {
+          console.error(`[Cron] Household ICS sync failed for ${household.name}:`, syncResult.error)
+        }
+
+        // Small delay between syncs to avoid rate limiting
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      } catch (error) {
+        console.error(`[Cron] Household ICS sync failed for ${household.name}:`, error)
+      }
+    }
+
+    return result
+  } catch (error) {
+    console.error('[Cron] Household ICS calendar sync error:', error)
+    return result
+  }
 }

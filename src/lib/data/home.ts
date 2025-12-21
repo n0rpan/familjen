@@ -6,6 +6,7 @@ import type {
   PickupWithDetails,
   MealWithRecipe,
   MemberEvent,
+  HouseholdEvent,
   ChildTaskWithChild,
   HouseholdReminderWithAssignee,
 } from '@/lib/types'
@@ -26,6 +27,7 @@ export interface HomePageData {
   pickups: PickupWithDetails[]
   meals: MealWithRecipe[]
   memberEvents: MemberEvent[]
+  householdEvents: HouseholdEvent[]
   childTasks: ChildTaskWithChild[]
   householdReminders: HouseholdReminderWithAssignee[]
   holidays: Holiday[]
@@ -65,6 +67,7 @@ export async function getHomePageData(
     pickupsResult,
     mealsResult,
     eventsResult,
+    householdEventsResult,
     tasksResult,
     remindersResult,
     holidaysResult,
@@ -98,6 +101,15 @@ export async function getHomePageData(
       .eq('household_id', householdId)
       .lte('date', weekEndStr)
       .or(`end_date.gte.${weekStartStr},end_date.is.null`),
+    // Fetch household events that overlap with this week
+    supabase
+      .from('household_events')
+      .select('*')
+      .eq('household_id', householdId)
+      .lte('event_date', weekEndStr)
+      .or(`end_date.gte.${weekStartStr},end_date.is.null`)
+      .order('event_date')
+      .order('event_time'),
     // Fetch child tasks for this week
     supabase
       .from('child_tasks')
@@ -146,6 +158,7 @@ export async function getHomePageData(
     pickupsResult.error ||
     mealsResult.error ||
     eventsResult.error ||
+    householdEventsResult.error ||
     tasksResult.error ||
     remindersResult.error ||
     photosResult.error
@@ -236,6 +249,7 @@ export async function getHomePageData(
       pickups: (pickupsResult.data || []) as PickupWithDetails[],
       meals: (mealsResult.data || []) as MealWithRecipe[],
       memberEvents: (eventsResult.data || []) as MemberEvent[],
+      householdEvents: (householdEventsResult.data || []) as HouseholdEvent[],
       childTasks: (tasksResult.data || []) as ChildTaskWithChild[],
       householdReminders: (remindersResult.data || []) as HouseholdReminderWithAssignee[],
       holidays,
@@ -258,6 +272,12 @@ export function getTodaySummary(data: HomePageData) {
   const todayMeal = data.meals.find(m => m.date === data.todayStr) || null
   const todayTasks = data.childTasks.filter(t => t.date === data.todayStr)
   const todayReminders = data.householdReminders.filter(r => r.date === data.todayStr)
+  // Household events: include if today falls within event_date to end_date range
+  const todayHouseholdEvents = data.householdEvents.filter(e => {
+    const startDate = e.event_date
+    const endDate = e.end_date || e.event_date
+    return data.todayStr >= startDate && data.todayStr <= endDate
+  })
 
   return {
     date: data.todayStr,
@@ -265,6 +285,7 @@ export function getTodaySummary(data: HomePageData) {
     meal: todayMeal,
     tasks: todayTasks,
     reminders: todayReminders,
+    householdEvents: todayHouseholdEvents,
   }
 }
 

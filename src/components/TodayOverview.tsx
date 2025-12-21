@@ -118,7 +118,7 @@ export function TodayOverview({ summary, loading, holidays = [] }: TodayOverview
         </div>
       </div>
 
-      {!summary || (summary.pickups.length === 0 && !summary.meal && summary.tasks.length === 0 && (!summary.reminders || summary.reminders.length === 0)) ? (
+      {!summary || (summary.pickups.length === 0 && !summary.meal && summary.tasks.length === 0 && (!summary.reminders || summary.reminders.length === 0) && (!summary.householdEvents || summary.householdEvents.length === 0)) ? (
         <div
           className="text-center py-8 rounded-xl"
           style={{ background: 'var(--background)' }}
@@ -194,6 +194,50 @@ export function TodayOverview({ summary, loading, holidays = [] }: TodayOverview
                   {summary.meal.recipe?.name || summary.meal.custom_meal || t.home.noMealPlanned}
                 </span>
               </div>
+            </div>
+          )}
+
+          {/* Household/Family events */}
+          {summary.householdEvents && summary.householdEvents.length > 0 && (
+            <div className="mt-4">
+              {summary.householdEvents.map((event) => (
+                <div
+                  key={event.id}
+                  className="flex items-center gap-4 p-4 rounded-xl mb-2"
+                  style={{
+                    background: 'rgba(167, 139, 250, 0.1)',
+                    opacity: event.is_redistributed ? 0.6 : 1,
+                  }}
+                >
+                  <div
+                    className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-lg"
+                    style={{ background: 'rgba(167, 139, 250, 0.3)', color: '#a78bfa' }}
+                  >
+                    🏠
+                  </div>
+                  <div className="flex-1">
+                    <span className="text-sm" style={{ color: '#a78bfa' }}>{t.week.family}</span>
+                    <span className="font-medium block" style={{ color: 'var(--foreground)' }}>
+                      {event.event_time && (
+                        <span className="text-sm" style={{ color: 'var(--muted)' }}>
+                          {event.event_time.substring(0, 5)}{' '}
+                        </span>
+                      )}
+                      {event.title}
+                    </span>
+                    {event.location && (
+                      <span className="text-sm" style={{ color: 'var(--muted)' }}>
+                        📍 {event.location}
+                      </span>
+                    )}
+                  </div>
+                  {event.is_redistributed && (
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(167, 139, 250, 0.2)', color: '#a78bfa' }}>
+                      ↗
+                    </span>
+                  )}
+                </div>
+              ))}
             </div>
           )}
 
