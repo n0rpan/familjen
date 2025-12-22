@@ -171,11 +171,23 @@ async function syncIntegration(
     // Fetch board posts
     try {
       const boardData = await client.getBoardPosts()
-      console.log(`[Kidplan] Board posts: ${boardData.BoardPosts?.length || 0}`)
+      const totalBoardPosts = boardData.BoardPosts?.length || 0
+      console.log(`[Kidplan] Board posts received: ${totalBoardPosts}`)
+
+      let boardPostsFiltered = 0
+      let boardPostsAdded = 0
 
       for (const post of boardData.BoardPosts || []) {
         const postDate = KidplanClient.parseMicrosoftDate(post.Created)
-        if (!postDate || postDate < lastSync) continue
+        if (!postDate) {
+          console.log(`[Kidplan] Board post ${post.PostId} has invalid date: ${post.Created}`)
+          boardPostsFiltered++
+          continue
+        }
+        if (postDate < lastSync) {
+          boardPostsFiltered++
+          continue
+        }
 
         messagesToUpsert.push({
           integration_id: integration.id,
@@ -190,26 +202,78 @@ async function syncIntegration(
           source_type: 'board_post',
           raw_data: post,
         })
+        boardPostsAdded++
       }
+
+      console.log(`[Kidplan] Board posts: ${boardPostsAdded} added, ${boardPostsFiltered} filtered (older than ${lastSync.toISOString()})`)
     } catch (boardError) {
       console.error('Error fetching board posts:', boardError)
     }
 
-    // Fetch conversations
+    // Fetch conversations with pagination
     try {
-      const conversations = await client.getConversations(20, 0)
-      console.log(`[Kidplan] Conversations: ${conversations.length}`)
+      const PAGE_SIZE = 50 // Fetch more per page
+      const MAX_PAGES = isHistoricalSync ? 20 : 5 // More pages for historical sync
+      let allConversations: Awaited<ReturnType<typeof client.getConversations>> = []
+      let page = 0
+      let hasMore = true
 
-      for (const conv of conversations) {
-        // Get messages for each conversation
+      // Paginate through conversations
+      while (hasMore && page < MAX_PAGES) {
+        const conversations = await client.getConversations(PAGE_SIZE, page * PAGE_SIZE)
+        console.log(`[Kidplan] Conversations page ${page + 1}: ${conversations.length} items`)
+
+        if (conversations.length === 0) {
+          hasMore = false
+        } else {
+          allConversations = [...allConversations, ...conversations]
+          if (conversations.length < PAGE_SIZE) {
+            hasMore = false // Last page
+          }
+          page++
+        }
+      }
+
+      console.log(`[Kidplan] Total conversations fetched: ${allConversations.length}`)
+
+      let conversationMessagesAdded = 0
+      let conversationMessagesFiltered = 0
+
+      for (const conv of allConversations) {
+        // Get messages for each conversation (also with pagination)
         try {
-          const messagesResponse = await client.getMessages(conv.ConversationId, 20, 0)
-          // Ensure we have an array
-          const messages = Array.isArray(messagesResponse) ? messagesResponse : []
+          let allMessages: Awaited<ReturnType<typeof client.getMessages>> = []
+          let msgPage = 0
+          let msgHasMore = true
+          const MSG_PAGE_SIZE = 50
+          const MSG_MAX_PAGES = isHistoricalSync ? 10 : 2
 
-          for (const msg of messages) {
+          while (msgHasMore && msgPage < MSG_MAX_PAGES) {
+            const messagesResponse = await client.getMessages(conv.ConversationId, MSG_PAGE_SIZE, msgPage * MSG_PAGE_SIZE)
+            const messages = Array.isArray(messagesResponse) ? messagesResponse : []
+
+            if (messages.length === 0) {
+              msgHasMore = false
+            } else {
+              allMessages = [...allMessages, ...messages]
+              if (messages.length < MSG_PAGE_SIZE) {
+                msgHasMore = false
+              }
+              msgPage++
+            }
+          }
+
+          for (const msg of allMessages) {
             const msgDate = KidplanClient.parseMicrosoftDate(msg.Created)
-            if (!msgDate || msgDate < lastSync) continue
+            if (!msgDate) {
+              console.log(`[Kidplan] Message ${msg.MessageId} has invalid date: ${msg.Created}`)
+              conversationMessagesFiltered++
+              continue
+            }
+            if (msgDate < lastSync) {
+              conversationMessagesFiltered++
+              continue
+            }
 
             messagesToUpsert.push({
               integration_id: integration.id,
@@ -224,29 +288,48 @@ async function syncIntegration(
               source_type: 'conversation',
               raw_data: msg,
             })
+            conversationMessagesAdded++
           }
         } catch (msgError) {
           console.error(`Error fetching messages for conversation ${conv.ConversationId}:`, msgError)
         }
       }
+
+      console.log(`[Kidplan] Conversation messages: ${conversationMessagesAdded} added, ${conversationMessagesFiltered} filtered`)
     } catch (convError) {
       console.error('Error fetching conversations:', convError)
     }
 
     // Upsert messages
+    console.log(`[Kidplan] Total messages to upsert: ${messagesToUpsert.length}`)
+
     if (messagesToUpsert.length > 0) {
-      const { error: messagesError } = await supabase
+      const { data: upsertedData, error: messagesError } = await supabase
         .from('external_messages')
         .upsert(messagesToUpsert, {
           onConflict: 'integration_id,external_id',
           ignoreDuplicates: false,
         })
+        .select('id')
 
       if (messagesError) {
-        console.error('Error upserting messages:', messagesError)
+        console.error('[Kidplan] Error upserting messages:', messagesError)
+        console.error('[Kidplan] Error details:', {
+          code: messagesError.code,
+          message: messagesError.message,
+          details: messagesError.details,
+          hint: messagesError.hint,
+        })
+        // Try inserting one by one to find the problematic message
+        if (messagesError.code === '42703') { // undefined_column
+          console.error('[Kidplan] Column error - check if source_type column exists in external_messages table')
+        }
       } else {
-        result.messagesCount = messagesToUpsert.length
+        result.messagesCount = upsertedData?.length ?? messagesToUpsert.length
+        console.log(`[Kidplan] Successfully upserted ${result.messagesCount} messages`)
       }
+    } else {
+      console.log('[Kidplan] No messages to upsert')
     }
 
     // Fetch, download, compress, and store photos
