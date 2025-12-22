@@ -118,29 +118,58 @@ export async function POST(request: Request) {
         // Create document record for HTML content (truncate to 500KB for DB storage)
         const truncatedContent = content.slice(0, 500000)
 
-        const { data: docRecord, error: docError } = await supabase
+        // Check if document already exists for this source URL
+        const { data: existingDoc } = await supabase
           .from('external_documents')
-          .upsert({
-            household_id: member.household_id,
-            source_url_id: sourceUrl.id,
-            external_id: `manual_${sourceUrl.id}`,
-            source_type: 'manual_url',
-            source_url: sourceUrl.url,
-            title: sourceUrl.display_name,
-            filename: null,
-            mime_type: 'text/html',
-            storage_path: null, // Content stored in extracted_text
-            file_size: content.length,
-            extracted_text: truncatedContent,
-            ai_processed: false,
-          }, {
-            onConflict: 'source_url_id',
-          })
           .select('id')
+          .eq('source_url_id', sourceUrl.id)
           .single()
 
+        let docRecord: { id: string } | null = null
+        let docError: Error | null = null
+
+        if (existingDoc) {
+          // Update existing document
+          const { data, error } = await supabase
+            .from('external_documents')
+            .update({
+              source_url: sourceUrl.url,
+              title: sourceUrl.display_name,
+              file_size: content.length,
+              extracted_text: truncatedContent,
+              ai_processed: false,
+            })
+            .eq('id', existingDoc.id)
+            .select('id')
+            .single()
+          docRecord = data
+          docError = error as Error | null
+        } else {
+          // Insert new document
+          const { data, error } = await supabase
+            .from('external_documents')
+            .insert({
+              household_id: member.household_id,
+              source_url_id: sourceUrl.id,
+              external_id: `manual_${sourceUrl.id}`,
+              source_type: 'manual_url',
+              source_url: sourceUrl.url,
+              title: sourceUrl.display_name,
+              filename: null,
+              mime_type: 'text/html',
+              storage_path: null,
+              file_size: content.length,
+              extracted_text: truncatedContent,
+              ai_processed: false,
+            })
+            .select('id')
+            .single()
+          docRecord = data
+          docError = error as Error | null
+        }
+
         if (docError) {
-          console.error('Document insert error:', docError)
+          console.error('Document insert/update error:', docError)
         }
 
         // Process immediately with AI to extract events
