@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
 
 interface NavigationState {
@@ -22,6 +22,9 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     targetPath: null,
   })
 
+  // Track the pathname when navigation started
+  const startPathnameRef = useRef<string | null>(null)
+
   // Start navigation - called on link click
   const startNavigation = useCallback((path: string) => {
     // Normalize path (remove query string for comparison)
@@ -32,19 +35,23 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
       return
     }
 
+    startPathnameRef.current = pathname
     setState({ isNavigating: true, targetPath: normalizedPath })
   }, [pathname])
 
   // End navigation - called when page is ready or on error
   const endNavigation = useCallback(() => {
+    startPathnameRef.current = null
     setState({ isNavigating: false, targetPath: null })
   }, [])
 
-  // Auto-end navigation when pathname changes (page loaded)
+  // Auto-end navigation ONLY when pathname actually changes
   useEffect(() => {
-    if (state.isNavigating) {
-      // Small delay to allow content to render before removing skeleton
+    // Only end if we were navigating AND pathname changed from where we started
+    if (state.isNavigating && startPathnameRef.current !== null && pathname !== startPathnameRef.current) {
+      // Small delay to allow content to render
       const timer = setTimeout(() => {
+        startPathnameRef.current = null
         setState({ isNavigating: false, targetPath: null })
       }, 50)
       return () => clearTimeout(timer)
@@ -55,8 +62,9 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (state.isNavigating) {
       const timer = setTimeout(() => {
+        startPathnameRef.current = null
         setState({ isNavigating: false, targetPath: null })
-      }, 3000) // 3 second max
+      }, 5000) // 5 second max
       return () => clearTimeout(timer)
     }
   }, [state.isNavigating])
