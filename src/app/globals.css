@@ -333,6 +333,16 @@ input:focus, select:focus, textarea:focus {
   to { transform: rotate(360deg); }
 }
 
+/* Instant navigation feedback - applied via DOM before any async work */
+.page-content-wrapper {
+  transition: opacity 80ms ease-out;
+}
+
+.page-content-wrapper.navigating {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
 /* View transition animations */
 @view-transition {
   navigation: auto;

@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useState, type ComponentProps, type MouseEvent } from 'react'
+import { useNavigationOptional } from '@/lib/navigation'
 
 type TransitionLinkProps = ComponentProps<typeof Link> & {
   viewTransition?: boolean
@@ -70,6 +71,7 @@ export function TransitionLink({
   ...props
 }: TransitionLinkProps) {
   const router = useRouter()
+  const navigation = useNavigationOptional()
   const [prefetched, setPrefetched] = useState(false)
 
   // Prefetch on hover for faster navigation
@@ -90,8 +92,8 @@ export function TransitionLink({
       // Let the default onClick run first
       onClick?.(e)
 
-      // If default was prevented or view transitions not supported, skip
-      if (e.defaultPrevented || !viewTransition || !supportsViewTransitions) {
+      // If default was prevented, skip
+      if (e.defaultPrevented) {
         return
       }
 
@@ -107,39 +109,52 @@ export function TransitionLink({
       const isBack = isBackNavigation(targetPath)
       setTransitionDirection(isBack ? 'back' : 'forward')
 
-      // Navigation function - extracted so we can call it as fallback
+      // INSTANT FEEDBACK: Add class directly to DOM (no React state delay)
+      // This gives immediate visual response before any async work
+      const pageContent = document.querySelector('.page-content-wrapper')
+      if (pageContent) {
+        pageContent.classList.add('navigating')
+      }
+
+      // Signal navigation for any React-based tracking
+      navigation?.startNavigation(targetPath)
+
+      // Navigation function
       const navigate = () => {
         router.push(href)
         pushToNavStack(targetPath)
       }
 
-      // Try to start view transition, with robust fallback
+      // If view transitions not supported, navigate directly
+      if (!viewTransition || !supportsViewTransitions) {
+        navigate()
+        clearTransitionDirection()
+        return
+      }
+
+      // Start view transition immediately (instant feedback already applied via class)
       try {
         const transition = (document as Document & { startViewTransition?: (callback: () => void) => { finished: Promise<void> } }).startViewTransition?.(navigate)
 
         if (!transition) {
-          // startViewTransition returned nothing, navigate directly
           navigate()
           clearTransitionDirection()
           return
         }
 
-        // Clear direction after transition completes
         transition.finished
           .then(() => {
             clearTransitionDirection()
           })
           .catch(() => {
-            // View transition was skipped, still clean up
             clearTransitionDirection()
           })
       } catch {
-        // View transition failed entirely, navigate directly
         navigate()
         clearTransitionDirection()
       }
     },
-    [router, href, viewTransition, onClick]
+    [router, href, viewTransition, onClick, navigation]
   )
 
   return (

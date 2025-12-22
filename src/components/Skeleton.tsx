@@ -336,6 +336,43 @@ export function ShoppingPagePartialSkeleton({ t }: { t: TranslationStrings }) {
   )
 }
 
+// Navigation transition skeleton - shows immediately on route change
+// This is the instant feedback the user sees before Next.js loads the page
+export function NavigationSkeleton() {
+  return (
+    <div className="animate-fade-in space-y-6 py-2">
+      {/* Generic page header skeleton */}
+      <div>
+        <Skeleton height={32} width={180} borderRadius={12} className="mb-2" />
+        <Skeleton height={18} width={240} borderRadius={8} />
+      </div>
+
+      {/* Generic content card skeleton */}
+      <div
+        className="rounded-2xl p-6"
+        style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+      >
+        <div className="space-y-4">
+          <Skeleton height={20} width="90%" borderRadius={8} />
+          <Skeleton height={20} width="75%" borderRadius={8} />
+          <Skeleton height={20} width="85%" borderRadius={8} />
+        </div>
+      </div>
+
+      {/* Secondary content */}
+      <div
+        className="rounded-2xl p-6"
+        style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+      >
+        <div className="space-y-4">
+          <Skeleton height={16} width="60%" borderRadius={6} />
+          <Skeleton height={16} width="80%" borderRadius={6} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Recipes page partial skeleton - real title + shimmer for grid
 export function RecipesPagePartialSkeleton({ t }: { t: TranslationStrings }) {
   return (

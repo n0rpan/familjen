@@ -9,6 +9,8 @@ import { UpdatePrompt } from "@/components/UpdatePrompt";
 import { AppShell } from "@/components/AppShell";
 import { OfflineIndicator } from "@/components/OfflineIndicator";
 import { RealtimeWrapper } from "@/components/RealtimeWrapper";
+import { NavigationProvider } from "@/lib/navigation";
+import { PageContent } from "@/components/PageContent";
 
 // Self-hosted fonts with next/font for better performance (no render-blocking)
 const outfit = Outfit({
@@ -64,18 +66,22 @@ export default async function RootLayout({
     <html lang={language} className={`${outfit.variable} ${fraunces.variable}`}>
       <body className="antialiased grain app-shell font-sans" style={{ background: 'var(--background)' }}>
         <LanguageProvider initialLanguage={language}>
-          <RealtimeWrapper>
-            <OfflineIndicator />
-            <Header />
-            <div className="app-shell-content pt-mobile-header">
-              <AppShell>
-                <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-24 md:pb-6 relative z-0" style={{ viewTransitionName: 'page-content' }}>
-                  {children}
-                </main>
-              </AppShell>
-            </div>
-            <UpdatePrompt />
-          </RealtimeWrapper>
+          <NavigationProvider>
+            <RealtimeWrapper>
+              <OfflineIndicator />
+              <Header />
+              <div className="app-shell-content pt-mobile-header">
+                <AppShell>
+                  <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-24 md:pb-6 relative z-0" style={{ viewTransitionName: 'page-content' }}>
+                    <PageContent>
+                      {children}
+                    </PageContent>
+                  </main>
+                </AppShell>
+              </div>
+              <UpdatePrompt />
+            </RealtimeWrapper>
+          </NavigationProvider>
         </LanguageProvider>
         <ServiceWorkerRegistration />
       </body>
