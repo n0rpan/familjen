@@ -6,9 +6,9 @@ const CACHE_NAME = 'familjen-v8'
 const STATIC_CACHE = 'familjen-static-v6'
 const NAV_CACHE = 'familjen-nav-v4'
 
-// Max age for cached navigation responses (2 minutes for faster updates)
-// After this, we'll still show cached but prioritize network
-const NAV_CACHE_MAX_AGE = 2 * 60 * 1000
+// Max age for cached navigation responses (3 minutes)
+// Aligned with IndexedDB cache for consistent freshness signals
+const NAV_CACHE_MAX_AGE = 3 * 60 * 1000
 
 // Race timeout when cache is stale (300ms for faster perceived load)
 const STALE_RACE_TIMEOUT = 300

@@ -376,7 +376,29 @@ export default function WeekEditPage() {
     }
   }, [supabase, weekStart, weekEnd, reloadTrigger, weekOffset])
 
+  // Immediate reload for user-initiated actions
   const triggerReload = () => setReloadTrigger(prev => prev + 1)
+
+  // Debounced reload for realtime events - collects bursts into single reload
+  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const debouncedReload = useCallback(() => {
+    if (reloadTimerRef.current) {
+      clearTimeout(reloadTimerRef.current)
+    }
+    reloadTimerRef.current = setTimeout(() => {
+      setReloadTrigger(prev => prev + 1)
+      reloadTimerRef.current = null
+    }, 250) // 250ms debounce window
+  }, [])
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (reloadTimerRef.current) {
+        clearTimeout(reloadTimerRef.current)
+      }
+    }
+  }, [])
 
   // Prefetch adjacent weeks for instant navigation
   const hasPrefetchedRef = useRef<Set<string>>(new Set())
@@ -458,9 +480,9 @@ export default function WeekEditPage() {
       }
     }
 
-    // Reload data to get full pickup details with relations
-    triggerReload()
-  }, [weekStartStr, weekEndStr, realtime, children, members, t.date.weekdays])
+    // Reload data to get full pickup details with relations (debounced for bursts)
+    debouncedReload()
+  }, [weekStartStr, weekEndStr, realtime, children, members, t.date.weekdays, debouncedReload])
 
   // Realtime handlers for meals
   const handleMealRealtime = useCallback((
@@ -493,9 +515,9 @@ export default function WeekEditPage() {
       )
     }
 
-    // Reload data to get full meal details with recipe
-    triggerReload()
-  }, [weekStartStr, weekEndStr, realtime, t.date.weekdays])
+    // Reload data to get full meal details with recipe (debounced for bursts)
+    debouncedReload()
+  }, [weekStartStr, weekEndStr, realtime, t.date.weekdays, debouncedReload])
 
   // Realtime handlers for child tasks
   const handleTaskRealtime = useCallback((
@@ -533,9 +555,9 @@ export default function WeekEditPage() {
       }
     }
 
-    // Reload data
-    triggerReload()
-  }, [weekStartStr, weekEndStr, realtime, children])
+    // Reload data (debounced for bursts)
+    debouncedReload()
+  }, [weekStartStr, weekEndStr, realtime, children, debouncedReload])
 
   // Realtime handlers for member events
   const handleEventRealtime = useCallback((
@@ -564,9 +586,9 @@ export default function WeekEditPage() {
       }
     }
 
-    // Reload data
-    triggerReload()
-  }, [realtime, members])
+    // Reload data (debounced for bursts)
+    debouncedReload()
+  }, [realtime, members, debouncedReload])
 
   // Realtime handlers for household events
   const handleHouseholdEventRealtime = useCallback((
@@ -592,9 +614,9 @@ export default function WeekEditPage() {
       )
     }
 
-    // Reload data
-    triggerReload()
-  }, [realtime])
+    // Reload data (debounced for bursts)
+    debouncedReload()
+  }, [realtime, debouncedReload])
 
   // Subscribe to realtime changes
   useRealtimeSubscription<Pickup>({

@@ -63,6 +63,7 @@ export const nb: TranslationStrings = {
     items: 'varer',
     confirmDelete: 'Er du sikker på at du vil slette dette?',
     free: 'Gratis',
+    navigatedTo: 'Navigert til',
   },
 
   // Date/Time

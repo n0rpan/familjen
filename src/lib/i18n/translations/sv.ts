@@ -63,6 +63,7 @@ export const sv: TranslationStrings = {
     items: 'varor',
     confirmDelete: 'Är du säker på att du vill ta bort detta?',
     free: 'Gratis',
+    navigatedTo: 'Navigerade till',
   },
 
   // Date/Time

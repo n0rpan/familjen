@@ -218,7 +218,24 @@ export function createHouseholdFilter(householdId: string): string {
   return `household_id=eq.${householdId}`
 }
 
-// Helper to create a list_id filter for shopping items
+// Helper to create a list_id filter for a single shopping list
 export function createListFilter(listId: string): string {
   return `list_id=eq.${listId}`
+}
+
+// UUID validation regex
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * Helper to create an "in" filter for multiple UUID values
+ * Validates UUIDs to prevent filter injection
+ * @example createInFilter('list_id', ['uuid1', 'uuid2']) => 'list_id=in.(uuid1,uuid2)'
+ */
+export function createInFilter(column: string, values: string[]): string | undefined {
+  if (values.length === 0) return undefined
+  // Validate UUIDs to prevent filter injection
+  const validValues = values.filter(v => UUID_REGEX.test(v))
+  if (validValues.length === 0) return undefined
+  if (validValues.length === 1) return `${column}=eq.${validValues[0]}`
+  return `${column}=in.(${validValues.join(',')})`
 }

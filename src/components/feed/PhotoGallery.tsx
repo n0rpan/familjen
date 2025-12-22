@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 
 export interface FeedPhoto {
@@ -30,6 +30,26 @@ export function PhotoGallery({ photos, onPhotoClick }: Props) {
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  // Preload adjacent images when lightbox is open for faster navigation
+  const preloadImage = useCallback((url: string | null | undefined) => {
+    if (!url) return
+    const img = new Image()
+    img.src = url
+  }, [])
+
+  useEffect(() => {
+    if (selectedIndex === null) return
+
+    // Preload next image
+    if (selectedIndex < photos.length - 1) {
+      preloadImage(photos[selectedIndex + 1].image_url)
+    }
+    // Preload previous image
+    if (selectedIndex > 0) {
+      preloadImage(photos[selectedIndex - 1].image_url)
+    }
+  }, [selectedIndex, photos, preloadImage])
 
   if (photos.length === 0) {
     return null
@@ -83,6 +103,8 @@ export function PhotoGallery({ photos, onPhotoClick }: Props) {
                 alt={photo.title || 'Bilde'}
                 className="absolute inset-0 w-full h-full object-cover"
                 loading="lazy"
+                decoding="async"
+                fetchPriority="low"
               />
             ) : (
               <div

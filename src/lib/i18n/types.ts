@@ -71,6 +71,7 @@ export interface TranslationStrings {
     items: string
     confirmDelete: string
     free: string
+    navigatedTo: string
   }
 
   // Date/Time
