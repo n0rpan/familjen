@@ -6,7 +6,7 @@ import type { ShoppingList, ShoppingListItem, Household } from '@/lib/types'
 import { useLanguage } from '@/lib/i18n/context'
 import { ShoppingPagePartialSkeleton } from '@/components/Skeleton'
 import { useMicroFeedback } from '@/hooks/useMicroFeedback'
-import { useRealtimeSubscription } from '@/hooks/useRealtimeSubscription'
+import { useRealtimeSubscription, createInFilter } from '@/hooks/useRealtimeSubscription'
 import { useRealtimeOptional } from '@/lib/realtime/context'
 import { getCachedCategory, setCachedCategory } from '@/lib/shopping-category-cache'
 import { useUndoStack } from '@/hooks/useUndoStack'
@@ -431,14 +431,20 @@ export default function ShoppingListPage() {
     }
   }, [realtime, listIds])
 
-  // Subscribe to shopping list item changes
+  // Create server-side filter for our lists to reduce event volume
+  const listFilter = useMemo(
+    () => createInFilter('list_id', listIds),
+    [listIds]
+  )
+
+  // Subscribe to shopping list item changes with server-side filtering
   useRealtimeSubscription<ShoppingListItem>({
     table: 'shopping_list_items',
-    filter: household?.id ? undefined : undefined, // Will use list_id filtering instead
+    filter: listFilter,
     onInsert: handleItemInsert,
     onUpdate: handleItemUpdate,
     onDelete: handleItemDelete,
-    enabled: !loading && lists.length > 0,
+    enabled: !loading && lists.length > 0 && !!listFilter,
   })
 
   const addItem = async (listId: string) => {

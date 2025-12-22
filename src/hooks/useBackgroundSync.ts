@@ -5,10 +5,32 @@ import { createClient } from '@/lib/supabase/client'
 import { getPendingChanges, removeChange, incrementRetry, type PendingChange } from '@/lib/offline-queue'
 
 const MAX_RETRIES = 3
+const LOW_BATTERY_THRESHOLD = 0.15 // 15% battery
+
+/**
+ * Check if we should pause sync due to low battery
+ * Returns true if battery is low and not charging
+ */
+async function shouldPauseForBattery(): Promise<boolean> {
+  // Battery API is not available in all browsers
+  if (!('getBattery' in navigator)) return false
+
+  try {
+    // @ts-expect-error - getBattery is not in TypeScript's lib
+    const battery = await navigator.getBattery()
+    // Pause if battery is low and not charging
+    return battery.level < LOW_BATTERY_THRESHOLD && !battery.charging
+  } catch {
+    // Ignore errors (e.g., permission denied)
+    return false
+  }
+}
 
 /**
  * Background sync hook - processes offline queue when back online
  * Should be mounted once in the app (e.g., in RealtimeWrapper or layout)
+ *
+ * Battery-aware: Pauses sync when battery is low (<15%) and not charging
  */
 export function useBackgroundSync() {
   const isSyncingRef = useRef(false)
@@ -17,6 +39,12 @@ export function useBackgroundSync() {
   const processQueue = useCallback(async () => {
     if (isSyncingRef.current) return
     if (!navigator.onLine) return
+
+    // Be gentle on mobile - skip sync if battery is critically low
+    if (await shouldPauseForBattery()) {
+      console.log('[BackgroundSync] Skipping sync - battery low')
+      return
+    }
 
     isSyncingRef.current = true
 

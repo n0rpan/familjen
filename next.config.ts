@@ -32,11 +32,19 @@ const nextConfig: NextConfig = {
 
   // Security headers
   async headers() {
+    const isDev = process.env.NODE_ENV === 'development'
+
     // Build CSP directives
+    // In development: unsafe-eval needed for HMR/Fast Refresh
+    // In production: unsafe-eval can be dropped, but unsafe-inline still needed
+    // for Next.js inline scripts. For stricter CSP, use nonces via middleware.
+    const scriptSrc = isDev
+      ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+      : "script-src 'self' 'unsafe-inline'"
+
     const cspDirectives = [
       "default-src 'self'",
-      // Next.js requires unsafe-inline and unsafe-eval for hydration/HMR
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      scriptSrc,
       // Tailwind and inline styles
       "style-src 'self' 'unsafe-inline'",
       // Images from self, data URIs, blobs, and HTTPS (Supabase signed URLs)

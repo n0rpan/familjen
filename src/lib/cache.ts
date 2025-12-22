@@ -254,5 +254,5 @@ export function isCacheFresh(entry: CacheEntry | null, maxAge: number): boolean 
   return Date.now() - entry.timestamp < maxAge
 }
 
-// Default max age: 5 minutes (aligned with service worker nav cache)
-export const DEFAULT_MAX_AGE = 5 * 60 * 1000
+// Default max age: 3 minutes (aligned with service worker nav cache)
+export const DEFAULT_MAX_AGE = 3 * 60 * 1000

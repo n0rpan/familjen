@@ -63,6 +63,7 @@ export const en: TranslationStrings = {
     items: 'items',
     confirmDelete: 'Are you sure you want to delete this?',
     free: 'Free',
+    navigatedTo: 'Navigated to',
   },
 
   // Date/Time
