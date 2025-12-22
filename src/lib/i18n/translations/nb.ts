@@ -403,6 +403,17 @@ export const nb: TranslationStrings = {
     emptyStateDesc: 'Koble til Spond, barnehage eller skole for å se meldinger her',
     syncButton: 'Synkroniser',
     syncing: 'Synkroniserer...',
+    // Smart search
+    askPlaceholder: 'Spør om meldinger... f.eks. "Når er juleavslutningen?"',
+    askPlaceholderShort: 'Spør om meldinger...',
+    askButton: 'Spør',
+    asking: 'Søker...',
+    answerTitle: 'Svar',
+    sourceTitle: 'Kilde',
+    sourceFrom: 'Fra',
+    noRelevantInfo: 'Fant ingen relevant informasjon',
+    clearAnswer: 'Lukk',
+    tryAgain: 'Prøv igjen',
   },
 
   // Admin page

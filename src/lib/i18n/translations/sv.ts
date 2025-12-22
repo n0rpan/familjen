@@ -403,6 +403,17 @@ export const sv: TranslationStrings = {
     emptyStateDesc: 'Anslut Spond, förskola eller skola för att se meddelanden här',
     syncButton: 'Synkronisera',
     syncing: 'Synkroniserar...',
+    // Smart search
+    askPlaceholder: 'Fråga om meddelanden... t.ex. "När är juleavslutningen?"',
+    askPlaceholderShort: 'Fråga om meddelanden...',
+    askButton: 'Fråga',
+    asking: 'Söker...',
+    answerTitle: 'Svar',
+    sourceTitle: 'Källa',
+    sourceFrom: 'Från',
+    noRelevantInfo: 'Hittade ingen relevant information',
+    clearAnswer: 'Stäng',
+    tryAgain: 'Försök igen',
   },
 
   // Admin page

@@ -403,6 +403,17 @@ export const en: TranslationStrings = {
     emptyStateDesc: 'Connect Spond, daycare, or school to see messages here',
     syncButton: 'Sync',
     syncing: 'Syncing...',
+    // Smart search
+    askPlaceholder: 'Ask about messages... e.g. "When is the Christmas show?"',
+    askPlaceholderShort: 'Ask about messages...',
+    askButton: 'Ask',
+    asking: 'Searching...',
+    answerTitle: 'Answer',
+    sourceTitle: 'Source',
+    sourceFrom: 'From',
+    noRelevantInfo: 'No relevant information found',
+    clearAnswer: 'Close',
+    tryAgain: 'Try again',
   },
 
   // Admin page

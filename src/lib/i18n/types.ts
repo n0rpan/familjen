@@ -411,6 +411,17 @@ export interface TranslationStrings {
     emptyStateDesc: string
     syncButton: string
     syncing: string
+    // Smart search
+    askPlaceholder: string
+    askPlaceholderShort: string
+    askButton: string
+    asking: string
+    answerTitle: string
+    sourceTitle: string
+    sourceFrom: string
+    noRelevantInfo: string
+    clearAnswer: string
+    tryAgain: string
   }
 
   // Admin page

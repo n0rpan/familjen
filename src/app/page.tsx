@@ -6,6 +6,7 @@ import { UniversalAIInput } from '@/components/ai'
 import { SuggestionBanner } from '@/components/integrations/SuggestionReview'
 import { RecentPhotos } from '@/components/RecentPhotos'
 import { HomeRefreshWrapper } from '@/components/HomeRefreshWrapper'
+import { FeedSearch } from '@/components/feed/FeedSearch'
 import { getHomePageData, getTodaySummary, getAttentionStatus } from '@/lib/data/home'
 import { TransitionLink } from '@/components/TransitionLink'
 import Image from 'next/image'
@@ -102,6 +103,15 @@ export default async function HomePage() {
 
   // Fetch all household data using dedicated loader
   const { data: homeData, error: dataError } = await getHomePageData(supabase, myMembership.household_id)
+
+  // Check if external integrations are enabled
+  const { data: householdSettings } = await supabase
+    .from('households')
+    .select('external_integrations_enabled')
+    .eq('id', myMembership.household_id)
+    .single()
+
+  const hasIntegrations = householdSettings?.external_integrations_enabled ?? false
 
   if (dataError || !homeData) {
     console.error('Error loading home page data:', dataError)
@@ -291,6 +301,25 @@ export default async function HomePage() {
           weekStart={weekStart}
         />
       </div>
+
+      {/* Feed Search - at the bottom for quick questions */}
+      {hasIntegrations && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
+              {t.feed.askPlaceholderShort}
+            </h2>
+            <TransitionLink
+              href="/feed"
+              className="text-sm font-medium transition-colors hover:opacity-80"
+              style={{ color: 'var(--accent)' }}
+            >
+              {t.nav.feed} →
+            </TransitionLink>
+          </div>
+          <FeedSearch compact />
+        </div>
+      )}
     </div>
     </HomeRefreshWrapper>
   )
