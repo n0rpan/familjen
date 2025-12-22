@@ -894,8 +894,9 @@ export default function SettingsPage() {
       {/* Toast message */}
       {message && (
         <div
-          className="fixed top-4 right-4 z-50 px-5 py-3 rounded-xl shadow-lg animate-slide-up"
+          className="fixed z-50 px-5 py-3 rounded-xl shadow-lg animate-slide-up left-4 right-4 sm:left-auto sm:right-4 sm:max-w-sm"
           style={{
+            top: 'max(1rem, env(safe-area-inset-top, 0px) + 0.5rem)',
             background: message.type === 'success' ? 'var(--color-sage)' : 'var(--color-coral)',
             color: 'white',
           }}

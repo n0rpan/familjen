@@ -168,14 +168,14 @@ export async function POST(request: Request) {
                 .from('external_suggestions')
                 .insert({
                   household_id: member.household_id,
-                  child_id: sourceUrl.child_id,
+                  suggested_child_id: sourceUrl.child_id,
                   source_type: 'external_document',
                   source_document_id: docRecord.id,
-                  suggestion_type: event.eventType === 'holiday' || event.eventType === 'closure' ? 'event' : 'task',
-                  title: event.title,
+                  suggested_type: event.eventType === 'holiday' || event.eventType === 'closure' ? 'event' : 'task',
+                  suggested_title: event.title,
                   suggested_date: event.date,
-                  suggested_end_date: event.endDate,
-                  raw_data: event,
+                  suggested_description: event.description || (event.endDate ? `Til ${event.endDate}` : null),
+                  confidence_score: event.confidence,
                   status: 'pending',
                 })
             }
