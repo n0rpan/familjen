@@ -2,7 +2,36 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { isUserAdmin } from '@/lib/config'
 
+// Protected routes that require authentication
+const PROTECTED_PATHS = ['/uke', '/oppskrifter', '/innstillinger', '/handleliste', '/ny-husstand', '/admin', '/feed']
+const ADMIN_PATHS = ['/admin']
+
+// Check if request has a Supabase auth cookie (quick check without calling auth API)
+function hasAuthCookie(request: NextRequest): boolean {
+  const cookies = request.cookies.getAll()
+  // Supabase auth cookies are named like: sb-<project-ref>-auth-token
+  return cookies.some(cookie => cookie.name.includes('-auth-token'))
+}
+
 export async function updateSession(request: NextRequest) {
+  const pathname = request.nextUrl.pathname
+  const isProtectedPath = PROTECTED_PATHS.some(path => pathname.startsWith(path))
+  const isAdminPath = ADMIN_PATHS.some(path => pathname.startsWith(path))
+  const isLoginPage = pathname === '/login'
+
+  // Quick check: if no auth cookie exists, we can skip the expensive getUser() call
+  if (!hasAuthCookie(request)) {
+    // No session cookie - redirect protected routes to login immediately
+    if (isProtectedPath) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/login'
+      return NextResponse.redirect(url)
+    }
+    // Non-protected route with no session - just pass through (no auth call needed)
+    return NextResponse.next({ request })
+  }
+
+  // Auth cookie exists - need to validate/refresh the session
   let supabaseResponse = NextResponse.next({
     request,
   })
@@ -28,17 +57,10 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  // Refresh session if expired
+  // Refresh session if expired (this is the expensive call we're optimizing)
   const { data: { user } } = await supabase.auth.getUser()
 
-  const pathname = request.nextUrl.pathname
-
-  // Protected routes - redirect to login if not authenticated
-  const protectedPaths = ['/uke', '/oppskrifter', '/innstillinger', '/handleliste', '/ny-husstand', '/admin']
-  const isProtectedPath = protectedPaths.some(path =>
-    pathname.startsWith(path)
-  )
-
+  // Protected routes - redirect to login if session is invalid/expired
   if (!user && isProtectedPath) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
@@ -46,14 +68,6 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Admin-only routes - redirect non-admin users to home
-  // Uses JWT app_metadata.is_admin (set during login from allowed_emails table)
-  // Note: /api/openrouter is NOT admin-only - it's used by all users for AI features
-  // Those endpoints have their own auth checks and rate limiting
-  const adminOnlyPaths = ['/admin']
-  const isAdminPath = adminOnlyPaths.some(path =>
-    pathname.startsWith(path)
-  )
-
   if (isAdminPath && !isUserAdmin(user)) {
     const url = request.nextUrl.clone()
     url.pathname = '/'
@@ -61,7 +75,7 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Redirect logged-in users away from login page
-  if (user && pathname === '/login') {
+  if (user && isLoginPage) {
     const url = request.nextUrl.clone()
     url.pathname = '/'
     return NextResponse.redirect(url)
