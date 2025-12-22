@@ -1,29 +1,23 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { useState, useEffect, useCallback } from 'react'
 import type { Child } from '@/lib/types'
+import {
+  SERVICE_CONFIGS,
+  useIntegrationState,
+  IntegrationCard,
+  ConnectionForm,
+  LoadingSkeleton,
+  EmptyState,
+  type IntegrationMapping,
+} from './shared'
 
+// Kidplan-specific types
 interface KidplanChild {
   id: string
   name: string
   unit: string
   birthdate: string
-}
-
-interface Integration {
-  id: string
-  displayName: string
-  accountEmail: string | null
-  lastSyncAt: string | null
-  lastSyncStatus: string
-}
-
-interface ChildMapping {
-  id?: string
-  childId: string
-  kidplanChildId: string
-  kidplanChildName: string
 }
 
 interface Props {
@@ -32,112 +26,65 @@ interface Props {
   onMessage: (type: 'success' | 'error', text: string) => void
 }
 
+const config = SERVICE_CONFIGS.kidplan
+
 export function KidplanIntegration({ householdId, children, onMessage }: Props) {
-  const supabase = useMemo(() => createClient(), [])
+  const {
+    integrations,
+    currentMappings,
+    loading,
+    connecting,
+    syncing,
+    testingConnection,
+    showConnectForm,
+    connectionTested,
+    editingIntegrationId,
+    loadIntegrations,
+    testConnection,
+    saveIntegration,
+    saveEditedMappings,
+    syncNow,
+    removeIntegration,
+    resetForm,
+    setShowConnectForm,
+    setEditingIntegrationId,
+  } = useIntegrationState({ config, householdId, onMessage })
 
-  // State
-  const [integrations, setIntegrations] = useState<Integration[]>([])
-  const [loading, setLoading] = useState(true)
-  const [connecting, setConnecting] = useState(false)
-  const [syncing, setSyncing] = useState(false)
-
-  // Connection form state
-  const [showConnectForm, setShowConnectForm] = useState(false)
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [testingConnection, setTestingConnection] = useState(false)
-  const [connectionTested, setConnectionTested] = useState(false)
-
-  // Kidplan data
-  const [kindergartenInfo, setKindergartenInfo] = useState<{ id: number; name: string } | null>(null)
+  // Kidplan-specific state
   const [kidplanChildren, setKidplanChildren] = useState<KidplanChild[]>([])
+  const [kindergartenInfo, setKindergartenInfo] = useState<{ id: number; name: string } | null>(null)
+  const [loadingData, setLoadingData] = useState(false)
 
   // Child mapping state: Map<ourChildId, kidplanChildId>
   const [childMappings, setChildMappings] = useState<Map<string, string>>(new Map())
 
-  // Current mappings for display
-  const [currentMappings, setCurrentMappings] = useState<ChildMapping[]>([])
-
-  // Edit mode
-  const [editingIntegrationId, setEditingIntegrationId] = useState<string | null>(null)
-  const [loadingKidplanData, setLoadingKidplanData] = useState(false)
+  // Credentials state
+  const [credentials, setCredentials] = useState<Record<string, string>>({
+    email: '',
+    password: '',
+  })
 
   useEffect(() => {
     loadIntegrations()
-  }, [householdId])
+  }, [loadIntegrations])
 
-  const loadIntegrations = async () => {
-    setLoading(true)
-    try {
-      const res = await fetch('/api/integrations/kidplan/sync')
-      if (res.ok) {
-        const data = await res.json()
-        setIntegrations(data.integrations || [])
-
-        // Load mappings for each integration
-        if (data.integrations?.length > 0) {
-          const { data: mappings } = await supabase
-            .from('external_integration_children')
-            .select('id, integration_id, child_id, external_group_id, external_group_name')
-            .in(
-              'integration_id',
-              data.integrations.map((i: Integration) => i.id)
-            )
-
-          setCurrentMappings(
-            (mappings || []).map((m) => ({
-              id: m.id,
-              childId: m.child_id,
-              kidplanChildId: m.external_group_id,
-              kidplanChildName: m.external_group_name,
-            }))
-          )
-        }
-      }
-    } catch (error) {
-      console.error('Error loading integrations:', error)
-    }
-    setLoading(false)
-  }
-
-  const testConnection = async () => {
-    if (!email || !password) {
-      onMessage('error', 'Fyll inn e-post og passord')
-      return
-    }
-
-    setTestingConnection(true)
-    try {
-      const res = await fetch('/api/integrations/kidplan/test-connection', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        onMessage('error', data.error || 'Kunne ikke koble til Kidplan')
-        return
-      }
-
-      setKindergartenInfo(data.kindergarten)
+  const handleTestConnection = async (creds: Record<string, string>) => {
+    setCredentials(creds)
+    const result = await testConnection(creds)
+    if (result.success && result.data) {
+      const data = result.data as { children?: KidplanChild[]; kindergarten?: { id: number; name: string } }
       setKidplanChildren(data.children || [])
-      setConnectionTested(true)
-      onMessage('success', `Koblet til ${data.kindergarten.name}`)
-    } catch (error) {
-      console.error('Test connection error:', error)
-      onMessage('error', 'Nettverksfeil - prøv igjen')
+      setKindergartenInfo(data.kindergarten || null)
+      onMessage('success', `Koblet til ${data.kindergarten?.name || 'Kidplan'}`)
     }
-    setTestingConnection(false)
   }
 
-  const loadKidplanDataForEdit = async (integrationId: string) => {
-    setLoadingKidplanData(true)
+  const loadDataForEdit = async (integrationId: string) => {
+    setLoadingData(true)
     setEditingIntegrationId(integrationId)
 
     try {
-      const res = await fetch(`/api/integrations/kidplan/groups?integrationId=${integrationId}`)
+      const res = await fetch(`${config.groupsEndpoint}?integrationId=${integrationId}`)
       const data = await res.json()
 
       if (!res.ok) {
@@ -162,7 +109,7 @@ export function KidplanIntegration({ householdId, children, onMessage }: Props) 
       setEditingIntegrationId(null)
     }
 
-    setLoadingKidplanData(false)
+    setLoadingData(false)
   }
 
   const setChildMapping = (ourChildId: string, kidplanChildId: string) => {
@@ -177,206 +124,105 @@ export function KidplanIntegration({ householdId, children, onMessage }: Props) 
     })
   }
 
-  const hasAnyMapping = (): boolean => {
-    return childMappings.size > 0
-  }
+  const hasAnyMapping = (): boolean => childMappings.size > 0
 
-  const saveIntegration = async () => {
+  const getKidplanChildName = useCallback((kidplanChildId: string): string => {
+    const child = kidplanChildren.find((c) => c.id === kidplanChildId)
+    return child?.name || ''
+  }, [kidplanChildren])
+
+  const buildMappings = useCallback(() => {
+    const mappings: Array<{
+      childId: string | null
+      memberId: string | null
+      externalGroupId: string
+      externalGroupName: string
+    }> = []
+
+    for (const [ourChildId, kidplanChildId] of childMappings.entries()) {
+      mappings.push({
+        childId: ourChildId,
+        memberId: null,
+        externalGroupId: kidplanChildId,
+        externalGroupName: getKidplanChildName(kidplanChildId),
+      })
+    }
+
+    return mappings
+  }, [childMappings, getKidplanChildName])
+
+  const handleSaveIntegration = async () => {
     if (!connectionTested || !hasAnyMapping()) {
       onMessage('error', 'Koble sammen minst ett barn')
       return
     }
 
-    setConnecting(true)
-    try {
-      // Save integration credentials
-      const { data: integrationId, error: saveError } = await supabase.rpc(
-        'upsert_external_integration',
-        {
-          p_household_id: householdId,
-          p_service: 'kidplan',
-          p_display_name: kindergartenInfo?.name || 'Kidplan',
-          p_credentials: {
-            email,
-            password,
-            kindergartenId: kindergartenInfo?.id,
-          },
-          p_account_email: email,
-        }
-      )
-
-      if (saveError) {
-        console.error('Save integration error:', saveError)
-        onMessage('error', 'Kunne ikke lagre integrasjon')
-        return
-      }
-
-      await saveMappings(integrationId)
-
-      // Reset form and reload
-      resetForm()
-      await loadIntegrations()
-      onMessage('success', 'Kidplan-integrasjon lagret')
-
-      // Trigger initial sync
-      syncNow(integrationId)
-    } catch (error) {
-      console.error('Save integration error:', error)
-      onMessage('error', 'Kunne ikke lagre integrasjon')
+    // Include kindergarten ID in credentials for the sync handler
+    const credsWithKindergarten = {
+      ...credentials,
+      kindergartenId: kindergartenInfo?.id ? String(kindergartenInfo.id) : '',
     }
-    setConnecting(false)
+
+    const success = await saveIntegration(credsWithKindergarten, buildMappings())
+    if (success) {
+      handleResetForm()
+    }
   }
 
-  const saveEditedMappings = async () => {
+  const handleSaveEditedMappings = async () => {
     if (!editingIntegrationId || !hasAnyMapping()) {
       onMessage('error', 'Koble sammen minst ett barn')
       return
     }
 
-    setConnecting(true)
-    try {
-      await saveMappings(editingIntegrationId)
-
-      // Reset and reload
-      setEditingIntegrationId(null)
-      setKidplanChildren([])
-      setChildMappings(new Map())
-      await loadIntegrations()
-
-      onMessage('success', 'Barnekoblinger oppdatert')
-
-      // Trigger sync
-      syncNow(editingIntegrationId)
-    } catch (error) {
-      console.error('Save mappings error:', error)
-      onMessage('error', 'Kunne ikke lagre barnekoblinger')
-    }
-    setConnecting(false)
-  }
-
-  const saveMappings = async (integrationId: string) => {
-    // Build mappings to insert
-    const mappingsToInsert: Array<{
-      integration_id: string
-      child_id: string
-      member_id: null
-      external_group_id: string
-      external_group_name: string
-    }> = []
-
-    for (const [ourChildId, kidplanChildId] of childMappings.entries()) {
-      const kidplanChild = kidplanChildren.find((c) => c.id === kidplanChildId)
-      if (kidplanChild) {
-        mappingsToInsert.push({
-          integration_id: integrationId,
-          child_id: ourChildId,
-          member_id: null,
-          external_group_id: kidplanChildId,
-          external_group_name: kidplanChild.name,
-        })
-      }
-    }
-
-    // Delete existing mappings first
-    await supabase
-      .from('external_integration_children')
-      .delete()
-      .eq('integration_id', integrationId)
-
-    // Insert new mappings
-    if (mappingsToInsert.length > 0) {
-      const { error: mappingError } = await supabase
-        .from('external_integration_children')
-        .insert(mappingsToInsert)
-
-      if (mappingError) {
-        console.error('Save mappings error:', mappingError)
-        throw new Error('Could not save mappings')
-      }
+    const success = await saveEditedMappings(editingIntegrationId, buildMappings())
+    if (success) {
+      handleResetForm()
     }
   }
 
-  const resetForm = () => {
-    setShowConnectForm(false)
-    setEmail('')
-    setPassword('')
-    setKindergartenInfo(null)
+  const handleResetForm = () => {
+    resetForm()
+    setCredentials({ email: '', password: '' })
     setKidplanChildren([])
+    setKindergartenInfo(null)
     setChildMappings(new Map())
-    setConnectionTested(false)
-    setEditingIntegrationId(null)
   }
 
-  const syncNow = async (integrationId?: string) => {
-    setSyncing(true)
-    try {
-      const res = await fetch('/api/integrations/kidplan/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ integrationId }),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        onMessage('error', data.error || 'Synkronisering feilet')
-      } else {
-        // Run AI extraction on new messages
-        await fetch('/api/integrations/extract-actions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ integrationId }),
-        })
-
-        const { summary } = data
-        const message = `Synkronisert: ${summary.messagesTotal} meldinger, ${summary.photosTotal} bilder`
-        onMessage('success', message)
-        await loadIntegrations()
-      }
-    } catch (error) {
-      console.error('Sync error:', error)
-      onMessage('error', 'Synkronisering feilet')
-    }
-    setSyncing(false)
-  }
-
-  const disconnectIntegration = async (integrationId: string) => {
+  const handleRemove = async (integrationId: string) => {
     if (!confirm('Er du sikker på at du vil koble fra Kidplan?')) return
-
-    try {
-      const { error } = await supabase
-        .from('external_integrations')
-        .delete()
-        .eq('id', integrationId)
-
-      if (error) {
-        onMessage('error', 'Kunne ikke fjerne integrasjon')
-      } else {
-        onMessage('success', 'Kidplan frakoblet')
-        await loadIntegrations()
-      }
-    } catch (error) {
-      console.error('Disconnect error:', error)
-      onMessage('error', 'Kunne ikke fjerne integrasjon')
-    }
+    await removeIntegration(integrationId)
   }
 
-  const formatLastSync = (timestamp: string | null) => {
-    if (!timestamp) return 'Aldri synkronisert'
-    const date = new Date(timestamp)
-    return `Sist synkronisert: ${date.toLocaleDateString('nb-NO')} kl ${date.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' })}`
-  }
+  // Render mappings for IntegrationCard
+  const renderMappings = (mappings: IntegrationMapping[]) => (
+    <div className="space-y-1 text-sm">
+      {mappings.map((mapping) => {
+        const child = children.find((c) => c.id === mapping.childId)
+        if (!child) return null
+        return (
+          <div key={mapping.id} className="flex items-center gap-2">
+            <span
+              className="w-5 h-5 rounded-full flex items-center justify-center text-xs text-white flex-shrink-0"
+              style={{ background: `var(--color-${child.color || 'sky'})` }}
+            >
+              {child.name?.charAt(0) || '?'}
+            </span>
+            <span style={{ color: 'var(--foreground)' }}>{child.name}</span>
+            <span style={{ color: 'var(--muted)' }}>=</span>
+            <span style={{ color: 'var(--muted)' }}>{mapping.groupName}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
 
-  // Child mapping selector component
+  // Child mapping row component
   const ChildMappingRow = ({ child }: { child: Child }) => {
     const selectedKidplanId = childMappings.get(child.id) || ''
 
     return (
-      <div
-        className="flex items-center gap-3 p-3 rounded-lg"
-        style={{ background: 'var(--sand)' }}
-      >
-        {/* Our child */}
+      <div className="flex items-center gap-3 p-3 rounded-lg" style={{ background: 'var(--sand)' }}>
         <div className="flex items-center gap-2 flex-1">
           <span
             className="w-8 h-8 rounded-full flex items-center justify-center text-sm text-white flex-shrink-0"
@@ -389,20 +235,10 @@ export function KidplanIntegration({ householdId, children, onMessage }: Props) 
           </span>
         </div>
 
-        {/* Arrow */}
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          style={{ color: 'var(--muted)' }}
-        >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--muted)' }}>
           <path d="M5 12h14M12 5l7 7-7 7" />
         </svg>
 
-        {/* Kidplan child selector */}
         <select
           value={selectedKidplanId}
           onChange={(e) => setChildMapping(child.id, e.target.value)}
@@ -420,15 +256,46 @@ export function KidplanIntegration({ householdId, children, onMessage }: Props) 
     )
   }
 
-  if (loading) {
-    return (
-      <div className="animate-pulse rounded-xl p-4" style={{ background: 'var(--sand)' }}>
-        <div className="h-6 w-32 rounded" style={{ background: 'var(--border)' }} />
+  // Child mapping form (for both new connection and edit mode)
+  const ChildMappingForm = ({ connectedAs }: { connectedAs?: string }) => (
+    <>
+      <div
+        className="p-3 rounded-lg text-sm"
+        style={{ background: 'rgba(232, 160, 136, 0.1)', color: 'var(--color-coral)' }}
+      >
+        Tilkoblet {kindergartenInfo?.name ? `${kindergartenInfo.name} som ` : 'som '}
+        {connectedAs || credentials.email}
       </div>
-    )
+
+      <div className="space-y-2">
+        <label className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+          Koble sammen barn
+        </label>
+        <p className="text-xs" style={{ color: 'var(--muted)' }}>
+          Koble dine barn til barna i Kidplan for å synkronisere meldinger og bilder.
+        </p>
+        <div className="space-y-2">
+          {children.map((child) => (
+            <ChildMappingRow key={child.id} child={child} />
+          ))}
+        </div>
+      </div>
+
+      <button
+        onClick={editingIntegrationId ? handleSaveEditedMappings : handleSaveIntegration}
+        disabled={connecting || !hasAnyMapping()}
+        className="btn btn-primary w-full"
+      >
+        {connecting ? 'Lagrer...' : 'Lagre og synkroniser'}
+      </button>
+    </>
+  )
+
+  if (loading) {
+    return <LoadingSkeleton />
   }
 
-  // Edit mode UI
+  // Edit mode
   if (editingIntegrationId) {
     const integration = integrations.find((i) => i.id === editingIntegrationId)
 
@@ -441,46 +308,17 @@ export function KidplanIntegration({ householdId, children, onMessage }: Props) 
           <h4 className="font-medium" style={{ color: 'var(--foreground)' }}>
             Rediger barnekoblinger
           </h4>
-          <button onClick={resetForm} className="text-sm" style={{ color: 'var(--muted)' }}>
+          <button onClick={handleResetForm} className="text-sm" style={{ color: 'var(--muted)' }}>
             Avbryt
           </button>
         </div>
 
-        {loadingKidplanData ? (
+        {loadingData ? (
           <div className="py-8 text-center" style={{ color: 'var(--muted)' }}>
             Henter barn fra Kidplan...
           </div>
         ) : (
-          <>
-            <div
-              className="p-3 rounded-lg text-sm"
-              style={{ background: 'rgba(232, 160, 136, 0.1)', color: 'var(--color-coral)' }}
-            >
-              Tilkoblet som {integration?.accountEmail}
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
-                Koble sammen barn
-              </label>
-              <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                Koble dine barn til barna i Kidplan for å synkronisere meldinger og bilder.
-              </p>
-              <div className="space-y-2">
-                {children.map((child) => (
-                  <ChildMappingRow key={child.id} child={child} />
-                ))}
-              </div>
-            </div>
-
-            <button
-              onClick={saveEditedMappings}
-              disabled={connecting || !hasAnyMapping()}
-              className="btn btn-primary w-full"
-            >
-              {connecting ? 'Lagrer...' : 'Lagre og synkroniser'}
-            </button>
-          </>
+          <ChildMappingForm connectedAs={integration?.accountEmail || undefined} />
         )}
       </div>
     )
@@ -489,229 +327,43 @@ export function KidplanIntegration({ householdId, children, onMessage }: Props) 
   return (
     <div className="space-y-4">
       {/* Existing integrations */}
-      {integrations.map((integration) => {
-        const mappingsForDisplay = currentMappings
+      {integrations.map((integration) => (
+        <IntegrationCard
+          key={integration.id}
+          integration={integration}
+          mappings={currentMappings}
+          syncing={syncing}
+          service="kidplan"
+          onSync={() => syncNow(integration.id)}
+          onEdit={() => loadDataForEdit(integration.id)}
+          onRemove={() => handleRemove(integration.id)}
+          renderMappings={renderMappings}
+        />
+      ))}
 
-        return (
-          <div
-            key={integration.id}
-            className="rounded-xl p-4"
-            style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center"
-                  style={{ background: 'rgba(232, 160, 136, 0.2)' }}
-                >
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="var(--color-coral)"
-                    strokeWidth="2"
-                  >
-                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                    <polyline points="9,22 9,12 15,12 15,22" />
-                  </svg>
-                </div>
-                <div>
-                  <div className="font-medium" style={{ color: 'var(--foreground)' }}>
-                    {integration.displayName || 'Kidplan'}
-                  </div>
-                  <div className="text-sm" style={{ color: 'var(--muted)' }}>
-                    {integration.accountEmail || 'Tilkoblet'}
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <span
-                  className={`px-2 py-1 rounded-full text-xs ${
-                    integration.lastSyncStatus === 'ok'
-                      ? 'bg-green-100 text-green-700'
-                      : integration.lastSyncStatus === 'auth_failed'
-                        ? 'bg-red-100 text-red-700'
-                        : 'bg-yellow-100 text-yellow-700'
-                  }`}
-                >
-                  {integration.lastSyncStatus === 'ok'
-                    ? 'OK'
-                    : integration.lastSyncStatus === 'auth_failed'
-                      ? 'Autentisering feilet'
-                      : 'Venter'}
-                </span>
-              </div>
-            </div>
-
-            {/* Show mappings */}
-            {mappingsForDisplay.length > 0 && (
-              <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
-                <div className="text-xs font-medium mb-2" style={{ color: 'var(--muted)' }}>
-                  Koblede barn:
-                </div>
-                <div className="space-y-1">
-                  {mappingsForDisplay.map((mapping) => {
-                    const child = children.find((c) => c.id === mapping.childId)
-                    if (!child) return null
-                    return (
-                      <div key={mapping.id} className="flex items-center gap-2 text-sm">
-                        <span
-                          className="w-5 h-5 rounded-full flex items-center justify-center text-xs text-white flex-shrink-0"
-                          style={{ background: `var(--color-${child.color || 'sky'})` }}
-                        >
-                          {child.name?.charAt(0) || '?'}
-                        </span>
-                        <span style={{ color: 'var(--foreground)' }}>{child.name}</span>
-                        <span style={{ color: 'var(--muted)' }}>=</span>
-                        <span style={{ color: 'var(--muted)' }}>{mapping.kidplanChildName}</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Last sync info and actions */}
-            <div
-              className="mt-3 pt-3 flex flex-wrap items-center justify-between gap-2"
-              style={{ borderTop: '1px solid var(--border)' }}
-            >
-              <div className="text-xs" style={{ color: 'var(--muted)' }}>
-                {formatLastSync(integration.lastSyncAt)}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => loadKidplanDataForEdit(integration.id)}
-                  className="btn btn-secondary text-sm"
-                >
-                  Rediger
-                </button>
-                <button
-                  onClick={() => syncNow(integration.id)}
-                  disabled={syncing}
-                  className="btn btn-secondary text-sm"
-                >
-                  {syncing ? 'Synkroniserer...' : 'Synkroniser'}
-                </button>
-                <button
-                  onClick={() => disconnectIntegration(integration.id)}
-                  className="btn text-sm"
-                  style={{ color: 'var(--color-coral)' }}
-                >
-                  Koble fra
-                </button>
-              </div>
-            </div>
-          </div>
-        )
-      })}
-
-      {/* Connect new integration */}
+      {/* Empty state */}
       {!showConnectForm && integrations.length === 0 && (
-        <button
-          onClick={() => setShowConnectForm(true)}
-          className="w-full rounded-xl p-4 flex items-center justify-center gap-2 transition-colors"
-          style={{
-            background: 'var(--background)',
-            border: '2px dashed var(--border)',
-            color: 'var(--muted)',
-          }}
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          Koble til Kidplan (barnehage)
-        </button>
+        <EmptyState
+          serviceName={config.displayName}
+          onAdd={() => setShowConnectForm(true)}
+        />
       )}
 
       {/* Connection form */}
       {showConnectForm && (
-        <div
-          className="rounded-xl p-4 space-y-4"
-          style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
+        <ConnectionForm
+          fields={config.credentialFields}
+          serviceName={config.displayName}
+          testing={testingConnection}
+          tested={connectionTested}
+          connecting={connecting}
+          onTest={handleTestConnection}
+          onSave={() => handleSaveIntegration()}
+          onCancel={handleResetForm}
+          canSave={hasAnyMapping()}
         >
-          <div className="flex items-center justify-between">
-            <h4 className="font-medium" style={{ color: 'var(--foreground)' }}>
-              Koble til Kidplan
-            </h4>
-            <button onClick={resetForm} className="text-sm" style={{ color: 'var(--muted)' }}>
-              Avbryt
-            </button>
-          </div>
-
-          {!connectionTested ? (
-            <>
-              <div className="space-y-3">
-                <div>
-                  <label className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
-                    E-post (Kidplan-konto)
-                  </label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="input mt-1"
-                    placeholder="din@epost.no"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
-                    Passord
-                  </label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="input mt-1"
-                    placeholder="Ditt Kidplan-passord"
-                  />
-                </div>
-              </div>
-              <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                Passordet lagres kryptert og brukes kun til å hente data fra Kidplan.
-              </p>
-              <button
-                onClick={testConnection}
-                disabled={testingConnection || !email || !password}
-                className="btn btn-primary w-full"
-              >
-                {testingConnection ? 'Tester tilkobling...' : 'Test tilkobling'}
-              </button>
-            </>
-          ) : (
-            <>
-              <div
-                className="p-3 rounded-lg text-sm"
-                style={{ background: 'rgba(232, 160, 136, 0.1)', color: 'var(--color-coral)' }}
-              >
-                Tilkoblet {kindergartenInfo?.name} som {email}
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
-                  Koble sammen barn
-                </label>
-                <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                  Koble dine barn til barna i Kidplan for å synkronisere meldinger og bilder.
-                </p>
-                <div className="space-y-2">
-                  {children.map((child) => (
-                    <ChildMappingRow key={child.id} child={child} />
-                  ))}
-                </div>
-              </div>
-
-              <button
-                onClick={saveIntegration}
-                disabled={connecting || !hasAnyMapping()}
-                className="btn btn-primary w-full"
-              >
-                {connecting ? 'Lagrer...' : 'Lagre og synkroniser'}
-              </button>
-            </>
-          )}
-        </div>
+          <ChildMappingForm />
+        </ConnectionForm>
       )}
     </div>
   )

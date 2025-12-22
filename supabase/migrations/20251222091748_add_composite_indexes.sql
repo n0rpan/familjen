@@ -29,6 +29,6 @@ ON external_events(integration_id, event_date);
 CREATE INDEX IF NOT EXISTS idx_external_messages_integration_processed
 ON external_messages(integration_id, is_processed);
 
--- Shopping list items: frequently queried by household + is_bought
-CREATE INDEX IF NOT EXISTS idx_shopping_items_household_bought
-ON shopping_list_items(household_id, is_bought);
+-- Shopping list items: frequently queried by list + is_bought
+CREATE INDEX IF NOT EXISTS idx_shopping_items_list_bought
+ON shopping_list_items(list_id, is_bought);
