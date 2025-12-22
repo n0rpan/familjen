@@ -227,6 +227,19 @@ export const en: TranslationStrings = {
   // Settings page
   settings: {
     title: 'Settings',
+    subtitle: 'Manage your family',
+    // Section headers
+    familyTitle: 'Family',
+    familyDesc: 'Manage children and household members',
+    mySettingsTitle: 'My settings',
+    mySettingsDesc: 'Personal preferences and profile',
+    integrationsTitle: 'Integrations',
+    integrationsDesc: 'Connect to external services',
+    aiPreferencesTitle: 'AI preferences',
+    aiPreferencesDesc: 'Customize the AI assistant for your family',
+    administrationTitle: 'Administration',
+    administrationDesc: 'Household settings and access',
+    // Legacy
     household: 'Household',
     householdName: 'Household name',
     members: 'Family members',
@@ -265,7 +278,6 @@ export const en: TranslationStrings = {
     calendarSyncHint: 'Automatic calendar sync',
     calendarSyncDesc: 'Send calendar invitations to this address to automatically add them to your family plan:',
     // Additional profile strings
-    subtitle: 'Manage your profile and household',
     noAllergies: 'No allergies registered',
     addAllergy: '+ Add',
     noRegistered: 'Not registered',
@@ -437,6 +449,8 @@ export const en: TranslationStrings = {
     deletedEntry: 'Deleted entry',
     aiSettings: 'AI settings',
     aiSettingsDesc: 'Choose AI model for meal suggestions',
+    systemConfigTitle: 'System configuration',
+    systemConfigDesc: 'AI models and calendar integration',
     openrouterModel: 'OpenRouter model',
     priceNote: 'Prices are per million tokens. Gemini 2.5 Flash Lite recommended (fast and cheap).',
     modelTestHint: 'Test models with: npx tsx --env-file=.env.local scripts/benchmark-ai-models.mts',

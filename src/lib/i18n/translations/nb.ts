@@ -228,6 +228,18 @@ export const nb: TranslationStrings = {
   settings: {
     title: 'Innstillinger',
     subtitle: 'Administrer familien din',
+    // Section headers
+    familyTitle: 'Familie',
+    familyDesc: 'Administrer barn og husstandsmedlemmer',
+    mySettingsTitle: 'Mine innstillinger',
+    mySettingsDesc: 'Personlige preferanser og profil',
+    integrationsTitle: 'Integrasjoner',
+    integrationsDesc: 'Koble til eksterne tjenester',
+    aiPreferencesTitle: 'AI-preferanser',
+    aiPreferencesDesc: 'Tilpass AI-assistenten for din familie',
+    administrationTitle: 'Administrasjon',
+    administrationDesc: 'Husstandsinnstillinger og tilgang',
+    // Legacy
     household: 'Husstand',
     householdName: 'Hustandsnavn',
     members: 'Familiemedlemmer',
@@ -437,6 +449,8 @@ export const nb: TranslationStrings = {
     deletedEntry: 'Slettet oppføring',
     aiSettings: 'AI-innstillinger',
     aiSettingsDesc: 'Velg AI-modell for middagsforslag',
+    systemConfigTitle: 'Systemkonfigurasjon',
+    systemConfigDesc: 'AI-modeller og kalenderintegrasjon',
     openrouterModel: 'OpenRouter-modell',
     priceNote: 'Priser er per million tokens. Gemini 2.5 Flash Lite anbefales (rask og billig).',
     modelTestHint: 'Test modeller med: npx tsx --env-file=.env.local scripts/benchmark-ai-models.mts',

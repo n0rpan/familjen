@@ -227,6 +227,19 @@ export const sv: TranslationStrings = {
   // Settings page
   settings: {
     title: 'Inställningar',
+    subtitle: 'Hantera din familj',
+    // Section headers
+    familyTitle: 'Familj',
+    familyDesc: 'Hantera barn och hushållsmedlemmar',
+    mySettingsTitle: 'Mina inställningar',
+    mySettingsDesc: 'Personliga preferenser och profil',
+    integrationsTitle: 'Integrationer',
+    integrationsDesc: 'Anslut till externa tjänster',
+    aiPreferencesTitle: 'AI-inställningar',
+    aiPreferencesDesc: 'Anpassa AI-assistenten för din familj',
+    administrationTitle: 'Administration',
+    administrationDesc: 'Hushållsinställningar och åtkomst',
+    // Legacy
     household: 'Hushåll',
     householdName: 'Hushållsnamn',
     members: 'Familjemedlemmar',
@@ -265,7 +278,6 @@ export const sv: TranslationStrings = {
     calendarSyncHint: 'Automatisk kalendersynk',
     calendarSyncDesc: 'Skicka kalenderinbjudningar till denna adress för att automatiskt lägga till dem i familjeplanen:',
     // Additional profile strings
-    subtitle: 'Hantera din profil och ditt hushåll',
     noAllergies: 'Inga allergier registrerade',
     addAllergy: '+ Lägg till',
     noRegistered: 'Ej registrerad',
@@ -437,6 +449,8 @@ export const sv: TranslationStrings = {
     deletedEntry: 'Raderad post',
     aiSettings: 'AI-inställningar',
     aiSettingsDesc: 'Välj AI-modell för middagsförslag',
+    systemConfigTitle: 'Systemkonfiguration',
+    systemConfigDesc: 'AI-modeller och kalenderintegration',
     openrouterModel: 'OpenRouter-modell',
     priceNote: 'Priser är per miljon tokens. Gemini 2.5 Flash Lite rekommenderas (snabb och billig).',
     modelTestHint: 'Testa modeller med: npx tsx --env-file=.env.local scripts/benchmark-ai-models.mts',

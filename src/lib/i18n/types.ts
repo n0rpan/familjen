@@ -236,6 +236,18 @@ export interface TranslationStrings {
   settings: {
     title: string
     subtitle: string
+    // Section headers
+    familyTitle: string
+    familyDesc: string
+    mySettingsTitle: string
+    mySettingsDesc: string
+    integrationsTitle: string
+    integrationsDesc: string
+    aiPreferencesTitle: string
+    aiPreferencesDesc: string
+    administrationTitle: string
+    administrationDesc: string
+    // Legacy
     household: string
     householdName: string
     members: string
@@ -445,6 +457,8 @@ export interface TranslationStrings {
     deletedEntry: string
     aiSettings: string
     aiSettingsDesc: string
+    systemConfigTitle: string
+    systemConfigDesc: string
     openrouterModel: string
     priceNote: string
     modelTestHint: string

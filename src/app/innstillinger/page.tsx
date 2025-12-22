@@ -21,6 +21,7 @@ import {
   AIPreferencesSection,
   HouseholdAdminSection,
 } from './sections'
+import { SectionHeader, CollapsibleSection } from './components'
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
@@ -157,14 +158,8 @@ export default function SettingsPage() {
       setFamilyCalendarLastSync(householdData?.ics_last_sync_at || null)
       setFamilyCalendarError(householdData?.ics_sync_error || null)
 
-      // Fetch household event count
-      const { count: eventCount } = await supabase
-        .from('household_events')
-        .select('*', { count: 'exact', head: true })
-        .eq('household_id', householdData.id)
-      setFamilyCalendarEventCount(eventCount || 0)
-
-      // Load members and children - explicitly filter by household_id for admins who can see all
+      // Load members and children FIRST - they're at the top of the page now
+      // Fetch in parallel for performance
       const [membersResult, childrenResult] = await Promise.all([
         supabase.from('household_members').select('*').eq('household_id', myMembership.household_id).order('is_parent', { ascending: false }).order('name'),
         supabase.from('children').select('*').eq('household_id', myMembership.household_id).order('sort_order'),
@@ -190,23 +185,33 @@ export default function SettingsPage() {
         })
       }
 
-      // If household admin, load invited emails
+      // If household admin, load admin-specific data (lower priority - admin section at bottom)
       if (myMember?.is_household_admin && householdData) {
-        const { data: emailsData } = await supabase
-          .from('allowed_emails')
-          .select('*')
-          .eq('invited_by_household_id', householdData.id)
-          .order('created_at', { ascending: false })
-        setInvitedEmails(emailsData || [])
-      }
+        // Fetch these in parallel - both needed for admin section
+        const [emailsResult, eventCountResult, calendarEmailResult] = await Promise.all([
+          supabase
+            .from('allowed_emails')
+            .select('*')
+            .eq('invited_by_household_id', householdData.id)
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('household_events')
+            .select('*', { count: 'exact', head: true })
+            .eq('household_id', householdData.id),
+          supabase.rpc('get_connected_calendar_email'),
+        ])
 
-      // Get connected calendar email (available to all members)
-      // Gracefully handle if function doesn't exist in production
-      const { data: calendarEmail, error: calError } = await supabase.rpc('get_connected_calendar_email')
-      if (!calError) {
-        setConnectedCalendarEmail(calendarEmail || null)
+        setInvitedEmails(emailsResult.data || [])
+        setFamilyCalendarEventCount(eventCountResult.count || 0)
+        if (!calendarEmailResult.error) {
+          setConnectedCalendarEmail(calendarEmailResult.data || null)
+        }
       } else {
-        console.warn('Could not fetch calendar email:', calError.message)
+        // Non-admins still need calendar email for the hint
+        const { data: calendarEmail, error: calError } = await supabase.rpc('get_connected_calendar_email')
+        if (!calError) {
+          setConnectedCalendarEmail(calendarEmail || null)
+        }
       }
     } catch (err) {
       console.error('Settings page error:', err)
@@ -792,6 +797,66 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {/* ========== GROUP 1: FAMILY ========== */}
+      <SectionHeader
+        icon={
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+        }
+        title={t.settings.familyTitle || 'Familie'}
+        description={t.settings.familyDesc || 'Administrer barn og husstandsmedlemmer'}
+        color="var(--color-honey)"
+      />
+
+      {/* Children */}
+      <ChildrenSection
+        children={children}
+        editingChildId={editingChildId}
+        editingChildForm={editingChildForm}
+        newChild={newChild}
+        newAllergy={newAllergy}
+        saving={saving}
+        t={t}
+        onEditingChildFormChange={setEditingChildForm}
+        onNewChildChange={setNewChild}
+        onNewAllergyChange={setNewAllergy}
+        onStartEdit={startEditChild}
+        onCancelEdit={cancelEditChild}
+        onSaveEdit={saveEditingChild}
+        onAddChild={addChild}
+        onDeleteChild={deleteChild}
+        onAddAllergy={addAllergyToForm}
+        onRemoveAllergy={removeAllergyFromForm}
+      />
+
+      {/* Household Members */}
+      <MembersSection
+        members={members}
+        newMember={newMember}
+        saving={saving}
+        t={t}
+        onNewMemberChange={setNewMember}
+        onAddMember={addMember}
+        onDeleteMember={deleteMember}
+      />
+
+      {/* ========== GROUP 2: MY SETTINGS ========== */}
+      <SectionHeader
+        icon={
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+            <circle cx="12" cy="7" r="4"/>
+          </svg>
+        }
+        title={t.settings.mySettingsTitle || 'Mine innstillinger'}
+        description={t.settings.mySettingsDesc || 'Personlige preferanser og profil'}
+        color="var(--color-sky)"
+      />
+
       {/* My Profile */}
       {myProfile && (
         <section
@@ -1098,137 +1163,99 @@ export default function SettingsPage() {
         </section>
       )}
 
-      {/* Spond Integration - Only show if enabled for household */}
+      {/* ========== GROUP 3: INTEGRATIONS ========== */}
       {household?.external_integrations_enabled && (
-        <section
-          className="rounded-2xl p-6 md:p-8"
-          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-        >
-          <div className="flex items-center gap-3 mb-6">
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center"
-              style={{ background: 'rgba(126, 182, 196, 0.2)' }}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-sky)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <>
+          <SectionHeader
+            icon={
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                <polyline points="15 3 21 3 21 9"/>
+                <line x1="10" y1="14" x2="21" y2="3"/>
+              </svg>
+            }
+            title={t.settings.integrationsTitle || 'Integrasjoner'}
+            description={t.settings.integrationsDesc || 'Koble til eksterne tjenester'}
+            color="var(--color-sage)"
+          />
+
+          {/* Spond Integration */}
+          <CollapsibleSection
+            icon={
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10"/>
                 <path d="M12 6v6l4 2"/>
               </svg>
-            </div>
-            <div>
-              <h2 className="text-xl font-semibold" style={{ color: 'var(--foreground)' }}>
-                Spond
-              </h2>
-              <p className="text-sm" style={{ color: 'var(--muted)' }}>
-                Synkroniser hendelser og meldinger fra Spond
-              </p>
-            </div>
-          </div>
-          <SpondIntegration
-            householdId={household.id}
-            children={children}
-            members={members}
-            onMessage={showMessage}
-          />
-        </section>
-      )}
+            }
+            title="Spond"
+            description="Synkroniser hendelser og meldinger fra Spond"
+            color="var(--color-sky)"
+          >
+            <SpondIntegration
+              householdId={household.id}
+              children={children}
+              members={members}
+              onMessage={showMessage}
+            />
+          </CollapsibleSection>
 
-      {/* Kidplan Integration - Only show if enabled for household */}
-      {household?.external_integrations_enabled && (
-        <section
-          className="rounded-2xl p-6 md:p-8"
-          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-        >
-          <div className="flex items-center gap-3 mb-6">
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center"
-              style={{ background: 'rgba(131, 166, 151, 0.2)' }}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-sage)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          {/* Kidplan Integration */}
+          <CollapsibleSection
+            icon={
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
                 <polyline points="9 22 9 12 15 12 15 22"/>
               </svg>
-            </div>
-            <div>
-              <h2 className="text-xl font-semibold" style={{ color: 'var(--foreground)' }}>
-                Kidplan
-              </h2>
-              <p className="text-sm" style={{ color: 'var(--muted)' }}>
-                Synkroniser meldinger og bilder fra barnehagen
-              </p>
-            </div>
-          </div>
-          <KidplanIntegration
-            householdId={household.id}
-            children={children}
-            onMessage={showMessage}
-          />
-        </section>
-      )}
+            }
+            title="Kidplan"
+            description="Synkroniser meldinger og bilder fra barnehagen"
+            color="var(--color-sage)"
+          >
+            <KidplanIntegration
+              householdId={household.id}
+              children={children}
+              onMessage={showMessage}
+            />
+          </CollapsibleSection>
 
-      {/* iSkole Integration - Only show if enabled for household */}
-      {household?.external_integrations_enabled && (
-        <section
-          className="rounded-2xl p-6 md:p-8"
-          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-        >
-          <div className="flex items-center gap-3 mb-6">
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center"
-              style={{ background: 'rgba(126, 182, 196, 0.2)' }}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-sky)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          {/* iSkole Integration */}
+          <CollapsibleSection
+            icon={
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M22 10v6M2 10l10-5 10 5-10 5z"/>
                 <path d="M6 12v5c3 3 9 3 12 0v-5"/>
               </svg>
-            </div>
-            <div>
-              <h2 className="text-xl font-semibold" style={{ color: 'var(--foreground)' }}>
-                iSkole
-              </h2>
-              <p className="text-sm" style={{ color: 'var(--muted)' }}>
-                Synkroniser meldinger og timeplan fra skolen
-              </p>
-            </div>
-          </div>
-          <ISkoleIntegration
-            householdId={household.id}
-            children={children}
-            onMessage={showMessage}
-          />
-        </section>
-      )}
+            }
+            title="iSkole"
+            description="Synkroniser meldinger og timeplan fra skolen"
+            color="var(--color-sky)"
+          >
+            <ISkoleIntegration
+              householdId={household.id}
+              children={children}
+              onMessage={showMessage}
+            />
+          </CollapsibleSection>
 
-      {/* MyKid Integration */}
-      {household?.external_integrations_enabled && (
-        <section
-          className="rounded-2xl p-6 md:p-8"
-          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-        >
-          <div className="flex items-center gap-3 mb-6">
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center"
-              style={{ background: 'rgba(159, 205, 178, 0.2)' }}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-sage)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          {/* MyKid Integration */}
+          <CollapsibleSection
+            icon={
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="8" r="4" />
                 <path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
               </svg>
-            </div>
-            <div>
-              <h2 className="text-xl font-semibold" style={{ color: 'var(--foreground)' }}>
-                MyKid
-              </h2>
-              <p className="text-sm" style={{ color: 'var(--muted)' }}>
-                Synkroniser kalender, nyhetsbrev og bilder fra barnehagen
-              </p>
-            </div>
-          </div>
-          <MyKidIntegration
-            householdId={household.id}
-            children={children}
-            onMessage={showMessage}
-          />
-        </section>
+            }
+            title="MyKid"
+            description="Synkroniser kalender, nyhetsbrev og bilder fra barnehagen"
+            color="var(--color-sage)"
+          >
+            <MyKidIntegration
+              householdId={household.id}
+              children={children}
+              onMessage={showMessage}
+            />
+          </CollapsibleSection>
+        </>
       )}
 
       {/* Notification Settings */}
@@ -1340,68 +1367,20 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      {/* Household Admin Panel */}
-      {myProfile?.is_household_admin && (
-        <HouseholdAdminSection
-          household={household}
-          inviteEmail={inviteEmail}
-          invitedEmails={invitedEmails}
-          savingInvite={savingInvite}
-          familyCalendarUrl={familyCalendarUrl}
-          savingFamilyCalendar={savingFamilyCalendar}
-          syncingFamilyCalendar={syncingFamilyCalendar}
-          familyCalendarLastSync={familyCalendarLastSync}
-          familyCalendarError={familyCalendarError}
-          familyCalendarEventCount={familyCalendarEventCount}
-          showDeleteConfirm={showDeleteConfirm}
-          deleteConfirmText={deleteConfirmText}
-          language={language}
-          t={t}
-          onInviteEmailChange={setInviteEmail}
-          onInviteUser={inviteUser}
-          onRemoveInvite={removeInvite}
-          onFamilyCalendarUrlChange={setFamilyCalendarUrl}
-          onSaveFamilyCalendar={saveFamilyCalendar}
-          onSyncFamilyCalendar={syncFamilyCalendar}
-          onShowDeleteConfirmChange={setShowDeleteConfirm}
-          onDeleteConfirmTextChange={setDeleteConfirmText}
-          onDeleteHousehold={deleteHousehold}
-        />
-      )}
-
-      {/* Household Members */}
-      <MembersSection
-        members={members}
-        newMember={newMember}
-        saving={saving}
-        t={t}
-        onNewMemberChange={setNewMember}
-        onAddMember={addMember}
-        onDeleteMember={deleteMember}
+      {/* ========== GROUP 4: AI PREFERENCES ========== */}
+      <SectionHeader
+        icon={
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z"/>
+            <circle cx="8" cy="14" r="2"/>
+            <circle cx="16" cy="14" r="2"/>
+          </svg>
+        }
+        title={t.settings.aiPreferencesTitle || 'AI-preferanser'}
+        description={t.settings.aiPreferencesDesc || 'Tilpass AI-assistenten for din familie'}
+        color="var(--color-lavender)"
       />
 
-      {/* Children */}
-      <ChildrenSection
-        children={children}
-        editingChildId={editingChildId}
-        editingChildForm={editingChildForm}
-        newChild={newChild}
-        newAllergy={newAllergy}
-        saving={saving}
-        t={t}
-        onEditingChildFormChange={setEditingChildForm}
-        onNewChildChange={setNewChild}
-        onNewAllergyChange={setNewAllergy}
-        onStartEdit={startEditChild}
-        onCancelEdit={cancelEditChild}
-        onSaveEdit={saveEditingChild}
-        onAddChild={addChild}
-        onDeleteChild={deleteChild}
-        onAddAllergy={addAllergyToForm}
-        onRemoveAllergy={removeAllergyFromForm}
-      />
-
-      {/* AI Meal Preferences */}
       <AIPreferencesSection
         shareNamesWithAi={shareNamesWithAi}
         savingPrivacy={savingPrivacy}
@@ -1412,6 +1391,49 @@ export default function SettingsPage() {
         onAiContextChange={setAiMealContext}
         onSaveAiContext={saveAiContext}
       />
+
+      {/* ========== GROUP 5: ADMINISTRATION (Admin only) ========== */}
+      {myProfile?.is_household_admin && (
+        <>
+          <SectionHeader
+            icon={
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+            }
+            title={t.settings.administrationTitle || 'Administrasjon'}
+            description={t.settings.administrationDesc || 'Husstandsinnstillinger og tilgang'}
+            color="var(--color-coral)"
+          />
+
+          <HouseholdAdminSection
+            household={household}
+            inviteEmail={inviteEmail}
+            invitedEmails={invitedEmails}
+            savingInvite={savingInvite}
+            familyCalendarUrl={familyCalendarUrl}
+            savingFamilyCalendar={savingFamilyCalendar}
+            syncingFamilyCalendar={syncingFamilyCalendar}
+            familyCalendarLastSync={familyCalendarLastSync}
+            familyCalendarError={familyCalendarError}
+            familyCalendarEventCount={familyCalendarEventCount}
+            showDeleteConfirm={showDeleteConfirm}
+            deleteConfirmText={deleteConfirmText}
+            language={language}
+            t={t}
+            onInviteEmailChange={setInviteEmail}
+            onInviteUser={inviteUser}
+            onRemoveInvite={removeInvite}
+            onFamilyCalendarUrlChange={setFamilyCalendarUrl}
+            onSaveFamilyCalendar={saveFamilyCalendar}
+            onSyncFamilyCalendar={syncFamilyCalendar}
+            onShowDeleteConfirmChange={setShowDeleteConfirm}
+            onDeleteConfirmTextChange={setDeleteConfirmText}
+            onDeleteHousehold={deleteHousehold}
+          />
+        </>
+      )}
     </div>
   )
 }
