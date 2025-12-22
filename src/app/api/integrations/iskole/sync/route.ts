@@ -170,6 +170,7 @@ async function syncIntegration(
     console.log(`[iSkole] Fetching messages for ${children.length} children`)
     for (const child of children) {
       try {
+        console.log(`[iSkole] Fetching messages for child: elevnr=${child.Elevnr}, fylke=${child.Fylkeid}, planperi=${child.Planperi}, skole=${child.Skoleid}`)
         const messages = await client.getMessages(
           child.Elevnr,
           child.Fylkeid,
