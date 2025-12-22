@@ -97,9 +97,3 @@ export const SECONDARY_ROUTES = [
   '/oppskrifter',
   '/innstillinger',
 ]
-
-// Routes to prefetch with data (most used, benefit most from data cache)
-export const DATA_PREFETCH_ROUTES = [
-  '/uke',
-  '/handleliste',
-]
