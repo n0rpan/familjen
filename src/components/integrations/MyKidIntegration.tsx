@@ -336,6 +336,7 @@ export function MyKidIntegration({ householdId, children, onMessage }: Props) {
           syncing={syncing}
           service="mykid"
           onSync={() => syncNow(integration.id)}
+          onFullSync={() => syncNow(integration.id, true)}
           onEdit={() => loadDataForEdit(integration.id)}
           onRemove={() => handleRemove(integration.id)}
           renderMappings={renderMappings}

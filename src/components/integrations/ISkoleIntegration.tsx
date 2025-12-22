@@ -332,6 +332,7 @@ export function ISkoleIntegration({ householdId, children, onMessage }: Props) {
           syncing={syncing}
           service="iskole"
           onSync={() => syncNow(integration.id)}
+          onFullSync={() => syncNow(integration.id, true)}
           onEdit={() => loadDataForEdit(integration.id)}
           onRemove={() => handleRemove(integration.id)}
           renderMappings={renderMappings}

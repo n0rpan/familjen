@@ -1,6 +1,6 @@
 'use client'
 
-import { memo } from 'react'
+import { memo, useState, useRef, useEffect } from 'react'
 import type { Integration, IntegrationMapping, ServiceName } from './types'
 
 interface IntegrationCardProps {
@@ -10,6 +10,7 @@ interface IntegrationCardProps {
   service: ServiceName
   children?: React.ReactNode // For custom content in the card
   onSync: () => void
+  onFullSync: () => void
   onEdit: () => void
   onRemove: () => void
   renderMappings?: (mappings: IntegrationMapping[]) => React.ReactNode
@@ -62,13 +63,28 @@ export const IntegrationCard = memo(function IntegrationCard({
   service,
   children,
   onSync,
+  onFullSync,
   onEdit,
   onRemove,
   renderMappings,
 }: IntegrationCardProps) {
+  const [showSyncMenu, setShowSyncMenu] = useState(false)
+  const syncMenuRef = useRef<HTMLDivElement>(null)
   const color = SERVICE_COLORS[service]
   const icon = SERVICE_ICONS[service]
   const integrationMappings = mappings.filter((m) => m.id)
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    if (!showSyncMenu) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (syncMenuRef.current && !syncMenuRef.current.contains(e.target as Node)) {
+        setShowSyncMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showSyncMenu])
 
   return (
     <div
@@ -127,31 +143,87 @@ export const IntegrationCard = memo(function IntegrationCard({
 
       {/* Action buttons */}
       <div className="flex gap-2 flex-wrap">
-        <button
-          onClick={onSync}
-          disabled={syncing}
-          className="btn btn-secondary text-sm"
-          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-        >
-          {syncing ? (
-            <>
-              <svg width="14" height="14" className="animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
-              </svg>
-              Synkroniserer...
-            </>
-          ) : (
-            <>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M21 2v6h-6"/>
-                <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
-                <path d="M3 22v-6h6"/>
-                <path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
-              </svg>
-              Synkroniser
-            </>
+        {/* Sync dropdown */}
+        <div className="relative" ref={syncMenuRef}>
+          <button
+            onClick={() => syncing ? undefined : setShowSyncMenu(!showSyncMenu)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setShowSyncMenu(false)
+            }}
+            disabled={syncing}
+            aria-expanded={showSyncMenu}
+            aria-haspopup="menu"
+            className="btn btn-secondary text-sm"
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+          >
+            {syncing ? (
+              <>
+                <svg width="14" height="14" className="animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                </svg>
+                Synkroniserer...
+              </>
+            ) : (
+              <>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M21 2v6h-6"/>
+                  <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+                  <path d="M3 22v-6h6"/>
+                  <path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+                </svg>
+                Synkroniser
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M6 9l6 6 6-6"/>
+                </svg>
+              </>
+            )}
+          </button>
+
+          {/* Dropdown menu */}
+          {showSyncMenu && !syncing && (
+            <div
+              role="menu"
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setShowSyncMenu(false)
+              }}
+              className="absolute left-0 top-full mt-1 py-1 rounded-lg shadow-lg z-10 min-w-[180px]"
+              style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+            >
+              <button
+                role="menuitem"
+                onClick={() => {
+                  setShowSyncMenu(false)
+                  onSync()
+                }}
+                className="w-full px-3 py-2 text-left text-sm hover:bg-black/5 flex items-center gap-2"
+                style={{ color: 'var(--foreground)' }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M21 2v6h-6"/>
+                  <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+                  <path d="M3 22v-6h6"/>
+                  <path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+                </svg>
+                Synk nye
+              </button>
+              <button
+                role="menuitem"
+                onClick={() => {
+                  setShowSyncMenu(false)
+                  onFullSync()
+                }}
+                className="w-full px-3 py-2 text-left text-sm hover:bg-black/5 flex items-center gap-2"
+                style={{ color: 'var(--foreground)' }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <path d="M12 6v6l4 2"/>
+                </svg>
+                Full resynk (365 dager)
+              </button>
+            </div>
           )}
-        </button>
+        </div>
 
         <button
           onClick={onEdit}

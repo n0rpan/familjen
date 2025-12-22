@@ -469,6 +469,7 @@ export function SpondIntegration({ householdId, children, members, onMessage }: 
           syncing={syncing}
           service="spond"
           onSync={() => syncNow(integration.id)}
+          onFullSync={() => syncNow(integration.id, true)}
           onEdit={() => loadGroupsForEdit(integration.id)}
           onRemove={() => handleRemove(integration.id)}
           renderMappings={renderMappings}

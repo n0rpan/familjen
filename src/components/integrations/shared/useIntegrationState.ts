@@ -31,7 +31,7 @@ interface UseIntegrationStateReturn {
   testConnection: (credentials: Record<string, string>) => Promise<{ success: boolean; data?: unknown }>
   saveIntegration: (credentials: Record<string, string>, mappings: MappingInput[]) => Promise<boolean>
   saveEditedMappings: (integrationId: string, mappings: MappingInput[]) => Promise<boolean>
-  syncNow: (integrationId?: string) => Promise<void>
+  syncNow: (integrationId?: string, fullSync?: boolean) => Promise<void>
   removeIntegration: (integrationId: string) => Promise<boolean>
   resetForm: () => void
   setShowConnectForm: (show: boolean) => void
@@ -245,13 +245,13 @@ export function useIntegrationState({
   )
 
   const syncNow = useCallback(
-    async (integrationId?: string) => {
+    async (integrationId?: string, fullSync?: boolean) => {
       setSyncing(true)
       try {
         const res = await fetch(config.syncEndpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ integrationId }),
+          body: JSON.stringify({ integrationId, fullSync: fullSync === true }),
         })
 
         const data = await res.json()
