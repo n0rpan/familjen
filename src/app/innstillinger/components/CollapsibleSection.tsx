@@ -24,7 +24,7 @@ export function CollapsibleSection({
 
   return (
     <div
-      className="rounded-2xl overflow-hidden"
+      className="rounded-2xl"
       style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
     >
       <button

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { extractEventsFromHtml } from '@/lib/integrations/document-extraction'
 
 /**
  * POST /api/integrations/fetch-url
@@ -111,13 +112,13 @@ export async function POST(request: Request) {
 
         content = null // PDF content will be processed by AI later
       } else {
-        // HTML page - store for AI processing
+        // HTML page - store and process immediately
         content = await response.text()
 
         // Create document record for HTML content (truncate to 500KB for DB storage)
         const truncatedContent = content.slice(0, 500000)
 
-        await supabase
+        const { data: docRecord } = await supabase
           .from('external_documents')
           .upsert({
             household_id: member.household_id,
@@ -136,9 +137,82 @@ export async function POST(request: Request) {
           }, {
             onConflict: 'source_url_id',
           })
+          .select('id')
+          .single()
+
+        // Process immediately with AI to extract events
+        let eventsFound = 0
+        if (docRecord) {
+          try {
+            // Get vision model setting
+            const { data: modelSetting } = await supabase
+              .from('app_settings')
+              .select('value')
+              .eq('key', 'openrouter_vision_model')
+              .single()
+
+            const model = modelSetting?.value || 'google/gemini-2.0-flash-001'
+
+            // Extract events from HTML
+            const events = await extractEventsFromHtml(truncatedContent, {
+              childName: undefined, // Could look up child name from child_id
+              schoolName: sourceUrl.display_name,
+              model,
+            })
+
+            eventsFound = events.length
+
+            // Create suggestions from extracted events
+            for (const event of events) {
+              await supabase
+                .from('external_suggestions')
+                .insert({
+                  household_id: member.household_id,
+                  child_id: sourceUrl.child_id,
+                  source_type: 'external_document',
+                  source_document_id: docRecord.id,
+                  suggestion_type: event.eventType === 'holiday' || event.eventType === 'closure' ? 'event' : 'task',
+                  title: event.title,
+                  suggested_date: event.date,
+                  suggested_end_date: event.endDate,
+                  raw_data: event,
+                  status: 'pending',
+                })
+            }
+
+            // Mark document as processed
+            await supabase
+              .from('external_documents')
+              .update({
+                ai_processed: true,
+                ai_processed_at: new Date().toISOString(),
+              })
+              .eq('id', docRecord.id)
+
+          } catch (aiError) {
+            console.error('AI extraction error:', aiError)
+            // Don't fail the request, just log - cron will retry later
+          }
+        }
+
+        // Update sync status
+        await supabase
+          .from('external_source_urls')
+          .update({
+            last_sync_at: new Date().toISOString(),
+            last_sync_status: 'ok',
+            last_sync_error: null,
+          })
+          .eq('id', sourceUrl.id)
+
+        return NextResponse.json({
+          success: true,
+          message: eventsFound > 0 ? `Synkronisert - ${eventsFound} hendelser funnet` : 'Synkronisert',
+          eventsFound,
+        })
       }
 
-      // Update sync status
+      // Update sync status (for PDF/ICS)
       await supabase
         .from('external_source_urls')
         .update({
