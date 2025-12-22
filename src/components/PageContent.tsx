@@ -26,6 +26,7 @@ export function PageContent({ children }: PageContentProps) {
   const previousPathRef = useRef(pathname)
   const announcementRef = useRef<HTMLDivElement | null>(null)
   const announcementTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isMountedRef = useRef(true)
 
   // Handle navigation state changes
   useEffect(() => {
@@ -41,9 +42,10 @@ export function PageContent({ children }: PageContentProps) {
     }
   }, [isNavigating])
 
-  // Cleanup announcement on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
+      isMountedRef.current = false
       if (announcementTimeoutRef.current) {
         clearTimeout(announcementTimeoutRef.current)
       }
@@ -71,6 +73,8 @@ export function PageContent({ children }: PageContentProps) {
     // After navigation, move focus to main content for keyboard/AT users
     // Use requestAnimationFrame to ensure DOM has updated
     requestAnimationFrame(() => {
+      // Guard against unmount during RAF delay
+      if (!isMountedRef.current) return
       const wrapper = wrapperRef.current
       if (!wrapper) return
 

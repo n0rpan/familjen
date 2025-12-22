@@ -223,15 +223,18 @@ export function createListFilter(listId: string): string {
   return `list_id=eq.${listId}`
 }
 
-// UUID validation regex
+// Validation regexes
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const COLUMN_REGEX = /^[a-z_][a-z0-9_]*$/i
 
 /**
  * Helper to create an "in" filter for multiple UUID values
- * Validates UUIDs to prevent filter injection
+ * Validates column name and UUIDs to prevent filter injection
  * @example createInFilter('list_id', ['uuid1', 'uuid2']) => 'list_id=in.(uuid1,uuid2)'
  */
 export function createInFilter(column: string, values: string[]): string | undefined {
+  // Validate column name (alphanumeric + underscore only)
+  if (!COLUMN_REGEX.test(column)) return undefined
   if (values.length === 0) return undefined
   // Validate UUIDs to prevent filter injection
   const validValues = values.filter(v => UUID_REGEX.test(v))
