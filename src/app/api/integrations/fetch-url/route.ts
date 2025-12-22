@@ -118,7 +118,7 @@ export async function POST(request: Request) {
         // Create document record for HTML content (truncate to 500KB for DB storage)
         const truncatedContent = content.slice(0, 500000)
 
-        const { data: docRecord } = await supabase
+        const { data: docRecord, error: docError } = await supabase
           .from('external_documents')
           .upsert({
             household_id: member.household_id,
@@ -133,12 +133,15 @@ export async function POST(request: Request) {
             file_size: content.length,
             extracted_text: truncatedContent,
             ai_processed: false,
-            child_id: sourceUrl.child_id,
           }, {
             onConflict: 'source_url_id',
           })
           .select('id')
           .single()
+
+        if (docError) {
+          console.error('Document insert error:', docError)
+        }
 
         // Process immediately with AI to extract events
         let eventsFound = 0
