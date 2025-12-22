@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { ShoppingList, ShoppingListItem, Household } from '@/lib/types'
 import { useLanguage } from '@/lib/i18n/context'
-import { ListPageSkeleton } from '@/components/Skeleton'
+import { ShoppingPagePartialSkeleton } from '@/components/Skeleton'
 import { useMicroFeedback } from '@/hooks/useMicroFeedback'
 import { useRealtimeSubscription } from '@/hooks/useRealtimeSubscription'
 import { useRealtimeOptional } from '@/lib/realtime/context'
@@ -682,8 +682,9 @@ export default function ShoppingListPage() {
     }
   }, [lists, supabase])
 
-  if (loading) {
-    return <ListPageSkeleton />
+  // Only show skeleton if loading AND no cached data yet
+  if (loading && !household) {
+    return <ShoppingPagePartialSkeleton t={t} />
   }
 
   if (error) {

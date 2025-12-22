@@ -12,7 +12,7 @@ import { useLanguage } from '@/lib/i18n/context'
 import { notifyPickupAssigned, notifyMealChanged, notifyTaskAdded, notifyEventAdded } from '@/lib/notify'
 import { nb, sv } from 'react-day-picker/locale'
 import 'react-day-picker/style.css'
-import { WeekPageSkeleton } from '@/components/Skeleton'
+import { WeekPagePartialSkeleton } from '@/components/Skeleton'
 import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealtimeSubscription'
 import { useRealtimeOptional } from '@/lib/realtime/context'
 import { getCachedWeekData, getWeekCacheKey, prefetchWeekData } from '@/lib/prefetch/fetchers'
@@ -1457,8 +1457,10 @@ export default function WeekEditPage() {
     }
   }
 
-  if (loading) {
-    return <WeekPageSkeleton />
+  // Only show skeleton if loading AND no cached data yet
+  // Once we have household data (from cache or fetch), render content
+  if (loading && !household) {
+    return <WeekPagePartialSkeleton t={t} />
   }
 
   if (error) {

@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Recipe, Household } from '@/lib/types'
 import { useLanguage } from '@/lib/i18n/context'
-import { RecipesPageSkeleton } from '@/components/Skeleton'
+import { RecipesPagePartialSkeleton } from '@/components/Skeleton'
 
 export default function RecipesPage() {
   const { t } = useLanguage()
@@ -191,8 +191,9 @@ export default function RecipesPage() {
       return a.name.localeCompare(b.name, 'nb')
     })
 
-  if (loading) {
-    return <RecipesPageSkeleton />
+  // Only show skeleton if loading AND no cached data yet
+  if (loading && !household) {
+    return <RecipesPagePartialSkeleton t={t} />
   }
 
   if (error) {
