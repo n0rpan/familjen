@@ -204,7 +204,7 @@ async function syncIntegration(
           })
         }
       } catch (msgError) {
-        console.error(`Error fetching messages for child ${child.Elevnr}:`, msgError)
+        console.error(`[iSkole] Error fetching messages for child ${child.Elevnr} (fylke=${child.Fylkeid}, planperi=${child.Planperi}, skole=${child.Skoleid}):`, msgError)
       }
     }
 
