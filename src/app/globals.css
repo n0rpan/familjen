@@ -335,22 +335,22 @@ input:focus, select:focus, textarea:focus {
 
 /* Instant navigation feedback - applied via DOM before any async work */
 .page-content-wrapper {
-  transition: opacity 100ms ease-out;
+  transition: opacity 50ms ease-out;
 }
 
 .page-content-wrapper.navigating {
-  opacity: 0.3;
+  opacity: 0.4;
   pointer-events: none;
 }
 
-/* Smooth fade-in animation for page content */
+/* Fast fade-in for page content - speed over smoothness */
 @keyframes page-fade-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0.7; }
+  to { opacity: 1; }
 }
 
 .animate-fade-in {
-  animation: page-fade-in 150ms ease-out forwards;
+  animation: page-fade-in 80ms ease-out forwards;
 }
 
 /* View transition animations */

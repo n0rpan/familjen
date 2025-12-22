@@ -49,12 +49,9 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Only end if we were navigating AND pathname changed from where we started
     if (state.isNavigating && startPathnameRef.current !== null && pathname !== startPathnameRef.current) {
-      // Small delay to allow content to render
-      const timer = setTimeout(() => {
-        startPathnameRef.current = null
-        setState({ isNavigating: false, targetPath: null })
-      }, 50)
-      return () => clearTimeout(timer)
+      // End immediately - no artificial delay
+      startPathnameRef.current = null
+      setState({ isNavigating: false, targetPath: null })
     }
   }, [pathname, state.isNavigating])
 
