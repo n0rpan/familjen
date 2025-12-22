@@ -14,6 +14,7 @@ interface SyncResult {
   eventsCount: number
   messagesCount: number
   photosCount: number
+  documentsCount: number
 }
 
 /**
@@ -53,6 +54,7 @@ export async function POST(request: Request) {
     const totalEvents = results.reduce((sum, r) => sum + r.eventsCount, 0)
     const totalMessages = results.reduce((sum, r) => sum + r.messagesCount, 0)
     const totalPhotos = results.reduce((sum, r) => sum + r.photosCount, 0)
+    const totalDocuments = results.reduce((sum, r) => sum + r.documentsCount, 0)
     const successCount = results.filter((r) => r.success).length
     const failureCount = results.filter((r) => !r.success).length
 
@@ -66,6 +68,7 @@ export async function POST(request: Request) {
         eventsTotal: totalEvents,
         messagesTotal: totalMessages,
         photosTotal: totalPhotos,
+        documentsTotal: totalDocuments,
       },
     })
   } catch (error) {
@@ -96,6 +99,7 @@ async function syncIntegration(
     eventsCount: 0,
     messagesCount: 0,
     photosCount: 0,
+    documentsCount: 0,
   }
 
   try {
@@ -258,6 +262,97 @@ async function syncIntegration(
       }
     } catch (messagesError) {
       console.error('Error syncing newsletters:', messagesError)
+    }
+
+    // ========================================================================
+    // SYNC NEWSLETTER ATTACHMENTS (PDFs, documents)
+    // ========================================================================
+    try {
+      // Get all newsletters with attachments that haven't been downloaded yet
+      const { data: messagesWithAttachments } = await supabase
+        .from('external_messages')
+        .select('id, external_id, raw_data')
+        .eq('integration_id', integration.id)
+        .eq('source_type', 'newsletter')
+
+      let documentsCount = 0
+
+      for (const message of messagesWithAttachments || []) {
+        const rawData = message.raw_data as { attachments?: Array<{ id: number; filename: string; url: string }> }
+        const attachments = rawData?.attachments || []
+
+        for (const attachment of attachments) {
+          try {
+            // Check if we already have this document
+            const externalId = `attachment_${attachment.id}`
+            const { data: existing } = await supabase
+              .from('external_documents')
+              .select('id')
+              .eq('integration_id', integration.id)
+              .eq('external_id', externalId)
+              .single()
+
+            if (existing) {
+              // Already downloaded
+              continue
+            }
+
+            // Download the attachment
+            const { buffer, contentType, filename } = await client.downloadAttachment(attachment.url)
+
+            // Generate storage path
+            const safeFilename = (filename || attachment.filename || `doc_${attachment.id}`).replace(/[^a-zA-Z0-9._-]/g, '_')
+            const storagePath = `${householdId}/${integration.id}/${safeFilename}`
+
+            // Upload to Supabase Storage
+            const { error: uploadError } = await supabase.storage
+              .from('external-documents')
+              .upload(storagePath, buffer, {
+                contentType,
+                upsert: true,
+              })
+
+            if (uploadError) {
+              console.error(`Failed to upload attachment ${attachment.id}:`, uploadError)
+              continue
+            }
+
+            // Insert document record
+            const { error: dbError } = await supabase
+              .from('external_documents')
+              .insert({
+                household_id: householdId,
+                integration_id: integration.id,
+                external_id: externalId,
+                source_type: 'mykid_attachment',
+                source_url: attachment.url,
+                title: attachment.filename || null,
+                filename: safeFilename,
+                mime_type: contentType,
+                storage_path: storagePath,
+                file_size: buffer.length,
+                ai_processed: false,
+                raw_data: attachment,
+              })
+
+            if (dbError) {
+              console.error(`Failed to save document ${attachment.id}:`, dbError)
+            } else {
+              documentsCount++
+            }
+
+            // Small delay between downloads
+            await new Promise(resolve => setTimeout(resolve, 200))
+
+          } catch (attachError) {
+            console.error(`Error processing attachment ${attachment.id}:`, attachError)
+          }
+        }
+      }
+
+      result.documentsCount = documentsCount
+    } catch (attachError) {
+      console.error('Error syncing attachments:', attachError)
     }
 
     // ========================================================================

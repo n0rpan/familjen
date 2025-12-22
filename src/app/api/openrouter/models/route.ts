@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 
@@ -13,9 +13,24 @@ export interface OpenRouterModel {
   top_provider?: {
     max_completion_tokens: number
   }
+  supportsVision?: boolean
 }
 
-export async function GET() {
+interface OpenRouterAPIModel {
+  id: string
+  name: string
+  pricing: { prompt: string; completion: string }
+  context_length: number
+  architecture?: {
+    modality?: string
+    input_modalities?: string[]
+    output_modalities?: string[]
+  }
+}
+
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url)
+  const visionOnly = searchParams.get('vision') === 'true'
   try {
     const supabase = await createClient()
 
@@ -56,15 +71,21 @@ export async function GET() {
 
     // Filter and sort models - prioritize popular ones
     const models: OpenRouterModel[] = data.data
-      .filter((m: OpenRouterModel) => {
+      .filter((m: OpenRouterAPIModel) => {
         // Filter out deprecated or test models
-        return !m.id.includes('test') && !m.id.includes('deprecated')
+        if (m.id.includes('test') || m.id.includes('deprecated')) return false
+        // If vision only requested, filter to models with image input
+        if (visionOnly) {
+          return m.architecture?.input_modalities?.includes('image') ?? false
+        }
+        return true
       })
-      .map((m: OpenRouterModel) => ({
+      .map((m: OpenRouterAPIModel) => ({
         id: m.id,
         name: m.name,
         pricing: m.pricing,
         context_length: m.context_length,
+        supportsVision: m.architecture?.input_modalities?.includes('image') ?? false,
       }))
       .sort((a: OpenRouterModel, b: OpenRouterModel) => {
         // Sort by provider (anthropic, openai first) then by name

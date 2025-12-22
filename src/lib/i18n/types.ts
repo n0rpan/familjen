@@ -483,6 +483,8 @@ export interface TranslationStrings {
     systemConfigTitle: string
     systemConfigDesc: string
     openrouterModel: string
+    visionModel: string
+    visionModelDescription: string
     priceNote: string
     modelTestHint: string
     calendarDesc: string
@@ -882,5 +884,29 @@ export interface TranslationStrings {
     deleteAccountConfirm: string
     deleteAccountButton: string
     accountDeleted: string
+  }
+
+  // Source URLs (manual calendar sources)
+  sourceUrls: {
+    title: string
+    description: string
+    addNew: string
+    urlLabel: string
+    nameLabel: string
+    typeLabel: string
+    typeCalendarPage: string
+    typePdf: string
+    typeIcs: string
+    childLabel: string
+    addButton: string
+    syncing: string
+    lastSync: string
+    syncNow: string
+    syncSuccess: string
+    eventsFound: string
+    invalidUrl: string
+    urlExists: string
+    remove: string
+    removeConfirm: string
   }
 }

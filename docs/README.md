@@ -25,12 +25,23 @@ These files contain historical research notes, HAR analysis, and detailed findin
 - **[../README.md](../README.md)** - Project README with setup instructions
 - **[../src/lib/integrations/spond/README.md](../src/lib/integrations/spond/README.md)** - Spond client notes
 
+## Key Features Documented
+
+- **Four External Integrations**: Spond, iSkole, Kidplan, MyKid
+- **AI Document Extraction**: Vision model for PDFs and web pages
+- **Manual URL Sources**: Users can add school calendars/schedules directly
+- **Suggestion Workflow**: AI extracts events → user reviews → creates tasks/events
+
 ## Document Status
 
 | Document | Last Updated | Status |
 |----------|--------------|--------|
-| api-integrations.md | Dec 2024 | Current |
+| api-integrations.md | Dec 2024 | Current - includes document extraction system |
 | iskole-integration-research.md | Dec 2024 | Current |
 | kidplan-integration-research.md | Dec 2024 | Historical |
 | mykid-integration-research.md | Dec 2024 | Historical |
 | supabase-email-templates.md | Dec 2024 | Current |
+
+## Implementation Status
+
+See [api-integrations.md](./api-integrations.md#implementation-status) for the full feature matrix showing what's implemented vs pending for each integration.

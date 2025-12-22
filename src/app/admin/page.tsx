@@ -33,6 +33,7 @@ interface OpenRouterModel {
     completion: string;
   };
   context_length: number;
+  supportsVision?: boolean;
 }
 
 function formatPrice(price: string | undefined | null, t: any): string {
@@ -66,11 +67,13 @@ function ModelSelector({
   onChange,
   disabled,
   t,
+  visionOnly = false,
 }: {
   value: string;
   onChange: (modelId: string) => void;
   disabled: boolean;
   t: any;
+  visionOnly?: boolean;
 }) {
   const [models, setModels] = useState<OpenRouterModel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,7 +83,7 @@ function ModelSelector({
 
   useEffect(() => {
     fetchModels();
-  }, []);
+  }, [visionOnly]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -97,7 +100,10 @@ function ModelSelector({
 
   const fetchModels = async () => {
     try {
-      const res = await fetch("/api/openrouter/models");
+      const url = visionOnly
+        ? "/api/openrouter/models?vision=true"
+        : "/api/openrouter/models";
+      const res = await fetch(url);
       const data = await res.json();
       if (data.models) {
         setModels(data.models);
@@ -1541,6 +1547,26 @@ export default function AdminPage() {
             </p>
             <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>
               {t.admin.modelTestHint}
+            </p>
+          </div>
+
+          {/* Vision Model Selector */}
+          <div className="pt-4 border-t" style={{ borderColor: "var(--border)" }}>
+            <label
+              className="block text-sm font-medium mb-2"
+              style={{ color: "var(--foreground)" }}
+            >
+              {t.admin.visionModel || "Visjonmodell"}
+            </label>
+            <ModelSelector
+              value={settings.openrouter_vision_model || "google/gemini-2.0-flash-001"}
+              onChange={(modelId) => updateSetting("openrouter_vision_model", modelId)}
+              disabled={saving}
+              t={t}
+              visionOnly
+            />
+            <p className="text-xs mt-2" style={{ color: "var(--muted)" }}>
+              {t.admin.visionModelDescription || "For å analysere bilder og dokumenter"}
             </p>
           </div>
         </div>

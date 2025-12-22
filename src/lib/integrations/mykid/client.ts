@@ -721,6 +721,47 @@ export class MyKidClient {
   }
 
   /**
+   * Download an attachment (PDF, etc.) from a newsletter.
+   * URL pattern: /_ajax/image/fetchimage/news_att/{id}/orig
+   */
+  async downloadAttachment(attachmentPath: string): Promise<{ buffer: Buffer; contentType: string; filename?: string }> {
+    this.ensureAuthenticated()
+    const url = attachmentPath.startsWith('http') ? attachmentPath : `${BASE_URL}${attachmentPath}`
+    this.log(`Downloading attachment: ${url.substring(0, 80)}...`)
+
+    const response = await this.fetchWithTimeout(url, {
+      headers: {
+        Cookie: this.getCookieHeader(),
+        'User-Agent': 'Mozilla/5.0',
+      },
+    })
+
+    if (!response.ok) {
+      throw new MyKidError(`Failed to download attachment: ${response.status}`)
+    }
+
+    const contentType = response.headers.get('content-type') || 'application/octet-stream'
+    const contentDisposition = response.headers.get('content-disposition')
+    let filename: string | undefined
+
+    // Extract filename from content-disposition header if available
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+      if (match) {
+        filename = match[1].replace(/['"]/g, '')
+      }
+    }
+
+    const arrayBuffer = await response.arrayBuffer()
+
+    return {
+      buffer: Buffer.from(arrayBuffer),
+      contentType,
+      filename,
+    }
+  }
+
+  /**
    * Get child avatar.
    */
   async getChildAvatar(childId: number, size: number = 200): Promise<Buffer> {

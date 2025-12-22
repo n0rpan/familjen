@@ -17,6 +17,7 @@ import { SpondIntegration } from '@/components/integrations/SpondIntegration'
 import { KidplanIntegration } from '@/components/integrations/KidplanIntegration'
 import { ISkoleIntegration } from '@/components/integrations/ISkoleIntegration'
 import { MyKidIntegration } from '@/components/integrations/MyKidIntegration'
+import { ManualSourceUrls } from '@/components/integrations/ManualSourceUrls'
 import {
   ChildrenSection,
   MembersSection,
@@ -1356,6 +1357,26 @@ export default function SettingsPage() {
             color="var(--color-sage)"
           >
             <MyKidIntegration
+              householdId={household.id}
+              children={children}
+              onMessage={showMessage}
+            />
+          </CollapsibleSection>
+
+          {/* Manual Source URLs */}
+          <CollapsibleSection
+            icon={
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="2" y1="12" x2="22" y2="12"/>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+              </svg>
+            }
+            title="Kalenderkilder"
+            description="Legg til eksterne kalendere og skoleruter"
+            color="var(--color-lavender)"
+          >
+            <ManualSourceUrls
               householdId={household.id}
               children={children}
               onMessage={showMessage}

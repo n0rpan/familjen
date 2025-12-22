@@ -1642,7 +1642,147 @@ class MyKidCsrfError extends MyKidError { }
 
 ---
 
+## Document Extraction System
+
+The app includes an AI-powered document extraction system that processes PDFs, images, and web pages to extract calendar events and create suggestions.
+
+### Architecture
+
+```
+Manual URL Sources                Integration Attachments
+       │                                    │
+       ▼                                    ▼
+external_source_urls               Integration Sync (MyKid, etc.)
+       │                                    │
+       ▼                                    ▼
+┌──────────────────────────────────────────────────────────┐
+│                   external_documents                      │
+│  (stores document metadata, storage paths, extracted text)│
+└──────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+              ┌─────────────────────┐
+              │  AI Vision Model    │
+              │  (configurable in   │
+              │   admin settings)   │
+              └─────────────────────┘
+                          │
+                          ▼
+              ┌─────────────────────┐
+              │ external_suggestions│
+              │  (pending review)   │
+              └─────────────────────┘
+                          │
+                          ▼
+              User reviews and approves
+                          │
+                          ▼
+              ┌─────────────────────┐
+              │  child_tasks or     │
+              │  member_events      │
+              └─────────────────────┘
+```
+
+### Document Sources
+
+| Source | Status | Description |
+|--------|--------|-------------|
+| Manual URLs (calendar pages, PDFs) | **Implemented** | Users add URLs in settings |
+| MyKid newsletter attachments | **Implemented** | Auto-downloaded during sync |
+| iSkole letters (VoBrev) | **Not Yet** | Endpoint available but not integrated |
+| iSkole message attachments | **Not Yet** | VoVedleggForMelding endpoint available |
+| Spond post attachments | **Not Yet** | Field exists but usually empty |
+| Kidplan files (GetFileList) | **Not Yet** | Endpoint available |
+
+### AI Extraction Service
+
+**File:** `src/lib/integrations/document-extraction.ts`
+
+```typescript
+// For HTML pages (school calendars)
+extractEventsFromHtml(html, context) → ExtractedEvent[]
+
+// For PDFs (sent as base64 to vision model)
+extractEventsFromPdf(pdfBase64, context) → { events: ExtractedEvent[] }
+
+// For images (screenshots, calendar photos)
+extractEventsFromImage(imageBase64, mimeType, context) → ExtractedEvent[]
+```
+
+### Vision Model Configuration
+
+The AI model for document extraction is configurable via admin settings:
+- **Setting key:** `openrouter_vision_model`
+- **Default:** `google/gemini-2.0-flash-001`
+- **Selection:** Models with vision capability (detected via `architecture.input_modalities.includes('image')`)
+
+### Database Tables
+
+```sql
+-- Manual calendar sources
+external_source_urls (
+  id, household_id, url, display_name, url_type,
+  auto_sync, sync_frequency_days, last_sync_at, last_sync_status, child_id
+)
+
+-- Documents from all sources
+external_documents (
+  id, household_id, integration_id, source_url_id,
+  external_id, source_type, source_url, title, filename,
+  mime_type, storage_path, file_size, extracted_text,
+  ai_processed, ai_processed_at, child_id
+)
+
+-- Extracted events become suggestions
+external_suggestions (
+  id, household_id, source_document_id, -- links to external_documents
+  suggested_type, suggested_date, suggested_title, ...
+)
+```
+
+---
+
+## Implementation Status
+
+### Per-Service Feature Matrix
+
+| Feature | Spond | iSkole | Kidplan | MyKid |
+|---------|-------|--------|---------|-------|
+| Authentication | ✅ | ✅ | ✅ | ✅ |
+| Calendar/Events | ✅ | ✅ | - | ✅ |
+| Messages | ✅ | ✅ | ✅ | ✅ |
+| Photos | - | - | ✅ | ✅ |
+| Timetable | - | ✅ | - | - |
+| Absences | - | ✅ | - | - |
+| School Calendar | - | ✅ | - | - |
+| PDF Attachments | ❌ | ❌ | ❌ | ✅ |
+| AI Message Extraction | ✅ | ✅ | ✅ | ✅ |
+
+**Legend:** ✅ Implemented | ❌ Not yet (endpoint exists) | - Not available
+
+### Pending Enhancements
+
+1. **iSkole Letters (VoBrev)**
+   - Endpoint: `GET /rest/v0/VoBrev;jsessionid={session}?finder=...`
+   - Contains official school letters which may have important dates
+
+2. **iSkole Message Attachments (VoVedleggForMelding)**
+   - Endpoint: `GET /rest/v0/VoVedleggForMelding;jsessionid={session}?meldingid={id}`
+   - Attachments to school messages (PDFs, images)
+
+3. **Spond Post/Event Attachments**
+   - Field: `attachments[]` on posts and sponds
+   - Usually empty in current data, but structure exists
+
+4. **Kidplan Files (GetFileList)**
+   - Endpoint: `POST /ChildPage/GetFileList`
+   - Child-related documents
+
+---
+
 ## Changelog
 
+- **2024-12-22**: Added document extraction system, vision model configuration
+- **2024-12-22**: Added implementation status matrix
 - **2024-12-22**: Initial documentation
 - **2024-12-22**: Added lessons learned, fixed inaccuracies from code review, added missing endpoints

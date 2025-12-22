@@ -4,6 +4,7 @@ import { SpondClient, SpondAuthError, SpondError } from '@/lib/integrations/spon
 import { KidplanClient, KidplanAuthError, KidplanError } from '@/lib/integrations/kidplan'
 import { ISkoleClient, ISkoleAuthError, ISkoleError } from '@/lib/integrations/iskole'
 import { MyKidClient, MyKidAuthError, MyKidError } from '@/lib/integrations/mykid'
+import { extractEventsFromHtml, extractEventsFromPdf, extractEventsFromImage, type ExtractedEvent } from '@/lib/integrations/document-extraction'
 import { formatDateISO, addDays } from '@/lib/utils'
 import { fetchAndParseICS, type ICSEvent } from '@/lib/ics-parser'
 import { syncHouseholdICS as syncHouseholdICSShared } from '@/lib/household-ics-sync'
@@ -255,6 +256,237 @@ export async function GET(request: Request) {
       }
     }
 
+    // Process unprocessed documents for AI event extraction
+    let documentsProcessed = 0
+    let documentSuggestionsCreated = 0
+
+    // Get vision model from settings
+    const { data: visionModelSetting } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'openrouter_vision_model')
+      .single()
+
+    const visionModel = visionModelSetting?.value || 'google/gemini-2.0-flash-001'
+
+    // Process documents where ai_processed = false
+    const { data: unprocessedDocuments } = await supabase
+      .from('external_documents')
+      .select('id, household_id, source_type, source_url, title, mime_type, storage_path, extracted_text, child_id')
+      .eq('ai_processed', false)
+      .limit(50)
+
+    if (unprocessedDocuments && unprocessedDocuments.length > 0) {
+      console.log(`[Cron] Processing ${unprocessedDocuments.length} documents for AI event extraction`)
+
+      for (const doc of unprocessedDocuments) {
+        try {
+          let events: ExtractedEvent[] = []
+
+          if (doc.mime_type === 'text/html' && doc.extracted_text) {
+            // HTML content - extract events from text
+            events = await extractEventsFromHtml(doc.extracted_text, {
+              childName: undefined,
+              schoolName: doc.title || doc.source_url || undefined,
+              model: visionModel,
+            })
+          } else if (doc.mime_type === 'application/pdf' && doc.storage_path) {
+            // PDF - download from storage and process with vision
+            const { data: pdfData, error: downloadError } = await supabase.storage
+              .from('external-documents')
+              .download(doc.storage_path)
+
+            if (downloadError) {
+              console.error(`[Cron] Failed to download PDF ${doc.id}:`, downloadError.message)
+            } else if (pdfData) {
+              const buffer = Buffer.from(await pdfData.arrayBuffer())
+              const pdfBase64 = buffer.toString('base64')
+              const result = await extractEventsFromPdf(pdfBase64, {
+                source: doc.title || doc.source_url || undefined,
+                model: visionModel,
+              })
+              events = result.events
+            }
+          } else if (doc.mime_type?.startsWith('image/') && doc.storage_path) {
+            // Image - download from storage and process with vision
+            const { data: imageData, error: downloadError } = await supabase.storage
+              .from('external-documents')
+              .download(doc.storage_path)
+
+            if (downloadError) {
+              console.error(`[Cron] Failed to download image ${doc.id}:`, downloadError.message)
+            } else if (imageData) {
+              const buffer = Buffer.from(await imageData.arrayBuffer())
+              const imageBase64 = buffer.toString('base64')
+              events = await extractEventsFromImage(imageBase64, doc.mime_type, {
+                source: doc.title || doc.source_url || undefined,
+                model: visionModel,
+              })
+            }
+          }
+
+          // Create suggestions for extracted events
+          for (const event of events) {
+            if (event.confidence >= 0.5) {
+              await supabase.from('external_suggestions').insert({
+                household_id: doc.household_id,
+                source_document_id: doc.id,
+                suggested_type: event.eventType === 'deadline' ? 'task' : 'event',
+                suggested_child_id: doc.child_id || null,
+                suggested_date: event.date,
+                suggested_time: event.time || null,
+                suggested_title: event.title,
+                suggested_description: event.description || null,
+                confidence_score: event.confidence,
+                status: 'pending',
+              })
+              documentSuggestionsCreated++
+            }
+          }
+
+          // Mark as processed
+          await supabase
+            .from('external_documents')
+            .update({
+              ai_processed: true,
+              ai_processed_at: new Date().toISOString(),
+            })
+            .eq('id', doc.id)
+
+          documentsProcessed++
+
+          // Small delay to avoid rate limiting
+          await new Promise((resolve) => setTimeout(resolve, 200))
+        } catch (error) {
+          console.error(`[Cron] Error processing document ${doc.id}:`, error)
+        }
+      }
+    }
+
+    // Re-fetch manual source URLs that are due for sync
+    let urlsRefetched = 0
+    const now = new Date()
+
+    const { data: sourceUrls } = await supabase
+      .from('external_source_urls')
+      .select('id, household_id, url, display_name, url_type, sync_frequency_days, last_sync_at, child_id')
+      .eq('auto_sync', true)
+
+    if (sourceUrls && sourceUrls.length > 0) {
+      for (const sourceUrl of sourceUrls) {
+        // Check if sync is due
+        const lastSync = sourceUrl.last_sync_at ? new Date(sourceUrl.last_sync_at) : null
+        const syncDueDays = sourceUrl.sync_frequency_days || 7
+        const syncDue = !lastSync || (now.getTime() - lastSync.getTime()) > (syncDueDays * 24 * 60 * 60 * 1000)
+
+        if (!syncDue) continue
+
+        try {
+          console.log(`[Cron] Re-fetching source URL: ${sourceUrl.display_name}`)
+
+          const response = await fetch(sourceUrl.url, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (compatible; FamiljenBot/1.0)',
+              'Accept': 'text/html,application/pdf,text/calendar,*/*',
+            },
+          })
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`)
+          }
+
+          const contentType = response.headers.get('content-type') || ''
+          const mimeType = contentType.split(';')[0].trim()
+
+          if (sourceUrl.url_type === 'pdf' || mimeType.includes('application/pdf')) {
+            // PDF document - store for AI processing
+            const buffer = Buffer.from(await response.arrayBuffer())
+            const filename = `source_${sourceUrl.id}_${Date.now()}.pdf`
+            const storagePath = `${sourceUrl.household_id}/manual/${filename}`
+
+            await supabase.storage
+              .from('external-documents')
+              .upload(storagePath, buffer, {
+                contentType: 'application/pdf',
+                upsert: true,
+              })
+
+            await supabase
+              .from('external_documents')
+              .upsert({
+                household_id: sourceUrl.household_id,
+                source_url_id: sourceUrl.id,
+                external_id: `manual_${sourceUrl.id}`,
+                source_type: 'manual_url',
+                source_url: sourceUrl.url,
+                title: sourceUrl.display_name,
+                filename,
+                mime_type: 'application/pdf',
+                storage_path: storagePath,
+                file_size: buffer.length,
+                ai_processed: false,
+                child_id: sourceUrl.child_id,
+              }, {
+                onConflict: 'source_url_id',
+              })
+          } else {
+            // HTML page - store text for AI processing (truncate to 500KB for DB storage)
+            const content = await response.text()
+            const truncatedContent = content.slice(0, 500000)
+
+            await supabase
+              .from('external_documents')
+              .upsert({
+                household_id: sourceUrl.household_id,
+                source_url_id: sourceUrl.id,
+                external_id: `manual_${sourceUrl.id}`,
+                source_type: 'manual_url',
+                source_url: sourceUrl.url,
+                title: sourceUrl.display_name,
+                filename: null,
+                mime_type: 'text/html',
+                storage_path: null,
+                file_size: content.length,
+                extracted_text: truncatedContent,
+                ai_processed: false,
+                child_id: sourceUrl.child_id,
+              }, {
+                onConflict: 'source_url_id',
+              })
+          }
+
+          // Update sync status
+          await supabase
+            .from('external_source_urls')
+            .update({
+              last_sync_at: new Date().toISOString(),
+              last_sync_status: 'ok',
+              last_sync_error: null,
+            })
+            .eq('id', sourceUrl.id)
+
+          urlsRefetched++
+
+          // Small delay between fetches
+          await new Promise((resolve) => setTimeout(resolve, 500))
+        } catch (error) {
+          console.error(`[Cron] Error re-fetching source URL ${sourceUrl.id}:`, error)
+
+          await supabase
+            .from('external_source_urls')
+            .update({
+              last_sync_at: new Date().toISOString(),
+              last_sync_status: 'error',
+              last_sync_error: error instanceof Error ? error.message : 'Unknown error',
+            })
+            .eq('id', sourceUrl.id)
+        }
+      }
+    }
+
+    console.log(`[Cron] Documents: ${documentsProcessed} processed, ${documentSuggestionsCreated} suggestions`)
+    console.log(`[Cron] Source URLs: ${urlsRefetched} re-fetched`)
+
     // Summary
     const successCount = results.filter((r) => r.success).length
     const failureCount = results.filter((r) => !r.success).length
@@ -262,7 +494,7 @@ export async function GET(request: Request) {
     const totalMessages = results.reduce((sum, r) => sum + r.messagesCount, 0)
 
     console.log(`[Cron] Sync complete: ${successCount} success, ${failureCount} failed`)
-    console.log(`[Cron] Events: ${totalEvents}, Messages: ${totalMessages}, Suggestions: ${suggestionsCreated}`)
+    console.log(`[Cron] Events: ${totalEvents}, Messages: ${totalMessages}, Suggestions: ${suggestionsCreated + documentSuggestionsCreated}`)
 
     return NextResponse.json({
       success: true,
@@ -272,7 +504,9 @@ export async function GET(request: Request) {
       integrationsFailed: failureCount,
       eventsTotal: totalEvents,
       messagesTotal: totalMessages,
-      suggestionsCreated,
+      suggestionsCreated: suggestionsCreated + documentSuggestionsCreated,
+      documentsProcessed,
+      urlsRefetched,
       icsCalendars: {
         membersProcessed: icsResults.membersProcessed,
         membersSuccess: icsResults.membersSuccess,
