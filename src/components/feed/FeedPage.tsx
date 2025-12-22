@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { FeedFilters, type FeedFilter } from './FeedFilters'
+import { FeedSearch } from './FeedSearch'
 import { MessageCard, type FeedMessage } from './MessageCard'
 import { PhotoGallery, type FeedPhoto } from './PhotoGallery'
 import { ReminderCard, type FeedReminder } from './ReminderCard'
@@ -312,6 +313,9 @@ export function FeedPage({ householdId }: Props) {
 
   return (
     <div className="space-y-6">
+      {/* Smart search */}
+      <FeedSearch />
+
       {/* Header with sync button */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <FeedFilters
