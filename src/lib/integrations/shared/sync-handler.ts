@@ -3,8 +3,32 @@ import type { SupabaseClient, User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { validateOrigin, isUserAdmin } from '@/lib/config'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
+import { addDays } from '@/lib/utils'
 
 type ServiceName = 'spond' | 'mykid' | 'kidplan' | 'iskole'
+
+/**
+ * Number of days to fetch on initial sync or when fullSync is requested.
+ * This provides a rich historical context for the feed.
+ */
+export const HISTORICAL_SYNC_DAYS = 365
+
+/**
+ * Calculate the message sync start date based on sync context.
+ * - First sync (last_sync_at is null): go back HISTORICAL_SYNC_DAYS
+ * - Full sync requested: go back HISTORICAL_SYNC_DAYS
+ * - Otherwise: use last_sync_at
+ */
+export function getSyncStartDate(
+  lastSyncAt: string | null,
+  fullSync: boolean
+): Date {
+  const now = new Date()
+  if (fullSync || !lastSyncAt) {
+    return addDays(now, -HISTORICAL_SYNC_DAYS)
+  }
+  return new Date(lastSyncAt)
+}
 
 type RateLimitKey = keyof typeof RATE_LIMITS
 
@@ -20,6 +44,7 @@ interface SyncHandlerSuccess {
   householdId: string
   integrations: Integration[]
   isAdmin: boolean
+  fullSync: boolean
 }
 
 interface SyncHandlerError {
@@ -137,7 +162,7 @@ export async function handleSyncSetup(
 
   // Parse request body
   const body = await request.json().catch(() => ({}))
-  const { integrationId } = body as { integrationId?: string }
+  const { integrationId, fullSync } = body as { integrationId?: string; fullSync?: boolean }
 
   // Get integrations to sync
   let integrationsQuery = supabase
@@ -176,6 +201,7 @@ export async function handleSyncSetup(
     householdId: membership.household_id,
     integrations: integrations as Integration[],
     isAdmin: isUserAdmin(user),
+    fullSync: fullSync === true,
   }
 }
 

@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { isUserAdmin } from '@/lib/config'
 import { MyKidClient, MyKidAuthError, MyKidError } from '@/lib/integrations/mykid'
 import { addDays } from '@/lib/utils'
-import { handleSyncSetup } from '@/lib/integrations/shared'
+import { handleSyncSetup, getSyncStartDate, HISTORICAL_SYNC_DAYS } from '@/lib/integrations/shared'
 import sharp from 'sharp'
 
 interface SyncResult {
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
       return setup.response
     }
 
-    const { supabase, householdId, integrations, isAdmin } = setup
+    const { supabase, householdId, integrations, isAdmin, fullSync } = setup
 
     // Sync each integration
     const results: SyncResult[] = []
@@ -43,7 +43,8 @@ export async function POST(request: Request) {
         supabase,
         integration,
         householdId,
-        isAdmin
+        isAdmin,
+        fullSync
       )
       results.push(result)
     }
@@ -85,7 +86,8 @@ async function syncIntegration(
     last_sync_at: string | null
   },
   householdId: string,
-  isAdmin: boolean
+  isAdmin: boolean,
+  fullSync: boolean
 ): Promise<SyncResult> {
   const result: SyncResult = {
     integrationId: integration.id,
@@ -131,9 +133,14 @@ async function syncIntegration(
       throw error
     }
 
-    // Calculate date range for events
+    // Calculate date ranges
     const now = new Date()
     const futureDate = addDays(now, 90) // 90 days ahead for calendar
+    const isHistoricalSync = fullSync || !integration.last_sync_at
+
+    if (isHistoricalSync) {
+      console.log(`[MyKid] Historical sync: fetching ${HISTORICAL_SYNC_DAYS} days of data`)
+    }
 
     // ========================================================================
     // SYNC CALENDAR EVENTS (JSON API - easy!)
@@ -178,9 +185,8 @@ async function syncIntegration(
     // SYNC NEWSLETTERS (HTML parsing)
     // ========================================================================
     try {
-      const lastSync = integration.last_sync_at
-        ? new Date(integration.last_sync_at)
-        : addDays(now, -30) // Go back 30 days on first sync
+      // Use historical sync date for first sync or fullSync
+      const lastSync = getSyncStartDate(integration.last_sync_at, fullSync)
 
       const newsletters = await client.getNewsletterList()
 
@@ -259,7 +265,9 @@ async function syncIntegration(
     // ========================================================================
     try {
       // Get photos from /foto gallery (primary source)
-      const photos = await client.getPhotosFromRecentDays(30)
+      // On first sync or fullSync, go back 1 year for photos
+      const photoDays = isHistoricalSync ? HISTORICAL_SYNC_DAYS : 30
+      const photos = await client.getPhotosFromRecentDays(photoDays)
 
       if (photos.length > 0) {
         let uploadedCount = 0

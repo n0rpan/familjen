@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { isUserAdmin } from '@/lib/config'
 import { ISkoleClient, ISkoleAuthError, ISkoleError } from '@/lib/integrations/iskole'
 import { addDays } from '@/lib/utils'
-import { handleSyncSetup } from '@/lib/integrations/shared'
+import { handleSyncSetup, getSyncStartDate, HISTORICAL_SYNC_DAYS } from '@/lib/integrations/shared'
 
 interface SyncResult {
   integrationId: string
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       return setup.response
     }
 
-    const { supabase, householdId, integrations, isAdmin } = setup
+    const { supabase, householdId, integrations, isAdmin, fullSync } = setup
 
     // Sync each integration
     const results: SyncResult[] = []
@@ -41,7 +41,8 @@ export async function POST(request: Request) {
         supabase,
         integration,
         householdId,
-        isAdmin
+        isAdmin,
+        fullSync
       )
       results.push(result)
     }
@@ -81,7 +82,8 @@ async function syncIntegration(
     last_sync_at: string | null
   },
   householdId: string,
-  isAdmin: boolean
+  isAdmin: boolean,
+  fullSync: boolean
 ): Promise<SyncResult> {
   const result: SyncResult = {
     integrationId: integration.id,
@@ -142,11 +144,14 @@ async function syncIntegration(
       }
     })
 
-    // Calculate date range for messages (first sync goes back 30 days)
-    const now = new Date()
-    const lastSync = integration.last_sync_at
-      ? new Date(integration.last_sync_at)
-      : addDays(now, -30)
+    // Calculate date range for messages
+    // On first sync or fullSync, go back 1 year for rich historical context
+    const isHistoricalSync = fullSync || !integration.last_sync_at
+    const lastSync = getSyncStartDate(integration.last_sync_at, fullSync)
+
+    if (isHistoricalSync) {
+      console.log(`[iSkole] Historical sync: fetching ${HISTORICAL_SYNC_DAYS} days of data`)
+    }
     console.log(`[iSkole] Message sync window: ${lastSync.toISOString()} to now`)
 
     const messagesToUpsert: Array<{

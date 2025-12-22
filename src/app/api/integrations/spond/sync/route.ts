@@ -7,6 +7,8 @@ import { processMessagesWithAI } from '@/lib/integrations/ai-extraction'
 import {
   handleSyncSetup,
   getMappingsForIntegrations,
+  getSyncStartDate,
+  HISTORICAL_SYNC_DAYS,
   type IntegrationMapping,
 } from '@/lib/integrations/shared'
 
@@ -38,7 +40,7 @@ export async function POST(request: Request) {
       return setup.response
     }
 
-    const { supabase, householdId, integrations, isAdmin } = setup
+    const { supabase, householdId, integrations, isAdmin, fullSync } = setup
 
     // Get all mappings (children and members) for this household
     const mappingsByIntegration = await getMappingsForIntegrations(
@@ -58,7 +60,8 @@ export async function POST(request: Request) {
         integration,
         mappings,
         householdId,
-        isAdmin
+        isAdmin,
+        fullSync
       )
       results.push(result)
     }
@@ -124,7 +127,8 @@ async function syncIntegration(
   },
   mappings: Array<{ childId: string | null; memberId: string | null; groupId: string }>,
   householdId: string,
-  isAdmin: boolean
+  isAdmin: boolean,
+  fullSync: boolean
 ): Promise<SyncResult> {
   const result: SyncResult = {
     integrationId: integration.id,
@@ -172,12 +176,18 @@ async function syncIntegration(
     const mappedGroupIds = new Set(mappings.map((m) => m.groupId))
 
     // Calculate date ranges
+    // On first sync or fullSync, go back 1 year for rich historical context
     const now = new Date()
-    const pastDate = addDays(now, -7) // Include events from last 7 days
+    const isHistoricalSync = fullSync || !integration.last_sync_at
+    const pastDate = isHistoricalSync
+      ? addDays(now, -HISTORICAL_SYNC_DAYS)
+      : addDays(now, -7) // Regular sync: include events from last 7 days
     const futureDate = addDays(now, 30) // Events for next 30 days
-    const lastSync = integration.last_sync_at
-      ? new Date(integration.last_sync_at)
-      : addDays(now, -7) // Messages from last 7 days on first sync
+    const lastSync = getSyncStartDate(integration.last_sync_at, fullSync)
+
+    if (isHistoricalSync) {
+      console.log(`[Spond] Historical sync: fetching ${HISTORICAL_SYNC_DAYS} days of data`)
+    }
 
     // Fetch events - include recent past events for reference
     const events = await client.getEvents({
