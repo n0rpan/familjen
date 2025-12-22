@@ -109,50 +109,19 @@ export function TransitionLink({
       const isBack = isBackNavigation(targetPath)
       setTransitionDirection(isBack ? 'back' : 'forward')
 
-      // INSTANT FEEDBACK: Add class directly to DOM (no React state delay)
-      // This gives immediate visual response before any async work
+      // INSTANT FEEDBACK: Add class directly to DOM (synchronous, no React delay)
       const pageContent = document.querySelector('.page-content-wrapper')
       if (pageContent) {
         pageContent.classList.add('navigating')
       }
 
-      // Signal navigation for any React-based tracking
+      // Signal navigation for React-based tracking
       navigation?.startNavigation(targetPath)
 
-      // Navigation function
-      const navigate = () => {
-        router.push(href)
-        pushToNavStack(targetPath)
-      }
-
-      // If view transitions not supported, navigate directly
-      if (!viewTransition || !supportsViewTransitions) {
-        navigate()
-        clearTransitionDirection()
-        return
-      }
-
-      // Start view transition immediately (instant feedback already applied via class)
-      try {
-        const transition = (document as Document & { startViewTransition?: (callback: () => void) => { finished: Promise<void> } }).startViewTransition?.(navigate)
-
-        if (!transition) {
-          navigate()
-          clearTransitionDirection()
-          return
-        }
-
-        transition.finished
-          .then(() => {
-            clearTransitionDirection()
-          })
-          .catch(() => {
-            clearTransitionDirection()
-          })
-      } catch {
-        navigate()
-        clearTransitionDirection()
-      }
+      // Navigate directly - no view transitions (they cause flash/lag)
+      router.push(href)
+      pushToNavStack(targetPath)
+      clearTransitionDirection()
     },
     [router, href, viewTransition, onClick, navigation]
   )
