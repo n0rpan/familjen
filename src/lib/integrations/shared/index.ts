@@ -3,6 +3,8 @@ export {
   getMappingsForIntegrations,
   updateSyncStatus,
   buildSyncResponse,
+  getSyncStartDate,
+  HISTORICAL_SYNC_DAYS,
   type SyncHandlerResult,
   type Integration,
   type IntegrationMapping,

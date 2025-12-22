@@ -532,6 +532,20 @@ external_photos (
 4. **Syncs data** (messages, events, photos)
 5. **AI extracts** actionable items from messages → `ai_suggestions`
 
+### Historical Sync
+
+On **first sync** (when `last_sync_at` is null), all integrations fetch **365 days** of historical data to populate the feed with rich context. Subsequent syncs only fetch new data since `last_sync_at`.
+
+**Manual re-fetch:** To re-sync historical data (e.g., after adding new child mappings), pass `fullSync: true`:
+
+```typescript
+// Request
+POST /api/integrations/spond/sync
+{ "integrationId": "...", "fullSync": true }
+```
+
+The `HISTORICAL_SYNC_DAYS` constant (365) is defined in `src/lib/integrations/shared/sync-handler.ts`.
+
 ### Key Patterns
 
 **Credential encryption:**
