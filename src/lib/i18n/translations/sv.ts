@@ -103,6 +103,16 @@ export const sv: TranslationStrings = {
     missingDinner: 'Saknar middagsplan',
     missingPickupAndDinner: 'Saknar hämtning och middag',
     missingPickupForAndDinner: 'Saknar hämtning för {name} och middag',
+    // AI Heads Up section
+    headsUp: 'Denna vecka',
+    headsUpItemSingular: 'varning',
+    headsUpItemPlural: 'varningar',
+    headsUpSource: 'Baserat på meddelanden och kalender',
+    headsUpConflict: 'Konflikt med hämtning',
+    headsUpSourceSuggestion: 'Meddelande',
+    headsUpSourceClosure: 'Skolkalender',
+    headsUpSourceTask: 'Uppgifter',
+    headsUpSourceMemberEvent: 'Kalender',
   },
 
   // Login page

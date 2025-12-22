@@ -103,6 +103,16 @@ export const en: TranslationStrings = {
     missingDinner: 'Missing dinner plan',
     missingPickupAndDinner: 'Missing pickup and dinner',
     missingPickupForAndDinner: 'Missing pickup for {name} and dinner',
+    // AI Heads Up section
+    headsUp: 'This week',
+    headsUpItemSingular: 'alert',
+    headsUpItemPlural: 'alerts',
+    headsUpSource: 'Based on messages and calendar',
+    headsUpConflict: 'Pickup conflict',
+    headsUpSourceSuggestion: 'Message',
+    headsUpSourceClosure: 'School calendar',
+    headsUpSourceTask: 'Tasks',
+    headsUpSourceMemberEvent: 'Calendar',
   },
 
   // Login page

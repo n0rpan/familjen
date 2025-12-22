@@ -9,6 +9,8 @@ import type {
   HouseholdEvent,
   ChildTaskWithChild,
   HouseholdReminderWithAssignee,
+  AIHeadsUp,
+  HeadsUpType,
 } from '@/lib/types'
 
 export interface HomePagePhoto {
@@ -32,6 +34,7 @@ export interface HomePageData {
   householdReminders: HouseholdReminderWithAssignee[]
   holidays: Holiday[]
   recentPhotos: HomePagePhoto[]
+  aiHeadsUps: AIHeadsUp[]
   weekStart: Date
   weekEnd: Date
   todayStr: string
@@ -211,6 +214,12 @@ export async function getHomePageData(
     ...birthdays,
   ]
 
+  // Fetch AI Heads Up items (needs pickups for conflict detection)
+  const pickups = (pickupsResult.data || []) as PickupWithDetails[]
+  const children = childrenResult.data || []
+  const members = membersResult.data || []
+  const aiHeadsUps = await getAIHeadsUps(supabase, householdId, pickups, children, members)
+
   // Transform photos data - filter out pending and generate signed URLs
   const actualPhotos = (photosResult.data || []).filter(
     (photo) => photo.storage_path && !photo.storage_path.startsWith('pending/')
@@ -246,9 +255,9 @@ export async function getHomePageData(
 
   return {
     data: {
-      children: childrenResult.data || [],
-      members: membersResult.data || [],
-      pickups: (pickupsResult.data || []) as PickupWithDetails[],
+      children,
+      members,
+      pickups,
       meals: (mealsResult.data || []) as MealWithRecipe[],
       memberEvents: (eventsResult.data || []) as MemberEvent[],
       householdEvents: (householdEventsResult.data || []) as HouseholdEvent[],
@@ -256,6 +265,7 @@ export async function getHomePageData(
       householdReminders: (remindersResult.data || []) as HouseholdReminderWithAssignee[],
       holidays,
       recentPhotos,
+      aiHeadsUps,
       weekStart,
       weekEnd,
       todayStr,
@@ -322,4 +332,244 @@ export function getAttentionStatus(data: HomePageData) {
     attentionCount,
     isAllReady: attentionCount === 0,
   }
+}
+
+/**
+ * Get priority score for sorting (lower = higher priority)
+ */
+function getHeadsUpPriorityScore(item: AIHeadsUp): number {
+  if (item.hasConflict) return 0 // Conflicts first
+  if (item.type === 'closure') return 1 // School closures
+  if (item.type === 'suggestion') return 2 // AI suggestions
+  if (item.type === 'task') return 3 // Upcoming tasks
+  return 4 // Member events without conflict
+}
+
+/**
+ * Detect pickup conflicts for member events
+ */
+function detectPickupConflicts(
+  memberEvents: Array<{ id: string; member_id: string; date: string; end_date: string | null }>,
+  pickups: PickupWithDetails[]
+): Map<string, boolean> {
+  const conflicts = new Map<string, boolean>()
+
+  for (const event of memberEvents) {
+    const eventStart = event.date
+    const eventEnd = event.end_date || event.date
+
+    const hasConflict = pickups.some(pickup =>
+      pickup.picker_id === event.member_id &&
+      pickup.date >= eventStart &&
+      pickup.date <= eventEnd
+    )
+
+    conflicts.set(event.id, hasConflict)
+  }
+
+  return conflicts
+}
+
+/**
+ * Fetch AI Heads Up items from multiple sources
+ * Returns up to 10 items sorted by priority then date
+ */
+export async function getAIHeadsUps(
+  supabase: SupabaseClient,
+  householdId: string,
+  pickups: PickupWithDetails[],
+  children: Child[],
+  members: HouseholdMember[]
+): Promise<AIHeadsUp[]> {
+  const today = new Date()
+  const todayStr = formatDateISO(today)
+  const threeDaysLater = formatDateISO(addDays(today, 3))
+  const sevenDaysLater = formatDateISO(addDays(today, 7))
+
+  // Run all queries in parallel
+  const [suggestionsResult, closuresResult, tasksResult, memberEventsResult] = await Promise.all([
+    // 1. AI Suggestions (pending, next 7 days)
+    supabase
+      .from('external_suggestions')
+      .select(`
+        id, suggested_type, suggested_title, suggested_description,
+        suggested_date, suggested_time, suggested_child_id, confidence_score,
+        integration:external_integrations(service, display_name),
+        child:children(name)
+      `)
+      .eq('household_id', householdId)
+      .eq('status', 'pending')
+      .gte('suggested_date', todayStr)
+      .lte('suggested_date', sevenDaysLater)
+      .order('suggested_date')
+      .limit(10),
+
+    // 2. School closures/absences (next 7 days)
+    supabase
+      .from('external_events')
+      .select(`
+        id, title, description, event_date, end_date, event_time, event_type,
+        integration:external_integrations!inner(service, display_name, household_id)
+      `)
+      .eq('external_integrations.household_id', householdId)
+      .in('event_type', ['school_closure', 'school_absence'])
+      .eq('is_hidden', false)
+      .gte('event_date', todayStr)
+      .lte('event_date', sevenDaysLater)
+      .order('event_date')
+      .limit(10),
+
+    // 3. Child tasks (future only, next 3 days, bring/appointment)
+    supabase
+      .from('child_tasks')
+      .select(`id, title, notes, date, time, task_type, child:children(id, name)`)
+      .eq('household_id', householdId)
+      .in('task_type', ['bring', 'appointment'])
+      .eq('status', 'open')
+      .gt('date', todayStr) // Future only
+      .lte('date', threeDaysLater)
+      .order('date')
+      .limit(10),
+
+    // 4. Member events (overlapping next 7 days)
+    supabase
+      .from('member_events')
+      .select(`id, title, date, end_date, event_type, member_id, member:household_members(id, name, short_name)`)
+      .eq('household_id', householdId)
+      .lte('date', sevenDaysLater)
+      .or(`end_date.gte.${todayStr},end_date.is.null,date.gte.${todayStr}`)
+      .order('date')
+      .limit(10),
+  ])
+
+  // Log non-critical errors but continue
+  if (suggestionsResult.error) console.warn('Could not load AI suggestions:', suggestionsResult.error)
+  if (closuresResult.error) console.warn('Could not load closures:', closuresResult.error)
+  if (tasksResult.error) console.warn('Could not load tasks for heads up:', tasksResult.error)
+  if (memberEventsResult.error) console.warn('Could not load member events:', memberEventsResult.error)
+
+  const headsUps: AIHeadsUp[] = []
+
+  // Detect conflicts for member events
+  const memberEventsData = memberEventsResult.data || []
+  const conflicts = detectPickupConflicts(memberEventsData, pickups)
+
+  // Transform suggestions
+  for (const s of suggestionsResult.data || []) {
+    const childData = s.child as unknown as { name: string } | null
+    const integrationData = s.integration as unknown as { service: string; display_name: string } | null
+
+    headsUps.push({
+      id: `suggestion-${s.id}`,
+      type: 'suggestion',
+      priority: s.confidence_score && s.confidence_score > 0.8 ? 'high' : 'normal',
+      title: s.suggested_title,
+      description: s.suggested_description,
+      date: s.suggested_date || todayStr,
+      endDate: null,
+      time: s.suggested_time?.substring(0, 5) || null,
+      childId: s.suggested_child_id,
+      childName: childData?.name || null,
+      memberId: null,
+      memberName: null,
+      hasConflict: false,
+      source: {
+        table: 'external_suggestions',
+        id: s.id,
+        sourceType: 'suggestion',
+        displayName: integrationData?.display_name || integrationData?.service || undefined,
+      },
+      href: '/feed',
+    })
+  }
+
+  // Transform closures
+  for (const c of closuresResult.data || []) {
+    headsUps.push({
+      id: `closure-${c.id}`,
+      type: 'closure',
+      priority: 'high',
+      title: c.title,
+      description: c.description,
+      date: c.event_date,
+      endDate: c.end_date,
+      time: c.event_time?.substring(0, 5) || null,
+      childId: null,
+      childName: null,
+      memberId: null,
+      memberName: null,
+      hasConflict: false,
+      source: {
+        table: 'external_events',
+        id: c.id,
+        sourceType: 'closure',
+      },
+      href: '/uke',
+    })
+  }
+
+  // Transform tasks
+  for (const t of tasksResult.data || []) {
+    const childData = t.child as unknown as { id: string; name: string } | null
+
+    headsUps.push({
+      id: `task-${t.id}`,
+      type: 'task',
+      priority: t.task_type === 'appointment' ? 'high' : 'normal',
+      title: t.title,
+      description: t.notes,
+      date: t.date,
+      endDate: null,
+      time: t.time?.substring(0, 5) || null,
+      childId: childData?.id || null,
+      childName: childData?.name || null,
+      memberId: null,
+      memberName: null,
+      hasConflict: false,
+      source: {
+        table: 'child_tasks',
+        id: t.id,
+        sourceType: 'task',
+      },
+      href: '/uke',
+    })
+  }
+
+  // Transform member events
+  for (const e of memberEventsData) {
+    const memberData = e.member as unknown as { id: string; name: string; short_name: string | null } | null
+    const hasConflict = conflicts.get(e.id) || false
+
+    headsUps.push({
+      id: `member-event-${e.id}`,
+      type: 'member_event',
+      priority: hasConflict ? 'critical' : 'normal',
+      title: e.title,
+      description: null, // Conflict description handled in component via translation
+      date: e.date,
+      endDate: e.end_date,
+      time: null,
+      childId: null,
+      childName: null,
+      memberId: memberData?.id || null,
+      memberName: memberData?.short_name || memberData?.name || null,
+      hasConflict,
+      source: {
+        table: 'member_events',
+        id: e.id,
+        sourceType: 'memberEvent',
+      },
+      href: '/uke',
+    })
+  }
+
+  // Sort by priority then date
+  headsUps.sort((a, b) => {
+    const priorityDiff = getHeadsUpPriorityScore(a) - getHeadsUpPriorityScore(b)
+    if (priorityDiff !== 0) return priorityDiff
+    return a.date.localeCompare(b.date)
+  })
+
+  // Return max 10 items
+  return headsUps.slice(0, 10)
 }

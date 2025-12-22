@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { TodayOverview } from '@/components/TodayOverview'
+import { AIHeadsUpSection } from '@/components/AIHeadsUpSection'
 import { WeekGrid } from '@/components/WeekGrid'
 import { UniversalAIInput } from '@/components/ai'
 import { SuggestionBanner } from '@/components/integrations/SuggestionReview'
@@ -259,6 +260,9 @@ export default async function HomePage() {
 
       {/* Today's Overview */}
       <TodayOverview summary={todaySummary} holidays={holidays} />
+
+      {/* AI Heads Up - Week lookahead */}
+      <AIHeadsUpSection items={homeData.aiHeadsUps} />
 
       {/* Recent Photos */}
       {recentPhotos.length > 0 && <RecentPhotos photos={recentPhotos} />}

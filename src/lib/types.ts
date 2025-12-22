@@ -358,6 +358,34 @@ export interface ExternalEvent {
   }
 }
 
+// AI Heads Up - proactive insights for the week ahead
+export type HeadsUpType = 'suggestion' | 'closure' | 'task' | 'member_event'
+export type HeadsUpPriority = 'critical' | 'high' | 'normal'
+export type HeadsUpSourceType = 'suggestion' | 'closure' | 'task' | 'memberEvent'
+
+export interface AIHeadsUp {
+  id: string
+  type: HeadsUpType
+  priority: HeadsUpPriority
+  title: string
+  description: string | null
+  date: string // ISO YYYY-MM-DD
+  endDate: string | null // For multi-day events
+  time: string | null // HH:MM
+  childId: string | null
+  childName: string | null
+  memberId: string | null
+  memberName: string | null
+  hasConflict: boolean // For member events conflicting with pickups
+  source: {
+    table: 'external_suggestions' | 'external_events' | 'child_tasks' | 'member_events'
+    id: string
+    sourceType: HeadsUpSourceType // Resolved to label via translations
+    displayName?: string // Optional display name from integration (e.g., kindergarten name)
+  }
+  href: string // Navigation target when clicked
+}
+
 // Recurrence pattern for recurring tasks/reminders
 export interface RecurrencePattern {
   type: RecurrenceType

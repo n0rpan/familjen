@@ -103,6 +103,16 @@ export const nb: TranslationStrings = {
     missingDinner: 'Mangler middagsplan',
     missingPickupAndDinner: 'Mangler henting og middag',
     missingPickupForAndDinner: 'Mangler henting for {name} og middag',
+    // AI Heads Up section
+    headsUp: 'Denne uken',
+    headsUpItemSingular: 'varsel',
+    headsUpItemPlural: 'varsler',
+    headsUpSource: 'Basert på meldinger og kalender',
+    headsUpConflict: 'Konflikt med henting',
+    headsUpSourceSuggestion: 'Melding',
+    headsUpSourceClosure: 'Skolekalender',
+    headsUpSourceTask: 'Oppgaver',
+    headsUpSourceMemberEvent: 'Kalender',
   },
 
   // Login page

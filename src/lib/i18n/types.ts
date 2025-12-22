@@ -111,6 +111,16 @@ export interface TranslationStrings {
     missingDinner: string // "Missing dinner plan"
     missingPickupAndDinner: string // "Missing pickup and dinner"
     missingPickupForAndDinner: string // "Missing pickup for {name} and dinner"
+    // AI Heads Up section
+    headsUp: string // "This week"
+    headsUpItemSingular: string // "alert"
+    headsUpItemPlural: string // "alerts"
+    headsUpSource: string // "Based on messages and calendar"
+    headsUpConflict: string // "Pickup conflict"
+    headsUpSourceSuggestion: string // "Message"
+    headsUpSourceClosure: string // "School calendar"
+    headsUpSourceTask: string // "Tasks"
+    headsUpSourceMemberEvent: string // "Calendar"
   }
 
   // Login page
