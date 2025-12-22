@@ -338,11 +338,21 @@ input:focus, select:focus, textarea:focus {
   navigation: auto;
 }
 
-/* Disable root transition - keeps header/nav stable */
+/* Disable root transition - prevents flash */
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation: none;
   mix-blend-mode: normal;
+}
+
+/* Keep header/nav completely stable during transitions */
+::view-transition-old(header),
+::view-transition-new(header),
+::view-transition-old(mobile-header),
+::view-transition-new(mobile-header),
+::view-transition-old(mobile-nav),
+::view-transition-new(mobile-nav) {
+  animation: none;
 }
 
 /* Page content: quick crossfade only, no slide/shake */

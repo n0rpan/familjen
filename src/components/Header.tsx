@@ -184,7 +184,8 @@ export function Header() {
         className="hidden lg:block w-full sticky top-0 z-50 backdrop-blur-md"
         style={{
           background: 'var(--header-bg)',
-          borderBottom: '1px solid var(--border)'
+          borderBottom: '1px solid var(--border)',
+          viewTransitionName: 'header',
         }}
       >
         <div className="max-w-6xl mx-auto px-6 w-full">
@@ -320,7 +321,8 @@ export function Header() {
         style={{
           background: 'var(--background)',
           borderBottom: '1px solid var(--border)',
-          paddingTop: 'env(safe-area-inset-top, 0px)'
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+          viewTransitionName: 'mobile-header',
         }}
       >
         <div className="flex justify-center items-center h-14 px-4">
@@ -345,7 +347,8 @@ export function Header() {
         style={{
           background: 'var(--nav-bg)',
           borderTop: '1px solid var(--border)',
-          paddingBottom: 'env(safe-area-inset-bottom, 0px)'
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          viewTransitionName: 'mobile-nav',
         }}
         aria-label="Mobile navigation"
       >
