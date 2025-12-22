@@ -65,10 +65,12 @@ const CHILD_COLOR_MAP: Record<ChildColor, { bg: string; text: string }> = {
 |------|---------|
 | `/` | Home - Today overview with pickups, meals, tasks |
 | `/uke` | Week planner - Edit pickups, meals, events, tasks |
+| `/feed` | Feed - Messages, photos, reminders from integrations |
 | `/oppskrifter` | Recipe management |
-| `/handleliste` | Shopping list |
+| `/handleliste` | Shopping list with AI categorization |
 | `/innstillinger` | Settings - Profile, household, members, children |
 | `/admin` | Admin panel - User management, AI settings, calendar |
+| `/login` | Authentication page |
 | `/ny-husstand` | Create new household |
 
 ### Components (`src/components/`)
@@ -291,8 +293,43 @@ ON CONFLICT (email) DO UPDATE SET is_admin = true, can_create_household = true;
 npm run dev          # Development server
 npm run build        # Production build
 npm run lint         # TypeScript + ESLint
+npm run test         # Run tests in watch mode
+npm run test:run     # Run tests once
 npx supabase db push # Push migrations
 ```
+
+## Testing
+
+Tests use Vitest and are located in `tests/`. Run with `npm run test:run`.
+
+### Test Structure
+
+```
+tests/
+├── setup.ts              # Test setup with jsdom
+├── lib/
+│   ├── utils.test.ts     # Date formatting, utilities
+│   └── ics-parser.test.ts # ICS calendar parsing
+└── hooks/
+    └── useUndoStack.test.ts # Undo/redo functionality
+```
+
+### Writing Tests
+
+```typescript
+import { describe, it, expect } from 'vitest'
+
+describe('myFunction', () => {
+  it('should do something', () => {
+    expect(myFunction()).toBe(expected)
+  })
+})
+```
+
+### Current Coverage
+
+- **35 tests** covering utilities, ICS parsing, and undo stack
+- Focus on critical paths: date handling, calendar sync, user interactions
 
 ## Internationalization (i18n)
 
@@ -444,7 +481,11 @@ src/app/api/integrations/
     └── sync/            # Sync MyKid data
 
 src/components/integrations/
-├── SpondIntegration.tsx
+├── shared/
+│   ├── BaseIntegration.tsx      # Shared UI component
+│   ├── useIntegrationState.ts   # Shared state management
+│   └── types.ts                 # Shared types
+├── SpondIntegration.tsx         # Uses shared infrastructure
 ├── KidplanIntegration.tsx
 ├── ISkoleIntegration.tsx
 └── MyKidIntegration.tsx

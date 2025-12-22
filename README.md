@@ -172,12 +172,15 @@ src/
 ├── app/                    # Next.js App Router pages
 │   ├── page.tsx           # Home (today overview + photo strip + AI input)
 │   ├── uke/               # Week planner
+│   │   └── components/    # Modal components (ChildTask, MemberEvent, HouseholdEvent)
 │   ├── feed/              # Unified feed (messages, photos, reminders)
 │   ├── oppskrifter/       # Recipes
-│   ├── handleliste/       # Shopping lists
-│   ├── huskeliste/        # Household reminders
+│   ├── handleliste/       # Shopping lists with AI categorization
 │   ├── innstillinger/     # Settings (profile, household, integrations)
+│   │   └── sections/      # Extracted sections (Children, Members, AI, HouseholdAdmin)
 │   ├── admin/             # Admin panel
+│   ├── login/             # Authentication
+│   ├── ny-husstand/       # Create new household
 │   └── api/
 │       ├── openrouter/    # AI endpoints
 │       ├── calendar/      # Google Calendar
@@ -187,11 +190,14 @@ src/
 ├── components/
 │   ├── ai/                # UniversalAIInput
 │   ├── feed/              # FeedPage, MessageCard, PhotoGallery, etc.
-│   ├── integrations/      # Spond, Kidplan, iSkole integration UIs
-│   ├── AppShell.tsx       # iOS app shell
+│   ├── integrations/      # Integration UIs
+│   │   ├── shared/        # Shared infrastructure (BaseIntegration, useIntegrationState)
+│   │   └── *.tsx          # Spond, Kidplan, iSkole, MyKid components
+│   ├── shopping/          # Shopping list components
+│   ├── AppShell.tsx       # iOS app shell with pull-to-refresh
 │   ├── Header.tsx         # Navigation (4-item mobile: Hjem, Uke, Feed, Mer)
 │   ├── WeekGrid.tsx       # Week planner grid
-│   ├── RecentPhotos.tsx   # Homepage photo strip
+│   ├── TodayOverview.tsx  # Home page today summary
 │   └── ...
 ├── lib/
 │   ├── types.ts           # TypeScript interfaces
@@ -205,7 +211,16 @@ src/
 │       ├── kidplan/       # Kidplan API client (kindergarten)
 │       ├── iskole/        # iSkole API client (school)
 │       └── mykid/         # MyKid API client (kindergarten)
+├── hooks/                  # Custom React hooks
+│   ├── useUndoStack.ts    # Undo/redo with retry
+│   ├── useRealtimeSubscription.ts  # Supabase realtime
+│   └── ...
 └── styles/
+
+tests/                      # Vitest tests
+├── setup.ts
+├── lib/
+└── hooks/
 
 public/
 ├── manifest.json          # PWA manifest
@@ -216,9 +231,25 @@ public/
 ## Development
 
 ```bash
-npm run dev      # Development server
-npm run build    # Production build
-npm run lint     # TypeScript + ESLint check
+npm run dev        # Development server
+npm run build      # Production build
+npm run lint       # TypeScript + ESLint check
+npm run test       # Run tests in watch mode
+npm run test:run   # Run tests once
+```
+
+### Testing
+
+Tests use Vitest with jsdom for React component testing:
+
+```
+tests/
+├── setup.ts              # Test setup
+├── lib/
+│   ├── utils.test.ts     # Date utilities
+│   └── ics-parser.test.ts # Calendar parsing
+└── hooks/
+    └── useUndoStack.test.ts # Undo/redo hook
 ```
 
 ## Deployment
