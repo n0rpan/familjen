@@ -31,10 +31,14 @@ export function useUndoStack<T = unknown>(options: UseUndoStackOptions<T> = {}) 
   const [stack, setStack] = useState<UndoableAction<T>[]>([])
   const [failedActions, setFailedActions] = useState<UndoableAction<T>[]>([])
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  // Track if component is unmounted to prevent state updates after unmount
+  const isMountedRef = useRef(true)
 
   // Clean up timers on unmount
   useEffect(() => {
+    isMountedRef.current = true
     return () => {
+      isMountedRef.current = false
       timersRef.current.forEach(timer => clearTimeout(timer))
       timersRef.current.clear()
     }
@@ -55,6 +59,9 @@ export function useUndoStack<T = unknown>(options: UseUndoStackOptions<T> = {}) 
 
     // Set timer to auto-commit (make non-undoable) after expiry
     const timer = setTimeout(async () => {
+      // Check if still mounted before updating state
+      if (!isMountedRef.current) return
+
       let actionToCommit: UndoableAction<T> | undefined
 
       setStack(prev => {
@@ -67,13 +74,15 @@ export function useUndoStack<T = unknown>(options: UseUndoStackOptions<T> = {}) 
       if (actionToCommit && onCommit) {
         try {
           const success = await onCommit(actionToCommit)
-          if (success === false) {
+          if (success === false && isMountedRef.current) {
             // Commit failed, add to failed actions for retry
             setFailedActions(prev => [...prev, { ...actionToCommit!, failed: true, retryCount: 1 }])
           }
         } catch {
           // Commit threw an error, add to failed actions
-          setFailedActions(prev => [...prev, { ...actionToCommit!, failed: true, retryCount: 1 }])
+          if (isMountedRef.current) {
+            setFailedActions(prev => [...prev, { ...actionToCommit!, failed: true, retryCount: 1 }])
+          }
         }
       }
     }, expireMs)
@@ -127,6 +136,8 @@ export function useUndoStack<T = unknown>(options: UseUndoStackOptions<T> = {}) 
 
   // Retry a failed action
   const retry = useCallback(async (actionId: string): Promise<boolean> => {
+    if (!isMountedRef.current) return false
+
     const action = failedActions.find(a => a.id === actionId)
     if (!action || !onCommit) return false
 
@@ -134,12 +145,16 @@ export function useUndoStack<T = unknown>(options: UseUndoStackOptions<T> = {}) 
       const success = await onCommit(action)
       if (success !== false) {
         // Success - remove from failed actions
-        setFailedActions(prev => prev.filter(a => a.id !== actionId))
+        if (isMountedRef.current) {
+          setFailedActions(prev => prev.filter(a => a.id !== actionId))
+        }
         return true
       }
     } catch {
       // Still failing
     }
+
+    if (!isMountedRef.current) return false
 
     // Update retry count
     const newRetryCount = (action.retryCount || 1) + 1
@@ -153,8 +168,18 @@ export function useUndoStack<T = unknown>(options: UseUndoStackOptions<T> = {}) 
       prev.map(a => a.id === actionId ? { ...a, retryCount: newRetryCount } : a)
     )
 
-    // Schedule another retry
-    setTimeout(() => retry(actionId), retryDelayMs)
+    // Schedule another retry - track in timersRef for proper cleanup
+    const retryTimerKey = `retry-scheduled-${actionId}`
+    const existingTimer = timersRef.current.get(retryTimerKey)
+    if (existingTimer) {
+      clearTimeout(existingTimer)
+    }
+    const timer = setTimeout(() => {
+      timersRef.current.delete(retryTimerKey)
+      retry(actionId)
+    }, retryDelayMs)
+    timersRef.current.set(retryTimerKey, timer)
+
     return false
   }, [failedActions, onCommit, maxRetries, retryDelayMs])
 
@@ -165,15 +190,33 @@ export function useUndoStack<T = unknown>(options: UseUndoStackOptions<T> = {}) 
 
   // Auto-retry failed actions
   useEffect(() => {
+    // Track timers created in this effect for cleanup
+    const effectTimers: string[] = []
+
     failedActions.forEach(action => {
-      if (!timersRef.current.has(`retry-${action.id}`)) {
+      const timerKey = `retry-${action.id}`
+      if (!timersRef.current.has(timerKey)) {
         const timer = setTimeout(() => {
-          retry(action.id)
-          timersRef.current.delete(`retry-${action.id}`)
+          timersRef.current.delete(timerKey)
+          if (isMountedRef.current) {
+            retry(action.id)
+          }
         }, retryDelayMs)
-        timersRef.current.set(`retry-${action.id}`, timer)
+        timersRef.current.set(timerKey, timer)
+        effectTimers.push(timerKey)
       }
     })
+
+    // Cleanup: clear timers created in this effect when dependencies change
+    return () => {
+      effectTimers.forEach(key => {
+        const timer = timersRef.current.get(key)
+        if (timer) {
+          clearTimeout(timer)
+          timersRef.current.delete(key)
+        }
+      })
+    }
   }, [failedActions, retry, retryDelayMs])
 
   return {

@@ -1,5 +1,6 @@
 'use client'
 
+import { memo } from 'react'
 import { formatDateLocalized, formatDateISO, isWeekend, getHoliday, getHolidayEmoji, type Holiday } from '@/lib/utils'
 import type { DaySummary, ChildTaskType, ReminderCategory } from '@/lib/types'
 import { getChildColor, getTaskConfig } from '@/lib/colors'
@@ -21,7 +22,7 @@ interface TodayOverviewProps {
   holidays?: Holiday[]
 }
 
-export function TodayOverview({ summary, loading, holidays = [] }: TodayOverviewProps) {
+export const TodayOverview = memo(function TodayOverview({ summary, loading, holidays = [] }: TodayOverviewProps) {
   const today = new Date()
   const { language, t } = useLanguage()
 
@@ -370,4 +371,4 @@ export function TodayOverview({ summary, loading, holidays = [] }: TodayOverview
       )}
     </div>
   )
-}
+})

@@ -6,6 +6,7 @@ import type { MealSuggestion } from '@/lib/types'
 import { aiSuggestRequestSchema, validateRequest } from '@/lib/schemas'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 import { extractJSON } from '@/lib/json-extract'
+import { formatDateISO } from '@/lib/utils'
 
 // Helper to calculate age from birth date
 function calculateAge(birthDate: string): number {
@@ -79,12 +80,13 @@ export async function POST(request: Request) {
     // Fetch all context data in parallel
     const weekEnd = new Date(weekStart)
     weekEnd.setDate(weekEnd.getDate() + 6)
-    const weekEndStr = weekEnd.toISOString().split('T')[0]
+    // Use formatDateISO for local timezone handling (not UTC)
+    const weekEndStr = formatDateISO(weekEnd)
 
     // Get recent meals (last 2 weeks) to avoid repetition
     const twoWeeksAgo = new Date(weekStart)
     twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14)
-    const twoWeeksAgoStr = twoWeeksAgo.toISOString().split('T')[0]
+    const twoWeeksAgoStr = formatDateISO(twoWeeksAgo)
 
     const [
       childrenResult,
@@ -159,7 +161,7 @@ export async function POST(request: Request) {
     for (let i = 0; i < 7; i++) {
       const date = new Date(startDate)
       date.setDate(date.getDate() + i)
-      const dateStr = date.toISOString().split('T')[0]
+      const dateStr = formatDateISO(date)
 
       const existingMeal = existingMeals.find(m => m.date === dateStr)
 
@@ -205,20 +207,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'OpenRouter API-nøkkel ikke konfigurert' }, { status: 500 })
     }
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-        'X-Title': 'Familjen',
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'system',
-            content: `Du er en hjelpsom assistent for norsk familieplanlegging. Du foreslår middager som er:
+    // Add timeout to prevent hanging requests (15 seconds)
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 15000)
+
+    let response: Response
+    try {
+      response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+          'X-Title': 'Familjen',
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: 'system',
+              content: `Du er en hjelpsom assistent for norsk familieplanlegging. Du foreslår middager som er:
 - Enkle å lage (få ingredienser, kort tilberedningstid)
 - Barnevennlige (passer for barn i alle aldre)
 - Proteinrike og næringsrike
@@ -240,16 +248,27 @@ Svar ALLTID i gyldig JSON-format med denne strukturen:
 }
 
 Ikke inkluder noe annet enn JSON i svaret.`,
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        temperature: 0.7,
-        max_tokens: 2000,
-      }),
-    })
+            },
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          temperature: 0.7,
+          max_tokens: 2000,
+        }),
+        signal: controller.signal,
+      })
+    } catch (fetchError) {
+      clearTimeout(timeoutId)
+      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+        console.error('OpenRouter request timed out')
+        return NextResponse.json({ error: 'AI-forespørselen tok for lang tid' }, { status: 504 })
+      }
+      throw fetchError
+    } finally {
+      clearTimeout(timeoutId)
+    }
 
     if (!response.ok) {
       console.error('OpenRouter error:', { status: response.status, statusText: response.statusText })

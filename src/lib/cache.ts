@@ -16,6 +16,38 @@ export interface CacheEntry<T = unknown> {
 let dbInstance: IDBDatabase | null = null
 let dbPromise: Promise<IDBDatabase> | null = null
 
+/**
+ * Reset the database connection (called on errors to allow reconnection)
+ */
+function resetConnection(): void {
+  if (dbInstance) {
+    try {
+      dbInstance.close()
+    } catch {
+      // Ignore close errors
+    }
+  }
+  dbInstance = null
+  dbPromise = null
+}
+
+/**
+ * Check if an error is recoverable by reconnecting
+ */
+function isRecoverableError(error: unknown): boolean {
+  if (error instanceof Error) {
+    // These errors often indicate a stale/broken connection
+    return (
+      error.message.includes('InvalidStateError') ||
+      error.message.includes('connection is closing') ||
+      error.message.includes('database connection is closed') ||
+      error.name === 'InvalidStateError' ||
+      error.name === 'TransactionInactiveError'
+    )
+  }
+  return false
+}
+
 // Open IndexedDB (singleton with connection pooling)
 async function openDB(): Promise<IDBDatabase> {
   if (dbInstance) return dbInstance
@@ -30,7 +62,8 @@ async function openDB(): Promise<IDBDatabase> {
     const request = indexedDB.open(DB_NAME, DB_VERSION)
 
     request.onerror = () => {
-      dbPromise = null
+      // Reset both on error to allow fresh connection attempt
+      resetConnection()
       reject(request.error)
     }
     request.onsuccess = () => {
@@ -41,16 +74,19 @@ async function openDB(): Promise<IDBDatabase> {
       // Reset instance so next call reopens the connection
       db.onclose = () => {
         console.log('[Cache] IndexedDB connection closed, will reopen on next use')
-        dbInstance = null
-        dbPromise = null
+        resetConnection()
       }
 
       // Handle version change (another tab upgraded the database)
       db.onversionchange = () => {
         console.log('[Cache] IndexedDB version change detected, closing connection')
-        db.close()
-        dbInstance = null
-        dbPromise = null
+        resetConnection()
+      }
+
+      // Handle errors on the connection
+      db.onerror = (event) => {
+        console.warn('[Cache] IndexedDB error:', event)
+        resetConnection()
       }
 
       resolve(db)
@@ -70,8 +106,9 @@ async function openDB(): Promise<IDBDatabase> {
 /**
  * Get cached data by key
  * Returns null if not found or IndexedDB unavailable
+ * Automatically retries once on recoverable errors
  */
-export async function getCached<T>(key: string): Promise<CacheEntry<T> | null> {
+export async function getCached<T>(key: string, retryCount = 0): Promise<CacheEntry<T> | null> {
   try {
     const db = await openDB()
 
@@ -80,6 +117,9 @@ export async function getCached<T>(key: string): Promise<CacheEntry<T> | null> {
       const store = tx.objectStore(STORE_NAME)
       const request = store.get(key)
 
+      // Handle transaction abort (connection issue)
+      tx.onabort = () => reject(tx.error)
+
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const result = request.result as CacheEntry<T> | undefined
@@ -87,6 +127,12 @@ export async function getCached<T>(key: string): Promise<CacheEntry<T> | null> {
       }
     })
   } catch (error) {
+    // If it's a recoverable error and we haven't retried yet, reset and retry
+    if (isRecoverableError(error) && retryCount < 1) {
+      console.log('[Cache] Recoverable error, resetting connection and retrying:', error)
+      resetConnection()
+      return getCached<T>(key, retryCount + 1)
+    }
     console.warn('[Cache] Failed to get cached data:', error)
     return null
   }
@@ -94,8 +140,9 @@ export async function getCached<T>(key: string): Promise<CacheEntry<T> | null> {
 
 /**
  * Store data in cache
+ * Automatically retries once on recoverable errors
  */
-export async function setCache<T>(key: string, data: T): Promise<void> {
+export async function setCache<T>(key: string, data: T, retryCount = 0): Promise<void> {
   try {
     const db = await openDB()
 
@@ -109,11 +156,20 @@ export async function setCache<T>(key: string, data: T): Promise<void> {
         timestamp: Date.now(),
       }
 
+      // Handle transaction abort (connection issue)
+      tx.onabort = () => reject(tx.error)
+
       const request = store.put(entry)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => resolve()
     })
   } catch (error) {
+    // If it's a recoverable error and we haven't retried yet, reset and retry
+    if (isRecoverableError(error) && retryCount < 1) {
+      console.log('[Cache] Recoverable error, resetting connection and retrying:', error)
+      resetConnection()
+      return setCache<T>(key, data, retryCount + 1)
+    }
     console.warn('[Cache] Failed to set cache:', error)
   }
 }

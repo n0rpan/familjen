@@ -193,6 +193,7 @@ export const sv: TranslationStrings = {
     calendar: 'Kalender',
     family: 'Familjen',
     familyEvent: 'Familjehändelse',
+    icsEventReadOnly: 'Denna händelse är synkroniserad från en extern kalender och kan inte redigeras.',
     // AI Modal
     aiModalTitle: 'AI Middagsförslag',
     suggestions: 'förslag',

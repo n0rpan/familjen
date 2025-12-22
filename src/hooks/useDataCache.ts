@@ -80,6 +80,13 @@ export function useDataCache<T>(
   keyRef.current = key
   // Track if we have data to avoid stale closure in error handler
   const hasDataRef = useRef(false)
+  // Store options in refs to avoid stale closures without triggering re-fetches
+  const fetcherRef = useRef(fetcher)
+  fetcherRef.current = fetcher
+  const maxAgeRef = useRef(maxAge)
+  maxAgeRef.current = maxAge
+  const onSuccessRef = useRef(onSuccess)
+  onSuccessRef.current = onSuccess
 
   // Load cached data on mount
   useEffect(() => {
@@ -101,7 +108,7 @@ export function useDataCache<T>(
           setIsLoading(false)
 
           // If cache is fresh, we're done
-          const isFresh = Date.now() - cached.timestamp < maxAge
+          const isFresh = Date.now() - cached.timestamp < maxAgeRef.current
           if (isFresh) {
             return
           }
@@ -124,7 +131,7 @@ export function useDataCache<T>(
       setError(null)
 
       try {
-        const freshData = await fetcher()
+        const freshData = await fetcherRef.current()
         if (cancelled || keyRef.current !== key) return
 
         setData(freshData)
@@ -135,7 +142,7 @@ export function useDataCache<T>(
         // Update cache
         await setCache(key, freshData)
 
-        onSuccess?.(freshData)
+        onSuccessRef.current?.(freshData)
       } catch (err) {
         if (!cancelled && keyRef.current === key) {
           setIsValidating(false)
@@ -184,20 +191,20 @@ export function useDataCache<T>(
     setError(null)
 
     try {
-      const freshData = await fetcher()
+      const freshData = await fetcherRef.current()
       if (!mountedRef.current || keyRef.current !== key) return
 
       setData(freshData)
       setIsValidating(false)
       await setCache(key, freshData)
-      onSuccess?.(freshData)
+      onSuccessRef.current?.(freshData)
     } catch (err) {
       if (mountedRef.current && keyRef.current === key) {
         setIsValidating(false)
         setError(err instanceof Error ? err : new Error('Failed to revalidate'))
       }
     }
-  }, [key, enabled, fetcher, onSuccess])
+  }, [key, enabled])
 
   // Invalidate cache
   const invalidate = useCallback(async () => {

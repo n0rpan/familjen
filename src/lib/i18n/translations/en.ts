@@ -193,6 +193,7 @@ export const en: TranslationStrings = {
     calendar: 'Calendar',
     family: 'Family',
     familyEvent: 'Family event',
+    icsEventReadOnly: 'This event is synced from an external calendar and cannot be edited.',
     // AI Modal
     aiModalTitle: 'AI Meal Suggestions',
     suggestions: 'suggestions',

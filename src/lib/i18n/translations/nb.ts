@@ -193,6 +193,7 @@ export const nb: TranslationStrings = {
     calendar: 'Kalender',
     family: 'Familien',
     familyEvent: 'Familiehendelse',
+    icsEventReadOnly: 'Denne hendelsen er synkronisert fra en ekstern kalender og kan ikke redigeres.',
     // AI Modal
     aiModalTitle: 'AI Middagsforslag',
     suggestions: 'forslag',

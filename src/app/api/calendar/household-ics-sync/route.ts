@@ -13,10 +13,9 @@ import { processHouseholdEventsWithAI } from '@/lib/integrations/household-event
  */
 export async function POST(request: Request) {
   try {
-    // Check if this is a cron request
-    const authHeader = request.headers.get('authorization')
-    const cronSecret = process.env.CRON_SECRET
-    const isCronRequest = cronSecret && authHeader === `Bearer ${cronSecret}`
+    // Check if this is a cron request (uses timing-safe comparison)
+    const { verifyCronRequest } = await import('@/lib/cron-auth')
+    const isCronRequest = verifyCronRequest(request)
 
     if (isCronRequest) {
       // Cron: sync all households with ICS URLs

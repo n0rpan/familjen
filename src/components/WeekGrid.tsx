@@ -37,6 +37,7 @@ interface WeekGridProps {
   onEventClick?: (event: MemberEvent) => void  // Click to edit event
   onHouseholdEventClick?: (event: HouseholdEvent) => void  // Click household event
   onWorkCalendarSync?: (pickupId: string, sync: boolean) => void  // Toggle work calendar invite
+  syncingPickupId?: string | null  // ID of pickup currently being synced to work calendar
   onTaskToggle?: (taskId: string, done: boolean) => void  // Mark task done/undone
   onTaskClick?: (task: ChildTask) => void  // Click to edit task
   onAddTask?: (childId: string, date: string) => void  // Quick add task
@@ -62,6 +63,7 @@ export const WeekGrid = memo(function WeekGrid({
   onEventClick,
   onHouseholdEventClick,
   onWorkCalendarSync,
+  syncingPickupId,
   onTaskToggle,
   onTaskClick,
   onAddTask,
@@ -152,7 +154,7 @@ export const WeekGrid = memo(function WeekGrid({
   // Get parent members who might have events (is_parent = true or has events)
   const parentMembers = useMemo(() => {
     const memberIds = new Set(memberEvents.map(e => e.member_id))
-    return members.filter(m => m.is_parent || memberIds.has(m.id))
+    return members?.filter(m => m.is_parent || memberIds.has(m.id)) || []
   }, [members, memberEvents])
 
   // Group tasks by child and date
@@ -297,7 +299,7 @@ export const WeekGrid = memo(function WeekGrid({
           </thead>
           <tbody>
             {/* Child rows */}
-            {children.map((child, childIndex) => (
+            {children?.map((child, childIndex) => (
               <tr key={child.id} style={{ borderBottom: '1px solid var(--border)' }}>
                 <td className="p-3">
                   <div className="flex items-center gap-2">
@@ -352,7 +354,7 @@ export const WeekGrid = memo(function WeekGrid({
                               }}
                             >
                               <option value="">-</option>
-                              {members.map((m) => (
+                              {members?.map((m) => (
                                 <option key={m.id} value={m.id}>
                                   {m.short_name || m.name}
                                 </option>
@@ -362,7 +364,8 @@ export const WeekGrid = memo(function WeekGrid({
                             {pickup?.picker?.work_email && onWorkCalendarSync && (
                               <button
                                 onClick={() => onWorkCalendarSync(pickup.id, !pickup.sync_to_work_calendar)}
-                                className="w-full flex items-center justify-center gap-1 text-xs py-1 px-2 rounded transition-colors"
+                                disabled={syncingPickupId === pickup.id}
+                                className="w-full flex items-center justify-center gap-1 text-xs py-1 px-2 rounded transition-colors disabled:opacity-50"
                                 style={{
                                   background: pickup.sync_to_work_calendar
                                     ? 'rgba(131, 166, 151, 0.2)'
@@ -374,13 +377,21 @@ export const WeekGrid = memo(function WeekGrid({
                                 }}
                                 title={pickup.sync_to_work_calendar ? t.week.removeFromWorkCalendar : t.week.sendToWorkCalendar}
                               >
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                                  <line x1="16" y1="2" x2="16" y2="6"/>
-                                  <line x1="8" y1="2" x2="8" y2="6"/>
-                                  <line x1="3" y1="10" x2="21" y2="10"/>
-                                </svg>
-                                {pickup.sync_to_work_calendar ? '✓' : ''}
+                                {syncingPickupId === pickup.id ? (
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
+                                    <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="12"/>
+                                  </svg>
+                                ) : (
+                                  <>
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                                      <line x1="16" y1="2" x2="16" y2="6"/>
+                                      <line x1="8" y1="2" x2="8" y2="6"/>
+                                      <line x1="3" y1="10" x2="21" y2="10"/>
+                                    </svg>
+                                    {pickup.sync_to_work_calendar ? '✓' : ''}
+                                  </>
+                                )}
                               </button>
                             )}
                           </>

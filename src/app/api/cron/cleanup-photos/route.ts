@@ -1,26 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-
-/**
- * Verify the request is from Vercel Cron.
- * In production, Vercel adds an Authorization header with CRON_SECRET.
- */
-function verifyCronRequest(request: Request): boolean {
-  // In development, allow without verification
-  if (process.env.NODE_ENV === 'development') {
-    return true
-  }
-
-  const authHeader = request.headers.get('authorization')
-  const cronSecret = process.env.CRON_SECRET
-
-  if (!cronSecret) {
-    console.error('CRON_SECRET not configured')
-    return false
-  }
-
-  return authHeader === `Bearer ${cronSecret}`
-}
+import { verifyCronRequest } from '@/lib/cron-auth'
 
 /**
  * GET /api/cron/cleanup-photos

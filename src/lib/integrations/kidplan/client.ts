@@ -51,7 +51,9 @@ export class KidplanClient {
    * This is step 1 of authentication.
    */
   async getKindergartens(email: string, password: string): Promise<KidplanKindergarten[]> {
-    this.log('Getting kindergartens for:', email)
+    // Mask email in logs to prevent credential exposure
+    const maskedEmail = email.length > 3 ? email.substring(0, 3) + '***' : '***'
+    this.log('Getting kindergartens for:', maskedEmail)
 
     const url = `${BASE_URL}/Account/GetKinderGartenIds?username=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`
 
@@ -78,7 +80,9 @@ export class KidplanClient {
    * This is step 2 of authentication.
    */
   async login(email: string, password: string, kindergartenId?: number): Promise<KidplanSession> {
-    this.log('Logging in as:', email)
+    // Mask email in logs to prevent credential exposure
+    const maskedEmail = email.length > 3 ? email.substring(0, 3) + '***' : '***'
+    this.log('Logging in as:', maskedEmail)
 
     // Step 1: Get kindergartens
     const kindergartens = await this.getKindergartens(email, password)

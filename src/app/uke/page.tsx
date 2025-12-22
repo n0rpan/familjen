@@ -17,6 +17,7 @@ import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealt
 import { useRealtimeOptional } from '@/lib/realtime/context'
 import { getCachedWeekData, getWeekCacheKey, prefetchWeekData } from '@/lib/prefetch/fetchers'
 import { setCache } from '@/lib/cache'
+import { MemberEventModal, HouseholdEventModal, ChildTaskModal } from './components'
 
 // Dynamic imports for code splitting
 const DayPicker = dynamic(
@@ -33,6 +34,7 @@ export default function WeekEditPage() {
   const { language, t } = useLanguage()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [syncingPickupId, setSyncingPickupId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [household, setHousehold] = useState<Household | null>(null)
   const [children, setChildren] = useState<Child[]>([])
@@ -210,8 +212,10 @@ export default function WeekEditPage() {
           }
         }
 
-        // Still show loading if no cache was found
-        if (!hasShownCacheRef.current && !household) {
+        // Still show loading if no cache was found for this week
+        // Note: We check only hasShownCacheRef, not household state, because
+        // household might still contain stale data from the previous week
+        if (!hasShownCacheRef.current) {
           setLoading(true)
         }
 
@@ -679,7 +683,7 @@ export default function WeekEditPage() {
   }
 
   const handleWorkCalendarSync = async (pickupId: string, sync: boolean) => {
-    setSaving(true)
+    setSyncingPickupId(pickupId)
     try {
       const res = await fetch('/api/calendar/send-invite', {
         method: 'POST',
@@ -698,7 +702,7 @@ export default function WeekEditPage() {
       console.error('Calendar sync error:', error)
       showMessage('error', t.errors.calendarSyncFailed)
     } finally {
-      setSaving(false)
+      setSyncingPickupId(null)
     }
   }
 
@@ -1820,6 +1824,7 @@ export default function WeekEditPage() {
         onMealChange={handleMealChange}
         onEventClick={openEventModal}
         onWorkCalendarSync={handleWorkCalendarSync}
+        syncingPickupId={syncingPickupId}
         childTasks={childTasks}
         onTaskToggle={handleTaskToggle}
         onTaskClick={handleTaskClick}
@@ -1918,479 +1923,45 @@ export default function WeekEditPage() {
       )}
 
       {/* Event Modal */}
-      {showEventModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0"
-            style={{ background: 'rgba(0, 0, 0, 0.5)' }}
-            onClick={closeEventModal}
-          />
-
-          {/* Modal */}
-          <div
-            className="relative w-full max-w-md rounded-2xl p-6 space-y-5 animate-fade-in"
-            style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
-                {editingEvent ? t.week.editEvent : t.week.addEvent}
-              </h2>
-              <button
-                onClick={closeEventModal}
-                className="p-2 rounded-lg transition-colors"
-                style={{ color: 'var(--muted)' }}
-                aria-label={t.common.close}
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"/>
-                  <line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
-            </div>
-
-            {/* Form */}
-            <div className="space-y-4">
-              {/* Member select */}
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                  {t.week.selectMember}
-                </label>
-                <select
-                  value={eventForm.member_id}
-                  onChange={(e) => setEventForm({ ...eventForm, member_id: e.target.value })}
-                  className="input"
-                >
-                  <option value="">{t.week.selectMember}</option>
-                  {members.filter(m => m.is_parent).map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Title */}
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                  {t.week.eventTitle}
-                </label>
-                <input
-                  type="text"
-                  value={eventForm.title}
-                  onChange={(e) => setEventForm({ ...eventForm, title: e.target.value })}
-                  className="input"
-                  placeholder={t.week.eventTitle}
-                />
-              </div>
-
-              {/* Event type */}
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                  {t.week.eventType}
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    { value: 'work', label: `💼 ${t.week.eventTypes.work}`, bg: 'rgba(126, 182, 196, 0.2)' },
-                    { value: 'travel', label: `✈️ ${t.week.eventTypes.travel}`, bg: 'rgba(167, 139, 250, 0.2)' },
-                    { value: 'family', label: `👨‍👩‍👧 ${t.week.eventTypes.family}`, bg: 'rgba(232, 120, 109, 0.2)' },
-                    { value: 'other', label: `📅 ${t.week.eventTypes.other}`, bg: 'rgba(131, 166, 151, 0.2)' },
-                  ].map((type) => (
-                    <button
-                      key={type.value}
-                      type="button"
-                      onClick={() => setEventForm({ ...eventForm, event_type: type.value as MemberEventType })}
-                      className="px-3 py-2 rounded-lg text-sm font-medium transition-all"
-                      style={{
-                        background: type.bg,
-                        border: eventForm.event_type === type.value ? '2px solid var(--foreground)' : '2px solid transparent',
-                        transform: eventForm.event_type === type.value ? 'scale(1.05)' : undefined,
-                      }}
-                    >
-                      {type.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Date */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                    {t.week.startDate}
-                  </label>
-                  <input
-                    type="date"
-                    value={eventForm.date}
-                    onChange={(e) => setEventForm({ ...eventForm, date: e.target.value })}
-                    className="input"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                    {t.week.endDate} <span style={{ color: 'var(--muted)' }}>({t.common.optional})</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={eventForm.end_date}
-                    onChange={(e) => setEventForm({ ...eventForm, end_date: e.target.value })}
-                    className="input"
-                    min={eventForm.date}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center justify-between pt-2">
-              <div>
-                {editingEvent && (
-                  <button
-                    onClick={deleteEvent}
-                    disabled={saving}
-                    className="px-4 py-2 rounded-xl text-sm font-medium transition-colors"
-                    style={{ color: 'var(--color-coral)' }}
-                  >
-                    {t.common.delete}
-                  </button>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={closeEventModal}
-                  className="btn btn-secondary"
-                >
-                  {t.common.cancel}
-                </button>
-                <button
-                  onClick={saveEvent}
-                  disabled={saving || !eventForm.member_id || !eventForm.title || !eventForm.date}
-                  className="btn btn-primary"
-                >
-                  {saving ? t.common.loading : t.common.save}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <MemberEventModal
+        isOpen={showEventModal}
+        editingEvent={editingEvent}
+        eventForm={eventForm}
+        members={members}
+        saving={saving}
+        t={t}
+        onFormChange={setEventForm}
+        onSave={saveEvent}
+        onDelete={deleteEvent}
+        onClose={closeEventModal}
+      />
 
       {/* Household Event Modal */}
-      {showHouseholdEventModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0"
-            style={{ background: 'rgba(0, 0, 0, 0.5)' }}
-            onClick={closeHouseholdEventModal}
-          />
-
-          {/* Modal */}
-          <div
-            className="relative w-full max-w-md rounded-2xl p-6 space-y-5 animate-fade-in"
-            style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
-                {editingHouseholdEvent ? t.week.editEvent : t.week.familyEvent}
-              </h2>
-              <button
-                onClick={closeHouseholdEventModal}
-                className="p-2 rounded-lg transition-colors"
-                style={{ color: 'var(--muted)' }}
-                aria-label={t.common.close}
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"/>
-                  <line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
-            </div>
-
-            {/* ICS source warning */}
-            {editingHouseholdEvent?.source === 'ics_calendar' && (
-              <div
-                className="flex items-center gap-2 p-3 rounded-lg text-sm"
-                style={{ background: 'rgba(167, 139, 250, 0.15)', color: 'var(--foreground)' }}
-              >
-                <span>📅</span>
-                <span>This event is synced from an external calendar and cannot be edited.</span>
-              </div>
-            )}
-
-            {/* Form */}
-            <div className="space-y-4">
-              {/* Title */}
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                  {t.week.eventTitle}
-                </label>
-                <input
-                  type="text"
-                  value={householdEventForm.title}
-                  onChange={(e) => setHouseholdEventForm({ ...householdEventForm, title: e.target.value })}
-                  className="input"
-                  placeholder={t.week.familyEvent}
-                  disabled={editingHouseholdEvent?.source === 'ics_calendar'}
-                />
-              </div>
-
-              {/* Date */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                    {t.week.startDate}
-                  </label>
-                  <input
-                    type="date"
-                    value={householdEventForm.date}
-                    onChange={(e) => setHouseholdEventForm({ ...householdEventForm, date: e.target.value })}
-                    className="input"
-                    disabled={editingHouseholdEvent?.source === 'ics_calendar'}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                    {t.week.endDate} <span style={{ color: 'var(--muted)' }}>({t.common.optional})</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={householdEventForm.end_date}
-                    onChange={(e) => setHouseholdEventForm({ ...householdEventForm, end_date: e.target.value })}
-                    className="input"
-                    min={householdEventForm.date}
-                    disabled={editingHouseholdEvent?.source === 'ics_calendar'}
-                  />
-                </div>
-              </div>
-
-              {/* Time (optional) */}
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                  {t.week.taskTime} <span style={{ color: 'var(--muted)' }}>({t.common.optional})</span>
-                </label>
-                <input
-                  type="time"
-                  value={householdEventForm.time}
-                  onChange={(e) => setHouseholdEventForm({ ...householdEventForm, time: e.target.value })}
-                  className="input"
-                  disabled={editingHouseholdEvent?.source === 'ics_calendar'}
-                />
-              </div>
-
-              {/* Location (optional) */}
-              {editingHouseholdEvent?.location && (
-                <div>
-                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                    📍 {editingHouseholdEvent.location}
-                  </label>
-                </div>
-              )}
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center justify-between pt-2">
-              <div>
-                {editingHouseholdEvent && editingHouseholdEvent.source !== 'ics_calendar' && (
-                  <button
-                    onClick={deleteHouseholdEvent}
-                    disabled={saving}
-                    className="px-4 py-2 rounded-xl text-sm font-medium transition-colors"
-                    style={{ color: 'var(--color-coral)' }}
-                  >
-                    {t.common.delete}
-                  </button>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={closeHouseholdEventModal}
-                  className="btn btn-secondary"
-                >
-                  {editingHouseholdEvent?.source === 'ics_calendar' ? t.common.close : t.common.cancel}
-                </button>
-                {editingHouseholdEvent?.source !== 'ics_calendar' && (
-                  <button
-                    onClick={saveHouseholdEvent}
-                    disabled={saving || !householdEventForm.title || !householdEventForm.date}
-                    className="btn btn-primary"
-                  >
-                    {saving ? t.common.loading : t.common.save}
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <HouseholdEventModal
+        isOpen={showHouseholdEventModal}
+        editingEvent={editingHouseholdEvent}
+        eventForm={householdEventForm}
+        saving={saving}
+        t={t}
+        onFormChange={setHouseholdEventForm}
+        onSave={saveHouseholdEvent}
+        onDelete={deleteHouseholdEvent}
+        onClose={closeHouseholdEventModal}
+      />
 
       {/* Task Modal */}
-      {showTaskModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0, 0, 0, 0.5)' }}>
-          <div
-            className="w-full max-w-md rounded-2xl p-6 space-y-4"
-            style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold" style={{ color: 'var(--foreground)' }}>
-                {editingTask ? t.week.editTask : t.week.addTask}
-              </h3>
-              <button
-                onClick={closeTaskModal}
-                className="p-2 rounded-lg transition-colors hover:opacity-70"
-                style={{ color: 'var(--muted)' }}
-                aria-label={t.common.close}
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="18" y1="6" x2="6" y2="18"/>
-                  <line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              {/* Child selector */}
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                  {t.week.selectChild}
-                </label>
-                <select
-                  value={taskForm.child_id}
-                  onChange={(e) => setTaskForm({ ...taskForm, child_id: e.target.value })}
-                  className="input"
-                >
-                  <option value="">{t.week.selectChild}...</option>
-                  {children.map((child) => (
-                    <option key={child.id} value={child.id}>
-                      {child.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Title */}
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                  {t.week.taskTitle}
-                </label>
-                <input
-                  type="text"
-                  value={taskForm.title}
-                  onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })}
-                  placeholder={t.week.taskTitle}
-                  maxLength={100}
-                  className="input"
-                />
-              </div>
-
-              {/* Task type */}
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                  {t.week.taskType}
-                </label>
-                <div className="flex gap-2 flex-wrap">
-                  {[
-                    { value: 'bring', icon: '🎒', label: t.week.taskTypes.bring },
-                    { value: 'appointment', icon: '🩺', label: t.week.taskTypes.appointment },
-                    { value: 'activity', icon: '⚽', label: t.week.taskTypes.activity },
-                    { value: 'closure', icon: '🏫', label: t.week.taskTypes.closure },
-                    { value: 'reminder', icon: '📝', label: t.week.taskTypes.reminder },
-                    { value: 'other', icon: '📌', label: t.week.taskTypes.other },
-                  ].map((type) => (
-                    <button
-                      key={type.value}
-                      type="button"
-                      onClick={() => setTaskForm({ ...taskForm, task_type: type.value as ChildTaskType })}
-                      className="px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1"
-                      style={{
-                        background: taskForm.task_type === type.value ? 'rgba(229, 185, 94, 0.2)' : 'var(--background)',
-                        border: taskForm.task_type === type.value ? '2px solid var(--color-honey)' : '2px solid var(--border)',
-                        transform: taskForm.task_type === type.value ? 'scale(1.05)' : undefined,
-                      }}
-                    >
-                      <span>{type.icon}</span>
-                      <span>{type.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Date and Time */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                    {t.week.startDate}
-                  </label>
-                  <input
-                    type="date"
-                    value={taskForm.date}
-                    onChange={(e) => setTaskForm({ ...taskForm, date: e.target.value })}
-                    className="input"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                    {t.week.taskTime} <span style={{ color: 'var(--muted)' }}>({t.common.optional})</span>
-                  </label>
-                  <input
-                    type="time"
-                    value={taskForm.time}
-                    onChange={(e) => setTaskForm({ ...taskForm, time: e.target.value })}
-                    className="input"
-                  />
-                </div>
-              </div>
-
-              {/* Notes */}
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                  {t.week.taskNotes} <span style={{ color: 'var(--muted)' }}>({t.common.optional})</span>
-                </label>
-                <textarea
-                  value={taskForm.notes}
-                  onChange={(e) => setTaskForm({ ...taskForm, notes: e.target.value })}
-                  placeholder={t.week.taskNotes}
-                  className="input"
-                  rows={2}
-                />
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center justify-between pt-2">
-              <div>
-                {editingTask && (
-                  <button
-                    onClick={deleteTask}
-                    disabled={saving}
-                    className="px-4 py-2 rounded-xl text-sm font-medium transition-colors"
-                    style={{ color: 'var(--color-coral)' }}
-                  >
-                    {t.common.delete}
-                  </button>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={closeTaskModal}
-                  className="btn btn-secondary"
-                >
-                  {t.common.cancel}
-                </button>
-                <button
-                  onClick={saveTask}
-                  disabled={saving || !taskForm.child_id || !taskForm.title || !taskForm.date}
-                  className="btn btn-primary"
-                >
-                  {saving ? t.common.loading : t.common.save}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <ChildTaskModal
+        isOpen={showTaskModal}
+        editingTask={editingTask}
+        taskForm={taskForm}
+        children={children}
+        saving={saving}
+        t={t}
+        onFormChange={setTaskForm}
+        onSave={saveTask}
+        onDelete={deleteTask}
+        onClose={closeTaskModal}
+      />
     </div>
   )
 }

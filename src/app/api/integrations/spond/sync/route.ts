@@ -1,10 +1,14 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { validateOrigin, isUserAdmin } from '@/lib/config'
-import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
+import { isUserAdmin } from '@/lib/config'
 import { SpondClient, SpondAuthError, SpondError } from '@/lib/integrations/spond'
-import { formatDateISO, addDays } from '@/lib/utils'
+import { addDays } from '@/lib/utils'
 import { processMessagesWithAI } from '@/lib/integrations/ai-extraction'
+import {
+  handleSyncSetup,
+  getMappingsForIntegrations,
+  type IntegrationMapping,
+} from '@/lib/integrations/shared'
 
 interface SyncResult {
   integrationId: string
@@ -24,120 +28,36 @@ interface SyncResult {
  */
 export async function POST(request: Request) {
   try {
-    // CSRF protection
-    if (!validateOrigin(request)) {
-      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+    // Common setup: CSRF, auth, rate limit, household check, get integrations
+    const setup = await handleSyncSetup(request, {
+      service: 'spond',
+      rateLimitKey: 'spondSync',
+    })
+
+    if (!setup.success) {
+      return setup.response
     }
 
-    const supabase = await createClient()
-
-    // Verify user is authenticated
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Check rate limit
-    const rateLimitKey = createRateLimitKey(user.id, 'spondSync')
-    const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.calendarSync) // Reuse calendar rate limit
-    if (rateLimit.limited) {
-      return NextResponse.json(
-        { error: `Too many requests. Try again in ${rateLimit.retryAfter} seconds.` },
-        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
-      )
-    }
-
-    // Get user's household
-    const { data: membership } = await supabase
-      .from('household_members')
-      .select('household_id')
-      .eq('user_id', user.id)
-      .single()
-
-    if (!membership) {
-      return NextResponse.json({ error: 'No household found' }, { status: 400 })
-    }
-
-    // Check if household has integrations enabled
-    const { data: household } = await supabase
-      .from('households')
-      .select('external_integrations_enabled')
-      .eq('id', membership.household_id)
-      .single()
-
-    if (!household?.external_integrations_enabled) {
-      return NextResponse.json(
-        { error: 'External integrations are not enabled for your household' },
-        { status: 403 }
-      )
-    }
-
-    // Parse request body
-    const body = await request.json().catch(() => ({}))
-    const { integrationId } = body as { integrationId?: string }
-
-    // Get integrations to sync
-    let integrationsQuery = supabase
-      .from('external_integrations')
-      .select('*')
-      .eq('household_id', membership.household_id)
-      .eq('service', 'spond')
-
-    if (integrationId) {
-      integrationsQuery = integrationsQuery.eq('id', integrationId)
-    }
-
-    const { data: integrations, error: integrationsError } = await integrationsQuery
-
-    if (integrationsError) {
-      console.error('Error fetching integrations:', integrationsError)
-      return NextResponse.json({ error: 'Failed to fetch integrations' }, { status: 500 })
-    }
-
-    if (!integrations || integrations.length === 0) {
-      return NextResponse.json(
-        { error: 'No Spond integrations found' },
-        { status: 404 }
-      )
-    }
+    const { supabase, householdId, integrations, isAdmin } = setup
 
     // Get all mappings (children and members) for this household
-    const { data: allMappings } = await supabase
-      .from('external_integration_children')
-      .select('integration_id, child_id, member_id, external_group_id')
-      .in(
-        'integration_id',
-        integrations.map((i) => i.id)
-      )
-
-    const mappingsByIntegration = new Map<
-      string,
-      Array<{ childId: string | null; memberId: string | null; groupId: string }>
-    >()
-    allMappings?.forEach((mapping) => {
-      const existing = mappingsByIntegration.get(mapping.integration_id) || []
-      if (mapping.external_group_id) {
-        existing.push({
-          childId: mapping.child_id,
-          memberId: mapping.member_id,
-          groupId: mapping.external_group_id,
-        })
-      }
-      mappingsByIntegration.set(mapping.integration_id, existing)
-    })
+    const mappingsByIntegration = await getMappingsForIntegrations(
+      supabase,
+      integrations.map((i) => i.id)
+    )
 
     // Sync each integration
     const results: SyncResult[] = []
-    const isAdmin = isUserAdmin(user)
 
     for (const integration of integrations) {
+      // Filter out mappings without groupId and narrow the type
+      const mappings = (mappingsByIntegration.get(integration.id) || [])
+        .filter((m): m is typeof m & { groupId: string } => m.groupId !== null)
       const result = await syncIntegration(
         supabase,
         integration,
-        mappingsByIntegration.get(integration.id) || [],
-        membership.household_id,
+        mappings,
+        householdId,
         isAdmin
       )
       results.push(result)
@@ -157,7 +77,7 @@ export async function POST(request: Request) {
         // Process messages for the synced integrations
         const integrationIds = results.filter((r) => r.success).map((r) => r.integrationId)
         for (const intId of integrationIds) {
-          const result = await processMessagesWithAI(supabase, membership.household_id, intId, 50)
+          const result = await processMessagesWithAI(supabase, householdId, intId, 50)
           aiExtractionResult.processed += result.processed
           aiExtractionResult.suggestionsCreated += result.suggestionsCreated
           aiExtractionResult.errors.push(...result.errors)

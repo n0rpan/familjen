@@ -63,7 +63,9 @@ export class MyKidClient {
    * 3. GET /foreldre - Extract new CSRF from meta tag for subsequent requests
    */
   async login(phone: string, password: string): Promise<void> {
-    this.log('Logging in as:', phone)
+    // Mask phone in logs to prevent credential exposure
+    const maskedPhone = phone.length > 4 ? phone.substring(0, 4) + '***' : '***'
+    this.log('Logging in as:', maskedPhone)
 
     // Step 1: Get login page for CSRF token
     this.log('Step 1: Fetching login page...')

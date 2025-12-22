@@ -61,6 +61,14 @@ export const MealSelector = memo(function MealSelector({
     setSearch(value)
   }, [value])
 
+  const handleInputBlur = useCallback(() => {
+    // Small delay to allow click on dropdown items to register before closing
+    setTimeout(() => {
+      // Reset search on blur to avoid stale state
+      setSearch('')
+    }, 150)
+  }, [])
+
   const selectRecipe = useCallback((recipe: Recipe) => {
     onChange(recipe.name, recipe.id)
     setIsOpen(false)
@@ -86,6 +94,7 @@ export const MealSelector = memo(function MealSelector({
           value={isOpen ? search : value}
           onChange={handleInputChange}
           onFocus={handleInputFocus}
+          onBlur={handleInputBlur}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled}

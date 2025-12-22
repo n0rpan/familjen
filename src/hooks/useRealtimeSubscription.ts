@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useId } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 
@@ -41,6 +41,9 @@ export function useRealtimeSubscription<T extends object>({
   onAny,
   enabled = true,
 }: UseRealtimeSubscriptionOptions<T>): UseRealtimeSubscriptionResult {
+  // Stable ID for this hook instance - prevents creating new channels on every effect run
+  const instanceId = useId()
+
   const [isConnected, setIsConnected] = useState(false)
   const [lastEvent, setLastEvent] = useState<RealtimeEvent | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -102,65 +105,99 @@ export function useRealtimeSubscription<T extends object>({
   }, [])
 
   useEffect(() => {
+    // Track if this effect instance is still active (not cleaned up)
+    let isActive = true
+
+    // Clean up any existing channel before potentially creating a new one
+    const cleanupExisting = async () => {
+      if (channelRef.current) {
+        const channelToRemove = channelRef.current
+        channelRef.current = null
+        await supabaseRef.current.removeChannel(channelToRemove)
+      }
+    }
+
     // Only subscribe when enabled AND visible (pause when backgrounded)
     if (!enabled || !isVisible) {
       // Clean up existing subscription if we're pausing
-      if (channelRef.current) {
-        supabaseRef.current.removeChannel(channelRef.current)
-        channelRef.current = null
-        setIsConnected(false)
+      cleanupExisting().then(() => {
+        if (isActive) {
+          setIsConnected(false)
+        }
+      })
+      return () => {
+        isActive = false
       }
-      return
     }
 
     const supabase = supabaseRef.current
 
-    // Create unique channel name
-    const channelName = `realtime:${schema}:${table}:${filter || 'all'}`
+    // Create unique channel name with stable instance ID to avoid conflicts
+    const channelName = `realtime:${schema}:${table}:${filter || 'all'}:${instanceId}`
 
-    // Subscribe to changes
-    const channel = supabase.channel(channelName)
+    // Subscribe after cleaning up the old channel
+    const setupSubscription = async () => {
+      await cleanupExisting()
 
-    // Build the subscription config
-    const subscriptionConfig: {
-      event: '*'
-      schema: string
-      table: string
-      filter?: string
-    } = {
-      event: '*',
-      schema,
-      table,
+      // Check if we were cancelled during cleanup
+      if (!isActive) return
+
+      // Subscribe to changes
+      const channel = supabase.channel(channelName)
+
+      // Build the subscription config
+      const subscriptionConfig: {
+        event: '*'
+        schema: string
+        table: string
+        filter?: string
+      } = {
+        event: '*',
+        schema,
+        table,
+      }
+
+      if (filter) {
+        subscriptionConfig.filter = filter
+      }
+
+      channel
+        .on(
+          'postgres_changes',
+          subscriptionConfig,
+          handleChange as (payload: RealtimePostgresChangesPayload<{ [key: string]: unknown }>) => void
+        )
+        .subscribe((status) => {
+          // Only update state if this effect instance is still active
+          if (!isActive) return
+
+          if (status === 'SUBSCRIBED') {
+            setIsConnected(true)
+            setError(null)
+          } else if (status === 'CHANNEL_ERROR') {
+            setIsConnected(false)
+            setError('Failed to connect to realtime channel')
+          } else if (status === 'TIMED_OUT') {
+            setIsConnected(false)
+            setError('Connection timed out')
+          } else if (status === 'CLOSED') {
+            setIsConnected(false)
+          }
+        })
+
+      // Only store the channel if we're still active
+      if (isActive) {
+        channelRef.current = channel
+      } else {
+        // We were cancelled during setup, clean up immediately
+        supabase.removeChannel(channel)
+      }
     }
 
-    if (filter) {
-      subscriptionConfig.filter = filter
-    }
-
-    channel
-      .on(
-        'postgres_changes',
-        subscriptionConfig,
-        handleChange as (payload: RealtimePostgresChangesPayload<{ [key: string]: unknown }>) => void
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          setIsConnected(true)
-          setError(null)
-        } else if (status === 'CHANNEL_ERROR') {
-          setIsConnected(false)
-          setError('Failed to connect to realtime channel')
-        } else if (status === 'TIMED_OUT') {
-          setIsConnected(false)
-          setError('Connection timed out')
-        } else if (status === 'CLOSED') {
-          setIsConnected(false)
-        }
-      })
-
-    channelRef.current = channel
+    setupSubscription()
 
     return () => {
+      isActive = false
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current)
         channelRef.current = null

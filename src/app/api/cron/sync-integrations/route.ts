@@ -7,30 +7,11 @@ import { MyKidClient, MyKidAuthError, MyKidError } from '@/lib/integrations/myki
 import { formatDateISO, addDays } from '@/lib/utils'
 import { fetchAndParseICS, type ICSEvent } from '@/lib/ics-parser'
 import { syncHouseholdICS as syncHouseholdICSShared } from '@/lib/household-ics-sync'
+import { verifyCronRequest } from '@/lib/cron-auth'
+import { truncate, sanitizeString, sanitizeTime } from '@/lib/sanitize'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnySupabaseClient = SupabaseClient<any, any, any>
-
-/**
- * Verify the request is from Vercel Cron.
- * In production, Vercel adds an Authorization header with CRON_SECRET.
- */
-function verifyCronRequest(request: Request): boolean {
-  // In development, allow without verification
-  if (process.env.NODE_ENV === 'development') {
-    return true
-  }
-
-  const authHeader = request.headers.get('authorization')
-  const cronSecret = process.env.CRON_SECRET
-
-  if (!cronSecret) {
-    console.error('CRON_SECRET not configured')
-    return false
-  }
-
-  return authHeader === `Bearer ${cronSecret}`
-}
 
 /**
  * GET /api/cron/sync-integrations
@@ -400,13 +381,13 @@ async function syncSpondIntegration(
         child_id: childMapping?.childId || null,
         external_id: mapped.externalId,
         external_group_id: mapped.externalGroupId,
-        title: mapped.title,
-        description: mapped.description,
+        title: truncate(sanitizeString(mapped.title), 200),
+        description: truncate(sanitizeString(mapped.description), 2000),
         event_date: mapped.eventDate,
-        event_time: mapped.eventTime,
+        event_time: sanitizeTime(mapped.eventTime),
         end_date: mapped.endDate,
-        end_time: mapped.endTime,
-        location: mapped.location,
+        end_time: sanitizeTime(mapped.endTime),
+        location: truncate(sanitizeString(mapped.location), 500),
         event_type: mapped.eventType,
         raw_data: mapped.rawData,
         updated_at: new Date().toISOString(),
@@ -447,9 +428,9 @@ async function syncSpondIntegration(
             external_id: mapped.externalId,
             external_group_id: mapped.externalGroupId,
             chat_id: mapped.chatId,
-            sender_name: mapped.senderName,
-            title: mapped.title,
-            body: mapped.body,
+            sender_name: truncate(sanitizeString(mapped.senderName), 100),
+            title: truncate(sanitizeString(mapped.title), 200),
+            body: truncate(sanitizeString(mapped.body), 50000),
             message_date: mapped.messageDate,
             raw_data: mapped.rawData,
           })

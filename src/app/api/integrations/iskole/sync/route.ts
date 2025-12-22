@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { validateOrigin, isUserAdmin } from '@/lib/config'
-import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
+import { isUserAdmin } from '@/lib/config'
 import { ISkoleClient, ISkoleAuthError, ISkoleError } from '@/lib/integrations/iskole'
 import { addDays } from '@/lib/utils'
+import { handleSyncSetup } from '@/lib/integrations/shared'
 
 interface SyncResult {
   integrationId: string
@@ -21,94 +21,26 @@ interface SyncResult {
  */
 export async function POST(request: Request) {
   try {
-    // CSRF protection
-    if (!validateOrigin(request)) {
-      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+    // Common setup: CSRF, auth, rate limit, household check, get integrations
+    const setup = await handleSyncSetup(request, {
+      service: 'iskole',
+      rateLimitKey: 'iskoleSync',
+    })
+
+    if (!setup.success) {
+      return setup.response
     }
 
-    const supabase = await createClient()
-
-    // Verify user is authenticated
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Check rate limit
-    const rateLimitKey = createRateLimitKey(user.id, 'iskoleSync')
-    const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.iskoleSync)
-    if (rateLimit.limited) {
-      return NextResponse.json(
-        { error: `Too many requests. Try again in ${rateLimit.retryAfter} seconds.` },
-        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
-      )
-    }
-
-    // Get user's household
-    const { data: membership } = await supabase
-      .from('household_members')
-      .select('household_id')
-      .eq('user_id', user.id)
-      .single()
-
-    if (!membership) {
-      return NextResponse.json({ error: 'No household found' }, { status: 400 })
-    }
-
-    // Check if household has integrations enabled
-    const { data: household } = await supabase
-      .from('households')
-      .select('external_integrations_enabled')
-      .eq('id', membership.household_id)
-      .single()
-
-    if (!household?.external_integrations_enabled) {
-      return NextResponse.json(
-        { error: 'External integrations are not enabled for your household' },
-        { status: 403 }
-      )
-    }
-
-    // Parse request body
-    const body = await request.json().catch(() => ({}))
-    const { integrationId } = body as { integrationId?: string }
-
-    // Get integrations to sync
-    let integrationsQuery = supabase
-      .from('external_integrations')
-      .select('*')
-      .eq('household_id', membership.household_id)
-      .eq('service', 'iskole')
-
-    if (integrationId) {
-      integrationsQuery = integrationsQuery.eq('id', integrationId)
-    }
-
-    const { data: integrations, error: integrationsError } = await integrationsQuery
-
-    if (integrationsError) {
-      console.error('Error fetching integrations:', integrationsError)
-      return NextResponse.json({ error: 'Failed to fetch integrations' }, { status: 500 })
-    }
-
-    if (!integrations || integrations.length === 0) {
-      return NextResponse.json(
-        { error: 'No iSkole integrations found' },
-        { status: 404 }
-      )
-    }
+    const { supabase, householdId, integrations, isAdmin } = setup
 
     // Sync each integration
     const results: SyncResult[] = []
-    const isAdmin = isUserAdmin(user)
 
     for (const integration of integrations) {
       const result = await syncIntegration(
         supabase,
         integration,
-        membership.household_id,
+        householdId,
         isAdmin
       )
       results.push(result)

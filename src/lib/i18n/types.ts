@@ -201,6 +201,7 @@ export interface TranslationStrings {
     calendar: string
     family: string  // "Familien" - Family row label
     familyEvent: string  // "Familiehendelse" - Family event
+    icsEventReadOnly: string  // Warning for ICS synced events
     // AI Modal
     aiModalTitle: string
     suggestions: string

@@ -52,7 +52,9 @@ export class SpondClient {
    * Must be called before any other API methods.
    */
   async login(email: string, password: string): Promise<void> {
-    this.log('Logging in as:', email)
+    // Mask email in logs to prevent credential exposure
+    const maskedEmail = email.length > 3 ? email.substring(0, 3) + '***' : '***'
+    this.log('Logging in as:', maskedEmail)
 
     const response = await this.fetch<SpondLoginResponse>('login', {
       method: 'POST',

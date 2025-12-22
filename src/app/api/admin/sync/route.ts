@@ -6,6 +6,7 @@ import { KidplanClient, KidplanAuthError } from '@/lib/integrations/kidplan'
 import { ISkoleClient, ISkoleAuthError } from '@/lib/integrations/iskole'
 import { MyKidClient, MyKidAuthError } from '@/lib/integrations/mykid'
 import { addDays } from '@/lib/utils'
+import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 import sharp from 'sharp'
 
 /**
@@ -35,6 +36,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Forbidden: Admin only' }, { status: 403 })
     }
 
+    // Rate limit admin sync (uses same limits as calendar sync since it's similar work)
+    const rateLimitKey = createRateLimitKey(user.id, 'calendarSync')
+    const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.calendarSync)
+    if (rateLimit.limited) {
+      return NextResponse.json(
+        { error: `For mange forespørsler. Prøv igjen om ${rateLimit.retryAfter} sekunder.` },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
+      )
+    }
+
     // Parse request body
     const body = await request.json()
     const { integrationId, service, householdId } = body as {
@@ -57,7 +68,7 @@ export async function POST(request: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // Get the integration
+    // Get the integration and verify it belongs to the claimed household
     const { data: integration, error: intError } = await serviceSupabase
       .from('external_integrations')
       .select('*')
@@ -66,6 +77,12 @@ export async function POST(request: Request) {
 
     if (intError || !integration) {
       return NextResponse.json({ error: `Integration not found: ${intError?.message}` }, { status: 404 })
+    }
+
+    // SECURITY: Verify integration belongs to the claimed household
+    if (integration.household_id !== householdId) {
+      console.error(`[Admin Sync] Household mismatch: integration ${integrationId} belongs to ${integration.household_id}, not ${householdId}`)
+      return NextResponse.json({ error: 'Integration does not belong to specified household' }, { status: 403 })
     }
 
     // Decrypt credentials
