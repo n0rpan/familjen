@@ -374,6 +374,21 @@ export interface TranslationStrings {
     }
   }
 
+  // Feed page
+  feed: {
+    title: string
+    subtitle: string
+    filters: {
+      all: string
+      photos: string
+      reminders: string
+    }
+    emptyState: string
+    emptyStateDesc: string
+    syncButton: string
+    syncing: string
+  }
+
   // Admin page
   admin: {
     title: string

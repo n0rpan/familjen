@@ -366,6 +366,21 @@ export const sv: TranslationStrings = {
     },
   },
 
+  // Feed page
+  feed: {
+    title: 'Flöde',
+    subtitle: 'Meddelanden, bilder och påminnelser från Spond, förskola och skola',
+    filters: {
+      all: 'Alla',
+      photos: 'Bilder',
+      reminders: 'Påminnelser',
+    },
+    emptyState: 'Inga meddelanden ännu',
+    emptyStateDesc: 'Anslut Spond, förskola eller skola för att se meddelanden här',
+    syncButton: 'Synkronisera',
+    syncing: 'Synkroniserar...',
+  },
+
   // Admin page
   admin: {
     title: 'Admin',

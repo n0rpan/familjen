@@ -366,6 +366,21 @@ export const nb: TranslationStrings = {
     },
   },
 
+  // Feed page
+  feed: {
+    title: 'Feed',
+    subtitle: 'Meldinger, bilder og varsler fra Spond, barnehage og skole',
+    filters: {
+      all: 'Alt',
+      photos: 'Bilder',
+      reminders: 'Påminnelser',
+    },
+    emptyState: 'Ingen meldinger ennå',
+    emptyStateDesc: 'Koble til Spond, barnehage eller skole for å se meldinger her',
+    syncButton: 'Synkroniser',
+    syncing: 'Synkroniserer...',
+  },
+
   // Admin page
   admin: {
     title: 'Admin',

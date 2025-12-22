@@ -366,6 +366,21 @@ export const en: TranslationStrings = {
     },
   },
 
+  // Feed page
+  feed: {
+    title: 'Feed',
+    subtitle: 'Messages, photos, and reminders from Spond, daycare, and school',
+    filters: {
+      all: 'All',
+      photos: 'Photos',
+      reminders: 'Reminders',
+    },
+    emptyState: 'No messages yet',
+    emptyStateDesc: 'Connect Spond, daycare, or school to see messages here',
+    syncButton: 'Sync',
+    syncing: 'Syncing...',
+  },
+
   // Admin page
   admin: {
     title: 'Admin',
