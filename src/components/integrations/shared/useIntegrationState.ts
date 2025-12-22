@@ -74,7 +74,12 @@ export function useIntegrationState({
   const loadIntegrations = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(config.syncEndpoint)
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 10000) // 10s timeout
+
+      const res = await fetch(config.syncEndpoint, { signal: controller.signal })
+      clearTimeout(timeoutId)
+
       if (res.ok) {
         const data = await res.json()
         setIntegrations(data.integrations || [])
@@ -101,10 +106,14 @@ export function useIntegrationState({
         }
       }
     } catch (error) {
-      console.error('Error loading integrations:', error)
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.error(`[${config.service}] Timeout loading integrations`)
+      } else {
+        console.error(`[${config.service}] Error loading integrations:`, error)
+      }
     }
     setLoading(false)
-  }, [config.syncEndpoint, supabase])
+  }, [config.syncEndpoint, config.service, supabase])
 
   const testConnection = useCallback(
     async (credentials: Record<string, string>): Promise<{ success: boolean; data?: unknown }> => {
