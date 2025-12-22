@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useTranslation } from '@/lib/i18n/context'
 import { OTPInput } from '@/components/OTPInput'
+import { TransitionLink } from '@/components/TransitionLink'
 
 type LoginStep = 'email' | 'otp'
 
@@ -12,6 +13,7 @@ function LoginContent() {
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<LoginStep>('email')
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -168,11 +170,32 @@ function LoginContent() {
           >
             {step === 'email' ? (
               <>
+                {/* Terms acceptance checkbox */}
+                <label className="flex items-start gap-3 cursor-pointer mb-6 select-none">
+                  <input
+                    type="checkbox"
+                    checked={acceptedTerms}
+                    onChange={(e) => setAcceptedTerms(e.target.checked)}
+                    className="w-5 h-5 mt-0.5 rounded border-2 accent-[var(--accent)] cursor-pointer flex-shrink-0"
+                    style={{ borderColor: 'var(--border)' }}
+                  />
+                  <span className="text-sm leading-relaxed" style={{ color: 'var(--muted)' }}>
+                    {t.legal.iAccept}{' '}
+                    <TransitionLink href="/vilkar" className="underline hover:opacity-70" style={{ color: 'var(--accent)' }}>
+                      {t.legal.termsOfService.toLowerCase()}
+                    </TransitionLink>
+                    {' '}{t.common.and}{' '}
+                    <TransitionLink href="/personvern" className="underline hover:opacity-70" style={{ color: 'var(--accent)' }}>
+                      {t.legal.privacyPolicy.toLowerCase()}
+                    </TransitionLink>
+                  </span>
+                </label>
+
                 {/* Google Login */}
                 <button
                   onClick={handleGoogleLogin}
-                  disabled={loading}
-                  className="w-full flex items-center justify-center gap-3 px-5 py-4 rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:hover:scale-100"
+                  disabled={loading || !acceptedTerms}
+                  className="w-full flex items-center justify-center gap-3 px-5 py-4 rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed"
                   style={{
                     background: 'var(--background)',
                     border: '1.5px solid var(--border)'
@@ -238,7 +261,7 @@ function LoginContent() {
                   </div>
                   <button
                     type="submit"
-                    disabled={loading || !email}
+                    disabled={loading || !email || !acceptedTerms}
                     className="btn btn-primary w-full py-4 text-base disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {loading ? (

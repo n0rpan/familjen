@@ -50,6 +50,11 @@ export default function SettingsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
 
+  // Account deletion
+  const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false)
+  const [deleteAccountConfirmText, setDeleteAccountConfirmText] = useState('')
+  const [deletingAccount, setDeletingAccount] = useState(false)
+
   // Family calendar settings
   const [familyCalendarUrl, setFamilyCalendarUrl] = useState('')
   const [savingFamilyCalendar, setSavingFamilyCalendar] = useState(false)
@@ -572,6 +577,32 @@ export default function SettingsPage() {
     } else {
       // Redirect to home after deletion
       window.location.href = '/'
+    }
+  }
+
+  // Delete my account
+  const deleteMyAccount = async () => {
+    const confirmWord = language === 'nb' ? 'SLETT' : language === 'sv' ? 'RADERA' : 'DELETE'
+    if (deleteAccountConfirmText !== confirmWord) return
+
+    setDeletingAccount(true)
+    try {
+      const { error } = await supabase.rpc('delete_my_account')
+
+      if (error) {
+        console.error('Delete account error:', error)
+        showMessage('error', t.errors.deleteFailed)
+        return
+      }
+
+      // Sign out and redirect to login
+      await supabase.auth.signOut()
+      window.location.href = '/login'
+    } catch (err) {
+      console.error('Delete account error:', err)
+      showMessage('error', t.errors.generic)
+    } finally {
+      setDeletingAccount(false)
     }
   }
 
@@ -1440,6 +1471,92 @@ export default function SettingsPage() {
             </button>
           ))}
         </div>
+      </section>
+
+      {/* Account Section - Delete Account */}
+      <section
+        className="rounded-2xl p-6 md:p-8"
+        style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+      >
+        <div className="flex items-center gap-3 mb-6">
+          <div
+            className="w-10 h-10 rounded-xl flex items-center justify-center"
+            style={{ background: 'rgba(232, 120, 109, 0.2)' }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
+              <line x1="18" y1="11" x2="18" y2="17"/>
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold" style={{ color: 'var(--foreground)' }}>
+              {t.account?.title || 'Konto'}
+            </h2>
+          </div>
+        </div>
+
+        {!showDeleteAccountConfirm ? (
+          <div>
+            <p className="text-sm mb-4" style={{ color: 'var(--muted)' }}>
+              {t.account?.deleteAccountDesc || 'Fjerner deg fra husstanden og sletter dine data'}
+            </p>
+            <button
+              onClick={() => setShowDeleteAccountConfirm(true)}
+              className="text-sm font-medium transition-opacity hover:opacity-70"
+              style={{ color: 'var(--color-coral)' }}
+            >
+              {t.account?.deleteAccount || 'Slett min konto'}
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div
+              className="p-4 rounded-xl"
+              style={{ background: 'rgba(232, 120, 109, 0.1)' }}
+            >
+              <p className="text-sm font-medium mb-3" style={{ color: 'var(--color-coral)' }}>
+                {t.account?.deleteAccount || 'Slett min konto'}
+              </p>
+              <ul className="text-sm space-y-1" style={{ color: 'var(--muted)' }}>
+                <li>• {t.account?.deleteAccountWarning1 || 'Fjerne deg fra husstanden'}</li>
+                <li>• {t.account?.deleteAccountWarning2 || 'Slette alle dine personlige data'}</li>
+                <li>• {t.account?.deleteAccountWarning3 || 'Logge deg ut permanent'}</li>
+              </ul>
+            </div>
+            <div>
+              <label className="block text-sm mb-2" style={{ color: 'var(--foreground)' }}>
+                {t.account?.deleteAccountConfirm || `Skriv "${language === 'nb' ? 'SLETT' : language === 'sv' ? 'RADERA' : 'DELETE'}" for å bekrefte:`}
+              </label>
+              <input
+                type="text"
+                value={deleteAccountConfirmText}
+                onChange={(e) => setDeleteAccountConfirmText(e.target.value)}
+                className="input"
+                placeholder={language === 'nb' ? 'SLETT' : language === 'sv' ? 'RADERA' : 'DELETE'}
+              />
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowDeleteAccountConfirm(false)
+                  setDeleteAccountConfirmText('')
+                }}
+                className="btn btn-secondary"
+              >
+                {t.common.cancel}
+              </button>
+              <button
+                onClick={deleteMyAccount}
+                disabled={deletingAccount || deleteAccountConfirmText !== (language === 'nb' ? 'SLETT' : language === 'sv' ? 'RADERA' : 'DELETE')}
+                className="btn text-white disabled:opacity-50"
+                style={{ background: 'var(--color-coral)' }}
+              >
+                {deletingAccount ? t.common.loading : (t.account?.deleteAccountButton || 'Slett konto')}
+              </button>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* ========== GROUP 4: AI PREFERENCES ========== */}

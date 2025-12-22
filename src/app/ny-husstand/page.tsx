@@ -48,7 +48,6 @@ export default function CreateHouseholdPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [canCreate, setCanCreate] = useState(false)
 
   const supabase = useMemo(() => createClient(), [])
   const router = useRouter()
@@ -77,14 +76,7 @@ export default function CreateHouseholdPage() {
         return
       }
 
-      // Check if user's email allows creating household
-      const { data: allowedEmail } = await supabase
-        .from('allowed_emails')
-        .select('can_create_household')
-        .eq('email', user.email.toLowerCase())
-        .maybeSingle()
-
-      setCanCreate(allowedEmail?.can_create_household === true)
+      // Open signup: all authenticated users can create a household
     } catch (err) {
       console.error('Error checking permission:', err)
     } finally {
@@ -253,33 +245,6 @@ export default function CreateHouseholdPage() {
         <div className="animate-pulse text-center">
           <div className="w-16 h-16 rounded-2xl mx-auto mb-4" style={{ background: 'var(--sand)' }} />
           <div className="h-6 w-32 rounded mx-auto" style={{ background: 'var(--sand)' }} />
-        </div>
-      </div>
-    )
-  }
-
-  // User cannot create household
-  if (!canCreate) {
-    return (
-      <div className="min-h-[60vh] flex items-center justify-center animate-fade-in">
-        <div className="w-full max-w-md rounded-2xl p-8 text-center" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4" style={{ background: 'rgba(126, 182, 196, 0.2)' }}>
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--color-sky)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-              <circle cx="9" cy="7" r="4"/>
-              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-            </svg>
-          </div>
-          <h1 className="text-2xl font-semibold font-display mb-2" style={{ color: 'var(--foreground)' }}>
-            {t.wizard.waitingForInvite}
-          </h1>
-          <p className="mb-6" style={{ color: 'var(--muted)' }}>
-            {t.wizard.waitingForInviteDesc}
-          </p>
-          <button onClick={() => router.push('/')} className="btn btn-secondary">
-            {t.wizard.backToHome}
-          </button>
         </div>
       </div>
     )

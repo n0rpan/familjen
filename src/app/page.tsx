@@ -70,32 +70,111 @@ export default async function HomePage() {
     }
   }
 
-  // If user doesn't have a household, show create household option
+  // If user doesn't have a household, show choice UI
   if (!myMembership) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center animate-fade-in">
-        <div className="text-center max-w-md mx-auto">
-          <div
-            className="inline-flex items-center justify-center w-20 h-20 rounded-2xl mb-8"
-            style={{ background: 'rgba(229, 185, 94, 0.2)' }}
-          >
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-              <polyline points="9,22 9,12 15,12 15,22"/>
-            </svg>
+        <div className="w-full max-w-md mx-auto px-4">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div
+              className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-6 shadow-lg"
+              style={{ background: 'var(--accent)' }}
+            >
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                <polyline points="9,22 9,12 15,12 15,22"/>
+              </svg>
+            </div>
+            <h1 className="text-2xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
+              {t.signup.getStarted}
+            </h1>
           </div>
-          <h1 className="text-3xl font-semibold font-display mb-4" style={{ color: 'var(--foreground)' }}>
-            {t.wizard.waitingForInvite}
-          </h1>
-          <p className="text-lg mb-8" style={{ color: 'var(--muted)' }}>
-            {t.wizard.waitingForInviteDesc}
-          </p>
-          <TransitionLink
-            href="/ny-husstand"
-            className="btn btn-primary text-lg px-8 py-4"
+
+          {/* Choice cards */}
+          <div className="space-y-4">
+            {/* Was invited option */}
+            <TransitionLink
+              href="/"
+              className="block p-5 rounded-2xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+              style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+            >
+              <div className="flex items-start gap-4">
+                <div
+                  className="flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center"
+                  style={{ background: 'rgba(126, 182, 196, 0.2)' }}
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--color-sky)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold mb-1" style={{ color: 'var(--foreground)' }}>
+                    {t.signup.wasInvited}
+                  </h3>
+                  <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                    {t.signup.wasInvitedDesc}
+                  </p>
+                  <span
+                    className="inline-block mt-3 text-sm font-medium"
+                    style={{ color: 'var(--accent)' }}
+                  >
+                    {t.signup.checkInvite} →
+                  </span>
+                </div>
+              </div>
+            </TransitionLink>
+
+            {/* Create new household option */}
+            <TransitionLink
+              href="/ny-husstand"
+              className="block p-5 rounded-2xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+              style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+            >
+              <div className="flex items-start gap-4">
+                <div
+                  className="flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center"
+                  style={{ background: 'rgba(229, 185, 94, 0.2)' }}
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 5v14M5 12h14"/>
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold mb-1" style={{ color: 'var(--foreground)' }}>
+                    {t.signup.createNew}
+                  </h3>
+                  <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                    {t.signup.createNewDesc}
+                  </p>
+                  <span
+                    className="inline-block mt-3 text-sm font-medium"
+                    style={{ color: 'var(--accent)' }}
+                  >
+                    {t.common.next} →
+                  </span>
+                </div>
+              </div>
+            </TransitionLink>
+          </div>
+
+          {/* Warning message */}
+          <div
+            className="mt-6 flex items-start gap-3 p-4 rounded-xl"
+            style={{ background: 'rgba(229, 185, 94, 0.1)' }}
           >
-            {t.settings.household}
-          </TransitionLink>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-0.5">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/>
+              <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <p className="text-sm" style={{ color: 'var(--color-honey-dark, #A68A3A)' }}>
+              {t.signup.dontCreateIfPartner}
+            </p>
+          </div>
         </div>
       </div>
     )

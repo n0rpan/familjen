@@ -27,9 +27,15 @@ export async function GET(request: Request) {
           .single()
 
         if (!allowed) {
-          // Email not in allowlist - sign out and redirect with error
-          await supabase.auth.signOut()
-          return NextResponse.redirect(`${origin}/login?error=not_allowed`)
+          // Open signup: auto-add new users to allowlist
+          // They can create their own household
+          await adminClient
+            .from('allowed_emails')
+            .insert({
+              email: user.email.toLowerCase(),
+              is_admin: false,
+              can_create_household: true,
+            })
         }
 
         // Sync is_admin to user's app_metadata (JWT claims)

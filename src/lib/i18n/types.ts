@@ -38,6 +38,7 @@ export interface TranslationStrings {
     yes: string
     no: string
     or: string
+    and: string
     optional: string
     required: string
     search: string
@@ -799,5 +800,87 @@ export interface TranslationStrings {
     description: string
     refresh: string
     later: string
+  }
+
+  // Legal pages
+  legal: {
+    privacyPolicy: string
+    termsOfService: string
+    lastUpdated: string
+    acceptTerms: string
+    iAccept: string  // "I accept the" prefix for checkbox
+    // Privacy policy sections
+    whoRunsTitle: string
+    whoRunsContent: string
+    noGuaranteesTitle: string
+    noGuaranteesContent: string
+    dataCollectedTitle: string
+    dataAccountLabel: string
+    dataAccountDesc: string
+    dataFamilyLabel: string
+    dataFamilyDesc: string
+    dataIntegrationsLabel: string
+    dataIntegrationsDesc: string
+    dataPhotosLabel: string
+    dataPhotosDesc: string
+    dataStorageTitle: string
+    storageDatabase: string
+    storageHosting: string
+    storageAI: string
+    storageAINote: string
+    accessTitle: string
+    accessContent: string
+    rightsTitle: string
+    rightsAccessLabel: string
+    rightsAccessDesc: string
+    rightsDeletionLabel: string
+    rightsDeletionDesc: string
+    rightsExportLabel: string
+    rightsExportDesc: string
+    cookiesTitle: string
+    cookiesContent: string
+    contactTitle: string
+    contactContent: string
+    // Terms of service sections
+    termsAcceptanceTitle: string
+    termsAcceptanceContent: string
+    termsServiceTitle: string
+    termsServiceContent: string
+    termsNoGuaranteesTitle: string
+    termsNoGuaranteesContent: string
+    termsResponsibilityTitle: string
+    termsResponsibility1: string
+    termsResponsibility2: string
+    termsResponsibility3: string
+    termsContentTitle: string
+    termsContentContent: string
+    termsTerminationTitle: string
+    termsTerminationContent: string
+    termsChangesTitle: string
+    termsChangesContent: string
+  }
+
+  // Signup flow
+  signup: {
+    getStarted: string
+    wasInvited: string
+    wasInvitedDesc: string
+    checkInvite: string
+    createNew: string
+    createNewDesc: string
+    dontCreateIfPartner: string
+  }
+
+  // Account management
+  account: {
+    title: string
+    deleteAccount: string
+    deleteAccountDesc: string
+    deleteAccountWarning1: string
+    deleteAccountWarning2: string
+    deleteAccountWarning3: string
+    deleteAccountConfirm: string
+    deleteAccountButton: string
+    accountDeleted: string
   }
 }
