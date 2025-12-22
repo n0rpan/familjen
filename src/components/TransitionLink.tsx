@@ -107,22 +107,37 @@ export function TransitionLink({
       const isBack = isBackNavigation(targetPath)
       setTransitionDirection(isBack ? 'back' : 'forward')
 
-      // Start view transition
-      const transition = (document as Document & { startViewTransition?: (callback: () => void) => { finished: Promise<void> } }).startViewTransition?.(() => {
+      // Navigation function - extracted so we can call it as fallback
+      const navigate = () => {
         router.push(href)
-        // Update nav stack after navigation
         pushToNavStack(targetPath)
-      })
+      }
 
-      // Clear direction after transition completes
-      transition?.finished
-        ?.then(() => {
+      // Try to start view transition, with robust fallback
+      try {
+        const transition = (document as Document & { startViewTransition?: (callback: () => void) => { finished: Promise<void> } }).startViewTransition?.(navigate)
+
+        if (!transition) {
+          // startViewTransition returned nothing, navigate directly
+          navigate()
           clearTransitionDirection()
-        })
-        ?.catch(() => {
-          // View transition was skipped, still clean up
-          clearTransitionDirection()
-        })
+          return
+        }
+
+        // Clear direction after transition completes
+        transition.finished
+          .then(() => {
+            clearTransitionDirection()
+          })
+          .catch(() => {
+            // View transition was skipped, still clean up
+            clearTransitionDirection()
+          })
+      } catch {
+        // View transition failed entirely, navigate directly
+        navigate()
+        clearTransitionDirection()
+      }
     },
     [router, href, viewTransition, onClick]
   )

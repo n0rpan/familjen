@@ -358,40 +358,40 @@ input:focus, select:focus, textarea:focus {
 
 /* Page-specific view transitions */
 ::view-transition-old(page-content) {
-  animation: slide-out-left 0.25s ease-out forwards;
+  animation: slide-out-left 0.15s ease-out forwards;
 }
 
 ::view-transition-new(page-content) {
-  animation: slide-in-right 0.25s ease-out forwards;
+  animation: slide-in-right 0.15s ease-out forwards;
 }
 
 @keyframes slide-out-left {
   from { transform: translateX(0); opacity: 1; }
-  to { transform: translateX(-20px); opacity: 0; }
+  to { transform: translateX(-6px); opacity: 0; }
 }
 
 @keyframes slide-in-right {
-  from { transform: translateX(20px); opacity: 0; }
+  from { transform: translateX(6px); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
 
 @keyframes slide-out-right {
   from { transform: translateX(0); opacity: 1; }
-  to { transform: translateX(20px); opacity: 0; }
+  to { transform: translateX(6px); opacity: 0; }
 }
 
 @keyframes slide-in-left {
-  from { transform: translateX(-20px); opacity: 0; }
+  from { transform: translateX(-6px); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
 
 /* Back navigation: slide in from left */
 [data-transition-direction="back"]::view-transition-old(page-content) {
-  animation: slide-out-right 0.25s ease-out forwards;
+  animation: slide-out-right 0.15s ease-out forwards;
 }
 
 [data-transition-direction="back"]::view-transition-new(page-content) {
-  animation: slide-in-left 0.25s ease-out forwards;
+  animation: slide-in-left 0.15s ease-out forwards;
 }
 
 /* Card alt background for skeleton items */
@@ -491,6 +491,11 @@ input:focus, select:focus, textarea:focus {
     transform: scale(0.98);
     background-color: var(--card-alt) !important;
   }
+}
+
+/* Prevent 300ms tap delay on interactive elements */
+a, button, [role="button"], input, select, textarea {
+  touch-action: manipulation;
 }
 
 /* Toast slide-in animation */
