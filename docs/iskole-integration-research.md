@@ -93,7 +93,7 @@ GET https://iskole.net/iskole_forelder/rest/v0/VoBarn;jsessionid=XXX?...
 | `VoFravaer_timer_alle_fag` | Absence by subject | `termin,elevnr` |
 | `VoFravaer_totaloversikt` | Absence summary | `elevnr` |
 | `VoFravaer_VM` | Absence VM stats | `elevnr` |
-| `VoPostkasse` | Messages (inbox) | `mappeid=INB,elevnr` |
+| `VoPostkasse` | Messages (inbox) | `mappeid=INB,elevnr=0` (0=all children) |
 | `VoBrev` | Official letters | `elevnr` |
 | `VoBulleteng` | Bulletin board | `elevnr` |
 | `VoAnsattliste_m_rolle` | Teachers/staff list | `elevnr` |

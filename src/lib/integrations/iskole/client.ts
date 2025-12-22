@@ -324,20 +324,13 @@ export class ISkoleClient {
   }
 
   /**
-   * Get messages for a specific child
+   * Get all messages for the logged-in parent.
+   * Uses elevnr=0 to get messages for all children - each message has Elevnr field.
    *
-   * @param elevnr Student number
-   * @param fylkeid County ID
-   * @param planperi School year
-   * @param skoleid School ID
    * @param limit Max messages to fetch
    * @param offset Pagination offset
    */
   async getMessages(
-    elevnr: number,
-    fylkeid: string,
-    planperi: string,
-    skoleid: string,
     limit = 50,
     offset = 0
   ): Promise<ISkoleMessage[]> {
@@ -345,19 +338,20 @@ export class ISkoleClient {
       throw new ISkoleError('Not logged in', 'NOT_LOGGED_IN')
     }
 
-    const finder = `RESTFilter;fylkeid=${fylkeid},planperi=${planperi},skoleid=${skoleid},elevnr=${elevnr},mappeid=INB`
+    // elevnr=0 gets messages for all children, response includes Elevnr per message
+    const finder = `RESTFilter;mappeid=INB,elevnr=0`
     const query = new URLSearchParams({
       finder,
+      fields: 'Meldingid,Mottatt,Apnet,Emne,Lname,Fname,Epost,Tekst,PersonidMottaker,Elevnr,Elevnavn',
       onlyData: 'true',
       limit: String(limit),
       offset: String(offset),
       totalResults: 'true',
-      orderBy: 'Mottatt:desc',
     })
 
     const response = await this.request<ISkoleMessagesResponse>(`VoPostkasse?${query}`)
 
-    this.log('Fetched', response.items?.length || 0, 'messages for student', elevnr)
+    this.log('Fetched', response.items?.length || 0, 'messages')
     return response.items || []
   }
 

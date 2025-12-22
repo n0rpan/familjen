@@ -778,49 +778,38 @@ async function syncISkoleIntegration(
 
     const messagesToUpsert: Array<Record<string, unknown>> = []
 
-    // Fetch children and their messages
+    // Fetch children (for calendar sync later) and messages
+    let children: Awaited<ReturnType<typeof client.getChildren>> = []
     try {
-      const children = await client.getChildren()
+      children = await client.getChildren()
 
-      for (const child of children) {
-        try {
-          const messages = await client.getMessages(
-            child.Elevnr,
-            child.Fylkeid,
-            child.Planperi,
-            child.Skoleid,
-            50,
-            0
-          )
+      // Fetch all messages (uses elevnr=0 to get all children's messages)
+      const messages = await client.getMessages(100, 0)
 
-          for (const msg of messages) {
-            const msgDate = new Date(msg.Mottatt)
-            if (msgDate < lastSync) continue
+      for (const msg of messages) {
+        const msgDate = new Date(msg.Mottatt)
+        if (msgDate < lastSync) continue
 
-            const senderName = [msg.Fname, msg.Lname].filter(Boolean).join(' ') || null
-            const childIdStr = String(child.Elevnr)
-            const mappedChildId = childIdMap.get(childIdStr) || null
+        const senderName = [msg.Fname, msg.Lname].filter(Boolean).join(' ') || null
+        const childIdStr = msg.Elevnr ? String(msg.Elevnr) : null
+        const mappedChildId = childIdStr ? childIdMap.get(childIdStr) || null : null
 
-            messagesToUpsert.push({
-              integration_id: integration.id,
-              child_id: mappedChildId,
-              external_id: `iskole_msg_${msg.Meldingid}`,
-              external_group_id: childIdStr,
-              chat_id: null,
-              sender_name: senderName,
-              title: msg.Emne || null,
-              body: msg.Tekst || '',
-              message_date: msgDate.toISOString(),
-              source_type: 'school_message',
-              raw_data: msg,
-            })
-          }
-        } catch (msgError) {
-          console.error(`[Cron] iSkole messages error for child ${child.Elevnr}:`, msgError)
-        }
+        messagesToUpsert.push({
+          integration_id: integration.id,
+          child_id: mappedChildId,
+          external_id: `iskole_msg_${msg.Meldingid}`,
+          external_group_id: childIdStr,
+          chat_id: null,
+          sender_name: senderName,
+          title: msg.Emne || null,
+          body: msg.Tekst || '',
+          message_date: msgDate.toISOString(),
+          source_type: 'school_message',
+          raw_data: msg,
+        })
       }
-    } catch (childError) {
-      console.error(`[Cron] iSkole children error for ${integration.id}:`, childError)
+    } catch (syncError) {
+      console.error(`[Cron] iSkole sync error for ${integration.id}:`, syncError)
     }
 
     // Upsert messages

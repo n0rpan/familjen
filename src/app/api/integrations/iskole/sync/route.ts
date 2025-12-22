@@ -166,46 +166,37 @@ async function syncIntegration(
     // Fetch children to get their school info
     const children = await client.getChildren()
 
-    // Fetch messages for each child
-    console.log(`[iSkole] Fetching messages for ${children.length} children`)
-    for (const child of children) {
-      try {
-        console.log(`[iSkole] Fetching messages for child: elevnr=${child.Elevnr}, fylke=${child.Fylkeid}, planperi=${child.Planperi}, skole=${child.Skoleid}`)
-        const messages = await client.getMessages(
-          child.Elevnr,
-          child.Fylkeid,
-          child.Planperi,
-          child.Skoleid,
-          50,
-          0
-        )
-        console.log(`[iSkole] Child ${child.Elevnr}: ${messages.length} messages returned`)
+    // Fetch all messages (uses elevnr=0 to get all children's messages)
+    console.log(`[iSkole] Fetching messages for parent`)
+    try {
+      const messages = await client.getMessages(100, 0)
+      console.log(`[iSkole] Fetched ${messages.length} messages`)
 
-        for (const msg of messages) {
-          const msgDate = new Date(msg.Mottatt)
-          if (msgDate < lastSync) continue
+      for (const msg of messages) {
+        const msgDate = new Date(msg.Mottatt)
+        if (msgDate < lastSync) continue
 
-          const senderName = [msg.Fname, msg.Lname].filter(Boolean).join(' ') || null
-          const childIdStr = String(child.Elevnr)
-          const mappedChildId = childIdMap.get(childIdStr) || null
+        const senderName = [msg.Fname, msg.Lname].filter(Boolean).join(' ') || null
+        // Message includes Elevnr to identify which child it's for
+        const childIdStr = msg.Elevnr ? String(msg.Elevnr) : null
+        const mappedChildId = childIdStr ? childIdMap.get(childIdStr) || null : null
 
-          messagesToUpsert.push({
-            integration_id: integration.id,
-            child_id: mappedChildId,
-            external_id: `iskole_msg_${msg.Meldingid}`,
-            external_group_id: childIdStr,
-            chat_id: null,
-            sender_name: senderName,
-            title: msg.Emne || null,
-            body: msg.Tekst || '',
-            message_date: msgDate.toISOString(),
-            source_type: 'school_message',
-            raw_data: msg,
-          })
-        }
-      } catch (msgError) {
-        console.error(`[iSkole] Error fetching messages for child ${child.Elevnr} (fylke=${child.Fylkeid}, planperi=${child.Planperi}, skole=${child.Skoleid}):`, msgError)
+        messagesToUpsert.push({
+          integration_id: integration.id,
+          child_id: mappedChildId,
+          external_id: `iskole_msg_${msg.Meldingid}`,
+          external_group_id: childIdStr,
+          chat_id: null,
+          sender_name: senderName,
+          title: msg.Emne || null,
+          body: msg.Tekst || '',
+          message_date: msgDate.toISOString(),
+          source_type: 'school_message',
+          raw_data: msg,
+        })
       }
+    } catch (msgError) {
+      console.error(`[iSkole] Error fetching messages:`, msgError)
     }
 
     // Upsert messages

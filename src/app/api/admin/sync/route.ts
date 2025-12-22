@@ -370,34 +370,34 @@ async function syncISkole(supabase: AnySupabase, integration: AnyIntegration, cr
   // Fetch children and messages
   const children = await client.getChildren()
 
-  for (const child of children) {
-    try {
-      const messages = await client.getMessages(child.Elevnr, child.Fylkeid, child.Planperi, child.Skoleid, 50, 0)
+  // Fetch all messages (uses elevnr=0 to get all children's messages)
+  try {
+    const messages = await client.getMessages(100, 0)
 
-      for (const msg of messages) {
-        const msgDate = new Date(msg.Mottatt)
-        if (msgDate < lastSync) continue
+    for (const msg of messages) {
+      const msgDate = new Date(msg.Mottatt)
+      if (msgDate < lastSync) continue
 
-        const senderName = [msg.Fname, msg.Lname].filter(Boolean).join(' ') || null
-        const childId = childIdMap.get(String(child.Elevnr))
+      const senderName = [msg.Fname, msg.Lname].filter(Boolean).join(' ') || null
+      const childIdStr = msg.Elevnr ? String(msg.Elevnr) : null
+      const childId = childIdStr ? childIdMap.get(childIdStr) : undefined
 
-        await supabase.from('external_messages').upsert({
-          integration_id: integration.id,
-          child_id: childId,
-          external_id: `iskole_msg_${msg.Meldingid}`,
-          external_group_id: String(child.Elevnr),
-          sender_name: senderName,
-          title: msg.Emne || null,
-          body: msg.Tekst || '',
-          message_date: msgDate.toISOString(),
-          source_type: 'school_message',
-          raw_data: msg,
-        }, { onConflict: 'integration_id,external_id' })
-        result.messagesCount++
-      }
-    } catch (e) {
-      console.error(`[Admin Sync] Error syncing iSkole child ${child.Elevnr}:`, e)
+      await supabase.from('external_messages').upsert({
+        integration_id: integration.id,
+        child_id: childId || null,
+        external_id: `iskole_msg_${msg.Meldingid}`,
+        external_group_id: childIdStr,
+        sender_name: senderName,
+        title: msg.Emne || null,
+        body: msg.Tekst || '',
+        message_date: msgDate.toISOString(),
+        source_type: 'school_message',
+        raw_data: msg,
+      }, { onConflict: 'integration_id,external_id' })
+      result.messagesCount++
     }
+  } catch (e) {
+    console.error(`[Admin Sync] Error syncing iSkole messages:`, e)
   }
 
   // Sync school calendar
