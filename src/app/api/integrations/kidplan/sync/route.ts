@@ -130,6 +130,18 @@ async function syncIntegration(
       throw error
     }
 
+    // Fetch children from Kidplan API to see units
+    try {
+      const childrenData = await client.getChildren()
+      console.log(`[Kidplan] Children from API:`, childrenData.ChildList.map(c => ({
+        id: c.ChildId,
+        name: c.Name,
+        unitName: c.unitName,
+      })))
+    } catch (childError) {
+      console.error('[Kidplan] Error fetching children:', childError)
+    }
+
     // Get children for mapping
     const { data: childMappings } = await supabase
       .from('external_integration_children')
@@ -172,6 +184,18 @@ async function syncIntegration(
     try {
       const boardData = await client.getBoardPosts()
       const totalBoardPosts = boardData.BoardPosts?.length || 0
+      const totalLatestPictures = boardData.LatestPictures?.length || 0
+
+      // Log full board response metadata for debugging
+      console.log(`[Kidplan] Board response:`, {
+        boardPosts: totalBoardPosts,
+        latestPictures: totalLatestPictures,
+        morePostsAvailable: boardData.MorePostsAvaliable,
+        oldestItemDate: boardData.OldestItemDate,
+        lastSeenDateTime: boardData.LastSeenDateTime,
+        userIsEmployee: boardData.UserIsEmployee,
+        unitsForCurrentUser: boardData.UnitsForCurrentUser,
+      })
       console.log(`[Kidplan] Board posts received: ${totalBoardPosts}`)
 
       let boardPostsFiltered = 0
