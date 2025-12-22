@@ -472,8 +472,13 @@ GET /VoBarn;jsessionid={jsessionid}?onlyData=true&fields=Id,Fylkeid,Skoleid,Plan
 
 #### Get Messages
 
+**Important:** Messages are fetched for ALL children at once using `elevnr=0`. Each message includes an `Elevnr` field to identify which child it belongs to.
+
 ```typescript
-GET /VoPostkasse;jsessionid={jsessionid}?finder=RESTFilter;fylkeid={fylkeid},planperi={planperi},skoleid={skoleid},elevnr={elevnr},mappeid=INB&onlyData=true&limit=50&offset=0&totalResults=true&orderBy=Mottatt:desc
+GET /VoPostkasse;jsessionid={jsessionid}?finder=RESTFilter;mappeid=INB,elevnr=0&fields=Meldingid,Mottatt,Apnet,Emne,Lname,Fname,Epost,Tekst,PersonidMottaker,Elevnr,Elevnavn&onlyData=true&limit=50&offset=0&totalResults=true
+
+// Note: elevnr=0 returns messages for ALL children
+// Each message includes Elevnr field to identify the child
 
 // Response
 {
@@ -488,7 +493,7 @@ GET /VoPostkasse;jsessionid={jsessionid}?finder=RESTFilter;fylkeid={fylkeid},pla
       "Epost": "teacher@school.no",
       "Tekst": "<p>HTML message content...</p>",
       "PersonidMottaker": 12345,
-      "Elevnr": 456,
+      "Elevnr": 456,              // Which child this message is for
       "Elevnavn": "Child Name"
     }
   ],
@@ -718,17 +723,22 @@ Cookie: JSESSIONID=abc123
 GET /VoBarn;jsessionid=abc123?onlyData=true
 ```
 
-#### 5. All endpoints need the child's context
-Every request requires `fylkeid`, `planperi`, `skoleid`, and `elevnr`. Get these from the child object first:
+#### 5. Messages don't need per-child context
+Unlike timetable and absences, messages use `elevnr=0` to fetch all children's messages at once:
 
 ```typescript
+// Messages: fetch all at once, filter by Elevnr in response
+const messages = await getMessages(100, 0)  // limit, offset
+for (const msg of messages) {
+  const childElevnr = msg.Elevnr  // Identifies which child
+}
+
+// Timetable/Absences: still need per-child context
 const children = await getChildren()
 const child = children[0]
-const messages = await getMessages(
-  child.Elevnr,    // Student number
-  child.Fylkeid,   // County
-  child.Planperi,  // School year
-  child.Skoleid    // School
+const timetable = await getTimetable(
+  child.Elevnr, child.Fylkeid, child.Planperi, child.Skoleid,
+  '20241215', '20241222'
 )
 ```
 
