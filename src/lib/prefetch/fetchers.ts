@@ -6,7 +6,7 @@
 import { createClient } from '@/lib/supabase/client'
 import { getCached, setCache, isCacheFresh, DEFAULT_MAX_AGE } from '@/lib/cache'
 import { formatDateISO, addDays, getWeekStart, type Holiday } from '@/lib/utils'
-import type { WeekCacheData, ShoppingCacheData } from '@/lib/types'
+import type { WeekCacheData, ShoppingCacheData, SettingsCacheData } from '@/lib/types'
 
 /**
  * Generate cache key for week data
@@ -258,4 +258,23 @@ export async function prefetchRecipesData(householdId: string): Promise<void> {
   } catch (error) {
     console.warn('[Prefetch] Failed to prefetch recipes data:', error)
   }
+}
+
+/**
+ * Generate cache key for settings data
+ */
+export function getSettingsCacheKey(householdId: string): string {
+  return `settings:${householdId}`
+}
+
+/**
+ * Get cached settings data if it exists and is fresh
+ */
+export async function getCachedSettingsData(householdId: string): Promise<SettingsCacheData | null> {
+  const cacheKey = getSettingsCacheKey(householdId)
+  const cached = await getCached<SettingsCacheData>(cacheKey)
+  if (cached && isCacheFresh(cached, DEFAULT_MAX_AGE)) {
+    return cached.data
+  }
+  return null
 }

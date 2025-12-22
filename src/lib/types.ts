@@ -64,6 +64,17 @@ export interface ShoppingCacheData {
   timestamp: number
 }
 
+// Settings page cache data
+export interface SettingsCacheData {
+  household: Household | null
+  members: HouseholdMember[]
+  children: Child[]
+  myProfile: HouseholdMember | null
+  connectedCalendarEmail: string | null
+  invitedEmails: AllowedEmail[]
+  timestamp: number
+}
+
 // Audit fields shared by most entities
 interface AuditFields {
   created_at: string

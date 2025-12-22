@@ -1,9 +1,11 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import type { Child, HouseholdMember, Household, AllowedEmail, ChildColor } from '@/lib/types'
+import type { Child, HouseholdMember, Household, AllowedEmail, ChildColor, SettingsCacheData } from '@/lib/types'
+import { getCachedSettingsData, getSettingsCacheKey } from '@/lib/prefetch/fetchers'
+import { setCache } from '@/lib/cache'
 import { CHILD_COLORS } from '@/lib/colors'
 import { User } from '@supabase/supabase-js'
 import { useLanguage } from '@/lib/i18n/context'
@@ -95,12 +97,19 @@ export default function SettingsPage() {
   const router = useRouter()
   const { language, setLanguage, t } = useLanguage()
 
+  // Track if we've shown cached data to prevent re-showing skeleton
+  const hasShownCacheRef = useRef(false)
+  const householdIdRef = useRef<string | null>(null)
+
   useEffect(() => {
     loadData()
   }, [])
 
   const loadData = async () => {
-    setLoading(true)
+    // Only show skeleton if we haven't shown cached data yet
+    if (!hasShownCacheRef.current) {
+      setLoading(true)
+    }
     setError(null)
 
     try {
@@ -136,6 +145,48 @@ export default function SettingsPage() {
         // No household - redirect to create page
         router.push('/ny-husstand')
         return
+      }
+
+      // Store household ID for cache key
+      householdIdRef.current = myMembership.household_id
+
+      // Check cache first - show cached data immediately if available
+      if (!hasShownCacheRef.current) {
+        const cached = await getCachedSettingsData(myMembership.household_id)
+        if (cached) {
+          // Populate state from cache instantly
+          setHousehold(cached.household)
+          setMembers(cached.members)
+          setChildren(cached.children)
+          setMyProfile(cached.myProfile)
+          setConnectedCalendarEmail(cached.connectedCalendarEmail)
+          setInvitedEmails(cached.invitedEmails)
+
+          // Set profile form from cached myProfile
+          if (cached.myProfile) {
+            setProfileForm({
+              name: cached.myProfile.name,
+              short_name: cached.myProfile.short_name || '',
+              birth_date: cached.myProfile.birth_date || '',
+              work_email: cached.myProfile.work_email || '',
+              allergies: cached.myProfile.allergies || [],
+              ics_calendar_url: cached.myProfile.ics_calendar_url || '',
+            })
+          }
+
+          // Set AI context from cached household
+          if (cached.household) {
+            setAiMealContext(cached.household.ai_meal_context || '')
+            setShareNamesWithAi(cached.household.share_names_with_ai ?? true)
+            setFamilyCalendarUrl(cached.household.ics_calendar_url || '')
+            setFamilyCalendarLastSync(cached.household.ics_last_sync_at || null)
+            setFamilyCalendarError(cached.household.ics_sync_error || null)
+          }
+
+          hasShownCacheRef.current = true
+          setLoading(false)
+          // Continue fetching fresh data in background...
+        }
       }
 
       // Now get the household by ID (exclude encrypted fields)
@@ -185,6 +236,10 @@ export default function SettingsPage() {
         })
       }
 
+      // Variables to store fresh data for cache
+      let freshInvitedEmails: AllowedEmail[] = []
+      let freshCalendarEmail: string | null = null
+
       // If household admin, load admin-specific data (lower priority - admin section at bottom)
       if (myMember?.is_household_admin && householdData) {
         // Fetch these in parallel - both needed for admin section
@@ -201,17 +256,37 @@ export default function SettingsPage() {
           supabase.rpc('get_connected_calendar_email'),
         ])
 
-        setInvitedEmails(emailsResult.data || [])
+        freshInvitedEmails = emailsResult.data || []
+        setInvitedEmails(freshInvitedEmails)
         setFamilyCalendarEventCount(eventCountResult.count || 0)
         if (!calendarEmailResult.error) {
-          setConnectedCalendarEmail(calendarEmailResult.data || null)
+          freshCalendarEmail = calendarEmailResult.data || null
+          setConnectedCalendarEmail(freshCalendarEmail)
         }
       } else {
         // Non-admins still need calendar email for the hint
         const { data: calendarEmail, error: calError } = await supabase.rpc('get_connected_calendar_email')
         if (!calError) {
-          setConnectedCalendarEmail(calendarEmail || null)
+          freshCalendarEmail = calendarEmail || null
+          setConnectedCalendarEmail(freshCalendarEmail)
         }
+      }
+
+      // Update cache with fresh data
+      if (householdIdRef.current && householdData) {
+        const cacheKey = getSettingsCacheKey(householdIdRef.current)
+        const cacheData: SettingsCacheData = {
+          household: householdData,
+          members: membersResult.data || [],
+          children: childrenResult.data || [],
+          myProfile: myMember || null,
+          connectedCalendarEmail: freshCalendarEmail,
+          invitedEmails: freshInvitedEmails,
+          timestamp: Date.now(),
+        }
+        setCache(cacheKey, cacheData).catch(() => {
+          // Ignore cache errors
+        })
       }
     } catch (err) {
       console.error('Settings page error:', err)
