@@ -32,6 +32,7 @@ Family planning app for managing daily pickups, meals, tasks, and more. Built fo
 - **Spond Sync**: Connect to Spond to sync events from children's activity groups
 - **Kidplan Sync**: Sync messages and photos from kindergarten (barnehage)
 - **iSkole Sync**: Sync messages from school (skole) via parent portal
+- **MyKid Sync**: Sync newsletters and photos from MyKid kindergarten app
 - **Unified Feed**: View all messages, photos, and reminders from all services in one place
 - **AI Action Extraction**: Automatically extract tasks/reminders from messages
 - **Suggestion Review**: Review AI-suggested tasks before adding to calendar
@@ -43,9 +44,12 @@ Family planning app for managing daily pickups, meals, tasks, and more. Built fo
 - **Install as App**: Add to home screen for native app experience
 - **Push Notifications**: Get notified about pickup assignments
 - **Offline Support**: Basic functionality works without internet
-- **Pull-to-Refresh**: Native-feel refresh gesture on mobile
+- **Pull-to-Refresh**: Native-feel refresh gesture (PWA mode only)
+- **View Transitions**: Smooth page transitions with 250ms crossfade
+- **Scroll Restoration**: Maintains scroll position on back/forward navigation
 - **iOS Optimized**: Dynamic Island and safe area support
 - **Auto-Update**: Prompts when new versions are available
+- **Adaptive Prefetching**: Respects Data Saver mode and slow connections
 
 ### Real-time Collaboration
 - **Live Sync**: Changes sync instantly between family members
@@ -199,7 +203,8 @@ src/
 │   └── integrations/
 │       ├── spond/         # Spond API client
 │       ├── kidplan/       # Kidplan API client (kindergarten)
-│       └── iskole/        # iSkole API client (school)
+│       ├── iskole/        # iSkole API client (school)
+│       └── mykid/         # MyKid API client (kindergarten)
 └── styles/
 
 public/
@@ -241,6 +246,8 @@ Vercel automatically picks up `vercel.json` for cron job configuration.
 - **SECURITY DEFINER functions**: For cross-table operations
 - **Rate limiting**: On AI and sync endpoints
 - **Admin controls**: Per-household feature flags
+- **Security Headers**: HSTS (1-year), CSP, X-Powered-By disabled
+- **Middleware Optimization**: Cookie-based auth check before API calls
 
 ## Contributing
 

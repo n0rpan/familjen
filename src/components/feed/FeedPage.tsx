@@ -107,43 +107,53 @@ export function FeedPage({ householdId }: Props) {
         .order('taken_at', { ascending: false })
         .limit(50)
 
-      // Filter out pending photos and generate signed URLs for actual photos
+      // Filter out pending photos
       const actualPhotos = (photosData || []).filter(
         (photo) => photo.storage_path && !photo.storage_path.startsWith('pending/')
       )
 
-      // Generate signed URLs for photos (1 hour expiry)
-      const transformedPhotos: FeedPhoto[] = await Promise.all(
-        actualPhotos.map(async (photo) => {
-          let imageUrl: string | null = null
+      // Set photos immediately with null URLs (allows UI to render while URLs load)
+      const initialPhotos: FeedPhoto[] = actualPhotos.map((photo) => ({
+        id: photo.id,
+        integration_id: photo.integration_id,
+        child_id: photo.child_id,
+        external_id: photo.external_id,
+        title: photo.title,
+        taken_at: photo.taken_at,
+        storage_path: photo.storage_path,
+        thumbnail_path: photo.thumbnail_path,
+        child_name: photo.children?.name || null,
+        integration_name: photo.external_integrations?.display_name || null,
+        image_url: null, // Will be populated progressively
+      }))
 
-          try {
-            const { data: signedUrlData } = await supabase.storage
-              .from('external-photos')
-              .createSignedUrl(photo.storage_path, 3600) // 1 hour
+      setPhotos(initialPhotos)
 
-            imageUrl = signedUrlData?.signedUrl || null
-          } catch (err) {
-            console.error('Failed to get signed URL:', err)
-          }
-
-          return {
-            id: photo.id,
-            integration_id: photo.integration_id,
-            child_id: photo.child_id,
-            external_id: photo.external_id,
-            title: photo.title,
-            taken_at: photo.taken_at,
-            storage_path: photo.storage_path,
-            thumbnail_path: photo.thumbnail_path,
-            child_name: photo.children?.name || null,
-            integration_name: photo.external_integrations?.display_name || null,
-            image_url: imageUrl,
-          }
-        })
-      )
-
-      setPhotos(transformedPhotos)
+      // Generate signed URLs progressively in background (don't block render)
+      // Process in batches of 5 for better UX
+      const batchSize = 5
+      for (let i = 0; i < actualPhotos.length; i += batchSize) {
+        const batch = actualPhotos.slice(i, i + batchSize)
+        const urls = await Promise.all(
+          batch.map(async (photo) => {
+            try {
+              const { data } = await supabase.storage
+                .from('external-photos')
+                .createSignedUrl(photo.storage_path, 3600)
+              return { id: photo.id, url: data?.signedUrl || null }
+            } catch {
+              return { id: photo.id, url: null }
+            }
+          })
+        )
+        // Update photos with new URLs
+        setPhotos((prev) =>
+          prev.map((p) => {
+            const match = urls.find((u) => u.id === p.id)
+            return match ? { ...p, image_url: match.url } : p
+          })
+        )
+      }
 
       // Load reminders (child_tasks with type 'reminder' or household_reminders)
       const { data: tasksData } = await supabase
@@ -224,38 +234,64 @@ export function FeedPage({ householdId }: Props) {
     }
   }
 
-  // Calculate filter counts
-  const counts = useMemo(() => {
-    const spondCount = messages.filter((m) => m.service === 'spond').length
-    const schoolCount = messages.filter((m) => m.service === 'iskole').length
-    const kindergartenCount = messages.filter((m) => m.service === 'kidplan' || m.service === 'mykid').length
+  // Calculate counts AND pre-filter messages in a single pass
+  const { counts, messagesByService } = useMemo(() => {
+    const byService = {
+      spond: [] as FeedMessage[],
+      school: [] as FeedMessage[],
+      kindergarten: [] as FeedMessage[],
+    }
+
+    // Single pass through messages
+    for (const m of messages) {
+      if (m.service === 'spond') {
+        byService.spond.push(m)
+      } else if (m.service === 'iskole') {
+        byService.school.push(m)
+      } else if (m.service === 'kidplan' || m.service === 'mykid') {
+        byService.kindergarten.push(m)
+      }
+    }
 
     return {
-      all: messages.length + photos.length + reminders.length,
-      spond: spondCount,
-      school: schoolCount,
-      kindergarten: kindergartenCount,
-      photos: photos.length,
-      reminders: reminders.length,
+      counts: {
+        all: messages.length + photos.length + reminders.length,
+        spond: byService.spond.length,
+        school: byService.school.length,
+        kindergarten: byService.kindergarten.length,
+        photos: photos.length,
+        reminders: reminders.length,
+      },
+      messagesByService: byService,
     }
-  }, [messages, photos, reminders])
+  }, [messages, photos.length, reminders.length])
 
-  // Filter content based on active filter
+  // Get filtered messages from pre-computed groups (no additional filtering)
   const filteredMessages = useMemo(() => {
     switch (activeFilter) {
       case 'spond':
-        return messages.filter((m) => m.service === 'spond')
+        return messagesByService.spond
       case 'school':
-        return messages.filter((m) => m.service === 'iskole')
+        return messagesByService.school
       case 'kindergarten':
-        return messages.filter((m) => m.service === 'kidplan' || m.service === 'mykid')
+        return messagesByService.kindergarten
       case 'photos':
       case 'reminders':
         return []
       default:
         return messages
     }
-  }, [messages, activeFilter])
+  }, [messages, messagesByService, activeFilter])
+
+  // Memoize sliced arrays to prevent new array creation on every render
+  const displayPhotos = useMemo(
+    () => (activeFilter === 'all' ? photos.slice(0, 8) : photos),
+    [photos, activeFilter]
+  )
+  const displayReminders = useMemo(
+    () => (activeFilter === 'all' ? reminders.slice(0, 5) : reminders),
+    [reminders, activeFilter]
+  )
 
   const showPhotos = activeFilter === 'all' || activeFilter === 'photos'
   const showReminders = activeFilter === 'all' || activeFilter === 'reminders'
@@ -362,7 +398,7 @@ export function FeedPage({ householdId }: Props) {
                   Siste bilder
                 </h2>
               )}
-              <PhotoGallery photos={activeFilter === 'all' ? photos.slice(0, 8) : photos} />
+              <PhotoGallery photos={displayPhotos} />
               {activeFilter === 'all' && photos.length > 8 && (
                 <button
                   onClick={() => setActiveFilter('photos')}
@@ -384,7 +420,7 @@ export function FeedPage({ householdId }: Props) {
                 </h2>
               )}
               <div className="space-y-2">
-                {(activeFilter === 'all' ? reminders.slice(0, 5) : reminders).map((reminder) => (
+                {displayReminders.map((reminder) => (
                   <ReminderCard
                     key={reminder.id}
                     reminder={reminder}

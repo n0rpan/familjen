@@ -27,8 +27,10 @@ export const MealSelector = memo(function MealSelector({
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Close dropdown when clicking outside
+  // Close dropdown when clicking outside - only listen when open
   useEffect(() => {
+    if (!isOpen) return
+
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setIsOpen(false)
@@ -36,7 +38,7 @@ export const MealSelector = memo(function MealSelector({
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  }, [isOpen])
 
   // Filter and sort recipes - memoized to avoid recalculation on every render
   const filteredRecipes = useMemo(() => recipes

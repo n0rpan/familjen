@@ -6,7 +6,7 @@ import { SuggestionBanner } from '@/components/integrations/SuggestionReview'
 import { RecentPhotos } from '@/components/RecentPhotos'
 import { HomeRefreshWrapper } from '@/components/HomeRefreshWrapper'
 import { getHomePageData, getTodaySummary, getAttentionStatus } from '@/lib/data/home'
-import Link from 'next/link'
+import { TransitionLink } from '@/components/TransitionLink'
 import Image from 'next/image'
 import { getLanguageFromCookieOrBrowser } from '@/lib/i18n/cookie.server'
 import { getTranslations } from '@/lib/i18n/translations'
@@ -36,12 +36,12 @@ export default async function HomePage() {
           <p className="text-lg mb-8" style={{ color: 'var(--muted)' }}>
             {t.login.subtitle}
           </p>
-          <Link
+          <TransitionLink
             href="/login"
             className="btn btn-primary text-lg px-8 py-4"
           >
             {t.common.next}
-          </Link>
+          </TransitionLink>
         </div>
       </div>
     )
@@ -88,12 +88,12 @@ export default async function HomePage() {
           <p className="text-lg mb-8" style={{ color: 'var(--muted)' }}>
             {t.wizard.waitingForInviteDesc}
           </p>
-          <Link
+          <TransitionLink
             href="/ny-husstand"
             className="btn btn-primary text-lg px-8 py-4"
           >
             {t.settings.household}
-          </Link>
+          </TransitionLink>
         </div>
       </div>
     )
@@ -126,12 +126,12 @@ export default async function HomePage() {
           <p className="mb-8 max-w-md mx-auto" style={{ color: 'var(--muted)' }}>
             {t.errors.generic}
           </p>
-          <Link
+          <TransitionLink
             href="/"
             className="btn btn-primary"
           >
             {t.common.retry}
-          </Link>
+          </TransitionLink>
         </div>
       </div>
     )
@@ -166,12 +166,12 @@ export default async function HomePage() {
           <p className="mb-8 max-w-md mx-auto" style={{ color: 'var(--muted)' }}>
             {t.wizard.welcomeSubtitle}
           </p>
-          <Link
+          <TransitionLink
             href="/innstillinger"
             className="btn btn-primary"
           >
             {t.nav.settings}
-          </Link>
+          </TransitionLink>
         </div>
       </div>
     )
@@ -221,7 +221,7 @@ export default async function HomePage() {
             </span>
           </div>
         ) : (
-          <Link
+          <TransitionLink
             href="/uke"
             className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl transition-opacity hover:opacity-80"
             style={{ background: 'rgba(229, 185, 94, 0.15)' }}
@@ -239,7 +239,7 @@ export default async function HomePage() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="9 18 15 12 9 6"/>
             </svg>
-          </Link>
+          </TransitionLink>
         )}
 
       {/* Universal AI Input - At top on all screen sizes */}
@@ -269,13 +269,13 @@ export default async function HomePage() {
           <h2 className="text-xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
             {t.common.week}
           </h2>
-          <Link
+          <TransitionLink
             href="/uke"
             className="text-sm font-medium transition-colors hover:opacity-80"
             style={{ color: 'var(--accent)' }}
           >
             {t.common.edit} →
-          </Link>
+          </TransitionLink>
         </div>
         <WeekGrid
           children={children || []}

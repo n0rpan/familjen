@@ -204,6 +204,15 @@ export const WeekGrid = memo(function WeekGrid({
     return externalEventsByChildDate.get(`${childId}-${formatDateISO(date)}`) || []
   }
 
+  // Pre-compute holidays for each day of the week to avoid repeated lookups in render
+  const holidaysByDate = useMemo(() => {
+    const map = new Map<string, Holiday | null>()
+    weekDates.forEach(date => {
+      map.set(formatDateISO(date), getHoliday(date, holidays))
+    })
+    return map
+  }, [weekDates, holidays])
+
   // Get service badge label (e.g., "Spond")
   const getServiceBadge = (event: ExternalEvent) => {
     // Special case for school closures
@@ -267,16 +276,20 @@ export const WeekGrid = memo(function WeekGrid({
                     {date.getDate()}.
                   </div>
                   {(() => {
-                    const holiday = getHoliday(date, holidays)
-                    return holiday ? (
+                    const holiday = holidaysByDate.get(formatDateISO(date))
+                    if (!holiday) return null
+                    const label = holiday.type === 'birthday'
+                      ? t.date.birthday.replace('{name}', holiday.name)
+                      : holiday.name
+                    return (
                       <div
                         className="text-xs mt-1 truncate max-w-[80px]"
                         style={{ color: holiday.type === 'birthday' ? '#a78bfa' : 'var(--color-coral)' }}
-                        title={holiday.type === 'birthday' ? t.date.birthday.replace('{name}', holiday.name) : holiday.name}
+                        title={label}
                       >
-                        {holiday.type === 'birthday' ? t.date.birthday.replace('{name}', holiday.name) : holiday.name}
+                        {label}
                       </div>
-                    ) : null
+                    )
                   })()}
                 </th>
               ))}

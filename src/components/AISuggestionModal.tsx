@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, memo } from 'react'
 import type { MealSuggestion, RecipeIngredient } from '@/lib/types'
 import { useLanguage } from '@/lib/i18n/context'
 
@@ -19,7 +19,7 @@ interface AISuggestionModalProps {
   onApplyAll?: () => void
 }
 
-export function AISuggestionModal({
+export const AISuggestionModal = memo(function AISuggestionModal({
   isOpen,
   onClose,
   suggestions,
@@ -416,4 +416,4 @@ export function AISuggestionModal({
       </div>
     </div>
   )
-}
+})

@@ -532,3 +532,105 @@ Filter categories:
 - **Barnehage** - Kidplan + MyKid messages
 - **Bilder** - Photos from all services
 - **Påminnelser** - AI-extracted reminders
+
+## Performance Patterns
+
+### View Transitions
+
+The app uses the View Transitions API for native-feel navigation:
+
+```typescript
+// Always use TransitionLink instead of next/link for internal navigation
+import { TransitionLink } from '@/components/TransitionLink'
+
+<TransitionLink href="/uke">Week</TransitionLink>
+```
+
+**Key files:**
+- `src/components/TransitionLink.tsx` - Wrapper with view transition support
+- `src/app/globals.css` - Transition animations (250ms crossfade)
+- `src/components/AppShell.tsx` - Pull-to-refresh (PWA only) + scroll restoration
+
+### Middleware Auth Optimization
+
+The middleware checks for session cookies before making expensive auth API calls:
+
+```typescript
+// src/lib/supabase/middleware.ts
+function hasAuthCookie(request: NextRequest): boolean {
+  return request.cookies.getAll().some(c => c.name.includes('-auth-token'))
+}
+
+// Skip getUser() if no cookie exists - major TTFB improvement
+if (!hasAuthCookie(request)) {
+  if (isProtectedPath) return NextResponse.redirect('/login')
+  return NextResponse.next({ request })
+}
+```
+
+### Component Memoization
+
+Key patterns used for performance:
+
+```typescript
+// Wrap modals and heavy components with memo
+export const AISuggestionModal = memo(function AISuggestionModal({ ... }) { ... })
+
+// Click-outside listeners only when needed
+useEffect(() => {
+  if (!isOpen) return  // Don't register listener when closed
+  document.addEventListener('mousedown', handleClickOutside)
+  return () => document.removeEventListener('mousedown', handleClickOutside)
+}, [isOpen])
+
+// Pre-compute lookups to avoid render-time calculations
+const holidaysByDate = useMemo(() => {
+  const map = new Map<string, Holiday | null>()
+  weekDates.forEach(date => map.set(formatDateISO(date), getHoliday(date, holidays)))
+  return map
+}, [weekDates, holidays])
+
+// Memoize sliced arrays to prevent child re-renders
+const displayPhotos = useMemo(
+  () => (activeFilter === 'all' ? photos.slice(0, 8) : photos),
+  [photos, activeFilter]
+)
+```
+
+### Progressive Loading
+
+For large data sets, load progressively instead of blocking:
+
+```typescript
+// FeedPage: Set photos immediately, load URLs in background
+setPhotos(initialPhotos)  // Render with placeholders
+
+// Process URLs in batches of 5
+for (let i = 0; i < photos.length; i += 5) {
+  const batch = photos.slice(i, i + 5)
+  const urls = await Promise.all(batch.map(p => getSignedUrl(p)))
+  setPhotos(prev => prev.map(p => /* merge URLs */))
+}
+```
+
+### Adaptive Prefetching
+
+Prefetch routes based on connection quality:
+
+```typescript
+// src/hooks/usePrefetchRoutes.ts
+const shouldSkipPrefetch = () => {
+  const conn = navigator.connection
+  return conn?.saveData || conn?.effectiveType === 'slow-2g' || conn?.effectiveType === '2g'
+}
+
+// Use requestIdleCallback for non-blocking prefetch
+requestIdleCallback(() => router.prefetch(route), { timeout: 2000 })
+```
+
+## Security Headers
+
+The app sets security headers via `next.config.ts`:
+- **HSTS**: Strict-Transport-Security with 1-year max-age
+- **CSP**: Content-Security-Policy for XSS protection
+- **X-Powered-By**: Disabled to hide framework info

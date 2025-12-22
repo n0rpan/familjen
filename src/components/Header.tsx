@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -191,7 +190,7 @@ export function Header() {
         <div className="max-w-6xl mx-auto px-6 w-full">
           <div className="flex justify-between items-center h-16">
             {/* Logo */}
-            <Link href="/" className="flex items-center gap-3 group">
+            <TransitionLink href="/" className="flex items-center gap-3 group">
               <Image
                 src="/icons/icon.svg"
                 alt="Familjen"
@@ -202,7 +201,7 @@ export function Header() {
               <span className="text-xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
                 Familjen
               </span>
-            </Link>
+            </TransitionLink>
 
             {/* Navigation */}
             <nav className="flex items-center gap-1" aria-label="Main navigation">
@@ -326,7 +325,7 @@ export function Header() {
         }}
       >
         <div className="flex justify-center items-center h-14 px-4">
-          <Link href="/" className="flex items-center gap-2 group">
+          <TransitionLink href="/" className="flex items-center gap-2 group">
             <Image
               src="/icons/icon.svg"
               alt="Familjen"
@@ -337,7 +336,7 @@ export function Header() {
             <span className="text-lg font-semibold font-display" style={{ color: 'var(--foreground)' }}>
               Familjen
             </span>
-          </Link>
+          </TransitionLink>
         </div>
       </header>
 

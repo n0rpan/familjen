@@ -1,6 +1,6 @@
 'use client'
 
-import Link from 'next/link'
+import { TransitionLink } from '@/components/TransitionLink'
 import { useLanguage } from '@/lib/i18n/context'
 
 interface Photo {
@@ -37,19 +37,19 @@ export function RecentPhotos({ photos }: Props) {
         <h2 className="text-xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
           Siste bilder
         </h2>
-        <Link
+        <TransitionLink
           href="/feed?filter=photos"
           className="text-sm font-medium transition-colors hover:opacity-80"
           style={{ color: 'var(--accent)' }}
         >
           Se alle →
-        </Link>
+        </TransitionLink>
       </div>
 
       {/* Horizontal scroll container */}
       <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
         {photos.slice(0, 4).map((photo) => (
-          <Link
+          <TransitionLink
             key={photo.id}
             href="/feed?filter=photos"
             className="flex-shrink-0 w-32 sm:w-40 group"
@@ -105,7 +105,7 @@ export function RecentPhotos({ photos }: Props) {
                 {photo.child_name || formatDate(photo.taken_at) || 'Bilde'}
               </p>
             </div>
-          </Link>
+          </TransitionLink>
         ))}
       </div>
     </div>

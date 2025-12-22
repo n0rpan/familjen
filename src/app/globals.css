@@ -355,13 +355,13 @@ input:focus, select:focus, textarea:focus {
   animation: none;
 }
 
-/* Page content: quick crossfade only, no slide/shake */
+/* Page content: crossfade for smooth transitions */
 ::view-transition-old(page-content) {
-  animation: content-fade-out 0.1s ease-out forwards;
+  animation: content-fade-out 0.25s ease-out forwards;
 }
 
 ::view-transition-new(page-content) {
-  animation: content-fade-in 0.1s ease-out forwards;
+  animation: content-fade-in 0.25s ease-out forwards;
 }
 
 @keyframes content-fade-out {

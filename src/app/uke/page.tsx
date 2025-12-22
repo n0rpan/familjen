@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { WeekGrid } from '@/components/WeekGrid'
 import { formatDateISO, getWeekStart, addDays, formatWeekHeaderLocalized, type Holiday } from '@/lib/utils'
 import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Household, Recipe, MealSuggestion, MemberEvent, MemberEventType, HouseholdEvent, ChildTask, ChildTaskType, RecipeIngredient, Pickup, Meal, ExternalEvent, WeekCacheData } from '@/lib/types'
-import Link from 'next/link'
+import { TransitionLink } from '@/components/TransitionLink'
 import dynamic from 'next/dynamic'
 import { RecentChanges } from '@/components/RecentChanges'
 import { useLanguage } from '@/lib/i18n/context'
@@ -1517,9 +1517,9 @@ export default function WeekEditPage() {
           <p className="mb-8 max-w-md mx-auto" style={{ color: 'var(--muted)' }}>
             {t.wizard.addChildrenSubtitle}
           </p>
-          <Link href="/innstillinger" className="btn btn-primary">
+          <TransitionLink href="/innstillinger" className="btn btn-primary">
             {t.nav.settings}
-          </Link>
+          </TransitionLink>
         </div>
       </div>
     )
