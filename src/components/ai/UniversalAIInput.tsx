@@ -16,6 +16,7 @@ import type {
 } from '@/app/api/openrouter/parse-action/route'
 import type { MealSuggestion } from '@/lib/types'
 import { formatDateISO } from '@/lib/utils'
+import { compressImageToBase64 } from '@/lib/image-compression'
 import { getCachedCategory, setCachedCategory } from '@/lib/shopping-category-cache'
 import type { ShoppingCategory } from '@/lib/constants'
 
@@ -82,6 +83,7 @@ export function UniversalAIInput({
   // Image upload state
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [isCompressing, setIsCompressing] = useState(false)
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -245,7 +247,7 @@ export function UniversalAIInput({
   }, [parseInput, selectedImage])
 
   // Image handling functions
-  const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
@@ -255,27 +257,29 @@ export function UniversalAIInput({
       return
     }
 
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      setError('Bildet er for stort (maks 5MB)')
-      return
-    }
+    setError(null)
+    setIsCompressing(true)
 
-    // Convert to base64
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      const base64 = reader.result as string
+    try {
+      // Compress image to max 1600px and ~2MB (handles large iPhone photos)
+      const base64 = await compressImageToBase64(file, {
+        maxWidth: 1600,
+        maxHeight: 1600,
+        quality: 0.85,
+        maxSizeBytes: 2 * 1024 * 1024,
+      })
+
       setSelectedImage(base64)
       setImagePreview(base64)
-      setError(null)
 
       // Parse immediately if we have an image (no need for text)
       parseInput(input || '', base64)
+    } catch (err) {
+      console.error('Image compression failed:', err)
+      setError('Kunne ikke behandle bildet')
+    } finally {
+      setIsCompressing(false)
     }
-    reader.onerror = () => {
-      setError('Kunne ikke lese bildet')
-    }
-    reader.readAsDataURL(file)
   }, [input, parseInput])
 
   const handleRemoveImage = useCallback(() => {
@@ -1821,8 +1825,19 @@ export function UniversalAIInput({
         )}
       </div>
 
+      {/* Image compressing indicator */}
+      {isCompressing && (
+        <div
+          className="p-3 rounded-xl text-sm flex items-center gap-2"
+          style={{ background: 'rgba(126, 182, 196, 0.15)', color: 'var(--color-sky)' }}
+        >
+          <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+          Behandler bilde...
+        </div>
+      )}
+
       {/* Image preview */}
-      {imagePreview && (
+      {imagePreview && !isCompressing && (
         <div
           className="relative inline-block rounded-xl overflow-hidden"
           style={{
