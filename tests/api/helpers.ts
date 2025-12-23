@@ -179,7 +179,32 @@ export function getNextMonday(): string {
 }
 
 // Common allergy test patterns
-export const DAIRY_PATTERNS = /melk|ost|fløte|yoghurt|smør|cream|cheese|milk|butter/i
+// Note: These patterns exclude common false positives:
+// - "kokosmelk" (coconut milk) is dairy-free
+// - "uten melk" (without milk) indicates dairy-free
+// - "muskatnøtt" (nutmeg) is not a tree nut
+
+// Helper to check for dairy allergens (excluding coconut milk and "without milk" phrases)
+export function containsDairy(text: string): boolean {
+  const lower = text.toLowerCase()
+  // Exclude coconut milk and "without X" phrases
+  const cleaned = lower
+    .replace(/kokosmelk/g, '')
+    .replace(/\(uten\s+\w+\)/g, '')
+    .replace(/uten\s+melk/g, '')
+  return /\bmelk\b|ost|fløte|yoghurt|smør|cream|cheese|milk|butter/i.test(cleaned)
+}
+
+// Helper to check for nut allergens (excluding nutmeg)
+export function containsNuts(text: string): boolean {
+  const lower = text.toLowerCase()
+  // Exclude muskatnøtt (nutmeg)
+  const cleaned = lower.replace(/muskatnøtt/g, '')
+  return /nøtt|mandel|valnøtt|hasselnøtt|cashew|pistachio|peanut|nut|almond/i.test(cleaned)
+}
+
+// Simple patterns for eggs and gluten
+export const DAIRY_PATTERNS = /\bmelk\b|ost|fløte|yoghurt|smør|cream|cheese|milk|butter/i
 export const EGG_PATTERNS = /\begg\b/i
 export const NUT_PATTERNS = /nøtt|mandel|valnøtt|hasselnøtt|cashew|pistachio|nut|almond/i
 export const GLUTEN_PATTERNS = /hvete|gluten|mel\b|pasta|brød|wheat|flour|bread/i

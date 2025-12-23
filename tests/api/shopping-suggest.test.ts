@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { GET } from '@/app/api/openrouter/shopping-suggest/route'
-import { createTestRequest, parseResponse, getNextMonday, formatDate } from './helpers'
+import { createTestRequest, parseResponse, getNextMonday } from './helpers'
+import { TEST_MODEL } from './setup'
 
 // Types for shopping suggest response
 interface ShoppingSuggestion {
@@ -17,44 +18,52 @@ interface ShoppingSuggestResponse {
   error?: string
 }
 
-// Mock household data
-const mockHousehold = {
-  id: 'test-household-id',
-  name: 'Test Familie',
-}
+// Use vi.hoisted to define mock data before vi.mock hoisting
+const mockData = vi.hoisted(() => {
+  const weekStart = (() => {
+    const today = new Date()
+    const dayOfWeek = today.getDay()
+    const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek
+    const nextMonday = new Date(today)
+    nextMonday.setDate(today.getDate() + daysUntilMonday)
+    return nextMonday.toISOString().split('T')[0]
+  })()
 
-const weekStart = getNextMonday()
-
-// Create mock recipes with ingredients
-const mockRecipes = [
-  {
-    id: 'recipe-1',
-    name: 'Taco',
-    household_id: 'test-household-id',
-    ingredients: [
-      { item: 'kjøttdeig', amount: '400g' },
-      { item: 'tacokrydder', amount: '1 pakke' },
-      { item: 'tortilla', amount: '8 stk' },
-      { item: 'salat', amount: '1 pose' },
+  return {
+    household: {
+      id: 'test-household-id',
+      name: 'Test Familie',
+    },
+    recipes: [
+      {
+        id: 'recipe-1',
+        name: 'Taco',
+        household_id: 'test-household-id',
+        ingredients: [
+          { item: 'kjøttdeig', amount: '400g' },
+          { item: 'tacokrydder', amount: '1 pakke' },
+          { item: 'tortilla', amount: '8 stk' },
+          { item: 'salat', amount: '1 pose' },
+        ],
+      },
+      {
+        id: 'recipe-2',
+        name: 'Pasta Bolognese',
+        household_id: 'test-household-id',
+        ingredients: [
+          { item: 'kjøttdeig', amount: '500g' },
+          { item: 'hermetiske tomater', amount: '2 bokser' },
+          { item: 'pasta', amount: '400g' },
+          { item: 'løk', amount: '1 stk' },
+        ],
+      },
     ],
-  },
-  {
-    id: 'recipe-2',
-    name: 'Pasta Bolognese',
-    household_id: 'test-household-id',
-    ingredients: [
-      { item: 'kjøttdeig', amount: '500g' },
-      { item: 'hermetiske tomater', amount: '2 bokser' },
-      { item: 'pasta', amount: '400g' },
-      { item: 'løk', amount: '1 stk' },
+    meals: [
+      { date: weekStart, recipe_id: 'recipe-1', custom_meal: null, household_id: 'test-household-id' },
     ],
-  },
-]
-
-// Create mock meals for the week
-const mockMeals = [
-  { date: weekStart, recipe_id: 'recipe-1', custom_meal: null, household_id: 'test-household-id' },
-]
+    weekStart,
+  }
+})
 
 // Mock the Supabase server client with meal and recipe data
 vi.mock('@/lib/supabase/server', () => ({
@@ -72,11 +81,16 @@ vi.mock('@/lib/supabase/server', () => ({
         is: vi.fn().mockReturnThis(),
         order: vi.fn().mockReturnThis(),
         limit: vi.fn().mockReturnThis(),
-        single: vi.fn().mockResolvedValue({ data: null, error: null }),
+        single: vi.fn().mockImplementation(() => {
+          if (table === 'app_settings') {
+            return Promise.resolve({ data: { value: TEST_MODEL }, error: null })
+          }
+          return Promise.resolve({ data: null, error: null })
+        }),
         then: (resolve: (value: { data: unknown[]; error: null }) => void) => {
           let data: unknown[] = []
-          if (table === 'meals') data = mockMeals
-          if (table === 'recipes') data = mockRecipes
+          if (table === 'meals') data = mockData.meals
+          if (table === 'recipes') data = mockData.recipes
           if (table === 'shopping_lists') data = [{ id: 'list-1', household_id: 'test-household-id', is_archived: false }]
           if (table === 'shopping_items') data = []
           resolve({ data, error: null })
@@ -96,10 +110,10 @@ vi.mock('@/lib/supabase/server', () => ({
 
 // Mock household helper
 vi.mock('@/lib/supabase/household', () => ({
-  getUserHousehold: vi.fn().mockResolvedValue({
-    data: mockHousehold,
+  getUserHousehold: vi.fn().mockImplementation(() => Promise.resolve({
+    data: mockData.household,
     error: null,
-  }),
+  })),
 }))
 
 // Mock rate limiting

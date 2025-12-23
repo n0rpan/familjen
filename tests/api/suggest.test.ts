@@ -5,10 +5,9 @@ import {
   createTestRequest,
   parseResponse,
   getNextMonday,
-  DAIRY_PATTERNS,
+  containsDairy,
+  containsNuts,
   EGG_PATTERNS,
-  NUT_PATTERNS,
-  GLUTEN_PATTERNS,
   type TestChild,
   type TestMember,
 } from './helpers'
@@ -108,8 +107,8 @@ describe('/api/openrouter/suggest', () => {
             ...meal.ingredients.map(i => i.item.toLowerCase()),
           ].join(' ')
 
-          // Verify no dairy ingredients
-          expect(nameAndIngredients).not.toMatch(DAIRY_PATTERNS)
+          // Verify no dairy ingredients (using helper that excludes false positives like kokosmelk)
+          expect(containsDairy(nameAndIngredients)).toBe(false)
         }
       }
     }, 60000) // 60s timeout for real API call
@@ -163,7 +162,8 @@ describe('/api/openrouter/suggest', () => {
       if (data.suggestions && data.suggestions.length > 0) {
         for (const meal of data.suggestions) {
           const ingredients = meal.ingredients.map(i => i.item.toLowerCase()).join(' ')
-          expect(ingredients).not.toMatch(NUT_PATTERNS)
+          // Verify no nut ingredients (using helper that excludes false positives like muskatnøtt)
+          expect(containsNuts(ingredients)).toBe(false)
         }
       }
     }, 60000)
@@ -196,10 +196,10 @@ describe('/api/openrouter/suggest', () => {
         for (const meal of data.suggestions) {
           const ingredients = meal.ingredients.map(i => i.item.toLowerCase()).join(' ')
 
-          // All three allergies should be excluded
-          expect(ingredients).not.toMatch(DAIRY_PATTERNS)
+          // All three allergies should be excluded (using helpers for dairy/nuts)
+          expect(containsDairy(ingredients)).toBe(false)
           expect(ingredients).not.toMatch(EGG_PATTERNS)
-          expect(ingredients).not.toMatch(NUT_PATTERNS)
+          expect(containsNuts(ingredients)).toBe(false)
         }
       }
     }, 60000)
@@ -226,7 +226,7 @@ describe('/api/openrouter/suggest', () => {
       if (data.suggestions && data.suggestions.length > 0) {
         for (const meal of data.suggestions) {
           const ingredients = meal.ingredients.map(i => i.item.toLowerCase()).join(' ')
-          expect(ingredients).not.toMatch(DAIRY_PATTERNS)
+          expect(containsDairy(ingredients)).toBe(false)
           expect(ingredients).not.toMatch(EGG_PATTERNS)
         }
       }
