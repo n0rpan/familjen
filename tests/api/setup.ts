@@ -1,7 +1,12 @@
 import { vi, afterEach, beforeAll } from 'vitest'
+import { config } from 'dotenv'
+
+// Load environment variables from .env.local for local development
+config({ path: '.env.local' })
 
 // Configurable model via environment variable (GitHub secret)
-export const TEST_MODEL = process.env.OPENROUTER_TEST_MODEL || 'google/gemini-2.0-flash-lite'
+// Valid cheap models: google/gemini-2.5-flash-lite, google/gemini-2.0-flash-exp:free
+export const TEST_MODEL = process.env.OPENROUTER_TEST_MODEL || 'google/gemini-2.5-flash-lite'
 
 // Add delay between tests to respect rate limits
 const TEST_DELAY = parseInt(process.env.TEST_API_DELAY_MS || '500')

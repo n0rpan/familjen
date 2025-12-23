@@ -311,9 +311,13 @@ Ikke inkluder noe annet enn JSON i svaret.`,
             // Common false positives to exclude
             const falsePositives = [
               { pattern: /kokos\s*melk/i, allergy: 'melk' },
+              { pattern: /melkefri/i, allergy: 'melk' },
               { pattern: /\(uten\s+\w+\)/i, allergy: allergyLower },
               { pattern: /uten\s+melk/i, allergy: 'melk' },
               { pattern: /muskatnøtt/i, allergy: 'nøtt' },
+              { pattern: /nøttefri/i, allergy: 'nøtt' },
+              { pattern: /eggfri/i, allergy: 'egg' },
+              { pattern: /glutenfri/i, allergy: 'gluten' },
             ]
 
             let isFalsePositive = false
