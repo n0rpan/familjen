@@ -233,6 +233,8 @@ export async function POST(request: Request) {
 - Varierte gjennom uken
 - Sesongbaserte når mulig
 
+KRITISK VIKTIG: Hvis familien har allergier eller matrestriksjoner, må du ALDRI foreslå retter som inneholder disse ingrediensene. Dette er et helsekrav.
+
 Svar ALLTID i gyldig JSON-format med denne strukturen:
 {
   "suggestions": [
@@ -396,6 +398,11 @@ function buildPrompt(context: PromptContext): string {
 - Fokuser på protein
 - Varier mellom ulike proteiner (kylling, fisk, kjøtt, vegetar)
 - Ta hensyn til sesongen og eventuelle helligdager`
+
+  // Reinforce allergies at the end (AI pays more attention to end of prompt)
+  if (allAllergies.length > 0) {
+    prompt += `\n\n**PÅMINNELSE - UNNGÅ DISSE INGREDIENSENE (allergier):** ${allAllergies.join(', ')}`
+  }
 
   return prompt
 }
