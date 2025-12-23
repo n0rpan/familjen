@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest'
 import { POST } from '@/app/api/openrouter/analyze-wishlist-image/route'
-import { createTestRequest, parseResponse } from './helpers'
+import { createTestRequest, parseResponse, getTestProductImage, FALLBACK_PRODUCT_IMAGE } from './helpers'
 import { TEST_MODEL } from './setup'
 
 // Types for wishlist analysis response
@@ -56,8 +56,24 @@ vi.mock('@/lib/config', () => ({
   validateOrigin: vi.fn().mockReturnValue(true),
 }))
 
-// A simple 1x1 PNG image as base64 for testing
-const SIMPLE_TEST_IMAGE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+// Generate realistic product images for testing
+let PRODUCT_IMAGE_TOY: string
+let PRODUCT_IMAGE_ELECTRONICS: string
+
+beforeAll(async () => {
+  console.log('[Test Setup] Generating product images for wishlist tests...')
+
+  // Try to generate realistic images, fall back to static if not available
+  const [toyImage, electronicsImage] = await Promise.all([
+    getTestProductImage('LEGO toy box on store shelf with visible price tag 299 kr'),
+    getTestProductImage('wireless headphones in retail packaging with price 599 kr'),
+  ])
+
+  PRODUCT_IMAGE_TOY = toyImage
+  PRODUCT_IMAGE_ELECTRONICS = electronicsImage
+
+  console.log(`[Test Setup] Using ${toyImage === FALLBACK_PRODUCT_IMAGE ? 'fallback' : 'AI-generated'} images`)
+}, 30000)
 
 describe('/api/openrouter/analyze-wishlist-image', () => {
   beforeEach(() => {
@@ -65,42 +81,58 @@ describe('/api/openrouter/analyze-wishlist-image', () => {
   })
 
   describe('Image Analysis', () => {
-    it('analyzes image and returns product info or gracefully fails', async () => {
+    it('analyzes toy product image and extracts info', async () => {
       const request = createTestRequest('http://localhost:3000/api/openrouter/analyze-wishlist-image', {
         method: 'POST',
-        body: { image: SIMPLE_TEST_IMAGE },
+        body: { image: PRODUCT_IMAGE_TOY },
       })
 
       const response = await POST(request)
 
-      // With a blank test image, the AI may:
-      // - Return 200 with null fields (no product detected)
-      // - Return 500 if it can't parse the response (AI returns text instead of JSON)
-      expect([200, 500]).toContain(response.status)
+      expect(response.status).toBe(200)
+      const data = await parseResponse<WishlistAnalysisResponse>(response)
 
-      if (response.status === 200) {
-        const data = await parseResponse<WishlistAnalysisResponse>(response)
-        // Response should have the expected structure
-        expect(data).toHaveProperty('name')
-        expect(data).toHaveProperty('description')
-        expect(data).toHaveProperty('price')
+      // Response should have the expected structure
+      expect(data).toHaveProperty('name')
+      expect(data).toHaveProperty('description')
+      expect(data).toHaveProperty('price')
+
+      // With a realistic toy image, AI should detect something
+      if (data.name !== null) {
+        expect(typeof data.name).toBe('string')
+        expect(data.name.length).toBeGreaterThan(0)
       }
     }, 60000)
 
-    it('handles images with no detectable product', async () => {
+    it('analyzes electronics product image and extracts info', async () => {
       const request = createTestRequest('http://localhost:3000/api/openrouter/analyze-wishlist-image', {
         method: 'POST',
-        body: { image: SIMPLE_TEST_IMAGE }, // Simple blank image
+        body: { image: PRODUCT_IMAGE_ELECTRONICS },
       })
 
       const response = await POST(request)
 
-      // AI may return 500 if it can't produce valid JSON for blank image
+      expect(response.status).toBe(200)
+      const data = await parseResponse<WishlistAnalysisResponse>(response)
+
+      expect(data).toHaveProperty('name')
+      expect(data).toHaveProperty('description')
+      expect(data).toHaveProperty('price')
+    }, 60000)
+
+    it('handles fallback image gracefully', async () => {
+      const request = createTestRequest('http://localhost:3000/api/openrouter/analyze-wishlist-image', {
+        method: 'POST',
+        body: { image: FALLBACK_PRODUCT_IMAGE },
+      })
+
+      const response = await POST(request)
+
+      // With minimal fallback image, AI may return 200 with nulls or 500
       expect([200, 500]).toContain(response.status)
 
       if (response.status === 200) {
         const data = await parseResponse<WishlistAnalysisResponse>(response)
-        // Should return null fields for undetectable product
         expect(data).toHaveProperty('name')
         expect(data).toHaveProperty('description')
         expect(data).toHaveProperty('price')
@@ -150,31 +182,27 @@ describe('/api/openrouter/analyze-wishlist-image', () => {
     it('returns properly typed response when successful', async () => {
       const request = createTestRequest('http://localhost:3000/api/openrouter/analyze-wishlist-image', {
         method: 'POST',
-        body: { image: SIMPLE_TEST_IMAGE },
+        body: { image: PRODUCT_IMAGE_TOY },
       })
 
       const response = await POST(request)
+      expect(response.status).toBe(200)
 
-      // With blank test image, AI may return 500 (can't parse)
-      expect([200, 500]).toContain(response.status)
+      const data = await parseResponse<WishlistAnalysisResponse>(response)
 
-      if (response.status === 200) {
-        const data = await parseResponse<WishlistAnalysisResponse>(response)
+      // Type validation
+      if (data.name !== null) {
+        expect(typeof data.name).toBe('string')
+        expect(data.name.length).toBeGreaterThan(0)
+      }
 
-        // Type validation
-        if (data.name !== null) {
-          expect(typeof data.name).toBe('string')
-          expect(data.name.length).toBeGreaterThan(0)
-        }
+      if (data.description !== null) {
+        expect(typeof data.description).toBe('string')
+      }
 
-        if (data.description !== null) {
-          expect(typeof data.description).toBe('string')
-        }
-
-        if (data.price !== null) {
-          expect(typeof data.price).toBe('number')
-          expect(data.price).toBeGreaterThanOrEqual(0)
-        }
+      if (data.price !== null) {
+        expect(typeof data.price).toBe('number')
+        expect(data.price).toBeGreaterThanOrEqual(0)
       }
     }, 60000)
   })

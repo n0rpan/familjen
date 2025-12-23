@@ -256,7 +256,7 @@ Ikke inkluder noe annet enn JSON i svaret.`,
               content: prompt,
             },
           ],
-          temperature: 0.7,
+          temperature: 0.4, // Lower temperature for more consistent allergy compliance
           max_tokens: 2000,
         }),
         signal: controller.signal,
@@ -291,7 +291,49 @@ Ikke inkluder noe annet enn JSON i svaret.`,
       return NextResponse.json({ error: 'Kunne ikke tolke AI-svar' }, { status: 500 })
     }
 
-    const suggestions: MealSuggestion[] = parsed.suggestions || []
+    let suggestions: MealSuggestion[] = parsed.suggestions || []
+
+    // SAFETY NET: Filter out any meals containing allergens (AI sometimes ignores constraints)
+    if (allAllergies.length > 0) {
+      suggestions = suggestions.filter(meal => {
+        const mealText = [
+          meal.name.toLowerCase(),
+          meal.description?.toLowerCase() || '',
+          ...meal.ingredients.map(i => i.item.toLowerCase()),
+        ].join(' ')
+
+        // Check if any allergen appears in meal text
+        for (const allergy of allAllergies) {
+          const allergyLower = allergy.toLowerCase()
+
+          // Skip false positive patterns
+          if (mealText.includes(allergyLower)) {
+            // Common false positives to exclude
+            const falsePositives = [
+              { pattern: /kokos\s*melk/i, allergy: 'melk' },
+              { pattern: /\(uten\s+\w+\)/i, allergy: allergyLower },
+              { pattern: /uten\s+melk/i, allergy: 'melk' },
+              { pattern: /muskatnøtt/i, allergy: 'nøtt' },
+            ]
+
+            let isFalsePositive = false
+            for (const fp of falsePositives) {
+              if (fp.allergy === allergyLower && fp.pattern.test(mealText)) {
+                isFalsePositive = true
+                break
+              }
+            }
+
+            if (!isFalsePositive) {
+              console.warn(`[Allergen Filter] Removing "${meal.name}" - contains "${allergy}"`)
+              return false
+            }
+          }
+        }
+        return true
+      })
+    }
+
     return NextResponse.json({ suggestions })
   } catch (error) {
     console.error('Suggest meals error:', error)

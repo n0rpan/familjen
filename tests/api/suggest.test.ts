@@ -203,27 +203,20 @@ describe('/api/openrouter/suggest', () => {
       expect(response.status).toBe(200)
 
       if (data.suggestions && data.suggestions.length > 0) {
-        const allergenIssues: string[] = []
-
         for (const meal of data.suggestions) {
           const ingredients = meal.ingredients.map(i => i.item)
 
-          // Use AI to verify all three allergies are excluded
+          // Use AI to verify all three allergies are excluded - NO TOLERANCE
           const result = await verifyNoAllergens(meal.name, ingredients, ['melk', 'dairy', 'egg', 'nøtter', 'nuts'])
-          if (result.containsAllergen) {
-            const issue = `${meal.name}: ${result.reason} (ingredient: ${result.ingredient})`
-            allergenIssues.push(issue)
-            console.warn(`[Allergen Warning] ${issue}`)
-            console.warn(`  Ingredients: ${ingredients.join(', ')}`)
-          }
-        }
 
-        // Allow up to 1 false positive from AI (non-deterministic behavior)
-        // But fail if multiple meals have issues (indicates systematic problem)
-        if (allergenIssues.length > 1) {
-          throw new Error(`Multiple meals contain allergens:\n${allergenIssues.join('\n')}`)
-        } else if (allergenIssues.length === 1) {
-          console.warn(`[Test Warning] Single allergen issue detected (allowing as AI variance): ${allergenIssues[0]}`)
+          if (result.containsAllergen) {
+            console.error(`[ALLERGEN VIOLATION] ${meal.name}`)
+            console.error(`  Reason: ${result.reason}`)
+            console.error(`  Ingredient: ${result.ingredient}`)
+            console.error(`  All ingredients: ${ingredients.join(', ')}`)
+          }
+
+          expect(result.containsAllergen).toBe(false)
         }
       }
     }, 120000)
