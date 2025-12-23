@@ -12,6 +12,7 @@ import type { MealSuggestion } from '@/lib/types'
 const parseActionSchema = z.object({
   input: z.string().max(500).optional().default(''),
   image: z.string().optional(), // Base64 data URI for image analysis
+  imageCategoryHint: z.enum(['gift', 'event', 'task', 'other']).optional(), // User-selected category hint
   context: z.object({
     today: z.string(),
     children: z.array(z.object({
@@ -155,7 +156,7 @@ export async function POST(request: Request) {
     if (!validation.success) {
       return NextResponse.json({ error: 'Ugyldig forespørsel' }, { status: 400 })
     }
-    const { input, image, context } = validation.data
+    const { input, image, imageCategoryHint, context } = validation.data
     const hasImage = Boolean(image)
 
     // Detect request mode
@@ -194,7 +195,7 @@ export async function POST(request: Request) {
     // Build the prompt
     const systemPrompt = buildSystemPrompt(context)
     const userPrompt = hasImage
-      ? buildVisionUserPrompt(input, image!, context, currentMember?.name)
+      ? buildVisionUserPrompt(input, image!, context, currentMember?.name, imageCategoryHint)
       : buildUserPrompt(input, context, currentMember?.name)
 
     // Call OpenRouter API
@@ -560,7 +561,8 @@ function buildVisionUserPrompt(
   input: string,
   _image: string,
   context: z.infer<typeof parseActionSchema>['context'],
-  currentUserName?: string
+  currentUserName?: string,
+  categoryHint?: 'gift' | 'event' | 'task' | 'other'
 ): string {
   const baseContext = `
 Kontekst:
@@ -576,41 +578,83 @@ Kontekst:
   // If user provided additional text context, include it
   const userNote = input.trim() ? `\nBrukerens tilleggsinformasjon: "${input}"` : ''
 
-  return `Analyser dette bildet og bestem hva slags dokument/element det viser.
+  // Build category-specific guidance based on user's hint
+  let categoryGuidance = ''
+  if (categoryHint === 'gift') {
+    categoryGuidance = `
+BRUKERENS KATEGORI-VALG: GAVE/ØNSKELISTE
+Brukeren har indikert at dette bildet viser noe de ønsker seg (gave, produkt, leke, etc.).
+- Tolk bildet som et produkt/ønske for ønskelisten
+- Returner: wishlist_item med operation="add"
+- Finn: Produktnavn, beskrivelse, ca. pris hvis synlig
+- VIKTIG: wishlist_item MÅ ALLTID ha needs_clarification for person_id:
+  {
+    "needs_clarification": {
+      "field": "person_id",
+      "question": "Hvem sin ønskeliste skal dette på?",
+      "options": [${allPersonOptions}]
+    }
+  }
+`
+  } else if (categoryHint === 'event') {
+    categoryGuidance = `
+BRUKERENS KATEGORI-VALG: HENDELSE
+Brukeren har indikert at dette bildet viser en hendelse/avtale (invitasjon, arrangement, etc.).
+- Tolk bildet som informasjon om en hendelse
+- Finn: Dato, klokkeslett, sted, hva slags hendelse
+- For barnerelaterte hendelser (bursdag, skolearrangement, etc.): Returner child_task med task_type="appointment"
+- For voksen-hendelser (jobbmøte, familiearrangement, etc.): Returner member_event
+- VIKTIG: Sett needs_clarification for child_id/member_id hvis du ikke vet hvem det gjelder
+- Barn til valg: [${childrenOptions}]
+- Voksne til valg: [${membersOptions}]
+`
+  } else if (categoryHint === 'task') {
+    categoryGuidance = `
+BRUKERENS KATEGORI-VALG: OPPGAVE
+Brukeren har indikert at dette bildet viser en oppgave/påminnelse (huskelapp, påminnelse, handleliste, etc.).
+- Tolk bildet som en oppgave eller påminnelse
+- For barnerelaterte oppgaver (ta med, huske, avtale): Returner child_task med passende task_type
+- For handleliste/kjøpeliste: Returner shopping_item med operation="add" for hver vare
+- For middagsplan/mat: Returner meal med dato
+- VIKTIG: Sett needs_clarification for child_id hvis det gjelder barn men du ikke vet hvilket
+- Barn til valg: [${childrenOptions}]
+`
+  }
 
-MULIGE BILDETYPER:
+  // If no category hint, show all possible types
+  const defaultGuidance = categoryHint ? '' : `
+MULIGE BILDETYPER (analyser og bestem automatisk):
 
-1. BURSDAGSINVITASJON / INVITASJON
-   - Finn: Hvem sin bursdag, dato, klokkeslett, sted, RSVP-info
-   - Returner: child_task med task_type="appointment"
-   - Tittel bør være: "Bursdag hos [navn]" eller lignende
-   - VIKTIG: Sett needs_clarification for child_id hvis du ikke vet hvilket barn som skal
+1. INVITASJON / HENDELSE
+   - Finn: Dato, klokkeslett, sted, hva slags hendelse
+   - Barn-hendelser: child_task med task_type="appointment"
+   - Voksen-hendelser: member_event
+   - VIKTIG: Sett needs_clarification for child_id/member_id
 
-2. SKOLE/BARNEHAGE-PÅMINNELSE
-   - Finn: Oppgave/påminnelse, dato, hvilket barn det gjelder
+2. OPPGAVE / PÅMINNELSE
+   - Finn: Oppgave, dato, hvem det gjelder
    - Returner: child_task med passende task_type (bring, reminder, closure, etc.)
-   - VIKTIG: Sett needs_clarification for child_id hvis du ikke vet hvilket barn
 
-3. PRODUKT/LEKE-BILDE (for ønskeliste)
-   - Finn: Produktnavn, beskrivelse, ca. pris hvis synlig
+3. PRODUKT / GAVE (for ønskeliste)
+   - Finn: Produktnavn, beskrivelse, ca. pris
    - Returner: wishlist_item med operation="add"
-   - VIKTIG: wishlist_item MÅ ALLTID ha needs_clarification for person_id:
-     {
-       "needs_clarification": {
-         "field": "person_id",
-         "question": "Hvem sin ønskeliste skal dette på?",
-         "options": [${allPersonOptions}]
-       }
-     }
+   - VIKTIG: wishlist_item MÅ ALLTID ha needs_clarification for person_id
 
-4. KVITTERING
-   - Finn: Varer som er kjøpt
-   - Returner: shopping_item med operation="complete" for hver vare
+4. HANDLELISTE / KVITTERING
+   - Finn: Varer/produkter
+   - Handleliste: shopping_item med operation="add"
+   - Kvittering: shopping_item med operation="complete"
 
-5. ANNET DOKUMENT
+5. MIDDAGSPLAN / MAT
+   - Finn: Rett, dato
+   - Returner: meal
+
+6. ANNET
    - Prøv å tolk innholdet og returner passende handling
-   - Hvis usikker, returner lav confidence (< 0.5)
+`
 
+  return `Analyser dette bildet og bestem hva det viser.
+${categoryGuidance}${defaultGuidance}
 ${baseContext}
 ${userNote}
 
@@ -618,7 +662,8 @@ VIKTIG:
 - Barn til valg (for needs_clarification): [${childrenOptions}]
 - Alle personer (for wishlist): [${allPersonOptions}]
 - Returner BARE gyldig JSON med actions-array
-- Sett høy confidence (0.8+) kun hvis du er sikker på tolkningen`
+- Sett høy confidence (0.8+) kun hvis du er sikker på tolkningen
+- Hvis usikker, returner lav confidence (< 0.5)`
 }
 
 // ============================================================================

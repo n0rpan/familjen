@@ -752,6 +752,13 @@ export const nb: TranslationStrings = {
     undo: 'Angre',
     parsing: 'Tolker...',
     confirmDelete: 'Er du sikker på at du vil slette dette?',
+    // Image category selection
+    whatIsThis: 'Hva er dette?',
+    categoryGift: 'Gave',
+    categoryEvent: 'Hendelse',
+    categoryTask: 'Oppgave',
+    categoryOther: 'Annet',
+    changeCategory: 'Endre type',
   },
 
   notifications: {
