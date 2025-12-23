@@ -1036,7 +1036,7 @@ Regler:
       return NextResponse.json({ error: 'Kunne ikke tolke middagsforslag' }, { status: 500 })
     }
 
-    let suggestions = parsed.suggestions || []
+    let suggestions = Array.isArray(parsed.suggestions) ? parsed.suggestions : []
 
     // Filter out allergens
     if (allAllergies.size > 0) {

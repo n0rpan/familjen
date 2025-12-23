@@ -977,7 +977,8 @@ export function UniversalAIInput({
           if (!meal) throw new Error('Meal not found')
           deletedRecord = meal
 
-          await supabase.from('meals').delete().eq('id', recordId)
+          const { error: deleteError } = await supabase.from('meals').delete().eq('id', recordId)
+          if (deleteError) throw deleteError
           break
         }
         case 'child_task': {
@@ -991,7 +992,8 @@ export function UniversalAIInput({
           if (!task) throw new Error('Task not found')
           deletedRecord = task
 
-          await supabase.from('child_tasks').delete().eq('id', recordId)
+          const { error: deleteError } = await supabase.from('child_tasks').delete().eq('id', recordId)
+          if (deleteError) throw deleteError
           break
         }
         case 'member_event': {
@@ -1005,7 +1007,8 @@ export function UniversalAIInput({
           if (!event) throw new Error('Event not found')
           deletedRecord = event
 
-          await supabase.from('member_events').delete().eq('id', recordId)
+          const { error: deleteError } = await supabase.from('member_events').delete().eq('id', recordId)
+          if (deleteError) throw deleteError
           break
         }
         case 'pickup': {
@@ -1020,10 +1023,11 @@ export function UniversalAIInput({
           deletedRecord = pickup
 
           // For pickup, we clear picker_id instead of deleting
-          await supabase
+          const { error: updateError } = await supabase
             .from('pickups')
             .update({ picker_id: null })
             .eq('id', recordId)
+          if (updateError) throw updateError
           break
         }
         case 'shopping_item': {
@@ -1037,7 +1041,8 @@ export function UniversalAIInput({
           if (!item) throw new Error('Item not found')
           deletedRecord = item
 
-          await supabase.from('shopping_list_items').delete().eq('id', recordId)
+          const { error: deleteError } = await supabase.from('shopping_list_items').delete().eq('id', recordId)
+          if (deleteError) throw deleteError
           break
         }
         case 'household_event': {
@@ -1051,7 +1056,8 @@ export function UniversalAIInput({
           if (!householdEvent) throw new Error('Household event not found')
           deletedRecord = householdEvent
 
-          await supabase.from('household_events').delete().eq('id', recordId)
+          const { error: deleteError } = await supabase.from('household_events').delete().eq('id', recordId)
+          if (deleteError) throw deleteError
           break
         }
         case 'wishlist_item': {
@@ -1065,7 +1071,8 @@ export function UniversalAIInput({
           if (!wishlistItem) throw new Error('Wishlist item not found')
           deletedRecord = wishlistItem
 
-          await supabase.from('wishlist_items').delete().eq('id', recordId)
+          const { error: deleteError } = await supabase.from('wishlist_items').delete().eq('id', recordId)
+          if (deleteError) throw deleteError
           break
         }
         default:
@@ -1223,10 +1230,11 @@ export function UniversalAIInput({
           if (!task) throw new Error('Task not found')
           previousState = { status: task.status, completed_at: task.completed_at }
 
-          await supabase
+          const { error: updateError } = await supabase
             .from('child_tasks')
             .update({ status: 'done', completed_at: new Date().toISOString() })
             .eq('id', recordId)
+          if (updateError) throw updateError
           break
         }
         case 'shopping_item': {
@@ -1240,10 +1248,11 @@ export function UniversalAIInput({
           if (!item) throw new Error('Item not found')
           previousState = { is_bought: item.is_bought }
 
-          await supabase
+          const { error: updateError } = await supabase
             .from('shopping_list_items')
             .update({ is_bought: true })
             .eq('id', recordId)
+          if (updateError) throw updateError
           break
         }
         default:
@@ -1625,7 +1634,8 @@ export function UniversalAIInput({
         return
       }
 
-      await supabase.from(table).update(updates).eq('id', recordId)
+      const { error: updateError } = await supabase.from(table).update(updates).eq('id', recordId)
+      if (updateError) throw updateError
 
       // Track as executed with undo data
       setExecutedActions(prev => [...prev, {
