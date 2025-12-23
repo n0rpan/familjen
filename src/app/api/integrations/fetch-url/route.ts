@@ -1,6 +1,50 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { extractEventsFromHtml } from '@/lib/integrations/document-extraction'
+import { validateOrigin } from '@/lib/config'
+import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
+
+/**
+ * Validate URL to prevent SSRF attacks
+ * Blocks internal IPs, localhost, and cloud metadata endpoints
+ */
+function isUrlAllowed(urlString: string): boolean {
+  try {
+    const url = new URL(urlString)
+
+    // Only allow http/https
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      return false
+    }
+
+    const hostname = url.hostname.toLowerCase()
+
+    // Block localhost variations
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+      return false
+    }
+
+    // Block private IP ranges and cloud metadata
+    const blockedPatterns = [
+      /^127\./, // Loopback
+      /^10\./, // Private Class A
+      /^172\.(1[6-9]|2\d|3[01])\./, // Private Class B
+      /^192\.168\./, // Private Class C
+      /^169\.254\./, // Link-local / Cloud metadata
+      /^0\./, // Invalid
+      /^fc00:/, // IPv6 private
+      /^fe80:/, // IPv6 link-local
+    ]
+
+    if (blockedPatterns.some(p => p.test(hostname))) {
+      return false
+    }
+
+    return true
+  } catch {
+    return false
+  }
+}
 
 /**
  * POST /api/integrations/fetch-url
@@ -8,6 +52,11 @@ import { extractEventsFromHtml } from '@/lib/integrations/document-extraction'
  * Fetch content from a manual source URL and process it.
  */
 export async function POST(request: Request) {
+  // CSRF protection
+  if (!validateOrigin(request)) {
+    return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+  }
+
   try {
     const supabase = await createClient()
 
@@ -15,6 +64,16 @@ export async function POST(request: Request) {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
+    }
+
+    // Rate limiting
+    const rateLimitKey = createRateLimitKey(user.id, 'urlFetch')
+    const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.urlFetch)
+    if (rateLimit.limited) {
+      return NextResponse.json(
+        { error: `For mange forespørsler. Prøv igjen om ${rateLimit.retryAfter} sekunder.` },
+        { status: 429 }
+      )
     }
 
     // Get user's household
@@ -45,6 +104,11 @@ export async function POST(request: Request) {
 
     if (fetchError || !sourceUrl) {
       return NextResponse.json({ error: 'Kilde ikke funnet' }, { status: 404 })
+    }
+
+    // SSRF protection - validate URL before fetching
+    if (!isUrlAllowed(sourceUrl.url)) {
+      return NextResponse.json({ error: 'URL ikke tillatt' }, { status: 400 })
     }
 
     // Fetch the content based on type
@@ -91,7 +155,7 @@ export async function POST(request: Request) {
         }
 
         // Create document record
-        await supabase
+        const { error: docError } = await supabase
           .from('external_documents')
           .upsert({
             household_id: member.household_id,
@@ -109,6 +173,11 @@ export async function POST(request: Request) {
           }, {
             onConflict: 'source_url_id',
           })
+
+        if (docError) {
+          console.error('PDF document record error:', docError)
+          throw new Error(`Document record failed: ${docError.message}`)
+        }
 
         content = null // PDF content will be processed by AI later
       } else {

@@ -43,6 +43,8 @@ export const RATE_LIMITS = {
   mykidSync: { limit: 10, windowMs: 60 * 1000 },
   // MyKid test connection - 5/minute (during setup)
   mykidTestConnection: { limit: 5, windowMs: 60 * 1000 },
+  // Manual URL fetch - 10/minute (external fetch + AI processing)
+  urlFetch: { limit: 10, windowMs: 60 * 1000 },
 } as const
 
 // ============================================================================

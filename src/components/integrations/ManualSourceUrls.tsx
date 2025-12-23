@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useState, useEffect } from 'react'
+import { memo, useState, useEffect, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Child } from '@/lib/types'
 
@@ -40,13 +40,9 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
   const [newChildId, setNewChildId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
-  useEffect(() => {
-    loadSourceUrls()
-  }, [householdId])
-
-  const loadSourceUrls = async () => {
+  const loadSourceUrls = useCallback(async () => {
     const { data, error } = await supabase
       .from('external_source_urls')
       .select('*')
@@ -57,7 +53,11 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
       setSourceUrls(data)
     }
     setLoading(false)
-  }
+  }, [supabase, householdId])
+
+  useEffect(() => {
+    loadSourceUrls()
+  }, [loadSourceUrls])
 
   const addSourceUrl = async () => {
     if (!newUrl || !newName) return
