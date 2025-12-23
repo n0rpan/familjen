@@ -48,6 +48,7 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
   // Loading and error states
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [compressing, setCompressing] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
   const [aiMessage, setAiMessage] = useState<string | null>(null)
   const [aiError, setAiError] = useState<string | null>(null)
@@ -81,6 +82,7 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
 
     setExistingImagePath(null)
     setSaveError(null)
+    setCompressing(true)
 
     try {
       // Compress image to max 1600px and WebP format (handles large iPhone photos)
@@ -102,6 +104,8 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
     } catch (err) {
       console.error('Failed to compress image:', err)
       setSaveError(t.wishlists.imageReadError || 'Kunne ikke behandle bildefilen')
+    } finally {
+      setCompressing(false)
     }
   }, [t])
 
@@ -307,7 +311,15 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
               className="hidden"
             />
 
-            {imagePreview ? (
+            {compressing ? (
+              <div
+                className="w-full h-32 rounded-xl flex flex-col items-center justify-center gap-2"
+                style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
+              >
+                <div className="w-6 h-6 border-2 border-current border-t-transparent rounded-full animate-spin" style={{ color: 'var(--accent)' }} />
+                <span className="text-sm" style={{ color: 'var(--muted)' }}>Behandler bilde...</span>
+              </div>
+            ) : imagePreview ? (
               <div className="relative">
                 <img
                   src={imagePreview}

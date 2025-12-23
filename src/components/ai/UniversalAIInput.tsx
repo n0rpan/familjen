@@ -83,6 +83,7 @@ export function UniversalAIInput({
   // Image upload state
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [isCompressing, setIsCompressing] = useState(false)
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -257,9 +258,7 @@ export function UniversalAIInput({
     }
 
     setError(null)
-    // Show immediate feedback that we're processing
-    setImagePreview(null)
-    setSelectedImage(null)
+    setIsCompressing(true)
 
     try {
       // Compress image to max 1600px and ~2MB (handles large iPhone photos)
@@ -278,6 +277,8 @@ export function UniversalAIInput({
     } catch (err) {
       console.error('Image compression failed:', err)
       setError('Kunne ikke behandle bildet')
+    } finally {
+      setIsCompressing(false)
     }
   }, [input, parseInput])
 
@@ -1824,8 +1825,19 @@ export function UniversalAIInput({
         )}
       </div>
 
+      {/* Image compressing indicator */}
+      {isCompressing && (
+        <div
+          className="p-3 rounded-xl text-sm flex items-center gap-2"
+          style={{ background: 'rgba(126, 182, 196, 0.15)', color: 'var(--color-sky)' }}
+        >
+          <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+          Behandler bilde...
+        </div>
+      )}
+
       {/* Image preview */}
-      {imagePreview && (
+      {imagePreview && !isCompressing && (
         <div
           className="relative inline-block rounded-xl overflow-hidden"
           style={{
