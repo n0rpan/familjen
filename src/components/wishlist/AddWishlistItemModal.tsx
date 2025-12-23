@@ -267,24 +267,24 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4"
       style={{ background: 'rgba(0, 0, 0, 0.5)' }}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl"
+        className="w-full sm:max-w-md max-h-[85vh] sm:max-h-[90vh] flex flex-col rounded-t-2xl sm:rounded-2xl"
         style={{ background: 'var(--card)' }}
         onClick={e => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="sticky top-0 p-4 border-b" style={{ background: 'var(--card)', borderColor: 'var(--border)' }}>
+        {/* Header - fixed at top */}
+        <div className="flex-shrink-0 p-4 border-b" style={{ borderColor: 'var(--border)' }}>
           <h3 className="text-lg font-semibold" style={{ color: 'var(--foreground)' }}>
             {editItem ? t.wishlists.editItem : t.wishlists.addItem}
           </h3>
         </div>
 
-        {/* Form */}
-        <div className="p-4 space-y-4">
+        {/* Form - scrollable area */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {/* Image upload */}
           <div>
             <input
@@ -482,8 +482,8 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="sticky bottom-0 p-4 border-t" style={{ background: 'var(--card)', borderColor: 'var(--border)' }}>
+        {/* Footer - fixed at bottom */}
+        <div className="flex-shrink-0 p-4 border-t safe-area-bottom" style={{ borderColor: 'var(--border)' }}>
           {saveError && (
             <p className="text-sm mb-3 p-3 rounded-lg" style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444' }}>
               {saveError}
@@ -492,7 +492,7 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="flex-1 py-2.5 rounded-lg font-medium"
+              className="flex-1 py-3 rounded-lg font-medium text-base"
               style={{ background: 'var(--background)', color: 'var(--foreground)' }}
             >
               {t.common.cancel}
@@ -500,7 +500,7 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
             <button
               onClick={handleSave}
               disabled={!name.trim() || saving}
-              className="flex-1 py-2.5 rounded-lg font-medium disabled:opacity-50"
+              className="flex-1 py-3 rounded-lg font-medium text-base disabled:opacity-50"
               style={{ background: 'var(--accent)', color: 'white' }}
             >
               {saving ? t.common.saving : t.common.save}
