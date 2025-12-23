@@ -28,18 +28,68 @@ interface ParsedAction {
   needsClarification?: NeedsClarification
 }
 
-interface ParseActionResponse {
+interface SearchSource {
+  type: 'message' | 'task' | 'event' | 'recipe' | 'meal'
+  title: string
+  excerpt: string
+  date?: string
+  id: string
+}
+
+interface MealSuggestion {
+  day: string
+  name: string
+  description?: string
+  ingredients: Array<{ item: string; amount: string }>
+}
+
+// Response types for different modes
+interface ActionResponse {
+  mode: 'action'
+  actions: ParsedAction[]
+}
+
+interface SearchResponse {
+  mode: 'search'
+  answer: string
+  sources: SearchSource[]
+}
+
+interface SuggestResponse {
+  mode: 'suggest'
+  suggestions: MealSuggestion[]
+}
+
+type ParseActionResponse = ActionResponse | SearchResponse | SuggestResponse | { error: string }
+
+// Legacy response type for backward compatibility
+interface LegacyParseActionResponse {
   actions: ParsedAction[]
   error?: string
 }
 
-// Mock the Supabase server client
+// Mock the Supabase server client with full query chain support
 vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(() => Promise.resolve({
     from: vi.fn((table: string) => {
+      // Create a complete builder that supports all query methods
       const builder = {
         select: vi.fn().mockReturnThis(),
+        insert: vi.fn().mockReturnThis(),
+        update: vi.fn().mockReturnThis(),
+        upsert: vi.fn().mockReturnThis(),
+        delete: vi.fn().mockReturnThis(),
         eq: vi.fn().mockReturnThis(),
+        neq: vi.fn().mockReturnThis(),
+        gte: vi.fn().mockReturnThis(),
+        lte: vi.fn().mockReturnThis(),
+        lt: vi.fn().mockReturnThis(),
+        gt: vi.fn().mockReturnThis(),
+        or: vi.fn().mockReturnThis(),
+        and: vi.fn().mockReturnThis(),
+        in: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
         single: vi.fn().mockResolvedValue({
           data: table === 'app_settings' ? { value: TEST_MODEL } : null,
           error: null,
@@ -48,6 +98,10 @@ vi.mock('@/lib/supabase/server', () => ({
           data: table === 'household_members' ? { household_id: 'test-household-id' } : null,
           error: null,
         }),
+        // Default to returning empty arrays for list queries (search/suggest modes)
+        then: vi.fn((callback: (result: { data: unknown[]; error: null }) => void) =>
+          Promise.resolve(callback({ data: [], error: null }))
+        ),
       }
       return builder
     }),
@@ -532,9 +586,145 @@ describe('/api/openrouter/parse-action', () => {
 
       expect(response.status).toBe(200)
 
-      // Should either return empty actions or low confidence
-      if (data.actions.length > 0) {
-        expect(data.actions[0].confidence).toBeLessThan(0.7)
+      // New format returns mode: 'action' with actions array
+      if ('mode' in data && data.mode === 'action') {
+        if (data.actions.length > 0) {
+          expect(data.actions[0].confidence).toBeLessThan(0.7)
+        }
+      }
+    }, 60000)
+  })
+
+  describe('Mode Detection', () => {
+    it('returns action mode for normal input', async () => {
+      const request = createTestRequest('http://localhost:3000/api/openrouter/parse-action', {
+        method: 'POST',
+        body: {
+          input: 'Taco på fredag',
+          context: defaultContext,
+        },
+      })
+
+      const response = await POST(request)
+      const data = await parseResponse<ParseActionResponse>(response)
+
+      expect(response.status).toBe(200)
+      expect('mode' in data).toBe(true)
+      if ('mode' in data) {
+        expect(data.mode).toBe('action')
+      }
+    }, 60000)
+
+    it('returns action mode and parses meals correctly', async () => {
+      const request = createTestRequest('http://localhost:3000/api/openrouter/parse-action', {
+        method: 'POST',
+        body: {
+          input: 'Pizza på lørdag',
+          context: defaultContext,
+        },
+      })
+
+      const response = await POST(request)
+      const data = await parseResponse<ParseActionResponse>(response)
+
+      expect(response.status).toBe(200)
+      if ('mode' in data && data.mode === 'action') {
+        expect(data.actions.length).toBeGreaterThan(0)
+        expect(data.actions[0].type).toBe('meal')
+      }
+    }, 60000)
+  })
+
+  describe('Search Mode (requires full mocking)', () => {
+    // Note: Search mode requires database queries that need mocking.
+    // These tests verify the mode detection pattern works.
+
+    it('detects search intent from ? prefix', async () => {
+      // The API should detect "?" as search mode
+      // However, without full mocking of child_tasks, member_events, etc.
+      // the search will return no results, which is valid
+
+      const request = createTestRequest('http://localhost:3000/api/openrouter/parse-action', {
+        method: 'POST',
+        body: {
+          input: '?når er tannlege',
+          context: defaultContext,
+        },
+      })
+
+      const response = await POST(request)
+      const data = await parseResponse<ParseActionResponse>(response)
+
+      expect(response.status).toBe(200)
+      // Should return search mode
+      if ('mode' in data) {
+        expect(data.mode).toBe('search')
+        if (data.mode === 'search') {
+          expect(data.answer).toBeDefined()
+          expect(Array.isArray(data.sources)).toBe(true)
+        }
+      }
+    }, 60000)
+
+    it('detects search intent from question words', async () => {
+      const request = createTestRequest('http://localhost:3000/api/openrouter/parse-action', {
+        method: 'POST',
+        body: {
+          input: 'hva sa barnehagen om dugnad',
+          context: defaultContext,
+        },
+      })
+
+      const response = await POST(request)
+      const data = await parseResponse<ParseActionResponse>(response)
+
+      expect(response.status).toBe(200)
+      if ('mode' in data) {
+        expect(data.mode).toBe('search')
+      }
+    }, 60000)
+  })
+
+  describe('Suggest Mode (requires full mocking)', () => {
+    // Note: Suggest mode requires database queries for meals, recipes, etc.
+    // These tests verify the mode detection pattern works.
+
+    it('detects suggest intent from middag keyword', async () => {
+      const request = createTestRequest('http://localhost:3000/api/openrouter/parse-action', {
+        method: 'POST',
+        body: {
+          input: 'forslag til middag denne uken',
+          context: defaultContext,
+        },
+      })
+
+      const response = await POST(request)
+      const data = await parseResponse<ParseActionResponse>(response)
+
+      expect(response.status).toBe(200)
+      if ('mode' in data) {
+        expect(data.mode).toBe('suggest')
+        if (data.mode === 'suggest') {
+          expect(Array.isArray(data.suggestions)).toBe(true)
+        }
+      }
+    }, 60000)
+
+    it('detects suggest intent from hva skal vi ha', async () => {
+      const request = createTestRequest('http://localhost:3000/api/openrouter/parse-action', {
+        method: 'POST',
+        body: {
+          input: 'hva skal vi ha til middag',
+          context: defaultContext,
+        },
+      })
+
+      const response = await POST(request)
+      const data = await parseResponse<ParseActionResponse>(response)
+
+      expect(response.status).toBe(200)
+      if ('mode' in data) {
+        expect(data.mode).toBe('suggest')
       }
     }, 60000)
   })

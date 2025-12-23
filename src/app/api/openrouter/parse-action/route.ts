@@ -4,11 +4,14 @@ import { getUserHousehold } from '@/lib/supabase/household'
 import { validateOrigin } from '@/lib/config'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 import { extractJSON } from '@/lib/json-extract'
+import { formatDateISO } from '@/lib/utils'
 import { z } from 'zod'
+import type { MealSuggestion } from '@/lib/types'
 
 // Request schema
 const parseActionSchema = z.object({
-  input: z.string().min(1).max(500),
+  input: z.string().max(500).optional().default(''),
+  image: z.string().optional(), // Base64 data URI for image analysis
   context: z.object({
     today: z.string(),
     children: z.array(z.object({
@@ -21,7 +24,47 @@ const parseActionSchema = z.object({
       isCurrentUser: z.boolean(),
     })),
   }),
-})
+}).refine(
+  data => data.input.trim().length > 0 || data.image,
+  { message: 'Må ha enten tekst eller bilde' }
+)
+
+// Mode detection patterns
+const SEARCH_PREFIXES = ['?', '??']
+const SEARCH_QUESTION_WORDS = /^(hva|når|hvor|hvem|hvorfor|hvordan|finnes|har vi|har jeg|er det|sa |skrev )/i
+// More specific pattern for meal suggestions - must include suggestion-related words
+// "forslag", "foreslå", or phrases like "hva skal vi ha til middag"
+// Excludes simple "middag" which could be in "endre middag" or "fjern middag"
+const MEAL_SUGGEST_KEYWORDS = /\b(forslag|foreslå|middagsforslag|hva skal vi (ha|spise)|foreslå mat)\b/i
+
+type RequestMode = 'action' | 'search' | 'suggest'
+
+function detectMode(input: string, hasImage: boolean): RequestMode {
+  // Image analysis defaults to action mode
+  if (hasImage) return 'action'
+
+  const trimmed = input.trim()
+
+  // Check for search prefixes (explicit search with ? or ??)
+  for (const prefix of SEARCH_PREFIXES) {
+    if (trimmed.startsWith(prefix)) {
+      return 'search'
+    }
+  }
+
+  // Check for meal suggestion keywords BEFORE question words
+  // This ensures "hva skal vi ha til middag" triggers suggest, not search
+  if (MEAL_SUGGEST_KEYWORDS.test(trimmed)) {
+    return 'suggest'
+  }
+
+  // Check for question words (only if not matching suggest pattern)
+  if (SEARCH_QUESTION_WORDS.test(trimmed)) {
+    return 'search'
+  }
+
+  return 'action'
+}
 
 // Response types
 export type ActionType = 'meal' | 'child_task' | 'member_event' | 'pickup' | 'shopping_item' | 'household_event' | 'wishlist_item' | 'navigate'
@@ -49,10 +92,37 @@ export interface ParsedAction {
   }
 }
 
-export interface ParseActionResponse {
-  actions: ParsedAction[]
-  error?: string
+// Search result types
+export interface SearchSource {
+  type: 'message' | 'task' | 'event' | 'recipe' | 'meal'
+  title: string
+  excerpt: string
+  date?: string
+  id: string
+  childName?: string
 }
+
+export interface SearchResponse {
+  mode: 'search'
+  answer: string
+  sources: SearchSource[]
+}
+
+export interface SuggestResponse {
+  mode: 'suggest'
+  suggestions: MealSuggestion[]
+}
+
+export interface ActionResponse {
+  mode: 'action'
+  actions: ParsedAction[]
+}
+
+export type ParseActionResponse =
+  | ActionResponse
+  | SearchResponse
+  | SuggestResponse
+  | { error: string }
 
 export async function POST(request: Request) {
   try {
@@ -85,30 +155,70 @@ export async function POST(request: Request) {
     if (!validation.success) {
       return NextResponse.json({ error: 'Ugyldig forespørsel' }, { status: 400 })
     }
-    const { input, context } = validation.data
+    const { input, image, context } = validation.data
+    const hasImage = Boolean(image)
 
-    // Fetch model from app_settings
+    // Detect request mode
+    const mode = detectMode(input, hasImage)
+
+    // Get household for all modes
+    const { data: household, error: householdError } = await getUserHousehold(supabase)
+    if (householdError || !household) {
+      return NextResponse.json({ error: 'Kunne ikke finne husstand' }, { status: 404 })
+    }
+
+    // Handle search mode
+    if (mode === 'search') {
+      return handleSearchMode(supabase, input, household.id)
+    }
+
+    // Handle suggest mode
+    if (mode === 'suggest') {
+      return handleSuggestMode(supabase, input, household)
+    }
+
+    // --- ACTION MODE ---
+    // Fetch model from app_settings (text or vision based on input)
+    const modelKey = hasImage ? 'openrouter_vision_model' : 'openrouter_model'
     const { data: modelSetting } = await supabase
       .from('app_settings')
       .select('value')
-      .eq('key', 'openrouter_model')
+      .eq('key', modelKey)
       .single()
 
-    const model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
+    const defaultModel = hasImage ? 'google/gemini-2.0-flash-001' : 'google/gemini-2.5-flash-lite'
+    const model = modelSetting?.value || defaultModel
 
-    // Get household for current user context
-    const { data: household } = await getUserHousehold(supabase)
     const currentMember = context.members.find(m => m.isCurrentUser)
 
     // Build the prompt
     const systemPrompt = buildSystemPrompt(context)
-    const userPrompt = buildUserPrompt(input, context, currentMember?.name)
+    const userPrompt = hasImage
+      ? buildVisionUserPrompt(input, image!, context, currentMember?.name)
+      : buildUserPrompt(input, context, currentMember?.name)
 
     // Call OpenRouter API
     const apiKey = process.env.OPENROUTER_API_KEY
     if (!apiKey) {
       return NextResponse.json({ error: 'OpenRouter API-nøkkel ikke konfigurert' }, { status: 500 })
     }
+
+    // Build messages based on whether we have an image
+    const messages = hasImage
+      ? [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: userPrompt },
+              { type: 'image_url', image_url: { url: image! } },
+            ],
+          },
+        ]
+      : [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ]
 
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -120,10 +230,7 @@ export async function POST(request: Request) {
       },
       body: JSON.stringify({
         model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
+        messages,
         temperature: 0.2,
         max_tokens: 2000,
       }),
@@ -170,7 +277,7 @@ export async function POST(request: Request) {
       needsClarification: a.needs_clarification || undefined,
     }))
 
-    return NextResponse.json({ actions } as ParseActionResponse)
+    return NextResponse.json({ mode: 'action', actions } as ActionResponse)
   } catch (error) {
     console.error('Parse action error:', error)
     return NextResponse.json({ error: 'En feil oppstod' }, { status: 500 })
@@ -447,4 +554,532 @@ Kontekst:
 - Nåværende bruker: ${currentUserName || 'ukjent'}
 - Barn: ${context.children.map(c => c.name).join(', ') || 'ingen'}
 - Voksne: ${context.members.map(m => m.name).join(', ') || 'ingen'}`
+}
+
+function buildVisionUserPrompt(
+  input: string,
+  _image: string,
+  context: z.infer<typeof parseActionSchema>['context'],
+  currentUserName?: string
+): string {
+  const baseContext = `
+Kontekst:
+- I dag: ${context.today}
+- Nåværende bruker: ${currentUserName || 'ukjent'}
+- Barn: ${context.children.map(c => c.name).join(', ') || 'ingen'}
+- Voksne: ${context.members.map(m => m.name).join(', ') || 'ingen'}`
+
+  const childrenOptions = context.children.map(c => `{ "label": "${c.name}", "value": "${c.id}" }`).join(', ')
+  const membersOptions = context.members.map(m => `{ "label": "${m.name}", "value": "${m.id}" }`).join(', ')
+  const allPersonOptions = [...context.children.map(c => `{ "label": "${c.name}", "value": "${c.id}" }`), ...context.members.map(m => `{ "label": "${m.name}", "value": "${m.id}" }`)].join(', ')
+
+  // If user provided additional text context, include it
+  const userNote = input.trim() ? `\nBrukerens tilleggsinformasjon: "${input}"` : ''
+
+  return `Analyser dette bildet og bestem hva slags dokument/element det viser.
+
+MULIGE BILDETYPER:
+
+1. BURSDAGSINVITASJON / INVITASJON
+   - Finn: Hvem sin bursdag, dato, klokkeslett, sted, RSVP-info
+   - Returner: child_task med task_type="appointment"
+   - Tittel bør være: "Bursdag hos [navn]" eller lignende
+   - VIKTIG: Sett needs_clarification for child_id hvis du ikke vet hvilket barn som skal
+
+2. SKOLE/BARNEHAGE-PÅMINNELSE
+   - Finn: Oppgave/påminnelse, dato, hvilket barn det gjelder
+   - Returner: child_task med passende task_type (bring, reminder, closure, etc.)
+   - VIKTIG: Sett needs_clarification for child_id hvis du ikke vet hvilket barn
+
+3. PRODUKT/LEKE-BILDE (for ønskeliste)
+   - Finn: Produktnavn, beskrivelse, ca. pris hvis synlig
+   - Returner: wishlist_item med operation="add"
+   - VIKTIG: wishlist_item MÅ ALLTID ha needs_clarification for person_id:
+     {
+       "needs_clarification": {
+         "field": "person_id",
+         "question": "Hvem sin ønskeliste skal dette på?",
+         "options": [${allPersonOptions}]
+       }
+     }
+
+4. KVITTERING
+   - Finn: Varer som er kjøpt
+   - Returner: shopping_item med operation="complete" for hver vare
+
+5. ANNET DOKUMENT
+   - Prøv å tolk innholdet og returner passende handling
+   - Hvis usikker, returner lav confidence (< 0.5)
+
+${baseContext}
+${userNote}
+
+VIKTIG:
+- Barn til valg (for needs_clarification): [${childrenOptions}]
+- Alle personer (for wishlist): [${allPersonOptions}]
+- Returner BARE gyldig JSON med actions-array
+- Sett høy confidence (0.8+) kun hvis du er sikker på tolkningen`
+}
+
+// ============================================================================
+// SEARCH MODE HANDLER
+// ============================================================================
+
+interface SearchableData {
+  tasks: Array<{ id: string; title: string; date: string; child_name?: string }>
+  events: Array<{ id: string; title: string; date: string; member_name?: string }>
+  recipes: Array<{ id: string; name: string; description?: string }>
+  meals: Array<{ id: string; date: string; meal_name: string }>
+  messages: Array<{ id: string; title: string; body: string; date: string; source: string }>
+}
+
+async function handleSearchMode(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  input: string,
+  householdId: string
+): Promise<Response> {
+  // Remove search prefix if present
+  let searchQuery = input.trim()
+  for (const prefix of SEARCH_PREFIXES) {
+    if (searchQuery.startsWith(prefix)) {
+      searchQuery = searchQuery.slice(prefix.length).trim()
+      break
+    }
+  }
+
+  // Extract keywords for database search
+  const keywords = searchQuery.toLowerCase().split(/\s+/).filter(k => k.length > 2)
+
+  // Query all searchable data in parallel
+  const today = new Date()
+  const threeMonthsAgo = new Date(today)
+  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
+  const threeMonthsAhead = new Date(today)
+  threeMonthsAhead.setMonth(threeMonthsAhead.getMonth() + 3)
+
+  const [tasksResult, eventsResult, recipesResult, mealsResult, messagesResult] = await Promise.all([
+    // Child tasks
+    supabase
+      .from('child_tasks')
+      .select('id, title, date, child:children(name)')
+      .eq('household_id', householdId)
+      .gte('date', formatDateISO(threeMonthsAgo))
+      .lte('date', formatDateISO(threeMonthsAhead))
+      .order('date', { ascending: false })
+      .limit(50),
+
+    // Member events + household events
+    supabase
+      .from('member_events')
+      .select('id, title, date, member:household_members(name)')
+      .eq('household_id', householdId)
+      .gte('date', formatDateISO(threeMonthsAgo))
+      .lte('date', formatDateISO(threeMonthsAhead))
+      .order('date', { ascending: false })
+      .limit(30),
+
+    // Recipes
+    supabase
+      .from('recipes')
+      .select('id, name, description')
+      .eq('household_id', householdId)
+      .limit(50),
+
+    // Meals
+    supabase
+      .from('meals')
+      .select('id, date, custom_meal, recipe:recipes(name)')
+      .eq('household_id', householdId)
+      .gte('date', formatDateISO(threeMonthsAgo))
+      .lte('date', formatDateISO(threeMonthsAhead))
+      .order('date', { ascending: false })
+      .limit(30),
+
+    // External messages (from integrations)
+    supabase
+      .from('external_messages')
+      .select('id, title, body, message_date, integration:external_integrations(service)')
+      .eq('household_id', householdId)
+      .order('message_date', { ascending: false })
+      .limit(50),
+  ])
+
+  // Process and filter results by keywords
+  const searchableData: SearchableData = {
+    tasks: (tasksResult.data || [])
+      .filter(t => keywords.some(k => t.title.toLowerCase().includes(k)))
+      .map(t => ({
+        id: t.id,
+        title: t.title,
+        date: t.date,
+        child_name: (t.child as unknown as { name: string } | null)?.name,
+      })),
+    events: (eventsResult.data || [])
+      .filter(e => keywords.some(k => e.title.toLowerCase().includes(k)))
+      .map(e => ({
+        id: e.id,
+        title: e.title,
+        date: e.date,
+        member_name: (e.member as unknown as { name: string } | null)?.name,
+      })),
+    recipes: (recipesResult.data || [])
+      .filter(r => keywords.some(k =>
+        r.name.toLowerCase().includes(k) ||
+        (r.description?.toLowerCase().includes(k) ?? false)
+      )),
+    meals: (mealsResult.data || [])
+      .filter(m => {
+        const mealName = (m.recipe as unknown as { name: string } | null)?.name || m.custom_meal || ''
+        return keywords.some(k => mealName.toLowerCase().includes(k))
+      })
+      .map(m => ({
+        id: m.id,
+        date: m.date,
+        meal_name: (m.recipe as unknown as { name: string } | null)?.name || m.custom_meal || '',
+      })),
+    messages: (messagesResult.data || [])
+      .filter(msg =>
+        keywords.some(k =>
+          msg.title?.toLowerCase().includes(k) ||
+          msg.body?.toLowerCase().includes(k)
+        )
+      )
+      .map(msg => ({
+        id: msg.id,
+        title: msg.title || 'Melding',
+        body: msg.body?.substring(0, 200) || '',
+        date: msg.message_date,
+        source: (msg.integration as unknown as { service: string } | null)?.service || 'ukjent',
+      })),
+  }
+
+  // Build sources array
+  const sources: SearchSource[] = [
+    ...searchableData.tasks.slice(0, 5).map(t => ({
+      type: 'task' as const,
+      id: t.id,
+      title: t.title,
+      excerpt: t.child_name ? `${t.child_name} - ${t.date}` : t.date,
+      date: t.date,
+      childName: t.child_name,
+    })),
+    ...searchableData.events.slice(0, 5).map(e => ({
+      type: 'event' as const,
+      id: e.id,
+      title: e.title,
+      excerpt: e.member_name ? `${e.member_name} - ${e.date}` : e.date,
+      date: e.date,
+    })),
+    ...searchableData.recipes.slice(0, 3).map(r => ({
+      type: 'recipe' as const,
+      id: r.id,
+      title: r.name,
+      excerpt: r.description?.substring(0, 100) || 'Oppskrift i kokebok',
+    })),
+    ...searchableData.meals.slice(0, 5).map(m => ({
+      type: 'meal' as const,
+      id: m.id,
+      title: m.meal_name,
+      excerpt: `Planlagt ${m.date}`,
+      date: m.date,
+    })),
+    ...searchableData.messages.slice(0, 5).map(msg => ({
+      type: 'message' as const,
+      id: msg.id,
+      title: msg.title,
+      excerpt: `${msg.source}: ${msg.body.substring(0, 100)}...`,
+      date: msg.date,
+    })),
+  ]
+
+  // If we found results, use AI to summarize/answer
+  if (sources.length > 0) {
+    const { data: modelSetting } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'openrouter_model')
+      .single()
+
+    const model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
+    const apiKey = process.env.OPENROUTER_API_KEY
+
+    if (!apiKey) {
+      return NextResponse.json({
+        mode: 'search',
+        answer: `Fant ${sources.length} resultater for "${searchQuery}"`,
+        sources,
+      } as SearchResponse)
+    }
+
+    // Call AI to summarize
+    const summaryPrompt = `Brukeren søker etter: "${searchQuery}"
+
+Følgende data ble funnet:
+${sources.map(s => `- ${s.type}: ${s.title} (${s.excerpt})`).join('\n')}
+
+Gi et kort, hjelpsomt svar på norsk basert på resultatene. Hvis noe spesifikt ble spurt om (som en dato eller en person), svar direkte på det. Hold svaret under 100 ord.`
+
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+          'X-Title': 'Familjen',
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: 'Du er en hjelpsom assistent for en familieplanleggingsapp. Svar kort og konsist på norsk.' },
+            { role: 'user', content: summaryPrompt },
+          ],
+          temperature: 0.3,
+          max_tokens: 300,
+        }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        const answer = data.choices?.[0]?.message?.content || `Fant ${sources.length} resultater`
+
+        return NextResponse.json({
+          mode: 'search',
+          answer,
+          sources,
+        } as SearchResponse)
+      }
+    } catch (error) {
+      console.error('Search AI summary error:', error)
+    }
+
+    // Fallback without AI summary
+    return NextResponse.json({
+      mode: 'search',
+      answer: `Fant ${sources.length} resultater for "${searchQuery}"`,
+      sources,
+    } as SearchResponse)
+  }
+
+  // No results found
+  return NextResponse.json({
+    mode: 'search',
+    answer: `Fant ingen resultater for "${searchQuery}". Prøv å søke med andre ord.`,
+    sources: [],
+  } as SearchResponse)
+}
+
+// ============================================================================
+// SUGGEST MODE HANDLER (Meal Suggestions)
+// ============================================================================
+
+interface HouseholdData {
+  id: string
+  name: string | null
+  ai_meal_context?: string | null
+  share_names_with_ai?: boolean
+}
+
+async function handleSuggestMode(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  input: string,
+  household: HouseholdData
+): Promise<Response> {
+  // Get current week dates
+  const today = new Date()
+  const dayOfWeek = today.getDay()
+  const monday = new Date(today)
+  monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
+  const weekStart = formatDateISO(monday)
+
+  const weekEnd = new Date(monday)
+  weekEnd.setDate(monday.getDate() + 6)
+  const weekEndStr = formatDateISO(weekEnd)
+
+  // Get recent meals to avoid repetition
+  const twoWeeksAgo = new Date(monday)
+  twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14)
+
+  const [childrenResult, membersResult, recipesResult, recentMealsResult, existingMealsResult] = await Promise.all([
+    supabase.from('children').select('name, birth_date, allergies').eq('household_id', household.id),
+    supabase.from('household_members').select('name, birth_date, allergies, is_parent').eq('household_id', household.id).eq('is_parent', true),
+    supabase.from('recipes').select('id, name, is_favorite, is_quick, is_kid_friendly').eq('household_id', household.id),
+    supabase.from('meals').select('date, custom_meal, recipe:recipes(name)').eq('household_id', household.id).gte('date', formatDateISO(twoWeeksAgo)).lt('date', weekStart).order('date', { ascending: false }),
+    supabase.from('meals').select('date, custom_meal, recipe:recipes(name)').eq('household_id', household.id).gte('date', weekStart).lte('date', weekEndStr),
+  ])
+
+  // Collect allergies
+  const allAllergies = new Set<string>()
+  if (childrenResult.data) {
+    childrenResult.data.forEach(c => {
+      ((c.allergies as string[]) || []).forEach(a => allAllergies.add(a.toLowerCase()))
+    })
+  }
+  if (membersResult.data) {
+    membersResult.data.forEach(m => {
+      ((m.allergies as string[]) || []).forEach(a => allAllergies.add(a.toLowerCase()))
+    })
+  }
+
+  // Determine which days need suggestions (weekdays without meals)
+  const existingMealsMap = new Map<string, string>()
+  if (existingMealsResult.data) {
+    existingMealsResult.data.forEach(m => {
+      const mealName = (m.recipe as unknown as { name: string } | null)?.name || m.custom_meal || ''
+      if (mealName) {
+        existingMealsMap.set(m.date, mealName)
+      }
+    })
+  }
+
+  const daysNeedingSuggestions: { date: string; dayName: string }[] = []
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(monday)
+    date.setDate(monday.getDate() + i)
+    const dateStr = formatDateISO(date)
+    const dayOfWeek = date.getDay()
+
+    // Skip weekends (Saturday = 6, Sunday = 0)
+    if (dayOfWeek === 0 || dayOfWeek === 6) continue
+
+    // Skip days that already have meals
+    if (existingMealsMap.has(dateStr)) continue
+
+    const dayNames = ['søndag', 'mandag', 'tirsdag', 'onsdag', 'torsdag', 'fredag', 'lørdag']
+    daysNeedingSuggestions.push({ date: dateStr, dayName: dayNames[dayOfWeek] })
+  }
+
+  // If all days have meals, suggest for next week or just acknowledge
+  if (daysNeedingSuggestions.length === 0) {
+    return NextResponse.json({
+      mode: 'suggest',
+      suggestions: [],
+    } as SuggestResponse)
+  }
+
+  // Build context for AI
+  const recentMealNames = (recentMealsResult.data || [])
+    .map(m => (m.recipe as unknown as { name: string } | null)?.name || m.custom_meal)
+    .filter(Boolean) as string[]
+
+  const favoriteRecipes = (recipesResult.data || []).filter(r => r.is_favorite).map(r => r.name)
+
+  // Get model from settings
+  const { data: modelSetting } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', 'openrouter_model')
+    .single()
+
+  const model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
+  const apiKey = process.env.OPENROUTER_API_KEY
+
+  if (!apiKey) {
+    return NextResponse.json({ error: 'OpenRouter API-nøkkel ikke konfigurert' }, { status: 500 })
+  }
+
+  // Build the prompt
+  const prompt = `Foreslå middager for følgende dager:
+${daysNeedingSuggestions.map(d => `- ${d.dayName} (${d.date})`).join('\n')}
+
+${Array.from(allAllergies).length > 0 ? `**VIKTIG - Allergier (UNNGÅ disse):** ${Array.from(allAllergies).join(', ')}` : ''}
+
+${favoriteRecipes.length > 0 ? `**Familiens favoritter:** ${favoriteRecipes.slice(0, 5).join(', ')}` : ''}
+
+${recentMealNames.length > 0 ? `**Nylige middager (unngå gjentakelse):** ${recentMealNames.slice(0, 7).join(', ')}` : ''}
+
+${household.ai_meal_context ? `**Familiens preferanser:** ${household.ai_meal_context}` : ''}
+
+${input.replace(MEAL_SUGGEST_KEYWORDS, '').trim() ? `**Brukerens ønske:** ${input.replace(MEAL_SUGGEST_KEYWORDS, '').trim()}` : ''}
+
+Regler:
+- Enkle retter med få ingredienser
+- Barnevennlige og næringsrike
+- Varier mellom kylling, fisk, kjøtt, vegetar
+- Returner JSON: { "suggestions": [{ "day": "YYYY-MM-DD", "name": "...", "description": "...", "ingredients": [{"item": "...", "amount": "..."}] }] }`
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+        'X-Title': 'Familjen',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: 'Du er en hjelpsom assistent for norsk familieplanlegging. Du foreslår enkle, barnevennlige middager. Svar ALLTID med gyldig JSON.' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.4,
+        max_tokens: 1500,
+      }),
+    })
+
+    if (!response.ok) {
+      console.error('Suggest AI error:', response.status)
+      return NextResponse.json({ error: 'Kunne ikke få middagsforslag' }, { status: 500 })
+    }
+
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content
+
+    if (!content) {
+      return NextResponse.json({ error: 'Tomt svar fra AI' }, { status: 500 })
+    }
+
+    const parsed = extractJSON<{ suggestions?: MealSuggestion[] }>(content)
+    if (!parsed) {
+      console.error('Failed to parse suggest response')
+      return NextResponse.json({ error: 'Kunne ikke tolke middagsforslag' }, { status: 500 })
+    }
+
+    let suggestions = parsed.suggestions || []
+
+    // Filter out allergens
+    if (allAllergies.size > 0) {
+      suggestions = suggestions.filter(meal => {
+        const mealText = [
+          meal.name.toLowerCase(),
+          meal.description?.toLowerCase() || '',
+          ...meal.ingredients.map(i => i.item.toLowerCase()),
+        ].join(' ')
+
+        for (const allergy of Array.from(allAllergies)) {
+          if (mealText.includes(allergy)) {
+            // Check for false positives
+            const falsePositives = [
+              { pattern: /kokos\s*melk/i, allergy: 'melk' },
+              { pattern: /melkefri/i, allergy: 'melk' },
+              { pattern: /nøttefri/i, allergy: 'nøtt' },
+            ]
+
+            let isFalsePositive = false
+            for (const fp of falsePositives) {
+              if (fp.allergy === allergy && fp.pattern.test(mealText)) {
+                isFalsePositive = true
+                break
+              }
+            }
+
+            if (!isFalsePositive) {
+              console.warn(`[Allergen Filter] Removing "${meal.name}" - contains "${allergy}"`)
+              return false
+            }
+          }
+        }
+        return true
+      })
+    }
+
+    return NextResponse.json({
+      mode: 'suggest',
+      suggestions,
+    } as SuggestResponse)
+  } catch (error) {
+    console.error('Suggest error:', error)
+    return NextResponse.json({ error: 'En feil oppstod ved middagsforslag' }, { status: 500 })
+  }
 }

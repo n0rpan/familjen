@@ -4,7 +4,17 @@ import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
-import type { ParsedAction, ActionType, ActionOperation } from '@/app/api/openrouter/parse-action/route'
+import type {
+  ParsedAction,
+  ActionType,
+  ActionOperation,
+  SearchSource,
+  SearchResponse,
+  SuggestResponse,
+  ActionResponse,
+  ParseActionResponse,
+} from '@/app/api/openrouter/parse-action/route'
+import type { MealSuggestion } from '@/lib/types'
 import { formatDateISO } from '@/lib/utils'
 import { getCachedCategory, setCachedCategory } from '@/lib/shopping-category-cache'
 import type { ShoppingCategory } from '@/lib/constants'
@@ -63,8 +73,19 @@ export function UniversalAIInput({
   const [pendingConfirmation, setPendingConfirmation] = useState<ParsedAction | null>(null)
   const [rateLimitCountdown, setRateLimitCountdown] = useState<number>(0)
 
+  // New mode states for search and suggest
+  const [responseMode, setResponseMode] = useState<'action' | 'search' | 'suggest' | null>(null)
+  const [searchAnswer, setSearchAnswer] = useState<string | null>(null)
+  const [searchSources, setSearchSources] = useState<SearchSource[]>([])
+  const [mealSuggestions, setMealSuggestions] = useState<MealSuggestion[]>([])
+
+  // Image upload state
+  const [selectedImage, setSelectedImage] = useState<string | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
   const pendingInputRef = useRef<string>('')
 
   const currentMember = members.find(m => m.user_id === currentUserId)
@@ -99,9 +120,14 @@ export function UniversalAIInput({
     }
   }, [rateLimitCountdown])
 
-  const parseInput = useCallback(async (text: string) => {
-    if (text.trim().length < 3) {
+  const parseInput = useCallback(async (text: string, image?: string | null) => {
+    // Need either text or image
+    if (text.trim().length < 3 && !image) {
       setParsedActions([])
+      setResponseMode(null)
+      setSearchAnswer(null)
+      setSearchSources([])
+      setMealSuggestions([])
       return
     }
 
@@ -113,26 +139,45 @@ export function UniversalAIInput({
 
     setIsParsing(true)
     setError(null)
-    // Clear executed actions when typing new input
+    // Clear all states when typing new input
     setExecutedActions([])
+    setResponseMode(null)
+    setSearchAnswer(null)
+    setSearchSources([])
+    setMealSuggestions([])
 
     try {
       const today = formatDateISO(new Date())
+      const requestBody: {
+        input: string
+        image?: string
+        context: {
+          today: string
+          children: Array<{ id: string; name: string }>
+          members: Array<{ id: string; name: string; isCurrentUser: boolean }>
+        }
+      } = {
+        input: text,
+        context: {
+          today,
+          children: children.map(c => ({ id: c.id, name: c.name })),
+          members: members.map(m => ({
+            id: m.id,
+            name: m.name,
+            isCurrentUser: m.user_id === currentUserId,
+          })),
+        },
+      }
+
+      // Include image if provided
+      if (image) {
+        requestBody.image = image
+      }
+
       const response = await fetch('/api/openrouter/parse-action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          input: text,
-          context: {
-            today,
-            children: children.map(c => ({ id: c.id, name: c.name })),
-            members: members.map(m => ({
-              id: m.id,
-              name: m.name,
-              isCurrentUser: m.user_id === currentUserId,
-            })),
-          },
-        }),
+        body: JSON.stringify(requestBody),
       })
 
       // Handle rate limiting with countdown
@@ -150,8 +195,33 @@ export function UniversalAIInput({
         throw new Error(data.error || 'Kunne ikke tolke tekst')
       }
 
-      const data = await response.json()
-      setParsedActions(data.actions || [])
+      const data: ParseActionResponse = await response.json()
+
+      // Handle different response modes
+      if ('error' in data) {
+        throw new Error(data.error)
+      }
+
+      if ('mode' in data) {
+        setResponseMode(data.mode)
+
+        if (data.mode === 'search') {
+          const searchData = data as SearchResponse
+          setSearchAnswer(searchData.answer)
+          setSearchSources(searchData.sources)
+          setParsedActions([])
+        } else if (data.mode === 'suggest') {
+          const suggestData = data as SuggestResponse
+          setMealSuggestions(suggestData.suggestions)
+          setParsedActions([])
+        } else if (data.mode === 'action') {
+          const actionData = data as ActionResponse
+          setParsedActions(actionData.actions || [])
+        }
+      } else {
+        // Legacy response format (just actions array)
+        setParsedActions((data as { actions?: ParsedAction[] }).actions || [])
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Noe gikk galt')
       setParsedActions([])
@@ -170,9 +240,86 @@ export function UniversalAIInput({
     }
 
     debounceRef.current = setTimeout(() => {
-      parseInput(text)
+      parseInput(text, selectedImage)
     }, 600)
-  }, [parseInput])
+  }, [parseInput, selectedImage])
+
+  // Image handling functions
+  const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      setError('Kun bilder er støttet')
+      return
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Bildet er for stort (maks 5MB)')
+      return
+    }
+
+    // Convert to base64
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      const base64 = reader.result as string
+      setSelectedImage(base64)
+      setImagePreview(base64)
+      setError(null)
+
+      // Parse immediately if we have an image (no need for text)
+      parseInput(input || '', base64)
+    }
+    reader.onerror = () => {
+      setError('Kunne ikke lese bildet')
+    }
+    reader.readAsDataURL(file)
+  }, [input, parseInput])
+
+  const handleRemoveImage = useCallback(() => {
+    setSelectedImage(null)
+    setImagePreview(null)
+    if (imageInputRef.current) {
+      imageInputRef.current.value = ''
+    }
+    // Re-parse without image
+    if (input.trim().length >= 3) {
+      parseInput(input)
+    } else {
+      setParsedActions([])
+      setResponseMode(null)
+    }
+  }, [input, parseInput])
+
+  // Meal suggestion handlers
+  const handleAcceptMeal = useCallback(async (suggestion: MealSuggestion) => {
+    try {
+      // Insert meal into database
+      const { error: insertError } = await supabase
+        .from('meals')
+        .upsert({
+          household_id: householdId,
+          date: suggestion.day,
+          custom_meal: suggestion.name,
+        }, { onConflict: 'household_id,date' })
+
+      if (insertError) throw insertError
+
+      // Remove from suggestions list
+      setMealSuggestions(prev => prev.filter(s => s.day !== suggestion.day))
+
+      // Refresh if callback provided
+      onActionExecuted?.()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Kunne ikke lagre middag')
+    }
+  }, [supabase, householdId, onActionExecuted])
+
+  const handleRejectMeal = useCallback((suggestion: MealSuggestion) => {
+    setMealSuggestions(prev => prev.filter(s => s.day !== suggestion.day))
+  }, [])
 
   const handleClarification = useCallback((action: ParsedAction, field: string, value: string | null, resultType?: ActionType) => {
     // Handle person_id clarification (contains "child:uuid" or "member:uuid")
@@ -1595,22 +1742,53 @@ export function UniversalAIInput({
 
   return (
     <div className="space-y-3">
-      {/* Input field */}
+      {/* Input field with image upload */}
       <div className="relative">
-        <textarea
-          ref={inputRef}
-          value={input}
-          onChange={handleInputChange}
-          placeholder={t.ai?.inputPlaceholder || 'Middag, henting, oppgave...'}
-          className="w-full p-4 rounded-xl text-base resize-none"
-          style={{
-            background: 'var(--card)',
-            border: '1px solid var(--border)',
-            color: 'var(--foreground)',
-            minHeight: '56px',
-          }}
-          rows={1}
-        />
+        <div className="flex gap-2">
+          {/* Image upload button */}
+          <button
+            type="button"
+            onClick={() => imageInputRef.current?.click()}
+            className="flex-shrink-0 p-4 rounded-xl flex items-center justify-center transition-colors"
+            style={{
+              background: selectedImage ? 'var(--accent)' : 'var(--card)',
+              border: '1px solid var(--border)',
+              color: selectedImage ? 'white' : 'var(--muted)',
+            }}
+            title="Last opp bilde"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <polyline points="21 15 16 10 5 21" />
+            </svg>
+          </button>
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleImageSelect}
+            className="hidden"
+          />
+
+          {/* Text input */}
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={handleInputChange}
+            placeholder={t.ai?.inputPlaceholder || 'Middag, henting, søk med ?, eller ta bilde...'}
+            className="flex-1 p-4 rounded-xl text-base resize-none"
+            style={{
+              background: 'var(--card)',
+              border: '1px solid var(--border)',
+              color: 'var(--foreground)',
+              minHeight: '56px',
+            }}
+            rows={1}
+          />
+        </div>
+
+        {/* Loading indicator */}
         {isParsing && (
           <div
             className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2 px-3 py-1 rounded-full text-sm"
@@ -1633,6 +1811,35 @@ export function UniversalAIInput({
         )}
       </div>
 
+      {/* Image preview */}
+      {imagePreview && (
+        <div
+          className="relative inline-block rounded-xl overflow-hidden"
+          style={{
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+          }}
+        >
+          <img
+            src={imagePreview}
+            alt="Valgt bilde"
+            className="max-h-32 max-w-full object-contain"
+          />
+          <button
+            type="button"
+            onClick={handleRemoveImage}
+            className="absolute top-2 right-2 p-1 rounded-full"
+            style={{ background: 'rgba(0,0,0,0.6)', color: 'white' }}
+            title="Fjern bilde"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       {/* Rate limit countdown message */}
       {rateLimitCountdown > 0 && (
         <div
@@ -1654,6 +1861,143 @@ export function UniversalAIInput({
           style={{ background: 'rgba(232, 120, 109, 0.1)', color: 'var(--color-coral)' }}
         >
           {error}
+        </div>
+      )}
+
+      {/* Search results */}
+      {responseMode === 'search' && searchAnswer && (
+        <div className="space-y-3">
+          <div
+            className="p-4 rounded-xl"
+            style={{
+              background: 'var(--card)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <div className="flex items-start gap-3">
+              <span className="text-xl">🔍</span>
+              <div className="flex-1">
+                <p style={{ color: 'var(--foreground)' }}>{searchAnswer}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Search sources */}
+          {searchSources.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium" style={{ color: 'var(--muted)' }}>Kilder:</p>
+              {searchSources.map((source, index) => (
+                <div
+                  key={index}
+                  className="p-3 rounded-lg flex items-start gap-2"
+                  style={{
+                    background: 'var(--background)',
+                    border: '1px solid var(--border)',
+                  }}
+                >
+                  <span className="text-sm">
+                    {source.type === 'task' && '📋'}
+                    {source.type === 'event' && '📅'}
+                    {source.type === 'recipe' && '🍳'}
+                    {source.type === 'meal' && '🍽️'}
+                    {source.type === 'message' && '💬'}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate" style={{ color: 'var(--foreground)' }}>
+                      {source.title}
+                    </p>
+                    <p className="text-xs truncate" style={{ color: 'var(--muted)' }}>
+                      {source.excerpt}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Meal suggestions */}
+      {responseMode === 'suggest' && mealSuggestions.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-sm font-medium" style={{ color: 'var(--muted)' }}>
+            Middagsforslag:
+          </p>
+          {mealSuggestions.map((suggestion, index) => {
+            const date = new Date(suggestion.day)
+            const dayNames = ['Søndag', 'Mandag', 'Tirsdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lørdag']
+            const dayName = dayNames[date.getDay()]
+
+            return (
+              <div
+                key={index}
+                className="p-4 rounded-xl"
+                style={{
+                  background: 'var(--card)',
+                  border: '1px solid var(--border)',
+                }}
+              >
+                <div className="flex items-start gap-3">
+                  <span className="text-xl">🍽️</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium" style={{ color: 'var(--foreground)' }}>
+                      {suggestion.name}
+                    </p>
+                    <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                      {dayName} {date.getDate()}.{date.getMonth() + 1}
+                    </p>
+                    {suggestion.description && (
+                      <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>
+                        {suggestion.description}
+                      </p>
+                    )}
+                    {/* Action buttons */}
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        onClick={() => handleAcceptMeal(suggestion)}
+                        className="px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1"
+                        style={{
+                          background: 'var(--accent)',
+                          color: 'white',
+                        }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        Legg til
+                      </button>
+                      <button
+                        onClick={() => handleRejectMeal(suggestion)}
+                        className="px-3 py-1.5 rounded-lg text-sm font-medium"
+                        style={{
+                          background: 'var(--background)',
+                          border: '1px solid var(--border)',
+                          color: 'var(--muted)',
+                        }}
+                      >
+                        Nei takk
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Empty state for suggestions */}
+      {responseMode === 'suggest' && mealSuggestions.length === 0 && !isParsing && (
+        <div
+          className="p-4 rounded-xl text-center"
+          style={{
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+          }}
+        >
+          <p style={{ color: 'var(--muted)' }}>
+            Alle hverdager har allerede middager planlagt! 🎉
+          </p>
         </div>
       )}
 
