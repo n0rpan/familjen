@@ -13,6 +13,7 @@ import { useUndoStack } from '@/hooks/useUndoStack'
 import { ShoppingItem } from '@/components/shopping/ShoppingItem'
 import { ShoppingUndoToast } from '@/components/shopping/ShoppingUndoToast'
 import { ShoppingSuggestions } from '@/components/shopping/ShoppingSuggestions'
+import { WishlistOverview } from '@/components/wishlist'
 import type { ShoppingCategory } from '@/lib/constants'
 import {
   getCachedShoppingData,
@@ -939,6 +940,11 @@ export default function ShoppingListPage() {
         onAddItem={addSuggestionItem}
         refreshTrigger={lists[0]?.items.length}
       />
+
+      {/* Wishlists section */}
+      {household && (
+        <WishlistOverview householdId={household.id} />
+      )}
 
       {/* Undo toast for deleted items */}
       <ShoppingUndoToast

@@ -23,7 +23,6 @@ import {
   MembersSection,
   AIPreferencesSection,
   HouseholdAdminSection,
-  WishlistsSection,
 } from './sections'
 import { SectionHeader, CollapsibleSection } from './components'
 
@@ -952,16 +951,6 @@ export default function SettingsPage() {
         onAddMember={addMember}
         onDeleteMember={deleteMember}
       />
-
-      {/* Wishlists */}
-      {household && (
-        <WishlistsSection
-          householdId={household.id}
-          children={children}
-          members={members}
-          t={t}
-        />
-      )}
 
       {/* ========== GROUP 2: MY SETTINGS ========== */}
       <SectionHeader

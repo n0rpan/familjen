@@ -175,11 +175,26 @@ export function UniversalAIInput({
   }, [parseInput])
 
   const handleClarification = useCallback((action: ParsedAction, field: string, value: string | null, resultType?: ActionType) => {
+    // Handle person_id clarification (contains "child:uuid" or "member:uuid")
+    let updatedData = { ...action.data }
+    if (field === 'person_id' && value) {
+      const [type, id] = value.split(':')
+      if (type === 'child') {
+        updatedData.child_id = id
+        updatedData.member_id = null
+      } else if (type === 'member') {
+        updatedData.member_id = id
+        updatedData.child_id = null
+      }
+    } else {
+      updatedData[field] = value
+    }
+
     // Update the action with the clarified value
     const updatedAction: ParsedAction = {
       ...action,
       type: resultType || action.type,
-      data: { ...action.data, [field]: value },
+      data: updatedData,
       needsClarification: undefined,
     }
 
@@ -289,10 +304,42 @@ export function UniversalAIInput({
         // For edit/delete, we search by title and show matches with member context
         break
       }
+      case 'wishlist_item': {
+        // Wishlist items MUST have either child_id or member_id specified
+        const childId = inferChildId(action)
+        const memberId = inferMemberId(action)
+
+        if (childId) {
+          updatedAction.data.child_id = childId
+          updatedAction.data.member_id = null
+        } else if (memberId) {
+          updatedAction.data.member_id = memberId
+          updatedAction.data.child_id = null
+        } else {
+          // Need clarification - show all children and members
+          const options = [
+            ...children.map(c => ({ label: c.name, value: `child:${c.id}` })),
+            ...members.map(m => ({ label: m.name, value: `member:${m.id}` })),
+          ]
+          return {
+            ...updatedAction,
+            needsClarification: {
+              field: 'person_id',
+              question: 'Hvem sin ønskeliste?',
+              options,
+            },
+          }
+        }
+        break
+      }
+      case 'navigate': {
+        // Navigate actions don't need validation, just execute
+        break
+      }
     }
 
     return updatedAction
-  }, [children, currentMember, inferChildId, inferMemberId])
+  }, [children, members, currentMember, inferChildId, inferMemberId])
 
   const executeAction = useCallback(async (action: ParsedAction) => {
     try {
@@ -451,6 +498,28 @@ export function UniversalAIInput({
             source: 'manual',
           }
           break
+        }
+        case 'wishlist_item': {
+          table = 'wishlist_items'
+          record = {
+            household_id: householdId,
+            child_id: preparedAction.data.child_id || null,
+            member_id: preparedAction.data.member_id || null,
+            name: preparedAction.data.item_name,
+            description: preparedAction.data.description || null,
+            link: preparedAction.data.link || null,
+            price: preparedAction.data.price || null,
+            occasion: preparedAction.data.occasion || 'general',
+            priority: preparedAction.data.priority || 0,
+            status: 'open',
+          }
+          break
+        }
+        case 'navigate': {
+          // Navigate to the handleliste page (wishlist is at the bottom)
+          setParsedActions(prev => prev.filter(a => a !== action))
+          router.push('/handleliste')
+          return // Don't create any database records
         }
       }
 
@@ -680,6 +749,33 @@ export function UniversalAIInput({
           }
           break
         }
+        case 'wishlist_item': {
+          let fetchQuery = supabase
+            .from('wishlist_items')
+            .select('*, children(name), household_members(name)')
+            .eq('household_id', householdId)
+
+          if (action.data.item_name) {
+            fetchQuery = fetchQuery.ilike('name', `%${action.data.item_name as string}%`)
+          }
+          const childId = inferChildId(action)
+          const memberId = inferMemberId(action)
+          if (childId) {
+            fetchQuery = fetchQuery.eq('child_id', childId)
+          } else if (memberId) {
+            fetchQuery = fetchQuery.eq('member_id', memberId)
+          }
+
+          const { data: items } = await fetchQuery.order('created_at', { ascending: false }).limit(5)
+          if (items) {
+            matches = items.map(item => ({
+              id: item.id,
+              label: item.name,
+              sublabel: `${(item.children as { name: string } | null)?.name || (item.household_members as { name: string } | null)?.name || ''} - ${item.occasion}`,
+            }))
+          }
+          break
+        }
       }
 
       if (matches.length === 0) {
@@ -809,6 +905,20 @@ export function UniversalAIInput({
           deletedRecord = householdEvent
 
           await supabase.from('household_events').delete().eq('id', recordId)
+          break
+        }
+        case 'wishlist_item': {
+          table = 'wishlist_items'
+          const { data: wishlistItem } = await supabase
+            .from('wishlist_items')
+            .select('*')
+            .eq('id', recordId)
+            .single()
+
+          if (!wishlistItem) throw new Error('Wishlist item not found')
+          deletedRecord = wishlistItem
+
+          await supabase.from('wishlist_items').delete().eq('id', recordId)
           break
         }
         default:
@@ -1168,6 +1278,34 @@ export function UniversalAIInput({
           }
           break
         }
+        case 'wishlist_item': {
+          table = 'wishlist_items'
+          let fetchQuery = supabase
+            .from('wishlist_items')
+            .select('*, children(name), household_members(name)')
+            .eq('household_id', householdId)
+
+          if (action.data.original_name || action.data.item_name) {
+            fetchQuery = fetchQuery.ilike('name', `%${(action.data.original_name || action.data.item_name) as string}%`)
+          }
+          const childId = inferChildId(action)
+          const memberId = inferMemberId(action)
+          if (childId) {
+            fetchQuery = fetchQuery.eq('child_id', childId)
+          } else if (memberId) {
+            fetchQuery = fetchQuery.eq('member_id', memberId)
+          }
+
+          const { data: items } = await fetchQuery.order('created_at', { ascending: false }).limit(5)
+          if (items) {
+            matches = items.map(item => ({
+              id: item.id,
+              label: item.name,
+              sublabel: `${(item.children as { name: string } | null)?.name || (item.household_members as { name: string } | null)?.name || ''} - ${item.occasion}`,
+            }))
+          }
+          break
+        }
         default:
           setError(t.errors.generic || 'Denne typen kan ikke redigeres')
           return
@@ -1303,6 +1441,32 @@ export function UniversalAIInput({
           if (action.data.new_end_date) updates.end_date = action.data.new_end_date
           if (action.data.new_time) updates.event_time = action.data.new_time
           if (action.data.new_location) updates.location = action.data.new_location
+          break
+        }
+        case 'wishlist_item': {
+          table = 'wishlist_items'
+          const { data: wishlistItem } = await supabase
+            .from('wishlist_items')
+            .select('*')
+            .eq('id', recordId)
+            .single()
+
+          if (!wishlistItem) throw new Error('Wishlist item not found')
+
+          previousState = {
+            name: wishlistItem.name,
+            description: wishlistItem.description,
+            occasion: wishlistItem.occasion,
+            priority: wishlistItem.priority,
+            price: wishlistItem.price,
+            link: wishlistItem.link,
+          }
+          if (action.data.new_name) updates.name = action.data.new_name
+          if (action.data.new_occasion) updates.occasion = action.data.new_occasion
+          if (action.data.new_priority !== undefined) updates.priority = action.data.new_priority
+          if (action.data.new_description) updates.description = action.data.new_description
+          if (action.data.new_price !== undefined) updates.price = action.data.new_price
+          if (action.data.new_link) updates.link = action.data.new_link
           break
         }
         default:

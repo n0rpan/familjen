@@ -24,7 +24,7 @@ const parseActionSchema = z.object({
 })
 
 // Response types
-export type ActionType = 'meal' | 'child_task' | 'member_event' | 'pickup' | 'shopping_item' | 'household_event'
+export type ActionType = 'meal' | 'child_task' | 'member_event' | 'pickup' | 'shopping_item' | 'household_event' | 'wishlist_item' | 'navigate'
 
 export type ActionOperation = 'add' | 'modify' | 'delete' | 'complete' | 'edit'
 
@@ -196,6 +196,8 @@ STØTTEDE OPERASJONER PER TYPE:
 | member_event    | ✓   | -      | ✓    | ✓      | -        |
 | pickup          | -   | ✓      | -    | ✓      | -        |
 | household_event | ✓   | -      | ✓    | ✓      | -        |
+| wishlist_item   | ✓   | -      | ✓    | ✓      | -        |
+| navigate        | ✓   | -      | -    | -      | -        |
 
 VIKTIG:
 - Bruk ALDRI "complete" for meal, member_event eller pickup!
@@ -256,6 +258,31 @@ HANDLINGSTYPER:
    - Brukes når: "jeg henter Storm i morgen", "pappa henter begge på fredag"
    - operation: "modify" (endre hvem som henter), "delete" (ingen henter / avlys henting)
    - Data: { date, child_id?, child_name?, picker_id?, picker_name? }
+
+7. "wishlist_item" - Ønske på ønskeliste
+   - Brukes når: "legg lego til Storms ønskeliste", "nintendo switch til jul", "sykkel på bursdag", "ønskeliste"
+   - VIKTIG: ALLTID krev spesifisering av hvilke(t) barn/person ønsket gjelder (needs_clarification)
+   - operation: "add" (nytt ønske), "edit" (endre ønske), "delete" (slett ønske)
+   - occasion: "birthday" (bursdag), "christmas" (jul), "general" (generelt/uspesifisert)
+   - Data for add: { item_name, child_id?, child_name?, member_id?, member_name?, occasion?, priority?, price?, link?, description? }
+   - Data for edit: { original_name, new_name?, new_occasion?, new_priority?, child_id? }
+   - Data for delete: { item_name, child_id?, child_name?, member_id?, member_name? }
+   - priority: 0-5 (0=ingen prioritet, 5=veldig viktig)
+   - VIKTIG: Hvis barn/person ikke er spesifisert, MÅ du sette needs_clarification med liste over barn+voksne
+   - Eksempler:
+     - "legg lego til Storms ønskeliste" → child_name=Storm, item_name=lego
+     - "nintendo switch til jul for Emma" → child_name=Emma, item_name=nintendo switch, occasion=christmas
+     - "jeg ønsker meg en sykkel til bursdag" → needs_clarification for member_id (hvem er "jeg"?)
+
+8. "navigate" - Navigasjon til ønskeliste
+   - Brukes når: "vis ønskelisten til Storm", "hva ønsker Emma seg?", "gå til ønskelister", "åpne ønskelista"
+   - operation: "add" (navigasjon er alltid "add")
+   - destination: "wishlist" (ønskeliste-siden på handleliste)
+   - Data: { destination: "wishlist", child_id?, child_name?, member_id?, member_name? }
+   - Hvis person ikke er spesifisert, navigerer til ønskelisteoversikten
+   - Eksempler:
+     - "vis ønskelisten til Storm" → destination=wishlist, child_name=Storm
+     - "gå til ønskelister" → destination=wishlist (ingen person)
 
 VIKTIG FOR SHOPPING vs MEAL:
 - "legg laks til handlelista" = shopping_item (skal KJØPES)
@@ -340,6 +367,8 @@ IKONER:
 - member_event: ✈️💼🎓
 - household_event: 🏠🏕️🎄👨‍👩‍👧‍👦
 - pickup: 🚗
+- wishlist_item: 🎁🎄🎂
+- navigate: 📍🔗
 
 FOR DELETE-OPERASJONER: Bruk 🗑️ først, så relevant ikon (f.eks. "🗑️🍕" for slett middag)
 FOR COMPLETE-OPERASJONER: Bruk ✅ først, så relevant ikon (f.eks. "✅🛒" for kjøpt vare)
@@ -378,6 +407,21 @@ Når barn ikke er spesifisert for pickup, MÅ du sette needs_clarification:
     "question": "Hvem skal hentes?",
     "options": [
       // Liste over alle barn fra konteksten
+    ]
+  }
+}
+
+NEEDS_CLARIFICATION FOR WISHLIST_ITEM:
+VIKTIG: Ønskeliste-elementer MÅ ALLTID spesifisere hvem ønsket er for.
+Hvis barn/person ikke er spesifisert, MÅ du sette needs_clarification:
+{
+  "needs_clarification": {
+    "field": "person_id",
+    "question": "Hvem sin ønskeliste?",
+    "options": [
+      // Liste over alle barn OG voksne fra konteksten
+      // { "label": "Storm", "value": "child_uuid", "result_type": "wishlist_item" },
+      // { "label": "Mamma", "value": "member_uuid", "result_type": "wishlist_item" }
     ]
   }
 }
