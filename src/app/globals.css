@@ -59,13 +59,20 @@
   box-sizing: border-box;
 }
 
-/* Remove default focus outlines - we use custom styles */
-*:focus {
+/* Remove ALL focus outlines globally */
+*:focus,
+*:focus-visible {
   outline: none;
 }
 
-/* Only show focus ring for keyboard navigation (accessibility) */
-*:focus-visible {
+/* Only show focus ring for keyboard navigation on interactive elements */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
