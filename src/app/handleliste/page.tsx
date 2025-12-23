@@ -41,6 +41,12 @@ export default function ShoppingListPage() {
   const duplicateCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasInitialized = useRef(false)
 
+  // Refs to avoid stale closures in async callbacks
+  const tRef = useRef(t)
+  const householdRef = useRef(household)
+  useEffect(() => { tRef.current = t }, [t])
+  useEffect(() => { householdRef.current = household }, [household])
+
   // Micro-feedback for recently changed items
   const { markChanged, isRecentlyChanged } = useMicroFeedback(800)
 
@@ -146,21 +152,6 @@ export default function ShoppingListPage() {
     checkDuplicates(listId, text)
   }, [checkDuplicates])
 
-  useEffect(() => {
-    if (hasInitialized.current) return
-    hasInitialized.current = true
-
-    let cancelled = false
-    loadData(cancelled, (cb) => { if (!cancelled) cb() })
-
-    return () => { cancelled = true }
-  }, [])
-
-  // Retry handler for error state (no cancellation needed - user-initiated)
-  const handleRetry = useCallback(() => {
-    loadData(false, (cb) => cb())
-  }, [])
-
   // Helper to combine lists with items
   const combineListsWithItems = (listsData: ShoppingList[], itemsData: ShoppingListItem[]): ListWithItems[] => {
     return listsData.map(list => ({
@@ -169,14 +160,14 @@ export default function ShoppingListPage() {
     }))
   }
 
-  const loadData = async (cancelled: boolean, safeSetState: (cb: () => void) => void) => {
+  const loadData = useCallback(async (cancelled: boolean, safeSetState: (cb: () => void) => void) => {
     setError(null)
 
     try {
       // First get user's membership to find their specific household
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
-        throw new Error(t.errors.unauthorized)
+        throw new Error(tRef.current.errors.unauthorized)
       }
 
       if (cancelled) return
@@ -204,7 +195,7 @@ export default function ShoppingListPage() {
         .single()
 
       if (householdError) {
-        throw new Error(t.errors.couldNotLoadHousehold)
+        throw new Error(tRef.current.errors.couldNotLoadHousehold)
       }
 
       if (cancelled) return
@@ -244,7 +235,7 @@ export default function ShoppingListPage() {
         .eq('is_archived', false)
         .order('sort_order')
 
-      if (listsError) throw new Error(t.errors.loadFailed)
+      if (listsError) throw new Error(tRef.current.errors.loadFailed)
 
       // Create single "Handleliste" if no lists exist
       if (!listsData || listsData.length === 0) {
@@ -254,7 +245,7 @@ export default function ShoppingListPage() {
           .select()
           .single()
 
-        if (createError) throw new Error(t.errors.saveFailed)
+        if (createError) throw new Error(tRef.current.errors.saveFailed)
         listsData = [newList]
       }
 
@@ -265,7 +256,7 @@ export default function ShoppingListPage() {
         .in('list_id', listsData.map(l => l.id))
         .order('created_at', { ascending: false })
 
-      if (itemsError) throw new Error(t.errors.loadFailed)
+      if (itemsError) throw new Error(tRef.current.errors.loadFailed)
 
       // Combine lists with their items
       const listsWithItems = combineListsWithItems(listsData, itemsData || [])
@@ -280,16 +271,47 @@ export default function ShoppingListPage() {
       await setCache(getShoppingCacheKey(householdData.id), cacheData)
     } catch (err) {
       console.error('Shopping list error:', err)
-      setError(err instanceof Error ? err.message : t.errors.generic)
+      setError(err instanceof Error ? err.message : tRef.current.errors.generic)
     } finally {
       setLoading(false)
     }
-  }
+  }, [supabase])
+
+  // Initial data load
+  useEffect(() => {
+    if (hasInitialized.current) return
+    hasInitialized.current = true
+
+    let cancelled = false
+    loadData(cancelled, (cb) => { if (!cancelled) cb() })
+
+    return () => { cancelled = true }
+  }, [loadData])
+
+  // Retry handler for error state (no cancellation needed - user-initiated)
+  const handleRetry = useCallback(() => {
+    loadData(false, (cb) => cb())
+  }, [loadData])
+
+  // Silent refresh that doesn't show loading spinner
+  const refreshData = useCallback(async () => {
+    const currentHousehold = householdRef.current
+    if (!currentHousehold) return
+
+    try {
+      // Fetch fresh data and update cache
+      const freshData = await fetchAndCacheShoppingData(currentHousehold.id)
+      const listsWithItems = combineListsWithItems(freshData.lists, freshData.items)
+      setLists(listsWithItems)
+    } catch {
+      // Silent fail - user can pull to refresh if needed
+    }
+  }, [])
 
   // Refetch data when app returns to foreground (catches changes missed while backgrounded)
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && hasInitialized.current && household) {
+      if (document.visibilityState === 'visible' && hasInitialized.current && householdRef.current) {
         // Fetch fresh data and update cache
         refreshData()
       }
@@ -297,21 +319,7 @@ export default function ShoppingListPage() {
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
-  }, [household])
-
-  // Silent refresh that doesn't show loading spinner
-  const refreshData = async () => {
-    if (!household) return
-
-    try {
-      // Fetch fresh data and update cache
-      const freshData = await fetchAndCacheShoppingData(household.id)
-      const listsWithItems = combineListsWithItems(freshData.lists, freshData.items)
-      setLists(listsWithItems)
-    } catch {
-      // Silent fail - user can pull to refresh if needed
-    }
-  }
+  }, [refreshData])
 
   // Sync state to cache when lists change (debounced to avoid excessive writes)
   const cacheDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)

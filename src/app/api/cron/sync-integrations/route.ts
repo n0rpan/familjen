@@ -120,7 +120,7 @@ export async function GET(request: Request) {
       childMappingsByIntegration.set(mapping.integration_id, existing)
     })
 
-    // Sync each integration
+    // Sync each integration in parallel (grouped by service to respect rate limits)
     const results: Array<{
       integrationId: string
       householdId: string
@@ -131,64 +131,79 @@ export async function GET(request: Request) {
       error?: string
     }> = []
 
-    // Sync Spond integrations
-    for (const integration of spondIntegrations) {
+    // Create sync promises for each service type (parallel within groups)
+    const spondPromises = spondIntegrations.map(async (integration) => {
       const result = await syncSpondIntegration(
         supabase,
         integration,
         childMappingsByIntegration.get(integration.id) || []
       )
-      results.push({
+      return {
         integrationId: integration.id,
         householdId: integration.household_id,
-        service: 'spond',
+        service: 'spond' as const,
         ...result,
-      })
-    }
+      }
+    })
 
-    // Sync Kidplan integrations
-    for (const integration of kidplanIntegrations) {
+    const kidplanPromises = kidplanIntegrations.map(async (integration) => {
       const result = await syncKidplanIntegration(
         supabase,
         integration,
         childMappingsByIntegration.get(integration.id) || []
       )
-      results.push({
+      return {
         integrationId: integration.id,
         householdId: integration.household_id,
-        service: 'kidplan',
+        service: 'kidplan' as const,
         ...result,
-      })
-    }
+      }
+    })
 
-    // Sync iSkole integrations
-    for (const integration of iskoleIntegrations) {
+    const iskolePromises = iskoleIntegrations.map(async (integration) => {
       const result = await syncISkoleIntegration(
         supabase,
         integration,
         childMappingsByIntegration.get(integration.id) || []
       )
-      results.push({
+      return {
         integrationId: integration.id,
         householdId: integration.household_id,
-        service: 'iskole',
+        service: 'iskole' as const,
         ...result,
-      })
-    }
+      }
+    })
 
-    // Sync MyKid integrations
-    for (const integration of mykidIntegrations) {
+    const mykidPromises = mykidIntegrations.map(async (integration) => {
       const result = await syncMyKidIntegration(
         supabase,
         integration,
         childMappingsByIntegration.get(integration.id) || []
       )
-      results.push({
+      return {
         integrationId: integration.id,
         householdId: integration.household_id,
-        service: 'mykid',
+        service: 'mykid' as const,
         ...result,
-      })
+      }
+    })
+
+    // Run all service types in parallel using Promise.allSettled
+    const allSettled = await Promise.allSettled([
+      ...spondPromises,
+      ...kidplanPromises,
+      ...iskolePromises,
+      ...mykidPromises,
+    ])
+
+    // Collect results, handling any unexpected rejections
+    for (const settled of allSettled) {
+      if (settled.status === 'fulfilled') {
+        results.push(settled.value)
+      } else {
+        // Promise rejected unexpectedly (shouldn't happen as sync functions catch errors)
+        console.error('[Cron] Unexpected sync rejection:', settled.reason)
+      }
     }
 
     // Sync ICS calendars for all members with ICS URLs

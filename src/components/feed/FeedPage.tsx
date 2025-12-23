@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { FeedFilters, type FeedFilter } from './FeedFilters'
 import { FeedSearch } from './FeedSearch'
@@ -33,6 +33,9 @@ export function FeedPage({ householdId }: Props) {
   const [reminders, setReminders] = useState<FeedReminder[]>([])
   const [integrationChildren, setIntegrationChildren] = useState<IntegrationChild[]>([])
   const [syncing, setSyncing] = useState(false)
+
+  // Track photo URL generation session to prevent stale updates
+  const photoGenSessionRef = useRef(0)
 
   // Load data
   const loadData = useCallback(async () => {
@@ -131,9 +134,17 @@ export function FeedPage({ householdId }: Props) {
       setPhotos(initialPhotos)
 
       // Generate signed URLs progressively in background (don't block render)
+      // Increment session to invalidate any previous in-flight URL generation
+      const currentSession = ++photoGenSessionRef.current
+
       // Process in batches of 5 for better UX
       const batchSize = 5
       for (let i = 0; i < actualPhotos.length; i += batchSize) {
+        // Check if this generation session is still current
+        if (photoGenSessionRef.current !== currentSession) {
+          break // New loadData called, abandon this batch
+        }
+
         const batch = actualPhotos.slice(i, i + batchSize)
         const urls = await Promise.all(
           batch.map(async (photo) => {
@@ -147,6 +158,12 @@ export function FeedPage({ householdId }: Props) {
             }
           })
         )
+
+        // Double-check session before updating state
+        if (photoGenSessionRef.current !== currentSession) {
+          break // New loadData called, don't update with stale URLs
+        }
+
         // Update photos with new URLs
         setPhotos((prev) =>
           prev.map((p) => {

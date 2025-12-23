@@ -398,7 +398,7 @@ export const WeekGrid = memo(function WeekGrid({
                         ) : (
                           <div className="text-center">
                             {(() => {
-                              const holiday = getHoliday(date, holidays)
+                              const holiday = holidaysByDate.get(formatDateISO(date))
                               const isNonWorkingDay = isWeekend(date) || !!holiday
                               const hasPicker = !!pickup?.picker
 

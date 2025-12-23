@@ -33,6 +33,7 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
   const [sourceUrls, setSourceUrls] = useState<SourceUrl[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
   const [newUrl, setNewUrl] = useState('')
   const [newName, setNewName] = useState('')
@@ -132,6 +133,9 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
 
   const deleteSourceUrl = async (id: string) => {
     if (!confirm('Er du sikker på at du vil fjerne denne kilden?')) return
+    if (deleting) return // Prevent double-clicks
+
+    setDeleting(id)
 
     const { error } = await supabase
       .from('external_source_urls')
@@ -144,6 +148,8 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
       onMessage('success', 'Kilde fjernet')
       loadSourceUrls()
     }
+
+    setDeleting(null)
   }
 
   const formatSyncTime = (time: string | null) => {
@@ -252,10 +258,20 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
             </button>
             <button
               onClick={() => deleteSourceUrl(source.id)}
-              className="btn text-sm"
+              disabled={deleting === source.id}
+              className="btn text-sm disabled:opacity-50"
               style={{ color: 'var(--color-coral)' }}
             >
-              Fjern
+              {deleting === source.id ? (
+                <>
+                  <svg width="14" height="14" className="animate-spin inline mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                  </svg>
+                  Fjerner...
+                </>
+              ) : (
+                'Fjern'
+              )}
             </button>
           </div>
         </div>
