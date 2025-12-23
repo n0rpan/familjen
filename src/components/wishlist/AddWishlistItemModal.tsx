@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import type { WishlistItem, WishlistOccasion } from '@/lib/types'
 import { WISHLIST_OCCASIONS } from '@/lib/constants'
+import { compressImage } from '@/lib/image-compression'
 
 interface AddWishlistItemModalProps {
   isOpen: boolean
@@ -73,24 +74,35 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
     }
   }, [isOpen, editItem, defaultOccasion, supabase])
 
-  // Handle image selection
-  const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle image selection with compression
+  const handleImageSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    setImageFile(file)
     setExistingImagePath(null)
+    setSaveError(null)
 
-    // Create preview with error handling
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      setImagePreview(e.target?.result as string)
+    try {
+      // Compress image to max 1600px and WebP format (handles large iPhone photos)
+      const result = await compressImage(file, {
+        maxWidth: 1600,
+        maxHeight: 1600,
+        quality: 0.85,
+        maxSizeBytes: 2 * 1024 * 1024,
+      })
+
+      // Create a compressed File object for upload
+      const ext = result.format === 'webp' ? '.webp' : '.jpg'
+      const mimeType = result.format === 'webp' ? 'image/webp' : 'image/jpeg'
+      const newFileName = file.name.replace(/\.[^.]+$/, ext)
+      const compressedFile = new File([result.blob], newFileName, { type: mimeType })
+
+      setImageFile(compressedFile)
+      setImagePreview(result.base64)
+    } catch (err) {
+      console.error('Failed to compress image:', err)
+      setSaveError(t.wishlists.imageReadError || 'Kunne ikke behandle bildefilen')
     }
-    reader.onerror = () => {
-      console.error('Failed to read image file')
-      setSaveError(t.wishlists.imageReadError || 'Kunne ikke lese bildefilen')
-    }
-    reader.readAsDataURL(file)
   }, [t])
 
   // Remove image
