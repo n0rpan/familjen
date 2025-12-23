@@ -10,22 +10,20 @@ vi.mock('next/navigation', () => ({
   }),
 }))
 
-// Mock FileReader globally before any tests
-class MockFileReader {
-  result: string | ArrayBuffer | null = null
-  onloadend: (() => void) | null = null
-  onerror: (() => void) | null = null
-
-  readAsDataURL() {
-    // Simulate async file reading
-    setTimeout(() => {
-      this.result = 'data:image/jpeg;base64,fake-base64-data'
-      this.onloadend?.()
-    }, 0)
-  }
-}
-
-global.FileReader = MockFileReader as unknown as typeof FileReader
+// Mock image compression utility
+vi.mock('@/lib/image-compression', () => ({
+  compressImageToBase64: vi.fn().mockResolvedValue('data:image/jpeg;base64,fake-base64-data'),
+  compressImage: vi.fn().mockResolvedValue({
+    base64: 'data:image/jpeg;base64,fake-base64-data',
+    blob: new Blob(['fake'], { type: 'image/jpeg' }),
+    width: 800,
+    height: 600,
+    originalSize: 5000000,
+    compressedSize: 500000,
+    format: 'jpeg',
+  }),
+  compressImageToFile: vi.fn().mockResolvedValue(new File(['fake'], 'test.jpg', { type: 'image/jpeg' })),
+}))
 
 // Mock language context
 vi.mock('@/lib/i18n/context', () => ({
@@ -191,7 +189,9 @@ describe('UniversalAIInput', () => {
       expect(screen.queryByAltText('Valgt bilde')).not.toBeInTheDocument()
     })
 
-    it('shows error for files over 5MB', async () => {
+    it('compresses large files instead of rejecting them', async () => {
+      const { compressImageToBase64 } = await import('@/lib/image-compression')
+
       render(<UniversalAIInput {...defaultProps} />)
 
       const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
@@ -204,8 +204,13 @@ describe('UniversalAIInput', () => {
         fireEvent.change(fileInput, { target: { files: [largeFile] } })
       })
 
-      // Check for error message
-      expect(screen.getByText('Bildet er for stort (maks 5MB)')).toBeInTheDocument()
+      // Compression should be called (not rejected)
+      expect(compressImageToBase64).toHaveBeenCalled()
+
+      // Wait for preview to appear (compression succeeded)
+      await waitFor(() => {
+        expect(screen.getByAltText('Valgt bilde')).toBeInTheDocument()
+      })
     })
 
     it('shows error for non-image files', async () => {

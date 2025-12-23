@@ -34,10 +34,15 @@ const DEFAULT_OPTIONS: Required<CompressOptions> = {
  * Check if the browser supports WebP encoding
  */
 function supportsWebP(): boolean {
-  const canvas = document.createElement('canvas')
-  canvas.width = 1
-  canvas.height = 1
-  return canvas.toDataURL('image/webp').startsWith('data:image/webp')
+  try {
+    const canvas = document.createElement('canvas')
+    canvas.width = 1
+    canvas.height = 1
+    const dataUrl = canvas.toDataURL('image/webp')
+    return dataUrl?.startsWith('data:image/webp') ?? false
+  } catch {
+    return false
+  }
 }
 
 /**
