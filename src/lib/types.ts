@@ -4,9 +4,6 @@ import type {
   ChildTaskType,
   ChildTaskStatus,
   TaskSource,
-  ReminderCategory,
-  ReminderStatus,
-  ReminderPriority,
   WishlistOccasion,
   WishlistItemStatus,
   CalendarEventType,
@@ -23,9 +20,6 @@ export type {
   ChildTaskType,
   ChildTaskStatus,
   TaskSource,
-  ReminderCategory,
-  ReminderStatus,
-  ReminderPriority,
   WishlistOccasion,
   WishlistItemStatus,
   CalendarEventType,
@@ -190,7 +184,6 @@ export interface DaySummary {
   pickups: PickupWithDetails[]
   meal: MealWithRecipe | null
   tasks: ChildTaskWithChild[]
-  reminders?: HouseholdReminderWithAssignee[]
   householdEvents?: HouseholdEvent[]
 }
 
@@ -418,84 +411,29 @@ export interface ChildTaskWithChild extends ChildTask {
   child: Child
 }
 
-// Household reminders (not tied to a specific child)
-export interface HouseholdReminder {
-  id: string
-  household_id: string
-  date: string  // ISO date YYYY-MM-DD
-  time: string | null
-  title: string
-  notes: string | null
-  category: ReminderCategory
-  status: ReminderStatus
-  priority: ReminderPriority
-  snoozed_until: string | null
-  assigned_to: string | null
-  source: TaskSource
-  recurrence_pattern: RecurrencePattern | null
-  parent_reminder_id: string | null
-  completed_at: string | null
-  completed_by: string | null
-  created_at: string
-  updated_at: string | null
-}
-
-export interface HouseholdReminderWithAssignee extends HouseholdReminder {
-  assignee: HouseholdMember | null
-}
-
-// Wishlists
-export interface Wishlist {
-  id: string
-  household_id: string
-  member_id: string | null  // For adult wishlists
-  child_id: string | null   // For child wishlists
-  name: string
-  occasion: WishlistOccasion | null
-  occasion_date: string | null
-  description: string | null
-  is_public: boolean
-  sort_order: number
-  created_at: string
-  updated_at: string | null
-}
-
+// Wishlist items (per person - child or household member)
 export interface WishlistItem {
   id: string
-  wishlist_id: string
+  household_id: string
+  child_id: string | null     // For child wishlists
+  member_id: string | null    // For adult wishlists
   name: string
   description: string | null
-  link: string | null
+  link: string | null         // URL to store/product
   price: number | null
-  currency: string
-  image_url: string | null
-  priority: number  // 0-5, higher = more wanted
-  quantity: number
+  image_path: string | null   // Storage path for uploaded image
+  occasion: WishlistOccasion
+  priority: number            // 0-5 stars
   status: WishlistItemStatus
-  reserved_by: string | null
+  reserved_by: string | null  // member_id or external name
   reserved_at: string | null
-  fulfilled_by: string | null
-  fulfilled_at: string | null
-  notes: string | null
-  buyer_notes: string | null
   created_at: string
   updated_at: string | null
 }
 
-export interface WishlistWithItems extends Wishlist {
-  items: WishlistItem[]
-  owner_name: string  // Resolved from member or child
-  owner_color: ChildColor | null  // If child, their color
-}
-
-export interface WishlistWithOwner extends Wishlist {
-  member: HouseholdMember | null
-  child: Child | null
-}
-
-export interface WishlistItemWithReservation extends WishlistItem {
-  reserver: HouseholdMember | null
-  fulfiller: HouseholdMember | null
+export interface WishlistItemWithPerson extends WishlistItem {
+  child?: Child | null
+  member?: HouseholdMember | null
 }
 
 // Week-specific AI context

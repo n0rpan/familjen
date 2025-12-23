@@ -227,7 +227,7 @@ export default async function HomePage() {
     )
   }
 
-  const { children, members, pickups, meals, memberEvents, childTasks, householdReminders, holidays, recentPhotos, weekStart } = homeData
+  const { children, members, pickups, meals, memberEvents, childTasks, holidays, recentPhotos, weekStart } = homeData
   const todaySummary = getTodaySummary(homeData)
 
   // Check if we have any data set up

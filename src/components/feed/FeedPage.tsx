@@ -173,7 +173,7 @@ export function FeedPage({ householdId }: Props) {
         )
       }
 
-      // Load reminders (child_tasks with type 'reminder' or household_reminders)
+      // Load reminders (child_tasks)
       const { data: tasksData } = await supabase
         .from('child_tasks')
         .select(`

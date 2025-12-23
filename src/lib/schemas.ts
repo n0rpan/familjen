@@ -4,9 +4,6 @@ import {
   CHILD_TASK_STATUSES,
   TASK_SOURCES,
   RECURRENCE_TYPES,
-  REMINDER_CATEGORIES,
-  REMINDER_STATUSES,
-  REMINDER_PRIORITIES,
   WISHLIST_OCCASIONS,
   WISHLIST_ITEM_STATUSES,
 } from './constants'
@@ -46,95 +43,35 @@ export const createChildTaskSchema = z.object({
 export type CreateChildTaskRequest = z.infer<typeof createChildTaskSchema>
 
 // ============================================
-// Household Reminder Schemas
-// ============================================
-
-export const reminderCategorySchema = z.enum(REMINDER_CATEGORIES)
-export const reminderStatusSchema = z.enum(REMINDER_STATUSES)
-export const reminderPrioritySchema = z.enum(REMINDER_PRIORITIES)
-
-export const createHouseholdReminderSchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Dato må være YYYY-MM-DD format'),
-  time: z.string().regex(/^\d{2}:\d{2}$/, 'Tid må være HH:MM format').optional().nullable(),
-  title: z.string().min(1, 'Tittel er påkrevd').max(150, 'Tittel kan maks være 150 tegn'),
-  notes: z.string().max(500).optional().nullable(),
-  category: reminderCategorySchema.optional().default('other'),
-  priority: reminderPrioritySchema.optional().default('normal'),
-  assigned_to: z.string().uuid().optional().nullable(),
-  source: taskSourceSchema.optional().default('manual'),
-  recurrence_pattern: recurrencePatternSchema,
-})
-export type CreateHouseholdReminderRequest = z.infer<typeof createHouseholdReminderSchema>
-
-export const updateHouseholdReminderSchema = createHouseholdReminderSchema.partial().extend({
-  status: reminderStatusSchema.optional(),
-  snoozed_until: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
-})
-export type UpdateHouseholdReminderRequest = z.infer<typeof updateHouseholdReminderSchema>
-
-// ============================================
 // Wishlist Schemas
 // ============================================
 
 export const wishlistOccasionSchema = z.enum(WISHLIST_OCCASIONS)
 export const wishlistItemStatusSchema = z.enum(WISHLIST_ITEM_STATUSES)
 
-export const createWishlistSchema = z.object({
-  member_id: z.string().uuid().optional().nullable(),
-  child_id: z.string().uuid().optional().nullable(),
-  name: z.string().min(1, 'Navn er påkrevd').max(100, 'Navn kan maks være 100 tegn'),
-  occasion: wishlistOccasionSchema.optional().nullable(),
-  occasion_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
-  description: z.string().max(500).optional().nullable(),
-  is_public: z.boolean().optional().default(true),
-}).refine(
-  data => !(data.member_id && data.child_id),
-  { message: 'Kan ikke sette både member_id og child_id' }
-)
-export type CreateWishlistRequest = z.infer<typeof createWishlistSchema>
-
 export const createWishlistItemSchema = z.object({
-  wishlist_id: z.string().uuid('wishlist_id må være gyldig UUID'),
+  child_id: z.string().uuid().optional().nullable(),
+  member_id: z.string().uuid().optional().nullable(),
   name: z.string().min(1, 'Navn er påkrevd').max(200, 'Navn kan maks være 200 tegn'),
   description: z.string().max(500).optional().nullable(),
   link: z.string().url('Må være gyldig URL').optional().nullable().or(z.literal('')),
   price: z.number().positive('Pris må være positiv').optional().nullable(),
-  currency: z.string().length(3, 'Valuta må være 3 tegn (f.eks. NOK)').optional().default('NOK'),
-  image_url: z.string().url().optional().nullable(),
+  image_path: z.string().optional().nullable(),
+  occasion: wishlistOccasionSchema.optional().default('general'),
   priority: z.number().min(0).max(5).optional().default(0),
-  quantity: z.number().min(1).optional().default(1),
-  notes: z.string().max(500).optional().nullable(),
-  buyer_notes: z.string().max(500).optional().nullable(),
-})
+}).refine(
+  data => (data.child_id != null) !== (data.member_id != null),
+  { message: 'Må sette enten child_id eller member_id (ikke begge)' }
+)
 export type CreateWishlistItemRequest = z.infer<typeof createWishlistItemSchema>
 
-export const updateWishlistItemSchema = createWishlistItemSchema.omit({ wishlist_id: true }).partial().extend({
-  status: wishlistItemStatusSchema.optional(),
-})
+export const updateWishlistItemSchema = createWishlistItemSchema
+  .omit({ child_id: true, member_id: true })
+  .partial()
+  .extend({
+    status: wishlistItemStatusSchema.optional(),
+  })
 export type UpdateWishlistItemRequest = z.infer<typeof updateWishlistItemSchema>
-
-// ============================================
-// AI Parse Reminders Schema
-// ============================================
-
-export const aiParseRemindersSchema = z.object({
-  input: z.string().min(1, 'Input er påkrevd').max(2000, 'Input kan maks være 2000 tegn'),
-  childIds: z.array(z.string().uuid()).optional(),  // Filter for specific children
-  defaultDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),  // Default date if not specified
-})
-export type AIParseRemindersRequest = z.infer<typeof aiParseRemindersSchema>
-
-export const parsedReminderSchema = z.object({
-  title: z.string(),
-  date: z.string().nullable(),
-  time: z.string().nullable(),
-  task_type: childTaskTypeSchema,
-  child_name: z.string().nullable(),
-  child_id: z.string().nullable(),
-  notes: z.string().nullable(),
-  confidence: z.number().min(0).max(1),
-})
-export type ParsedReminder = z.infer<typeof parsedReminderSchema>
 
 // ============================================
 // AI Meal Suggestions

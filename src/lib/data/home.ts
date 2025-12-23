@@ -8,9 +8,7 @@ import type {
   MemberEvent,
   HouseholdEvent,
   ChildTaskWithChild,
-  HouseholdReminderWithAssignee,
   AIHeadsUp,
-  HeadsUpType,
 } from '@/lib/types'
 
 export interface HomePagePhoto {
@@ -31,7 +29,6 @@ export interface HomePageData {
   memberEvents: MemberEvent[]
   householdEvents: HouseholdEvent[]
   childTasks: ChildTaskWithChild[]
-  householdReminders: HouseholdReminderWithAssignee[]
   holidays: Holiday[]
   recentPhotos: HomePagePhoto[]
   aiHeadsUps: AIHeadsUp[]
@@ -72,7 +69,6 @@ export async function getHomePageData(
     eventsResult,
     householdEventsResult,
     tasksResult,
-    remindersResult,
     holidaysResult,
     photosResult,
   ] = await Promise.all([
@@ -122,16 +118,6 @@ export async function getHomePageData(
       .lte('date', weekEndStr)
       .order('date')
       .order('time'),
-    // Fetch household reminders for this week
-    supabase
-      .from('household_reminders')
-      .select('*, assignee:household_members(*)')
-      .eq('household_id', householdId)
-      .gte('date', weekStartStr)
-      .lte('date', weekEndStr)
-      .eq('status', 'open')
-      .order('date')
-      .order('time'),
     // Fetch holidays (system-wide and household-specific)
     supabase
       .from('calendar_events')
@@ -165,7 +151,6 @@ export async function getHomePageData(
     mealsResult.error ||
     eventsResult.error ||
     tasksResult.error ||
-    remindersResult.error ||
     photosResult.error
 
   if (queryError) {
@@ -262,7 +247,6 @@ export async function getHomePageData(
       memberEvents: (eventsResult.data || []) as MemberEvent[],
       householdEvents: (householdEventsResult.data || []) as HouseholdEvent[],
       childTasks: (tasksResult.data || []) as ChildTaskWithChild[],
-      householdReminders: (remindersResult.data || []) as HouseholdReminderWithAssignee[],
       holidays,
       recentPhotos,
       aiHeadsUps,
@@ -283,7 +267,6 @@ export function getTodaySummary(data: HomePageData) {
   const todayPickups = data.pickups.filter(p => p.date === data.todayStr)
   const todayMeal = data.meals.find(m => m.date === data.todayStr) || null
   const todayTasks = data.childTasks.filter(t => t.date === data.todayStr)
-  const todayReminders = data.householdReminders.filter(r => r.date === data.todayStr)
   // Household events: include if today falls within event_date to end_date range
   const todayHouseholdEvents = data.householdEvents.filter(e => {
     const startDate = e.event_date
@@ -296,7 +279,6 @@ export function getTodaySummary(data: HomePageData) {
     pickups: todayPickups,
     meal: todayMeal,
     tasks: todayTasks,
-    reminders: todayReminders,
     householdEvents: todayHouseholdEvents,
   }
 }

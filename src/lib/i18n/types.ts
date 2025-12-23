@@ -688,52 +688,77 @@ export interface TranslationStrings {
   // Wishlists
   wishlists: {
     title: string
-    createWishlist: string
-    editWishlist: string
-    deleteWishlist: string
-    deleteWishlistConfirm: string
-    wishlistName: string
-    occasion: string
-    occasionDate: string
-    makePublic: string
-    makePublicDesc: string
+    sectionTitle: string
+    sectionDesc: string
     // Occasions
     occasions: {
       birthday: string
       christmas: string
-      anniversary: string
       general: string
-      other: string
     }
     // Items
     addItem: string
     editItem: string
     deleteItem: string
+    deleteItemConfirm: string
     itemName: string
     itemDescription: string
     itemLink: string
+    itemLinkPlaceholder: string
     itemPrice: string
     itemPriority: string
-    itemQuantity: string
-    buyerNotes: string
-    buyerNotesDesc: string
+    priorityStars: string
+    // Image upload
+    addImage: string
+    changeImage: string
+    removeImage: string
+    uploadImage: string
+    analyzing: string
+    analyzeImage: string
+    imageAnalyzed: string
     // Status
+    open: string
     reserve: string
     unreserve: string
-    markFulfilled: string
-    markDismissed: string
+    markBought: string
     reserved: string
     reservedBy: string
-    fulfilled: string
-    fulfilledBy: string
+    bought: string
+    boughtBy: string
+    enterYourName: string
+    // Share link
+    shareLink: string
+    shareLinkDesc: string
+    copyLink: string
+    linkCopied: string
+    createShareLink: string
+    deleteShareLink: string
+    externalReservation: string
     // Empty states
-    noWishlists: string
-    noWishlistsDesc: string
     noItems: string
     noItemsDesc: string
+    addFirstItem: string
     // Counts
     items: string
     item: string
+    // Priority
+    noPriority: string
+    lowPriority: string
+    mediumPriority: string
+    highPriority: string
+    veryHighPriority: string
+    mustHave: string
+    // Error messages
+    imageReadError: string
+    imageUploadFailed: string
+    saveFailed: string
+    aiNotConfigured: string
+    aiAnalysisFailed: string
+    loadError: string
+    shareLinkError: string
+    deleteShareLinkError: string
+    copyLinkManually: string
+    deleteItemError: string
   }
 
   // Universal AI Input

@@ -6,6 +6,7 @@ Norwegian family planning app for managing:
 - Daily pickup assignments (who picks up which child)
 - Weekly meal planning with recipe storage
 - Child tasks (reminders, appointments, bring items)
+- Wishlists for family members and children (with public share links)
 - Calendar sync with Google Calendar
 
 ## Tech Stack
@@ -72,6 +73,7 @@ const CHILD_COLOR_MAP: Record<ChildColor, { bg: string; text: string }> = {
 | `/admin` | Admin panel - User management, AI settings, calendar |
 | `/login` | Authentication page |
 | `/ny-husstand` | Create new household |
+| `/g/[token]` | Public wishlist share page (no auth required) |
 
 ### Components (`src/components/`)
 
@@ -83,6 +85,8 @@ const CHILD_COLOR_MAP: Record<ChildColor, { bg: string; text: string }> = {
 | `MealSelector` | Recipe/custom meal dropdown |
 | `AISuggestionModal` | AI meal suggestion interface |
 | `Header` | Navigation with user menu |
+| `WishlistSection` | Wishlist display with occasion tabs, share links |
+| `AddWishlistItemModal` | Add/edit wishlist item with AI image analysis |
 
 ### Types (`src/lib/types.ts`)
 
@@ -92,6 +96,7 @@ Key interfaces:
 - `Meal`, `MealWithRecipe`, `Recipe`
 - `ChildTask`, `ChildTaskWithChild`
 - `MemberEvent`
+- `WishlistItem`, `WishlistOccasion`, `WishlistShareToken`
 - `DaySummary`, `WeekPlan`
 
 ### API Routes (`src/app/api/`)
@@ -104,6 +109,7 @@ Key interfaces:
 | `/api/calendar/callback` | OAuth callback |
 | `/api/calendar/sync` | Sync inbound calendar events |
 | `/api/calendar/send-invite` | Send pickup to work calendar |
+| `/api/openrouter/analyze-wishlist-image` | AI extracts product info from images |
 
 ## Database Schema
 
@@ -135,6 +141,34 @@ child_tasks (
 member_events      -- Parent events (work trips, dinners)
 google_calendar_tokens  -- OAuth tokens for shared Gmail
 ```
+
+### Wishlist System
+
+```sql
+wishlist_items (
+  id, household_id, child_id OR member_id,
+  name, description, link, price,
+  image_path,  -- Storage path in wishlist-images bucket
+  priority: 0-5,
+  occasion: 'birthday' | 'christmas' | 'general',
+  status: 'open' | 'reserved' | 'bought',
+  reserved_by, bought_by, bought_at,
+  created_at, updated_at
+)
+
+wishlist_share_tokens (
+  id, household_id, child_id OR member_id,
+  token,  -- Short random string (16 hex chars)
+  occasion,  -- Optional filter for shared view
+  created_at
+)
+```
+
+**Key features:**
+- Items can belong to children OR household members (mutually exclusive)
+- Share tokens allow unauthenticated access via `/g/[token]`
+- Reserve/buy status hidden from wishlist owner, visible to others
+- AI image analysis extracts product name, description, price from photos
 
 ### Access Control
 
@@ -177,6 +211,7 @@ Key migrations (in order):
 7. Child tasks
 8. Pickup calendar sync
 9. Household creation fixes (RLS auth.jwt(), allergies array, calendar hint)
+10. Wishlist system (items, share tokens, storage bucket, RLS policies)
 
 ## Production Deployment Checklist
 
@@ -399,6 +434,7 @@ async function Page() {
 | `shopping` | Shopping list |
 | `admin` | Admin panel (~40 keys) |
 | `wizard` | Setup wizard |
+| `wishlists` | Wishlist management (~30 keys) |
 | `errors` | Error messages |
 | `success` | Success messages |
 
@@ -411,6 +447,7 @@ Key Norwegian terms used in code:
 - Husstand = Household
 - Innstillinger = Settings
 - Ukeplan = Week plan
+- Ønskeliste = Wishlist
 
 ## Error Handling
 
