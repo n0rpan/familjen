@@ -264,12 +264,13 @@ describe('/api/openrouter/parse-action', () => {
       // 2. Pre-fill the person (child_id/person_id set)
       // 3. Include person name in data
       // Any of these is acceptable
-      const hasPersonInfo =
+      const hasPersonInfo = Boolean(
         action.needsClarification?.field === 'person_id' ||
         action.data.child_id ||
         action.data.person_id ||
         action.data.for ||
         JSON.stringify(action.data).toLowerCase().includes('emma')
+      )
 
       expect(hasPersonInfo).toBe(true)
     }, 60000)
