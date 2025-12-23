@@ -85,10 +85,9 @@ export function UniversalAIInput({
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [isCompressing, setIsCompressing] = useState(false)
 
-  // Image category selection state
+  // Image type hint state (for re-parsing with user-selected type)
   type ImageCategory = 'gift' | 'event' | 'task' | 'other' | null
   const [imageCategory, setImageCategory] = useState<ImageCategory>(null)
-  const [showCategorySelector, setShowCategorySelector] = useState(false)
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -283,12 +282,9 @@ export function UniversalAIInput({
       setSelectedImage(base64)
       setImagePreview(base64)
 
-      // Show category selector instead of parsing immediately
-      setShowCategorySelector(true)
-      setImageCategory(null)
-      // Clear any previous parsed actions
-      setParsedActions([])
-      setResponseMode(null)
+      // Parse immediately - AI will analyze and suggest action type
+      // User can change the type afterwards using the type switcher
+      parseInput(input || '', base64)
     } catch (err) {
       console.error('Image compression failed:', err)
       setError('Kunne ikke behandle bildet')
@@ -300,7 +296,6 @@ export function UniversalAIInput({
   const handleRemoveImage = useCallback(() => {
     setSelectedImage(null)
     setImagePreview(null)
-    setShowCategorySelector(false)
     setImageCategory(null)
     if (imageInputRef.current) {
       imageInputRef.current.value = ''
@@ -314,22 +309,14 @@ export function UniversalAIInput({
     }
   }, [input, parseInput])
 
-  // Handle category selection for uploaded image
-  const handleCategorySelect = useCallback((category: 'gift' | 'event' | 'task' | 'other') => {
-    setImageCategory(category)
-    setShowCategorySelector(false)
-    // Now parse with the selected category hint
+  // Handle changing action type for image - re-parse with new type hint
+  const handleImageTypeChange = useCallback((typeHint: 'gift' | 'event' | 'task' | 'other') => {
+    setImageCategory(typeHint)
+    // Re-parse with the selected type hint
     if (selectedImage) {
-      parseInput(input || '', selectedImage, category)
+      parseInput(input || '', selectedImage, typeHint)
     }
   }, [input, selectedImage, parseInput])
-
-  // Handle changing the category after initial selection
-  const handleChangeCategory = useCallback(() => {
-    setShowCategorySelector(true)
-    setParsedActions([])
-    setResponseMode(null)
-  }, [])
 
   // Meal suggestion handlers
   const handleAcceptMeal = useCallback(async (suggestion: MealSuggestion) => {
@@ -1899,84 +1886,58 @@ export function UniversalAIInput({
         </div>
       )}
 
-      {/* Image category selector */}
-      {imagePreview && !isCompressing && showCategorySelector && (
-        <div
-          className="p-4 rounded-xl"
-          style={{
-            background: 'var(--card)',
-            border: '1px solid var(--border)',
-          }}
-        >
-          <p className="text-sm mb-3" style={{ color: 'var(--muted)' }}>
-            {t.ai?.whatIsThis || 'Hva er dette?'}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => handleCategorySelect('gift')}
-              className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-              style={{
-                background: 'rgba(174, 156, 200, 0.15)',
-                border: '1px solid var(--color-lavender)',
-                color: 'var(--color-lavender)',
-              }}
-            >
-              <span>🎁</span>
-              {t.ai?.categoryGift || 'Gave'}
-            </button>
-            <button
-              onClick={() => handleCategorySelect('event')}
-              className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-              style={{
-                background: 'rgba(229, 185, 94, 0.15)',
-                border: '1px solid var(--color-honey)',
-                color: 'var(--color-honey)',
-              }}
-            >
-              <span>📅</span>
-              {t.ai?.categoryEvent || 'Hendelse'}
-            </button>
-            <button
-              onClick={() => handleCategorySelect('task')}
-              className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-              style={{
-                background: 'rgba(126, 182, 196, 0.15)',
-                border: '1px solid var(--color-sky)',
-                color: 'var(--color-sky)',
-              }}
-            >
-              <span>📋</span>
-              {t.ai?.categoryTask || 'Oppgave'}
-            </button>
-            <button
-              onClick={() => handleCategorySelect('other')}
-              className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-              style={{
-                background: 'var(--background)',
-                border: '1px solid var(--border)',
-                color: 'var(--muted)',
-              }}
-            >
-              <span>✨</span>
-              {t.ai?.categoryOther || 'Annet'}
-            </button>
-          </div>
+      {/* Image type switcher - shown when image uploaded and we have results */}
+      {imagePreview && !isCompressing && parsedActions.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs" style={{ color: 'var(--muted)' }}>
+            {t.ai?.changeCategory || 'Endre type'}:
+          </span>
+          <button
+            onClick={() => handleImageTypeChange('gift')}
+            className={`px-2 py-1 rounded text-xs font-medium transition-colors ${imageCategory === 'gift' ? 'ring-1 ring-offset-1' : ''}`}
+            style={{
+              background: 'rgba(174, 156, 200, 0.15)',
+              color: 'var(--color-lavender)',
+              ringColor: 'var(--color-lavender)',
+            }}
+          >
+            🎁 {t.ai?.categoryGift || 'Gave'}
+          </button>
+          <button
+            onClick={() => handleImageTypeChange('event')}
+            className={`px-2 py-1 rounded text-xs font-medium transition-colors ${imageCategory === 'event' ? 'ring-1 ring-offset-1' : ''}`}
+            style={{
+              background: 'rgba(229, 185, 94, 0.15)',
+              color: 'var(--color-honey)',
+              ringColor: 'var(--color-honey)',
+            }}
+          >
+            📅 {t.ai?.categoryEvent || 'Hendelse'}
+          </button>
+          <button
+            onClick={() => handleImageTypeChange('task')}
+            className={`px-2 py-1 rounded text-xs font-medium transition-colors ${imageCategory === 'task' ? 'ring-1 ring-offset-1' : ''}`}
+            style={{
+              background: 'rgba(126, 182, 196, 0.15)',
+              color: 'var(--color-sky)',
+              ringColor: 'var(--color-sky)',
+            }}
+          >
+            📋 {t.ai?.categoryTask || 'Oppgave'}
+          </button>
+          <button
+            onClick={() => handleImageTypeChange('other')}
+            className={`px-2 py-1 rounded text-xs font-medium transition-colors ${imageCategory === 'other' || !imageCategory ? 'ring-1 ring-offset-1' : ''}`}
+            style={{
+              background: 'var(--background)',
+              border: '1px solid var(--border)',
+              color: 'var(--muted)',
+              ringColor: 'var(--border)',
+            }}
+          >
+            ✨ {t.ai?.categoryOther || 'Annet'}
+          </button>
         </div>
-      )}
-
-      {/* Change category button - shown after category selected and when we have parsed actions */}
-      {imagePreview && !isCompressing && !showCategorySelector && imageCategory && (parsedActions.length > 0 || isParsing) && (
-        <button
-          onClick={handleChangeCategory}
-          className="text-sm px-3 py-1.5 rounded-lg transition-colors self-start"
-          style={{
-            background: 'var(--background)',
-            border: '1px solid var(--border)',
-            color: 'var(--muted)',
-          }}
-        >
-          {t.ai?.changeCategory || 'Endre type'}
-        </button>
       )}
 
       {/* Rate limit countdown message */}
