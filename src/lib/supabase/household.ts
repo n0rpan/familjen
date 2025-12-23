@@ -54,23 +54,3 @@ export async function getUserHousehold(
   return { data: household as Household, error: null, multipleHouseholds: false }
 }
 
-/**
- * Safely handles PostgREST errors from .single() queries.
- * Useful for migrations from direct .single() calls.
- *
- * @param error - The error from Supabase query
- * @returns Object with categorized error info
- */
-export function categorizeSupabaseError(error: { code?: string; message?: string } | null) {
-  if (!error) return { isNoRows: false, isMultipleRows: false, isOther: false }
-
-  const code = error.code || ''
-
-  return {
-    isNoRows: code === PGRST_NO_ROWS,
-    // Multiple rows can come back as different codes depending on Supabase version
-    isMultipleRows: code === PGRST_MULTIPLE_ROWS ||
-      (code === PGRST_MULTIPLE_ROWS_NEW && error.message?.includes('more than')),
-    isOther: code !== PGRST_NO_ROWS && code !== PGRST_MULTIPLE_ROWS,
-  }
-}

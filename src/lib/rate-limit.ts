@@ -160,21 +160,6 @@ export async function checkRateLimit(
 }
 
 /**
- * Synchronous version for backwards compatibility
- * DEPRECATED: Use async checkRateLimit instead
- * This only works with in-memory store
- */
-export function checkRateLimitSync(
-  key: string,
-  config: RateLimitConfig
-): { limited: false } | { limited: true; retryAfter: number } {
-  if (redis) {
-    console.warn('checkRateLimitSync called with Redis configured - use async checkRateLimit instead')
-  }
-  return checkInMemoryRateLimit(key, config)
-}
-
-/**
  * Create rate limit key from user ID and endpoint
  */
 export function createRateLimitKey(userId: string, endpoint: string): string {

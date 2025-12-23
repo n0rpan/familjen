@@ -182,14 +182,6 @@ export function getHoliday(date: Date | string, holidays: Holiday[]): Holiday | 
 }
 
 /**
- * Get holiday name for a date, or null if not a holiday
- */
-export function getHolidayName(date: Date | string, holidays: Holiday[]): string | null {
-  const holiday = getHoliday(date, holidays)
-  return holiday?.name || null
-}
-
-/**
  * Check if a date is a non-working day (weekend or holiday)
  */
 export function isNonWorkingDay(date: Date | string, holidays: Holiday[]): boolean {

@@ -61,31 +61,3 @@ export function validateOrigin(request: Request): boolean {
   return false
 }
 
-/**
- * Validate Content-Type header for JSON API endpoints
- * Returns true if Content-Type is application/json (with optional charset)
- */
-export function validateContentType(request: Request): boolean {
-  const contentType = request.headers.get('content-type')
-  if (!contentType) return false
-
-  // Allow application/json with optional charset or other parameters
-  const mediaType = contentType.split(';')[0].trim().toLowerCase()
-  return mediaType === 'application/json'
-}
-
-/**
- * Combined validation for POST/PUT/PATCH API routes
- * Validates both origin (CSRF) and content-type
- */
-export function validateMutationRequest(request: Request): { valid: boolean; error?: string } {
-  if (!validateOrigin(request)) {
-    return { valid: false, error: 'Invalid origin' }
-  }
-
-  if (!validateContentType(request)) {
-    return { valid: false, error: 'Invalid Content-Type. Expected application/json' }
-  }
-
-  return { valid: true }
-}

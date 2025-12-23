@@ -22,21 +22,3 @@ export function maskEmail(email: string): string {
 
   return `${maskedLocal}@${maskedDomain}.${tld.join('.')}`
 }
-
-/**
- * Check if two emails share the same domain
- */
-export function sameEmailDomain(email1: string, email2: string): boolean {
-  if (!email1 || !email2) return false
-  const domain1 = email1.toLowerCase().split('@')[1]
-  const domain2 = email2.toLowerCase().split('@')[1]
-  return domain1 === domain2
-}
-
-/**
- * Get the domain from an email
- */
-export function getEmailDomain(email: string): string {
-  if (!email || !email.includes('@')) return ''
-  return email.toLowerCase().split('@')[1]
-}

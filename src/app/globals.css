@@ -154,20 +154,6 @@ input:focus, select:focus, textarea:focus {
   animation: pulse-soft 2s ease-in-out infinite;
 }
 
-/* Stagger children animations */
-.stagger-children > * {
-  animation: fadeIn 0.4s ease-out forwards;
-  opacity: 0;
-}
-
-.stagger-children > *:nth-child(1) { animation-delay: 0ms; }
-.stagger-children > *:nth-child(2) { animation-delay: 50ms; }
-.stagger-children > *:nth-child(3) { animation-delay: 100ms; }
-.stagger-children > *:nth-child(4) { animation-delay: 150ms; }
-.stagger-children > *:nth-child(5) { animation-delay: 200ms; }
-.stagger-children > *:nth-child(6) { animation-delay: 250ms; }
-.stagger-children > *:nth-child(7) { animation-delay: 300ms; }
-
 /* Grain texture overlay */
 .grain::before {
   content: '';
@@ -413,15 +399,6 @@ input:focus, select:focus, textarea:focus {
     );
     background-size: 200% 100%;
   }
-}
-
-/* Optimistic UI transitions */
-.optimistic-update {
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
-
-.optimistic-update.pending {
-  opacity: 0.7;
 }
 
 /* Contextual micro-feedback - highlight just-saved items */

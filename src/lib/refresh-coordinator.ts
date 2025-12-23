@@ -20,11 +20,3 @@ export function requestRefresh(): boolean {
   lastRefreshTime = now
   return true
 }
-
-/**
- * Mark that a refresh just occurred (for cases where
- * the caller needs to coordinate with external refresh triggers).
- */
-export function markRefreshed(): void {
-  lastRefreshTime = Date.now()
-}

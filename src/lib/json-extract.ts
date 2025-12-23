@@ -83,17 +83,3 @@ function tryParse<T>(str: string): T | null {
     return null
   }
 }
-
-/**
- * Extract JSON with validation using a provided validator function
- */
-export function extractAndValidateJSON<T>(
-  content: string,
-  validator: (data: unknown) => data is T
-): T | null {
-  const extracted = extractJSON(content)
-  if (extracted === null) {
-    return null
-  }
-  return validator(extracted) ? extracted : null
-}

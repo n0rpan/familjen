@@ -51,29 +51,6 @@ export function getCalendarClient(tokens: { access_token?: string | null; refres
   return google.calendar({ version: 'v3', auth: client })
 }
 
-// Fetch events from calendar
-export async function fetchCalendarEvents(
-  tokens: { access_token?: string | null; refresh_token?: string | null },
-  options: {
-    timeMin?: string // ISO date
-    timeMax?: string // ISO date
-    maxResults?: number
-  } = {}
-): Promise<calendar_v3.Schema$Event[]> {
-  const calendar = getCalendarClient(tokens)
-
-  const response = await calendar.events.list({
-    calendarId: 'primary',
-    timeMin: options.timeMin ? new Date(options.timeMin).toISOString() : undefined,
-    timeMax: options.timeMax ? new Date(options.timeMax).toISOString() : undefined,
-    maxResults: options.maxResults || 100,
-    singleEvents: true,
-    orderBy: 'startTime',
-  })
-
-  return response.data.items || []
-}
-
 // Create a calendar event (for sending pickup assignments to work calendars)
 export async function createCalendarEvent(
   tokens: { access_token?: string | null; refresh_token?: string | null },
@@ -148,77 +125,6 @@ export async function deleteCalendarEvent(
     eventId,
     sendUpdates: 'all',
   })
-}
-
-// Parse event to extract sender email (from organizer or creator)
-export function getEventSenderEmail(event: calendar_v3.Schema$Event): string | null {
-  // For invites, the organizer is who sent the invite
-  if (event.organizer?.email) {
-    return event.organizer.email
-  }
-  // Fallback to creator
-  if (event.creator?.email) {
-    return event.creator.email
-  }
-  return null
-}
-
-// Check if event is cancelled
-export function isEventCancelled(event: calendar_v3.Schema$Event): boolean {
-  return event.status === 'cancelled'
-}
-
-// Extract date from event (handles both all-day and timed events)
-export function getEventDates(event: calendar_v3.Schema$Event): { start: string; end: string | null } {
-  const startDate = event.start?.date || event.start?.dateTime?.split('T')[0] || ''
-  const endDate = event.end?.date || event.end?.dateTime?.split('T')[0] || ''
-
-  // For all-day events, end date is exclusive (next day), so subtract 1
-  let adjustedEnd: string | null = endDate
-  if (event.end?.date && endDate) {
-    const end = new Date(endDate)
-    end.setDate(end.getDate() - 1)
-    adjustedEnd = end.toISOString().split('T')[0]
-  }
-
-  return {
-    start: startDate,
-    end: startDate !== adjustedEnd ? adjustedEnd : null,
-  }
-}
-
-// Map event to our MemberEvent type
-export function mapGoogleEventToMemberEvent(
-  event: calendar_v3.Schema$Event,
-  memberId: string,
-  householdId: string
-) {
-  const dates = getEventDates(event)
-  const senderEmail = getEventSenderEmail(event)
-
-  // Guess event type from summary
-  const summary = event.summary?.toLowerCase() || ''
-  let eventType: 'work' | 'travel' | 'family' | 'other' = 'other'
-
-  if (summary.includes('reise') || summary.includes('travel') || summary.includes('flight') || summary.includes('fly')) {
-    eventType = 'travel'
-  } else if (summary.includes('jobb') || summary.includes('work') || summary.includes('møte') || summary.includes('meeting')) {
-    eventType = 'work'
-  } else if (summary.includes('familie') || summary.includes('family') || summary.includes('bursdag') || summary.includes('birthday')) {
-    eventType = 'family'
-  }
-
-  return {
-    household_id: householdId,
-    member_id: memberId,
-    date: dates.start,
-    end_date: dates.end,
-    title: event.summary || 'Ukjent hendelse',
-    event_type: eventType,
-    source: 'google_calendar' as const,
-    source_email: senderEmail,
-    google_event_id: event.id,
-  }
 }
 
 // ===========================================

@@ -93,13 +93,5 @@ export function setCachedCategory(itemName: string, category: ShoppingCategory):
   }
 }
 
-/**
- * Clear the category cache (for testing/debugging)
- */
-export function clearCategoryCache(): void {
-  if (typeof window === 'undefined') return
-  localStorage.removeItem(CACHE_KEY)
-}
-
 // Re-export for convenience
 export { normalizeItemName, getCommonItemCategory } from './shopping-common-items'
