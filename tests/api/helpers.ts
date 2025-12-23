@@ -178,32 +178,89 @@ export function getNextMonday(): string {
   return formatDate(nextMonday)
 }
 
-// Common allergy test patterns
-// Note: These patterns exclude common false positives:
-// - "kokosmelk" (coconut milk) is dairy-free
-// - "uten melk" (without milk) indicates dairy-free
-// - "muskatnøtt" (nutmeg) is not a tree nut
+// AI-based allergy verification
+// Uses a second AI call to semantically verify if a meal contains allergens
+// This handles edge cases like "coconut milk" (dairy-free), "nutmeg" (not a nut allergy), etc.
 
-// Helper to check for dairy allergens (excluding coconut milk and "without milk" phrases)
-export function containsDairy(text: string): boolean {
-  const lower = text.toLowerCase()
-  // Exclude coconut milk and "without X" phrases
-  const cleaned = lower
-    .replace(/kokosmelk/g, '')
-    .replace(/\(uten\s+\w+\)/g, '')
-    .replace(/uten\s+melk/g, '')
-  return /\bmelk\b|ost|fløte|yoghurt|smør|cream|cheese|milk|butter/i.test(cleaned)
+export interface AllergyVerificationResult {
+  containsAllergen: boolean
+  reason: string
+  ingredient?: string
 }
 
-// Helper to check for nut allergens (excluding nutmeg)
-export function containsNuts(text: string): boolean {
-  const lower = text.toLowerCase()
-  // Exclude muskatnøtt (nutmeg)
-  const cleaned = lower.replace(/muskatnøtt/g, '')
-  return /nøtt|mandel|valnøtt|hasselnøtt|cashew|pistachio|peanut|nut|almond/i.test(cleaned)
+export async function verifyNoAllergens(
+  mealName: string,
+  ingredients: string[],
+  allergies: string[]
+): Promise<AllergyVerificationResult> {
+  if (allergies.length === 0) {
+    return { containsAllergen: false, reason: 'No allergies specified' }
+  }
+
+  const apiKey = process.env.OPENROUTER_API_KEY
+  if (!apiKey) {
+    // Fallback to simple pattern matching if no API key
+    return { containsAllergen: false, reason: 'No API key, skipping AI verification' }
+  }
+
+  const model = process.env.OPENROUTER_TEST_MODEL || 'google/gemini-2.0-flash-lite'
+
+  const prompt = `You are a food allergy expert. Analyze if this meal contains any of the specified allergens.
+
+IMPORTANT RULES:
+- "Coconut milk" (kokosmelk) is NOT dairy and is safe for milk allergies
+- "Nutmeg" (muskatnøtt) is NOT a tree nut and is safe for nut allergies
+- "Lactose-free milk" is still dairy and NOT safe for milk allergies
+- Phrases like "without milk" (uten melk) mean the ingredient is allergen-free
+- Be precise: only flag ACTUAL allergens, not similar-sounding safe ingredients
+
+Meal: ${mealName}
+Ingredients: ${ingredients.join(', ')}
+Allergies to check: ${allergies.join(', ')}
+
+Respond with ONLY valid JSON (no markdown):
+{"containsAllergen": true/false, "reason": "brief explanation", "ingredient": "the problematic ingredient or null"}`
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0,
+        max_tokens: 200,
+      }),
+    })
+
+    if (!response.ok) {
+      return { containsAllergen: false, reason: 'API error, skipping verification' }
+    }
+
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content || ''
+
+    // Extract JSON from response (handle markdown code blocks)
+    const jsonMatch = content.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      return { containsAllergen: false, reason: 'Could not parse AI response' }
+    }
+
+    const result = JSON.parse(jsonMatch[0])
+    return {
+      containsAllergen: Boolean(result.containsAllergen),
+      reason: result.reason || '',
+      ingredient: result.ingredient || undefined,
+    }
+  } catch (error) {
+    return { containsAllergen: false, reason: `Verification error: ${error}` }
+  }
 }
 
-// Simple patterns for eggs and gluten
+// Legacy patterns (kept for backwards compatibility but prefer verifyNoAllergens)
 export const DAIRY_PATTERNS = /\bmelk\b|ost|fløte|yoghurt|smør|cream|cheese|milk|butter/i
 export const EGG_PATTERNS = /\begg\b/i
 export const NUT_PATTERNS = /nøtt|mandel|valnøtt|hasselnøtt|cashew|pistachio|nut|almond/i

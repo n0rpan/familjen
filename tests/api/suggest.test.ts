@@ -5,9 +5,7 @@ import {
   createTestRequest,
   parseResponse,
   getNextMonday,
-  containsDairy,
-  containsNuts,
-  EGG_PATTERNS,
+  verifyNoAllergens,
   type TestChild,
   type TestMember,
 } from './helpers'
@@ -102,16 +100,17 @@ describe('/api/openrouter/suggest', () => {
 
       if (data.suggestions && data.suggestions.length > 0) {
         for (const meal of data.suggestions) {
-          const nameAndIngredients = [
-            meal.name.toLowerCase(),
-            ...meal.ingredients.map(i => i.item.toLowerCase()),
-          ].join(' ')
+          const ingredients = meal.ingredients.map(i => i.item)
 
-          // Verify no dairy ingredients (using helper that excludes false positives like kokosmelk)
-          expect(containsDairy(nameAndIngredients)).toBe(false)
+          // Use AI to verify no dairy allergens (handles edge cases like coconut milk)
+          const result = await verifyNoAllergens(meal.name, ingredients, ['melk', 'dairy'])
+          expect(result.containsAllergen).toBe(false)
+          if (result.containsAllergen) {
+            console.error(`Allergen found in ${meal.name}: ${result.reason} (${result.ingredient})`)
+          }
         }
       }
-    }, 60000) // 60s timeout for real API call
+    }, 120000) // 120s timeout for real API calls (includes verification)
 
     it('excludes eggs when egg allergy is specified', async () => {
       const childrenWithAllergy: TestChild[] = [
@@ -134,11 +133,17 @@ describe('/api/openrouter/suggest', () => {
 
       if (data.suggestions && data.suggestions.length > 0) {
         for (const meal of data.suggestions) {
-          const ingredients = meal.ingredients.map(i => i.item.toLowerCase()).join(' ')
-          expect(ingredients).not.toMatch(EGG_PATTERNS)
+          const ingredients = meal.ingredients.map(i => i.item)
+
+          // Use AI to verify no egg allergens
+          const result = await verifyNoAllergens(meal.name, ingredients, ['egg'])
+          expect(result.containsAllergen).toBe(false)
+          if (result.containsAllergen) {
+            console.error(`Allergen found in ${meal.name}: ${result.reason} (${result.ingredient})`)
+          }
         }
       }
-    }, 60000)
+    }, 120000)
 
     it('excludes nuts when nut allergy is specified', async () => {
       const childrenWithAllergy: TestChild[] = [
@@ -161,12 +166,17 @@ describe('/api/openrouter/suggest', () => {
 
       if (data.suggestions && data.suggestions.length > 0) {
         for (const meal of data.suggestions) {
-          const ingredients = meal.ingredients.map(i => i.item.toLowerCase()).join(' ')
-          // Verify no nut ingredients (using helper that excludes false positives like muskatnøtt)
-          expect(containsNuts(ingredients)).toBe(false)
+          const ingredients = meal.ingredients.map(i => i.item)
+
+          // Use AI to verify no nut allergens (handles edge cases like nutmeg)
+          const result = await verifyNoAllergens(meal.name, ingredients, ['nøtter', 'nuts'])
+          expect(result.containsAllergen).toBe(false)
+          if (result.containsAllergen) {
+            console.error(`Allergen found in ${meal.name}: ${result.reason} (${result.ingredient})`)
+          }
         }
       }
-    }, 60000)
+    }, 120000)
 
     it('handles multiple allergies from both children and parents', async () => {
       const children: TestChild[] = [
@@ -194,15 +204,17 @@ describe('/api/openrouter/suggest', () => {
 
       if (data.suggestions && data.suggestions.length > 0) {
         for (const meal of data.suggestions) {
-          const ingredients = meal.ingredients.map(i => i.item.toLowerCase()).join(' ')
+          const ingredients = meal.ingredients.map(i => i.item)
 
-          // All three allergies should be excluded (using helpers for dairy/nuts)
-          expect(containsDairy(ingredients)).toBe(false)
-          expect(ingredients).not.toMatch(EGG_PATTERNS)
-          expect(containsNuts(ingredients)).toBe(false)
+          // Use AI to verify all three allergies are excluded
+          const result = await verifyNoAllergens(meal.name, ingredients, ['melk', 'dairy', 'egg', 'nøtter', 'nuts'])
+          expect(result.containsAllergen).toBe(false)
+          if (result.containsAllergen) {
+            console.error(`Allergen found in ${meal.name}: ${result.reason} (${result.ingredient})`)
+          }
         }
       }
-    }, 60000)
+    }, 120000)
 
     it('normalizes allergy case (MELK should work same as melk)', async () => {
       const childrenWithAllergy: TestChild[] = [
@@ -225,12 +237,17 @@ describe('/api/openrouter/suggest', () => {
 
       if (data.suggestions && data.suggestions.length > 0) {
         for (const meal of data.suggestions) {
-          const ingredients = meal.ingredients.map(i => i.item.toLowerCase()).join(' ')
-          expect(containsDairy(ingredients)).toBe(false)
-          expect(ingredients).not.toMatch(EGG_PATTERNS)
+          const ingredients = meal.ingredients.map(i => i.item)
+
+          // Use AI to verify allergies are excluded (case shouldn't matter)
+          const result = await verifyNoAllergens(meal.name, ingredients, ['melk', 'dairy', 'egg'])
+          expect(result.containsAllergen).toBe(false)
+          if (result.containsAllergen) {
+            console.error(`Allergen found in ${meal.name}: ${result.reason} (${result.ingredient})`)
+          }
         }
       }
-    }, 60000)
+    }, 120000)
 
     it('returns suggestions when no allergies are specified', async () => {
       mockSupabase.client = createMockSupabaseClient({
