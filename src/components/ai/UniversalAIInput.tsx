@@ -85,10 +85,6 @@ export function UniversalAIInput({
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [isCompressing, setIsCompressing] = useState(false)
 
-  // Image type hint state (for re-parsing with user-selected type)
-  type ImageCategory = 'gift' | 'event' | 'task' | 'other' | null
-  const [imageCategory, setImageCategory] = useState<ImageCategory>(null)
-
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
@@ -126,7 +122,7 @@ export function UniversalAIInput({
     }
   }, [rateLimitCountdown])
 
-  const parseInput = useCallback(async (text: string, image?: string | null, categoryHint?: 'gift' | 'event' | 'task' | 'other' | null) => {
+  const parseInput = useCallback(async (text: string, image?: string | null) => {
     // Need either text or image
     if (text.trim().length < 3 && !image) {
       setParsedActions([])
@@ -157,7 +153,6 @@ export function UniversalAIInput({
       const requestBody: {
         input: string
         image?: string
-        imageCategoryHint?: string
         context: {
           today: string
           children: Array<{ id: string; name: string }>
@@ -179,11 +174,6 @@ export function UniversalAIInput({
       // Include image if provided
       if (image) {
         requestBody.image = image
-      }
-
-      // Include category hint if provided (helps AI interpret the image correctly)
-      if (categoryHint && categoryHint !== 'other') {
-        requestBody.imageCategoryHint = categoryHint
       }
 
       const response = await fetch('/api/openrouter/parse-action', {
@@ -296,7 +286,6 @@ export function UniversalAIInput({
   const handleRemoveImage = useCallback(() => {
     setSelectedImage(null)
     setImagePreview(null)
-    setImageCategory(null)
     if (imageInputRef.current) {
       imageInputRef.current.value = ''
     }
@@ -308,15 +297,6 @@ export function UniversalAIInput({
       setResponseMode(null)
     }
   }, [input, parseInput])
-
-  // Handle changing action type for image - re-parse with new type hint
-  const handleImageTypeChange = useCallback((typeHint: 'gift' | 'event' | 'task' | 'other') => {
-    setImageCategory(typeHint)
-    // Re-parse with the selected type hint
-    if (selectedImage) {
-      parseInput(input || '', selectedImage, typeHint)
-    }
-  }, [input, selectedImage, parseInput])
 
   // Meal suggestion handlers
   const handleAcceptMeal = useCallback(async (suggestion: MealSuggestion) => {
@@ -1882,60 +1862,6 @@ export function UniversalAIInput({
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
-          </button>
-        </div>
-      )}
-
-      {/* Image type switcher - shown when image uploaded and we have results */}
-      {imagePreview && !isCompressing && parsedActions.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs" style={{ color: 'var(--muted)' }}>
-            {t.ai?.changeCategory || 'Endre type'}:
-          </span>
-          <button
-            onClick={() => handleImageTypeChange('gift')}
-            className={`px-2 py-1 rounded text-xs font-medium transition-colors ${imageCategory === 'gift' ? 'ring-1 ring-offset-1' : ''}`}
-            style={{
-              background: 'rgba(174, 156, 200, 0.15)',
-              color: 'var(--color-lavender)',
-              ringColor: 'var(--color-lavender)',
-            }}
-          >
-            🎁 {t.ai?.categoryGift || 'Gave'}
-          </button>
-          <button
-            onClick={() => handleImageTypeChange('event')}
-            className={`px-2 py-1 rounded text-xs font-medium transition-colors ${imageCategory === 'event' ? 'ring-1 ring-offset-1' : ''}`}
-            style={{
-              background: 'rgba(229, 185, 94, 0.15)',
-              color: 'var(--color-honey)',
-              ringColor: 'var(--color-honey)',
-            }}
-          >
-            📅 {t.ai?.categoryEvent || 'Hendelse'}
-          </button>
-          <button
-            onClick={() => handleImageTypeChange('task')}
-            className={`px-2 py-1 rounded text-xs font-medium transition-colors ${imageCategory === 'task' ? 'ring-1 ring-offset-1' : ''}`}
-            style={{
-              background: 'rgba(126, 182, 196, 0.15)',
-              color: 'var(--color-sky)',
-              ringColor: 'var(--color-sky)',
-            }}
-          >
-            📋 {t.ai?.categoryTask || 'Oppgave'}
-          </button>
-          <button
-            onClick={() => handleImageTypeChange('other')}
-            className={`px-2 py-1 rounded text-xs font-medium transition-colors ${imageCategory === 'other' || !imageCategory ? 'ring-1 ring-offset-1' : ''}`}
-            style={{
-              background: 'var(--background)',
-              border: '1px solid var(--border)',
-              color: 'var(--muted)',
-              ringColor: 'var(--border)',
-            }}
-          >
-            ✨ {t.ai?.categoryOther || 'Annet'}
           </button>
         </div>
       )}
