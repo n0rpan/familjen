@@ -59,25 +59,13 @@
   box-sizing: border-box;
 }
 
-/* Remove ALL focus outlines globally */
+/* Remove ALL focus outlines and highlights */
 *:focus,
-*:focus-visible {
-  outline: none;
+*:focus-visible,
+*:focus-within {
+  outline: none !important;
 }
 
-/* Only show focus ring for keyboard navigation on interactive elements */
-a:focus-visible,
-button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible,
-[role="button"]:focus-visible,
-[tabindex]:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* Explicitly remove tap highlight on iOS Safari */
 * {
   -webkit-tap-highlight-color: transparent;
 }
