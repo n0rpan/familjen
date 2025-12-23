@@ -1,15 +1,17 @@
 import { defineConfig } from 'vitest/config'
-import react from '@vitejs/plugin-react'
 import path from 'path'
 
 export default defineConfig({
-  plugins: [react()],
   test: {
-    environment: 'jsdom',
+    environment: 'node',
     globals: true,
-    setupFiles: ['./tests/setup.ts'],
-    include: ['tests/**/*.test.{ts,tsx}'],
-    exclude: ['tests/api/**'],
+    include: ['tests/api/**/*.test.ts'],
+    testTimeout: 30000,  // 30s for real API calls
+    hookTimeout: 10000,
+    sequence: {
+      concurrent: false,  // Sequential to respect rate limits
+    },
+    setupFiles: ['./tests/api/setup.ts'],
     coverage: {
       reporter: ['text', 'json', 'html'],
       exclude: ['node_modules/', 'tests/'],
