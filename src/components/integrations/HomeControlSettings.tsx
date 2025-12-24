@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import type { OverkizServer } from '@/lib/integrations/somfy'
 import { SOMFY_UI } from '@/lib/integrations/somfy/constants'
+import { getAccountDisplayName } from '@/lib/integrations/somfy/utils'
 
 interface HomeControlAccount {
   id: string
@@ -406,15 +407,10 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
     setEditDeviceType(device.ui_class)
   }
 
-  // Get account display name (location name or email fallback)
-  const getAccountDisplayName = (accountId: string) => {
+  // Get account display name by ID
+  const getAccountName = (accountId: string) => {
     const account = accounts.find(a => a.id === accountId)
-    if (!account) return ''
-    // Prefer display_name if it's different from email (means user set a custom name)
-    if (account.display_name && account.display_name !== account.account_email) {
-      return account.display_name
-    }
-    return account.account_email || account.display_name || ''
+    return getAccountDisplayName(account)
   }
 
   // Group devices by account for the group form
@@ -515,15 +511,23 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                         {account.display_name !== account.account_email ? account.display_name : account.account_email}
                       </p>
                       <button
-                        onClick={() => startEditingAccount(account)}
-                        className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          startEditingAccount(account)
+                        }}
+                        className="px-2 py-1 rounded-md text-xs flex items-center gap-1 transition-colors"
+                        style={{
+                          background: 'rgba(126, 182, 196, 0.1)',
+                          color: 'var(--color-sky)',
+                        }}
                         title={t.homeControl.editLocation}
                         aria-label={t.homeControl.editLocation}
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                           <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                         </svg>
+                        {t.homeControl.editLocation}
                       </button>
                     </div>
                     <p className="text-xs" style={{ color: 'var(--muted)' }}>
@@ -749,7 +753,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                       <p className="text-xs" style={{ color: 'var(--muted)' }}>
                         {getDeviceTypeLabel(device.ui_class, t.homeControl.deviceTypes)}
                         <span className="mx-1">&bull;</span>
-                        {getAccountDisplayName(device.account_id)}
+                        {getAccountName(device.account_id)}
                       </p>
                     </div>
                     <div className="flex gap-1 shrink-0">
@@ -904,7 +908,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                     {Object.entries(devicesByAccount).map(([accountId, accountDevices]) => (
                       <div key={accountId}>
                         <p className="text-xs font-medium mb-2 px-2" style={{ color: 'var(--color-sky)' }}>
-                          {getAccountDisplayName(accountId)}
+                          {getAccountName(accountId)}
                         </p>
                         <div className="space-y-1">
                           {accountDevices.map(device => (

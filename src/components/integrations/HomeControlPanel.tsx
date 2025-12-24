@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import { TransitionLink } from '@/components/TransitionLink'
+import { getAccountDisplayName } from '@/lib/integrations/somfy/utils'
 
 interface HomeControlDevice {
   id: string
@@ -96,6 +97,9 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
   const [sliderValue, setSliderValue] = useState(0)
   const [confirmedDevice, setConfirmedDevice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  // Collapsed state for account sections (expanded by default)
+  const [collapsedAccounts, setCollapsedAccounts] = useState<Set<string>>(new Set())
 
   // Refs
   const sliderTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -343,14 +347,23 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
     return grouped
   }, [devices])
 
-  // Get account display name
+  // Get account display name by ID
   const getAccountName = (accountId: string) => {
     const account = accounts.find(a => a.id === accountId)
-    if (!account) return ''
-    if (account.display_name && account.display_name !== account.account_email) {
-      return account.display_name
-    }
-    return account.account_email || account.display_name || ''
+    return getAccountDisplayName(account)
+  }
+
+  // Toggle account collapse state
+  const toggleAccountCollapse = (accountId: string) => {
+    setCollapsedAccounts(prev => {
+      const next = new Set(prev)
+      if (next.has(accountId)) {
+        next.delete(accountId)
+      } else {
+        next.add(accountId)
+      }
+      return next
+    })
   }
 
   // Handle slider interaction - use ref to avoid stale closure
@@ -520,6 +533,7 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
       {Object.entries(devicesByAccount).map(([accountId, accountDevices]) => {
         const isControllingThisAccount = controllingAccount === accountId
         const accountName = getAccountName(accountId)
+        const isCollapsed = collapsedAccounts.has(accountId)
 
         return (
           <div
@@ -528,7 +542,10 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
             style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
           >
             {/* Account Header with Quick Controls */}
-            <div className="flex items-center gap-3 mb-3">
+            <button
+              onClick={() => toggleAccountCollapse(accountId)}
+              className="flex items-center gap-3 mb-3 w-full text-left"
+            >
               <div
                 className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
                 style={{ background: 'rgba(213, 186, 124, 0.2)' }}
@@ -546,10 +563,21 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
                   {t.homeControl.deviceCount.replace('{count}', String(accountDevices.length))}
                 </p>
               </div>
-            </div>
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="var(--muted)"
+                strokeWidth="2"
+                className={`shrink-0 transition-transform ${isCollapsed ? '' : 'rotate-180'}`}
+              >
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </button>
 
             {/* Account Quick Control Buttons */}
-            <div className="grid grid-cols-3 gap-2 mb-4">
+            <div className={`grid grid-cols-3 gap-2 ${isCollapsed ? '' : 'mb-4'}`}>
               <button
                 onClick={() => controlAccount(accountId, 'open')}
                 disabled={isControllingThisAccount}
@@ -598,7 +626,8 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
             </div>
 
             {/* Individual Devices in this Account */}
-            <div className={compact ? 'space-y-2' : 'grid gap-3 grid-cols-1 md:grid-cols-2'}>
+            {!isCollapsed && (
+            <div className={compact ? 'space-y-2' : 'grid gap-2 grid-cols-1 md:grid-cols-2'}>
               {accountDevices.map(device => {
                 const isControlling = controllingDevice === device.device_url
                 const isConfirmed = confirmedDevice === device.device_url
@@ -608,16 +637,15 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
                 return (
                   <div
                     key={device.id}
-                    className="rounded-xl p-3 transition-all relative"
+                    className="rounded-lg p-3 transition-all relative"
                     style={{
-                      background: 'var(--background)',
-                      border: '1px solid var(--border)',
+                      background: 'rgba(0, 0, 0, 0.03)',
                       boxShadow: isConfirmed ? '0 0 0 2px var(--color-sage)' : 'none',
                     }}
                   >
                     {/* Loading overlay */}
                     {isControlling && (
-                      <div className="absolute inset-0 flex items-center justify-center rounded-xl z-10" style={{ background: 'rgba(var(--card-rgb, 255, 255, 255), 0.7)' }}>
+                      <div className="absolute inset-0 flex items-center justify-center rounded-lg z-10" style={{ background: 'rgba(var(--card-rgb, 255, 255, 255), 0.7)' }}>
                         <span className="loading-spinner" style={{ width: 24, height: 24, borderWidth: 3, color: 'var(--color-sky)' }} />
                       </div>
                     )}
@@ -719,6 +747,11 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
                             aria-valuetext={currentPosition === 0 ? t.homeControl.open : currentPosition === 100 ? t.homeControl.closed : `${currentPosition}%`}
                           />
                         </div>
+                        {/* Position labels */}
+                        <div className="flex justify-between text-xs mt-1" style={{ color: 'var(--muted)' }}>
+                          <span>{t.homeControl.open}</span>
+                          <span>{t.homeControl.closed}</span>
+                        </div>
                       </>
                     ) : (
                       <p className="text-xs py-1" style={{ color: 'var(--color-coral)' }}>
@@ -729,6 +762,7 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
                 )
               })}
             </div>
+            )}
           </div>
         )
       })}
