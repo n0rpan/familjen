@@ -100,6 +100,12 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
   const [sliderDevice, setSliderDevice] = useState<string | null>(null)
   const [sliderPosition, setSliderPosition] = useState(50)
 
+  // Edit device state
+  const [editingDevice, setEditingDevice] = useState<string | null>(null)
+  const [editDeviceName, setEditDeviceName] = useState('')
+  const [savingDevice, setSavingDevice] = useState(false)
+  const [confirmedDevice, setConfirmedDevice] = useState<string | null>(null)
+
   const supabase = useMemo(() => createClient(), [])
 
   const loadAccounts = useCallback(async () => {
@@ -315,6 +321,9 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
           )
         )
         setSliderDevice(null)
+        // Show confirmation
+        setConfirmedDevice(deviceUrl)
+        setTimeout(() => setConfirmedDevice(null), 2000)
       } else {
         onMessage('error', data.error || 'Kommando feilet')
       }
@@ -323,6 +332,33 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
       onMessage('error', 'Kommando feilet')
     } finally {
       setControllingDevice(null)
+    }
+  }
+
+  const saveDeviceName = async (deviceId: string, newName: string) => {
+    setSavingDevice(true)
+    try {
+      const { error } = await supabase
+        .from('home_control_devices')
+        .update({ custom_name: newName.trim() || null })
+        .eq('id', deviceId)
+
+      if (error) throw error
+
+      // Update local state
+      setDevices(prev =>
+        prev.map(d =>
+          d.id === deviceId ? { ...d, custom_name: newName.trim() || null } : d
+        )
+      )
+      setEditingDevice(null)
+      setEditDeviceName('')
+      onMessage('success', 'Navn oppdatert')
+    } catch (err) {
+      console.error('Failed to save device name:', err)
+      onMessage('error', 'Kunne ikke lagre navn')
+    } finally {
+      setSavingDevice(false)
     }
   }
 
@@ -738,20 +774,86 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
                 .map(device => (
                   <div
                     key={device.id}
-                    className="rounded-xl p-4"
-                    style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+                    className="rounded-xl p-4 transition-all"
+                    style={{
+                      background: 'var(--card)',
+                      border: confirmedDevice === device.device_url
+                        ? '2px solid var(--color-sage)'
+                        : '1px solid var(--border)',
+                    }}
                   >
-                    {/* Header: Name + Favorite */}
+                    {/* Header: Name + Actions */}
                     <div className="flex items-start justify-between mb-1">
-                      <div>
-                        <p className="font-semibold" style={{ color: 'var(--foreground)' }}>
-                          {device.custom_name || device.label}
-                        </p>
-                        <p className="text-sm" style={{ color: 'var(--color-sage)' }}>
-                          {device.position ?? 0} %
-                        </p>
-                      </div>
-                      {device.available && (
+                      {editingDevice === device.id ? (
+                        <div className="flex-1 mr-2">
+                          <input
+                            type="text"
+                            value={editDeviceName}
+                            onChange={e => setEditDeviceName(e.target.value)}
+                            className="input text-sm py-1 px-2 w-full"
+                            placeholder={device.label}
+                            autoFocus
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') {
+                                saveDeviceName(device.id, editDeviceName)
+                              } else if (e.key === 'Escape') {
+                                setEditingDevice(null)
+                                setEditDeviceName('')
+                              }
+                            }}
+                          />
+                          <div className="flex gap-1 mt-1">
+                            <button
+                              onClick={() => saveDeviceName(device.id, editDeviceName)}
+                              disabled={savingDevice}
+                              className="text-xs px-2 py-1 rounded"
+                              style={{ background: 'var(--color-sage)', color: 'white' }}
+                            >
+                              {savingDevice ? '...' : 'Lagre'}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingDevice(null)
+                                setEditDeviceName('')
+                              }}
+                              className="text-xs px-2 py-1"
+                              style={{ color: 'var(--muted)' }}
+                            >
+                              Avbryt
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          className="cursor-pointer group"
+                          onClick={() => {
+                            setEditingDevice(device.id)
+                            setEditDeviceName(device.custom_name || device.label)
+                          }}
+                        >
+                          <div className="flex items-center gap-1">
+                            <p className="font-semibold" style={{ color: 'var(--foreground)' }}>
+                              {device.custom_name || device.label}
+                            </p>
+                            <svg
+                              width="12"
+                              height="12"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="var(--muted)"
+                              strokeWidth="2"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                            </svg>
+                          </div>
+                          <p className="text-sm" style={{ color: confirmedDevice === device.device_url ? 'var(--color-sage)' : 'var(--muted)' }}>
+                            {confirmedDevice === device.device_url ? '✓ ' : ''}{device.position ?? 0} %
+                          </p>
+                        </div>
+                      )}
+                      {device.available && editingDevice !== device.id && (
                         <button
                           onClick={() => controlDevice(account.id, device.device_url, 'my')}
                           disabled={controllingDevice === device.device_url}
