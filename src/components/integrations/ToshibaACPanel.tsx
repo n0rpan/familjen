@@ -20,14 +20,14 @@ interface ToshibaACDevice {
   ac_id: string
   name: string
   model: string | null
-  power_state: ToshibaPowerState
-  operation_mode: ToshibaOperationMode
-  target_temperature: number
+  power_state: ToshibaPowerState | null
+  operation_mode: ToshibaOperationMode | null
+  target_temperature: number | null
   current_temperature: number | null
   outdoor_temperature: number | null
-  fan_speed: ToshibaFanSpeed
-  swing_mode: string
-  pure_state: string
+  fan_speed: ToshibaFanSpeed | null
+  swing_mode: string | null
+  pure_state: string | null
   custom_name: string | null
   favorite: boolean
   is_hidden: boolean
@@ -361,20 +361,25 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
                 {accountDevices.map(device => {
                   const isControlling = controllingDevice === device.id
                   const isConfirmed = confirmedDevice === device.id
+                  const isOffline = device.power_state === null
                   const isPoweredOn = device.power_state === 'ON'
-                  const modeColor = MODE_COLORS[device.operation_mode]
+                  const currentMode = device.operation_mode ?? 'AUTO'
+                  const modeColor = MODE_COLORS[currentMode]
 
                   return (
                     <div
                       key={device.id}
                       className="rounded-xl p-4 transition-all relative"
                       style={{
-                        background: isPoweredOn
-                          ? `color-mix(in srgb, ${modeColor} 10%, var(--background))`
-                          : 'var(--background)',
+                        background: isOffline
+                          ? 'var(--background)'
+                          : isPoweredOn
+                            ? `color-mix(in srgb, ${modeColor} 10%, var(--background))`
+                            : 'var(--background)',
                         border: isConfirmed
                           ? '2px solid var(--color-sage)'
                           : '1px solid var(--border)',
+                        opacity: isOffline ? 0.7 : 1,
                       }}
                     >
                       {/* Loading overlay */}
@@ -390,25 +395,33 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
                           <div
                             className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
                             style={{
-                              background: isPoweredOn ? `color-mix(in srgb, ${modeColor} 20%, transparent)` : 'rgba(var(--muted-rgb), 0.1)',
-                              color: isPoweredOn ? modeColor : 'var(--muted)',
+                              background: isOffline
+                                ? 'rgba(var(--muted-rgb), 0.1)'
+                                : isPoweredOn
+                                  ? `color-mix(in srgb, ${modeColor} 20%, transparent)`
+                                  : 'rgba(var(--muted-rgb), 0.1)',
+                              color: isOffline ? 'var(--muted)' : isPoweredOn ? modeColor : 'var(--muted)',
                             }}
                           >
-                            {MODE_ICONS[device.operation_mode]}
+                            {MODE_ICONS[currentMode]}
                           </div>
                           <div className="min-w-0">
                             <p className="font-medium text-sm truncate" style={{ color: 'var(--foreground)' }}>
                               {device.custom_name || device.name}
                             </p>
-                            <p className="text-xs" style={{ color: isPoweredOn ? modeColor : 'var(--muted)' }}>
-                              {isPoweredOn ? t.homeControl.acModes[device.operation_mode] : t.homeControl.powerOff}
+                            <p className="text-xs" style={{ color: isOffline ? 'var(--color-coral)' : isPoweredOn ? modeColor : 'var(--muted)' }}>
+                              {isOffline
+                                ? t.homeControl.offline
+                                : isPoweredOn
+                                  ? t.homeControl.acModes[currentMode]
+                                  : t.homeControl.powerOff}
                             </p>
                           </div>
                         </div>
 
                         {/* Current/Outdoor Temps + Power Toggle */}
                         <div className="flex items-center gap-3 shrink-0">
-                          {isPoweredOn && (device.current_temperature || device.outdoor_temperature) && (
+                          {!isOffline && isPoweredOn && (device.current_temperature || device.outdoor_temperature) && (
                             <div className="text-right">
                               {device.current_temperature && (
                                 <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
@@ -425,28 +438,30 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
                               )}
                             </div>
                           )}
-                          {/* Power Toggle */}
-                          <button
-                            onClick={() => controlDevice(device.account_id, device.ac_id, device.id, isPoweredOn ? 'turnOff' : 'turnOn')}
-                            disabled={isControlling}
-                            className="w-12 h-7 rounded-full transition-all relative"
-                            style={{
-                              background: isPoweredOn ? modeColor : 'var(--border)',
-                            }}
-                            aria-label={isPoweredOn ? t.homeControl.powerOff : t.homeControl.powerOn}
-                          >
-                            <div
-                              className="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"
+                          {/* Power Toggle - disabled when offline */}
+                          {!isOffline && (
+                            <button
+                              onClick={() => controlDevice(device.account_id, device.ac_id, device.id, isPoweredOn ? 'turnOff' : 'turnOn')}
+                              disabled={isControlling}
+                              className="w-12 h-7 rounded-full transition-all relative"
                               style={{
-                                left: isPoweredOn ? 'calc(100% - 1.625rem)' : '0.125rem',
+                                background: isPoweredOn ? modeColor : 'var(--border)',
                               }}
-                            />
-                          </button>
+                              aria-label={isPoweredOn ? t.homeControl.powerOff : t.homeControl.powerOn}
+                            >
+                              <div
+                                className="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"
+                                style={{
+                                  left: isPoweredOn ? 'calc(100% - 1.625rem)' : '0.125rem',
+                                }}
+                              />
+                            </button>
+                          )}
                         </div>
                       </div>
 
-                      {/* Controls (only when powered on) */}
-                      {isPoweredOn && (
+                      {/* Controls (only when powered on and state is known) */}
+                      {isPoweredOn && !isOffline && (
                         <>
                           {/* Temperature Control */}
                           <div className="mb-4">
@@ -455,13 +470,13 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
                                 {t.homeControl.temperature}
                               </span>
                               <span className="text-lg font-semibold" style={{ color: modeColor }}>
-                                {device.target_temperature}°C
+                                {device.target_temperature ?? '--'}°C
                               </span>
                             </div>
                             <div className="flex items-center gap-2">
                               <button
-                                onClick={() => controlDevice(device.account_id, device.ac_id, device.id, 'temperature', Math.max(TEMPERATURE.MIN, device.target_temperature - 1))}
-                                disabled={isControlling || device.target_temperature <= TEMPERATURE.MIN}
+                                onClick={() => controlDevice(device.account_id, device.ac_id, device.id, 'temperature', Math.max(TEMPERATURE.MIN, (device.target_temperature ?? 22) - 1))}
+                                disabled={isControlling || device.target_temperature === null || device.target_temperature <= TEMPERATURE.MIN}
                                 className="w-11 h-11 rounded-lg flex items-center justify-center disabled:opacity-40"
                                 style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
                                 aria-label={t.homeControl.decreaseTemp}
@@ -474,14 +489,16 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
                                 <div
                                   className="absolute inset-y-0 left-0 rounded-full transition-all"
                                   style={{
-                                    width: `${((device.target_temperature - TEMPERATURE.MIN) / (TEMPERATURE.MAX - TEMPERATURE.MIN)) * 100}%`,
+                                    width: device.target_temperature !== null
+                                      ? `${((device.target_temperature - TEMPERATURE.MIN) / (TEMPERATURE.MAX - TEMPERATURE.MIN)) * 100}%`
+                                      : '0%',
                                     background: modeColor,
                                   }}
                                 />
                               </div>
                               <button
-                                onClick={() => controlDevice(device.account_id, device.ac_id, device.id, 'temperature', Math.min(TEMPERATURE.MAX, device.target_temperature + 1))}
-                                disabled={isControlling || device.target_temperature >= TEMPERATURE.MAX}
+                                onClick={() => controlDevice(device.account_id, device.ac_id, device.id, 'temperature', Math.min(TEMPERATURE.MAX, (device.target_temperature ?? 22) + 1))}
+                                disabled={isControlling || device.target_temperature === null || device.target_temperature >= TEMPERATURE.MAX}
                                 className="w-11 h-11 rounded-lg flex items-center justify-center disabled:opacity-40"
                                 style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
                                 aria-label={t.homeControl.increaseTemp}

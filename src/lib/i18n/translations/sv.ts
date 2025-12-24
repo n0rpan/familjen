@@ -869,6 +869,8 @@ export const sv: TranslationStrings = {
     outdoorTemp: 'Ute',
     powerOn: 'Slå på',
     powerOff: 'Stäng av',
+    offline: 'Offline',
+    stateUnknown: 'Status okänd',
     decreaseTemp: 'Sänk temperatur',
     increaseTemp: 'Höj temperatur',
     serviceType: 'Tjänstetyp',

@@ -870,6 +870,8 @@ export const nb: TranslationStrings = {
     outdoorTemp: 'Ute',
     powerOn: 'Slå på',
     powerOff: 'Slå av',
+    offline: 'Frakoblet',
+    stateUnknown: 'Status ukjent',
     decreaseTemp: 'Senk temperatur',
     increaseTemp: 'Øk temperatur',
     serviceType: 'Tjenestetype',
