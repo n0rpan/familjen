@@ -918,7 +918,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
                               }
                             }}
                             disabled={controllingDevice === device.device_url}
-                            aria-label={`Posisjon ${device.custom_name || device.label}`}
+                            aria-label={`${t.homeControl.position} ${device.custom_name || device.label}`}
                             aria-valuemin={0}
                             aria-valuemax={100}
                             aria-valuenow={sliderDevice === device.device_url ? sliderPosition : (device.position ?? 0)}
@@ -1020,7 +1020,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
                 }}
               >
                 {testResult.success
-                  ? `Tilkobling OK! Fant ${testResult.deviceCount} enheter.`
+                  ? t.homeControl.connectionSuccessWithCount.replace('{count}', String(testResult.deviceCount))
                   : testResult.error}
               </div>
             )}

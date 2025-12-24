@@ -813,6 +813,7 @@ export interface TranslationStrings {
     testConnection: string
     testing: string
     connectionSuccess: string
+    connectionSuccessWithCount: string
     connectionFailed: string
     deviceCount: string
     customName: string

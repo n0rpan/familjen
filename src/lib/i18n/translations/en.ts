@@ -787,6 +787,7 @@ export const en: TranslationStrings = {
     testConnection: 'Test connection',
     testing: 'Testing...',
     connectionSuccess: 'Connection successful',
+    connectionSuccessWithCount: 'Connection OK! Found {count} devices.',
     connectionFailed: 'Connection failed',
     deviceCount: '{count} devices',
     customName: 'Custom name',

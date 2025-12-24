@@ -787,6 +787,7 @@ export const nb: TranslationStrings = {
     testConnection: 'Test tilkobling',
     testing: 'Tester...',
     connectionSuccess: 'Tilkobling vellykket',
+    connectionSuccessWithCount: 'Tilkobling OK! Fant {count} enheter.',
     connectionFailed: 'Tilkobling feilet',
     deviceCount: '{count} enheter',
     customName: 'Egendefinert navn',

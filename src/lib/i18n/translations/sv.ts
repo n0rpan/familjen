@@ -787,6 +787,7 @@ export const sv: TranslationStrings = {
     testConnection: 'Testa anslutning',
     testing: 'Testar...',
     connectionSuccess: 'Anslutning lyckades',
+    connectionSuccessWithCount: 'Anslutning OK! Hittade {count} enheter.',
     connectionFailed: 'Anslutning misslyckades',
     deviceCount: '{count} enheter',
     customName: 'Anpassat namn',
