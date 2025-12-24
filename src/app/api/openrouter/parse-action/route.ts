@@ -570,55 +570,54 @@ Kontekst:
 - Voksne: ${context.members.map(m => m.name).join(', ') || 'ingen'}`
 
   const childrenOptions = context.children.map(c => `{ "label": "${c.name}", "value": "${c.id}" }`).join(', ')
-  const membersOptions = context.members.map(m => `{ "label": "${m.name}", "value": "${m.id}" }`).join(', ')
   const allPersonOptions = [...context.children.map(c => `{ "label": "${c.name}", "value": "${c.id}" }`), ...context.members.map(m => `{ "label": "${m.name}", "value": "${m.id}" }`)].join(', ')
 
-  // If user provided additional text context, include it
-  const userNote = input.trim() ? `\nBrukerens tilleggsinformasjon: "${input}"` : ''
+  // If user provided additional text context, include it as a strong directive
+  const userNote = input.trim()
+    ? `\n\nBRUKERENS INSTRUKSJON (VIKTIG - følg denne!): "${input}"
+Brukeren har gitt denne instruksjonen for hvordan bildet skal tolkes. Prioriter brukerens instruksjon over automatisk tolkning.`
+    : ''
 
-  return `Analyser dette bildet og bestem hva slags dokument/element det viser.
-
-MULIGE BILDETYPER:
-
-1. BURSDAGSINVITASJON / INVITASJON
-   - Finn: Hvem sin bursdag, dato, klokkeslett, sted, RSVP-info
-   - Returner: child_task med task_type="appointment"
-   - Tittel bør være: "Bursdag hos [navn]" eller lignende
-   - VIKTIG: Sett needs_clarification for child_id hvis du ikke vet hvilket barn som skal
-
-2. SKOLE/BARNEHAGE-PÅMINNELSE
-   - Finn: Oppgave/påminnelse, dato, hvilket barn det gjelder
-   - Returner: child_task med passende task_type (bring, reminder, closure, etc.)
-   - VIKTIG: Sett needs_clarification for child_id hvis du ikke vet hvilket barn
-
-3. PRODUKT/LEKE-BILDE (for ønskeliste)
-   - Finn: Produktnavn, beskrivelse, ca. pris hvis synlig
-   - Returner: wishlist_item med operation="add"
-   - VIKTIG: wishlist_item MÅ ALLTID ha needs_clarification for person_id:
-     {
-       "needs_clarification": {
-         "field": "person_id",
-         "question": "Hvem sin ønskeliste skal dette på?",
-         "options": [${allPersonOptions}]
-       }
-     }
-
-4. KVITTERING
-   - Finn: Varer som er kjøpt
-   - Returner: shopping_item med operation="complete" for hver vare
-
-5. ANNET DOKUMENT
-   - Prøv å tolk innholdet og returner passende handling
-   - Hvis usikker, returner lav confidence (< 0.5)
+  return `Analyser dette bildet og bestem hva det viser.
+${userNote}
 
 ${baseContext}
-${userNote}
+
+MULIGE BILDETYPER (analyser og bestem automatisk):
+
+1. INVITASJON / HENDELSE
+   - Finn: Dato, klokkeslett, sted, hva slags hendelse
+   - Barn-hendelser: child_task med task_type="appointment"
+   - Voksen-hendelser: member_event
+   - VIKTIG: Sett needs_clarification for child_id/member_id
+
+2. OPPGAVE / PÅMINNELSE
+   - Finn: Oppgave, dato, hvem det gjelder
+   - Returner: child_task med passende task_type (bring, reminder, closure, etc.)
+
+3. PRODUKT / GAVE (for ønskeliste)
+   - Finn: Produktnavn, beskrivelse, ca. pris
+   - Returner: wishlist_item med operation="add"
+   - VIKTIG: wishlist_item MÅ ALLTID ha needs_clarification for person_id
+
+4. HANDLELISTE / KVITTERING
+   - Finn: Varer/produkter
+   - Handleliste: shopping_item med operation="add"
+   - Kvittering: shopping_item med operation="complete"
+
+5. MIDDAGSPLAN / MAT
+   - Finn: Rett, dato
+   - Returner: meal
+
+6. ANNET
+   - Prøv å tolk innholdet og returner passende handling
 
 VIKTIG:
 - Barn til valg (for needs_clarification): [${childrenOptions}]
 - Alle personer (for wishlist): [${allPersonOptions}]
 - Returner BARE gyldig JSON med actions-array
-- Sett høy confidence (0.8+) kun hvis du er sikker på tolkningen`
+- Sett høy confidence (0.8+) kun hvis du er sikker på tolkningen
+- Hvis usikker, returner lav confidence (< 0.5)`
 }
 
 // ============================================================================

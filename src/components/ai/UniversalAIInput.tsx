@@ -272,7 +272,7 @@ export function UniversalAIInput({
       setSelectedImage(base64)
       setImagePreview(base64)
 
-      // Parse immediately if we have an image (no need for text)
+      // Parse immediately - AI will analyze and suggest action type
       parseInput(input || '', base64)
     } catch (err) {
       console.error('Image compression failed:', err)
