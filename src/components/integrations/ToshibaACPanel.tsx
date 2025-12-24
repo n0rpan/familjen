@@ -427,7 +427,7 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
                               <button
                                 onClick={() => controlDevice(device.account_id, device.ac_id, device.id, 'temperature', Math.max(TEMPERATURE.MIN, device.target_temperature - 1))}
                                 disabled={isControlling || device.target_temperature <= TEMPERATURE.MIN}
-                                className="w-10 h-10 rounded-lg flex items-center justify-center"
+                                className="w-11 h-11 rounded-lg flex items-center justify-center disabled:opacity-40"
                                 style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
                                 aria-label="Decrease temperature"
                               >
@@ -447,7 +447,7 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
                               <button
                                 onClick={() => controlDevice(device.account_id, device.ac_id, device.id, 'temperature', Math.min(TEMPERATURE.MAX, device.target_temperature + 1))}
                                 disabled={isControlling || device.target_temperature >= TEMPERATURE.MAX}
-                                className="w-10 h-10 rounded-lg flex items-center justify-center"
+                                className="w-11 h-11 rounded-lg flex items-center justify-center disabled:opacity-40"
                                 style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
                                 aria-label="Increase temperature"
                               >
@@ -495,13 +495,13 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
                             <span className="text-xs block mb-2" style={{ color: 'var(--muted)' }}>
                               {'Fan Speed'}
                             </span>
-                            <div className="flex flex-wrap gap-1">
+                            <div className="grid grid-cols-4 gap-1">
                               {FAN_SPEEDS.map(speed => (
                                 <button
                                   key={speed}
                                   onClick={() => controlDevice(device.account_id, device.ac_id, device.id, 'fanSpeed', speed)}
                                   disabled={isControlling}
-                                  className="px-2 py-1 rounded text-xs transition-all"
+                                  className="px-1.5 py-1.5 rounded text-[11px] transition-all text-center min-h-[36px]"
                                   style={{
                                     background: device.fan_speed === speed
                                       ? `color-mix(in srgb, ${modeColor} 20%, transparent)`
@@ -512,7 +512,7 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
                                     color: device.fan_speed === speed ? modeColor : 'var(--muted)',
                                   }}
                                 >
-                                  {speed.replace('_', ' ')}
+                                  {speed.replace(/_/g, '\u00A0')}
                                 </button>
                               ))}
                             </div>

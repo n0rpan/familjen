@@ -5,7 +5,6 @@ import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import type { OverkizServer } from '@/lib/integrations/somfy'
 import { SOMFY_UI } from '@/lib/integrations/somfy/constants'
-import { TOSHIBA_UI } from '@/lib/integrations/toshiba/constants'
 import { getAccountDisplayName } from '@/lib/integrations/somfy/utils'
 
 type ServiceType = 'somfy' | 'toshiba'
