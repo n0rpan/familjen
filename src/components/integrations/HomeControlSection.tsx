@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import type { OverkizServer } from '@/lib/integrations/somfy'
@@ -78,8 +78,9 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
 
   // Control state
   const [controllingDevice, setControllingDevice] = useState<string | null>(null)
+  const [syncingAccount, setSyncingAccount] = useState<string | null>(null)
 
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   const loadAccounts = useCallback(async () => {
     try {
@@ -197,6 +198,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
   }
 
   const syncDevices = async (accountId: string) => {
+    setSyncingAccount(accountId)
     try {
       const response = await fetch(`/api/home-control/somfy/devices?accountId=${accountId}`, {
         method: 'POST',
@@ -216,6 +218,8 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
     } catch (err) {
       console.error('Sync failed:', err)
       onMessage('error', 'Synkronisering feilet')
+    } finally {
+      setSyncingAccount(null)
     }
   }
 
@@ -290,12 +294,14 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
             <div className="flex gap-2">
               <button
                 onClick={() => syncDevices(account.id)}
+                disabled={syncingAccount === account.id}
                 className="btn btn-secondary text-sm"
               >
-                Synk
+                {syncingAccount === account.id ? 'Synker...' : 'Synk'}
               </button>
               <button
                 onClick={() => deleteAccount(account.id)}
+                disabled={syncingAccount === account.id}
                 className="text-sm px-3 py-1.5 rounded-lg transition-colors"
                 style={{ color: 'var(--color-coral)' }}
               >

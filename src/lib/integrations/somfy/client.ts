@@ -57,13 +57,11 @@ export class SomfyClient {
     const maskedEmail = email.length > 3 ? email.substring(0, 3) + '***' : '***'
     this.log('Logging in as:', maskedEmail)
 
-    // Step 1: Get OAuth token using password grant
+    // Get OAuth token using password grant
     const tokenResponse = await this.getOAuthToken(email, password)
 
-    // Step 2: Exchange OAuth token for JWT
-    const jwtToken = await this.getJwtToken(tokenResponse.access_token)
-
-    this.accessToken = jwtToken
+    // Use the OAuth access token directly for API calls
+    this.accessToken = tokenResponse.access_token
     this.refreshToken = tokenResponse.refresh_token
     this.tokenExpiry = Date.now() + (tokenResponse.expires_in * 1000) - 60000 // Subtract 1 min for safety
 
@@ -382,47 +380,6 @@ export class SomfyClient {
         throw new SomfyError('OAuth request timed out')
       }
       throw new SomfyError(`OAuth request failed: ${error}`)
-    }
-  }
-
-  /**
-   * Exchange OAuth token for JWT that can be used with the API.
-   */
-  private async getJwtToken(accessToken: string): Promise<string> {
-    const jwtEndpoint = `${this.serverConfig.authEndpoint}/jwt`
-
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), this.timeout)
-
-    try {
-      const response = await fetch(jwtEndpoint, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        signal: controller.signal,
-      })
-
-      clearTimeout(timeoutId)
-
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => 'Unknown error')
-        throw new SomfyError(
-          `JWT request failed: ${response.status} ${response.statusText}`,
-          response.status,
-          errorText
-        )
-      }
-
-      // Response is plain text JWT
-      return response.text()
-    } catch (error) {
-      clearTimeout(timeoutId)
-      if (error instanceof SomfyError) throw error
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new SomfyError('JWT request timed out')
-      }
-      throw new SomfyError(`JWT request failed: ${error}`)
     }
   }
 
