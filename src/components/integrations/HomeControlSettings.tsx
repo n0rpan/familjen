@@ -462,6 +462,14 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                     type="text"
                     value={editAccountName}
                     onChange={e => setEditAccountName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && editAccountName.trim()) {
+                        saveAccountName(account.id)
+                      } else if (e.key === 'Escape') {
+                        setEditingAccount(null)
+                        setEditAccountName('')
+                      }
+                    }}
                     className="input text-sm py-2"
                     placeholder={t.homeControl.locationNamePlaceholder}
                     autoFocus
