@@ -68,24 +68,15 @@ const UI_CLASS_LABELS: Record<string, string> = {
 }
 
 /**
- * Sanitize device name input to prevent XSS and limit length.
+ * Sanitize device name input: trim whitespace and limit length.
+ * Note: XSS prevention is handled by React's automatic escaping of JSX content.
  */
 function sanitizeDeviceName(name: string): string {
-  // Trim whitespace
   let sanitized = name.trim()
 
-  // Limit length
   if (sanitized.length > SOMFY_UI.MAX_DEVICE_NAME_LENGTH) {
     sanitized = sanitized.substring(0, SOMFY_UI.MAX_DEVICE_NAME_LENGTH)
   }
-
-  // Escape HTML entities to prevent XSS
-  sanitized = sanitized
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#x27;')
 
   return sanitized
 }

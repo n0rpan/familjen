@@ -16,6 +16,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Verify user belongs to a household (prevents unauthorized credential testing)
+    const { data: member } = await supabase
+      .from('household_members')
+      .select('household_id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!member) {
+      return NextResponse.json(
+        { success: false, error: 'No household membership' },
+        { status: 403 }
+      )
+    }
+
     // Parse request body
     const body = await request.json()
     const { email, password, server = 'somfy_europe' } = body
