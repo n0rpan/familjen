@@ -285,21 +285,24 @@ export class ToshibaClient {
   mapDeviceToDb(device: ToshibaACMapping): MappedToshibaDevice {
     const state = device.ACStateData
 
+    // Handle case where ACStateData may be missing or incomplete
+    const hasState = state !== null && state !== undefined
+
     return {
       acId: device.Id,
       name: device.Name,
       model: device.ACModelId,
       firmwareVersion: device.FirmwareVersion,
       timezone: device.Timezone,
-      // Current state
-      powerState: state.ACPowerState,
-      operationMode: state.ACOperationMode,
-      targetTemperature: state.ACSetpointTemperature,
-      currentTemperature: state.ACIndoorTemperature ?? null,
-      outdoorTemperature: state.ACOutdoorTemperature ?? null,
-      fanSpeed: state.ACFanSpeed,
-      swingMode: state.ACSwingMode,
-      pureState: state.ACPureState,
+      // Current state (with null checks)
+      powerState: hasState ? state.ACPowerState : 'OFF',
+      operationMode: hasState ? state.ACOperationMode : 'AUTO',
+      targetTemperature: hasState ? state.ACSetpointTemperature : 22,
+      currentTemperature: hasState ? (state.ACIndoorTemperature ?? null) : null,
+      outdoorTemperature: hasState ? (state.ACOutdoorTemperature ?? null) : null,
+      fanSpeed: hasState ? state.ACFanSpeed : 'AUTO',
+      swingMode: hasState ? state.ACSwingMode : 'OFF',
+      pureState: hasState ? state.ACPureState : 'OFF',
       // Features
       hasEnergyConsumption: device.IsEnergyConsumptionModel,
       hasAutoClean: device.IsAutoCleanPresent,
