@@ -513,6 +513,258 @@ a, button, [role="button"], input, select, textarea {
   }
 }
 
+/* Home Control - Slider styles with improved touch targets */
+.slider-container {
+  position: relative;
+  height: 44px; /* Minimum touch target */
+  display: flex;
+  align-items: center;
+}
+
+.slider-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 8px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.slider-fill {
+  height: 100%;
+  background: var(--color-sky);
+  border-radius: 4px;
+  transition: width 0.1s ease-out;
+}
+
+.slider-input {
+  position: relative;
+  width: 100%;
+  height: 44px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  margin: 0;
+  padding: 0;
+}
+
+/* Slider thumb - Webkit (Chrome, Safari, Edge) */
+.slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  background: var(--card);
+  border: 3px solid var(--color-sky);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.slider-input::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
+}
+
+.slider-input::-webkit-slider-thumb:active {
+  transform: scale(1.15);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+/* Slider thumb - Firefox */
+.slider-input::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  background: var(--card);
+  border: 3px solid var(--color-sky);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.slider-input::-moz-range-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
+}
+
+.slider-input::-moz-range-track {
+  background: transparent;
+  height: 44px;
+}
+
+/* Disabled state */
+.slider-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.slider-input:disabled::-webkit-slider-thumb {
+  cursor: not-allowed;
+}
+
+/* Home Control - Action buttons */
+.control-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px 8px;
+  min-height: 56px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  border: none;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.control-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.control-btn-open {
+  background: rgba(126, 182, 196, 0.15);
+  color: var(--color-sky);
+}
+
+.control-btn-open:hover:not(:disabled) {
+  background: rgba(126, 182, 196, 0.25);
+}
+
+.control-btn-open:active:not(:disabled) {
+  background: rgba(126, 182, 196, 0.35);
+  transform: scale(0.98);
+}
+
+.control-btn-stop {
+  background: rgba(213, 186, 124, 0.15);
+  color: var(--color-honey);
+}
+
+.control-btn-stop:hover:not(:disabled) {
+  background: rgba(213, 186, 124, 0.25);
+}
+
+.control-btn-stop:active:not(:disabled) {
+  background: rgba(213, 186, 124, 0.35);
+  transform: scale(0.98);
+}
+
+.control-btn-close {
+  background: rgba(158, 185, 154, 0.15);
+  color: var(--color-sage);
+}
+
+.control-btn-close:hover:not(:disabled) {
+  background: rgba(158, 185, 154, 0.25);
+}
+
+.control-btn-close:active:not(:disabled) {
+  background: rgba(158, 185, 154, 0.35);
+  transform: scale(0.98);
+}
+
+.control-btn-fav {
+  background: rgba(229, 185, 94, 0.15);
+  color: var(--color-honey);
+}
+
+.control-btn-fav:hover:not(:disabled) {
+  background: rgba(229, 185, 94, 0.25);
+}
+
+.control-btn-fav:active:not(:disabled) {
+  background: rgba(229, 185, 94, 0.35);
+  transform: scale(0.98);
+}
+
+/* Focus visible styles for accessibility */
+.control-btn:focus-visible {
+  outline: 2px solid var(--color-sky);
+  outline-offset: 2px;
+}
+
+.slider-input:focus-visible {
+  outline: none;
+}
+
+.slider-input:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--color-sky);
+  outline-offset: 2px;
+}
+
+/* Touch device optimizations for control buttons */
+@media (hover: none) {
+  .control-btn {
+    min-height: 60px;
+  }
+
+  .control-btn:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+
+  .slider-input::-webkit-slider-thumb {
+    width: 32px;
+    height: 32px;
+  }
+
+  .slider-input::-moz-range-thumb {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+/* Loading spinner for control buttons */
+.loading-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.control-btn .loading-spinner {
+  opacity: 0.8;
+}
+
+/* Reduced motion support for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .control-btn {
+    transition: none;
+  }
+
+  .control-btn:active:not(:disabled) {
+    transform: none;
+  }
+
+  .slider-fill {
+    transition: none;
+  }
+
+  .slider-input::-webkit-slider-thumb {
+    transition: none;
+  }
+
+  .slider-input::-moz-range-thumb {
+    transition: none;
+  }
+
+  .loading-spinner {
+    animation: none;
+    border-top-color: currentColor;
+    opacity: 0.5;
+  }
+}
+
 /* Mobile header spacing - accounts for fixed header + safe area + content spacing */
 .pt-mobile-header {
   padding-top: calc(4.5rem + env(safe-area-inset-top, 0px));
