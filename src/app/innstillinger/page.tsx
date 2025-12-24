@@ -18,7 +18,7 @@ import { KidplanIntegration } from '@/components/integrations/KidplanIntegration
 import { ISkoleIntegration } from '@/components/integrations/ISkoleIntegration'
 import { MyKidIntegration } from '@/components/integrations/MyKidIntegration'
 import { ManualSourceUrls } from '@/components/integrations/ManualSourceUrls'
-import { HomeControlSection } from '@/components/integrations/HomeControlSection'
+import { HomeControlSettings } from '@/components/integrations/HomeControlSettings'
 import {
   ChildrenSection,
   MembersSection,
@@ -1397,7 +1397,7 @@ export default function SettingsPage() {
             description="Styr screens og persienner via Somfy TaHoma"
             color="var(--color-honey)"
           >
-            <HomeControlSection
+            <HomeControlSettings
               householdId={household.id}
               onMessage={showMessage}
             />
