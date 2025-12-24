@@ -18,6 +18,7 @@ import { KidplanIntegration } from '@/components/integrations/KidplanIntegration
 import { ISkoleIntegration } from '@/components/integrations/ISkoleIntegration'
 import { MyKidIntegration } from '@/components/integrations/MyKidIntegration'
 import { ManualSourceUrls } from '@/components/integrations/ManualSourceUrls'
+import { HomeControlSection } from '@/components/integrations/HomeControlSection'
 import {
   ChildrenSection,
   MembersSection,
@@ -1380,6 +1381,24 @@ export default function SettingsPage() {
             <ManualSourceUrls
               householdId={household.id}
               children={children}
+              onMessage={showMessage}
+            />
+          </CollapsibleSection>
+
+          {/* Home Control (Somfy) */}
+          <CollapsibleSection
+            icon={
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <line x1="9" y1="3" x2="9" y2="21"/>
+              </svg>
+            }
+            title="Smarthus"
+            description="Styr screens og persienner via Somfy TaHoma"
+            color="var(--color-honey)"
+          >
+            <HomeControlSection
+              householdId={household.id}
               onMessage={showMessage}
             />
           </CollapsibleSection>
