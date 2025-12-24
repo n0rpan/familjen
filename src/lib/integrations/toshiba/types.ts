@@ -34,7 +34,9 @@ export interface ToshibaLoginResponse {
 // ============================================================================
 
 export interface ToshibaACMapping {
-  Id: string // ACId - unique identifier
+  // The API returns ACId, not Id
+  ACId: string
+  Id?: string // Fallback if older API version
   Name: string
   ACModelId: string
   MeritFeature: string
