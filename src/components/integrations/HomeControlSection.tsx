@@ -46,10 +46,10 @@ interface HomeControlSectionProps {
   onMessage: (type: 'success' | 'error', text: string) => void
 }
 
-const SERVER_OPTIONS: { value: OverkizServer; label: string }[] = [
-  { value: 'somfy_europe', label: 'Europa' },
-  { value: 'somfy_america', label: 'Nord-Amerika' },
-  { value: 'somfy_oceania', label: 'Oseania' },
+const SERVER_OPTION_KEYS: { value: OverkizServer; labelKey: 'regionEurope' | 'regionNorthAmerica' | 'regionOceania' }[] = [
+  { value: 'somfy_europe', labelKey: 'regionEurope' },
+  { value: 'somfy_america', labelKey: 'regionNorthAmerica' },
+  { value: 'somfy_oceania', labelKey: 'regionOceania' },
 ]
 
 const UI_CLASS_LABELS: Record<string, string> = {
@@ -198,7 +198,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
     } catch (err) {
       setTestResult({
         success: false,
-        error: err instanceof Error ? err.message : 'Tilkobling feilet',
+        error: err instanceof Error ? err.message : t.homeControl.connectionFailed,
       })
     } finally {
       setTesting(false)
@@ -226,7 +226,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
         method: 'POST',
       })
 
-      onMessage('success', 'Somfy-konto lagt til')
+      onMessage('success', t.homeControl.syncSuccess)
       setShowAddForm(false)
       setEmail('')
       setPassword('')
@@ -234,14 +234,14 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
       await loadAccounts()
     } catch (err) {
       console.error('Failed to save account:', err)
-      onMessage('error', 'Kunne ikke lagre konto')
+      onMessage('error', t.homeControl.couldNotSaveAccount)
     } finally {
       setSaving(false)
     }
   }
 
   const deleteAccount = async (accountId: string) => {
-    if (!confirm('Er du sikker på at du vil fjerne denne kontoen?')) return
+    if (!confirm(t.homeControl.removeAccountConfirm)) return
 
     try {
       const { error } = await supabase.rpc('delete_home_control_account', {
@@ -252,10 +252,10 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
 
       setAccounts(accounts.filter(a => a.id !== accountId))
       setDevices(devices.filter(d => d.account_id !== accountId))
-      onMessage('success', 'Konto fjernet')
+      onMessage('success', t.homeControl.accountRemoved)
     } catch (err) {
       console.error('Failed to delete account:', err)
-      onMessage('error', 'Kunne ikke fjerne konto')
+      onMessage('error', t.homeControl.couldNotRemoveAccount)
     }
   }
 
@@ -273,13 +273,13 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
           const filtered = prev.filter(d => d.account_id !== accountId)
           return [...filtered, ...data.devices]
         })
-        onMessage('success', `Synkroniserte ${data.devices.length} enheter`)
+        onMessage('success', t.homeControl.synced.replace('{count}', String(data.devices.length)))
       } else {
-        onMessage('error', data.error || 'Synkronisering feilet')
+        onMessage('error', data.error || t.homeControl.syncFailed)
       }
     } catch (err) {
       console.error('Sync failed:', err)
-      onMessage('error', 'Synkronisering feilet')
+      onMessage('error', t.homeControl.syncFailed)
     } finally {
       setSyncingAccount(null)
     }
@@ -302,11 +302,11 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
       const data = await response.json()
 
       if (!data.success) {
-        onMessage('error', data.error || 'Kommando feilet')
+        onMessage('error', data.error || t.homeControl.commandFailed)
       }
     } catch (err) {
       console.error('Control failed:', err)
-      onMessage('error', 'Kommando feilet')
+      onMessage('error', t.homeControl.commandFailed)
     } finally {
       setControllingDevice(null)
     }
@@ -340,11 +340,11 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
         setConfirmedDevice(deviceUrl)
         setTimeout(() => setConfirmedDevice(null), 2000)
       } else {
-        onMessage('error', data.error || 'Kommando feilet')
+        onMessage('error', data.error || t.homeControl.commandFailed)
       }
     } catch (err) {
       console.error('Position control failed:', err)
-      onMessage('error', 'Kommando feilet')
+      onMessage('error', t.homeControl.commandFailed)
     } finally {
       setControllingDevice(null)
     }
@@ -372,10 +372,10 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
       )
       setEditingDevice(null)
       setEditDeviceName('')
-      onMessage('success', 'Navn oppdatert')
+      onMessage('success', t.homeControl.nameUpdated)
     } catch (err) {
       console.error('Failed to save device name:', err)
-      onMessage('error', 'Kunne ikke lagre navn')
+      onMessage('error', t.homeControl.couldNotSaveName)
     } finally {
       setSavingDevice(false)
     }
@@ -417,13 +417,13 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
 
           const data = await response.json()
           if (!data.success) {
-            throw new Error(data.error || 'Kommando feilet')
+            throw new Error(data.error || t.homeControl.commandFailed)
           }
         })
       )
     } catch (err) {
       console.error('Group control failed:', err)
-      onMessage('error', 'Kommando feilet')
+      onMessage('error', t.homeControl.commandFailed)
     } finally {
       setControllingGroup(null)
     }
@@ -454,7 +454,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
             device_id: deviceId,
           })))
 
-        onMessage('success', 'Gruppe oppdatert')
+        onMessage('success', t.homeControl.groupUpdated)
       } else {
         // Create new group
         const { data: newGroup, error } = await supabase
@@ -476,7 +476,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
             device_id: deviceId,
           })))
 
-        onMessage('success', 'Gruppe opprettet')
+        onMessage('success', t.homeControl.groupCreated)
       }
 
       setShowGroupForm(false)
@@ -486,14 +486,14 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
       await loadAccounts()
     } catch (err) {
       console.error('Failed to save group:', err)
-      onMessage('error', 'Kunne ikke lagre gruppe')
+      onMessage('error', t.homeControl.couldNotSaveGroup)
     } finally {
       setSavingGroup(false)
     }
   }
 
   const deleteGroup = async (groupId: string) => {
-    if (!confirm('Er du sikker på at du vil slette denne gruppen?')) return
+    if (!confirm(t.homeControl.deleteGroupConfirm)) return
 
     try {
       await supabase
@@ -502,10 +502,10 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
         .eq('id', groupId)
 
       setGroups(groups.filter(g => g.id !== groupId))
-      onMessage('success', 'Gruppe slettet')
+      onMessage('success', t.homeControl.groupDeleted)
     } catch (err) {
       console.error('Failed to delete group:', err)
-      onMessage('error', 'Kunne ikke slette gruppe')
+      onMessage('error', t.homeControl.couldNotDeleteGroup)
     }
   }
 
@@ -532,7 +532,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h4 className="font-medium text-sm" style={{ color: 'var(--foreground)' }}>
-              Grupper
+              {t.homeControl.groups}
             </h4>
             {devices.length > 0 && (
               <button
@@ -545,7 +545,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
                 className="text-xs"
                 style={{ color: 'var(--color-sky)' }}
               >
-                + Ny gruppe
+                + {t.homeControl.newGroup}
               </button>
             )}
           </div>
@@ -573,7 +573,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
                       {group.name}
                     </p>
                     <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                      {group.device_ids.length} enheter
+                      {t.homeControl.deviceCount.replace('{count}', String(group.device_ids.length))}
                     </p>
                   </div>
                 </div>
@@ -581,7 +581,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
                   <button
                     onClick={() => openEditGroup(group)}
                     className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                    title="Rediger gruppe"
+                    title={t.homeControl.editGroup}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2">
                       <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
@@ -591,7 +591,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
                   <button
                     onClick={() => deleteGroup(group.id)}
                     className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                    title="Slett gruppe"
+                    title={t.homeControl.deleteAccount}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-coral)" strokeWidth="2">
                       <polyline points="3 6 5 6 21 6"/>
@@ -606,21 +606,21 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
                   disabled={controllingGroup === group.id}
                   className="flex-1 btn btn-secondary text-xs py-1.5"
                 >
-                  {controllingGroup === group.id ? '...' : 'Alle opp'}
+                  {controllingGroup === group.id ? '...' : t.homeControl.allUp}
                 </button>
                 <button
                   onClick={() => controlGroup(group.id, 'stop')}
                   disabled={controllingGroup === group.id}
                   className="flex-1 btn btn-secondary text-xs py-1.5"
                 >
-                  {controllingGroup === group.id ? '...' : 'Stopp alle'}
+                  {controllingGroup === group.id ? '...' : t.homeControl.stopAll}
                 </button>
                 <button
                   onClick={() => controlGroup(group.id, 'close')}
                   disabled={controllingGroup === group.id}
                   className="flex-1 btn btn-secondary text-xs py-1.5"
                 >
-                  {controllingGroup === group.id ? '...' : 'Alle ned'}
+                  {controllingGroup === group.id ? '...' : t.homeControl.allDown}
                 </button>
               </div>
             </div>
@@ -635,13 +635,13 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
           style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
         >
           <h4 className="font-medium mb-4" style={{ color: 'var(--foreground)' }}>
-            {editingGroup ? 'Rediger gruppe' : 'Ny gruppe'}
+            {editingGroup ? t.homeControl.editGroup : t.homeControl.newGroup}
           </h4>
 
           <div className="space-y-4">
             <div>
               <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>
-                Gruppenavn
+                {t.homeControl.groupName}
               </label>
               <input
                 type="text"
@@ -654,7 +654,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
 
             <div>
               <label className="block text-xs mb-2" style={{ color: 'var(--muted)' }}>
-                Velg enheter
+                {t.homeControl.selectDevices}
               </label>
               <div className="space-y-2 max-h-48 overflow-y-auto">
                 {devices.map(device => (
@@ -692,7 +692,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
                 disabled={savingGroup || !groupName.trim() || selectedDeviceIds.length === 0}
                 className="btn btn-primary"
               >
-                {savingGroup ? 'Lagrer...' : editingGroup ? 'Oppdater' : 'Opprett'}
+                {savingGroup ? t.homeControl.saving : editingGroup ? t.homeControl.update : t.homeControl.create}
               </button>
               <button
                 onClick={() => {
@@ -732,7 +732,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
             <rect x="14" y="14" width="7" height="7"/>
             <rect x="3" y="14" width="7" height="7"/>
           </svg>
-          Opprett enhetsgruppe
+          {t.homeControl.createDeviceGroup}
         </button>
       )}
 
@@ -759,9 +759,9 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
                   {account.account_email || account.display_name}
                 </p>
                 <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                  {SERVER_OPTIONS.find(s => s.value === account.server)?.label || account.server}
+                  {t.homeControl[SERVER_OPTION_KEYS.find(s => s.value === account.server)?.labelKey || 'regionEurope']}
                   {account.last_sync_at && (
-                    <> • Sist synkronisert {new Date(account.last_sync_at).toLocaleDateString('nb-NO')}</>
+                    <> • {t.homeControl.lastSynced} {new Date(account.last_sync_at).toLocaleDateString()}</>
                   )}
                 </p>
               </div>
@@ -772,7 +772,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
                 disabled={syncingAccount === account.id}
                 className="btn btn-secondary text-sm"
               >
-                {syncingAccount === account.id ? 'Synker...' : 'Synk'}
+                {syncingAccount === account.id ? t.homeControl.syncing : t.homeControl.sync}
               </button>
               <button
                 onClick={() => deleteAccount(account.id)}
@@ -780,7 +780,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
                 className="text-sm px-3 py-1.5 rounded-lg transition-colors"
                 style={{ color: 'var(--color-coral)' }}
               >
-                Fjern
+                {t.homeControl.removeAccount}
               </button>
             </div>
           </div>
@@ -829,7 +829,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
                               className="text-xs px-2 py-1 rounded"
                               style={{ background: 'var(--color-sage)', color: 'white' }}
                             >
-                              {savingDevice ? '...' : 'Lagre'}
+                              {savingDevice ? '...' : t.homeControl.save}
                             </button>
                             <button
                               onClick={() => {
@@ -839,7 +839,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
                               className="text-xs px-2 py-1"
                               style={{ color: 'var(--muted)' }}
                             >
-                              Avbryt
+                              {t.homeControl.cancel}
                             </button>
                           </div>
                         </div>
@@ -878,7 +878,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
                           onClick={() => controlDevice(account.id, device.device_url, 'my')}
                           disabled={controllingDevice === device.device_url}
                           className="p-1"
-                          title="Favorittposisjon"
+                          title={t.homeControl.favoritePosition}
                         >
                           <svg
                             width="20"
@@ -936,12 +936,12 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
                           disabled={controllingDevice === device.device_url}
                           className="w-full btn btn-secondary text-sm py-2"
                         >
-                          {controllingDevice === device.device_url ? '...' : 'Stopp'}
+                          {controllingDevice === device.device_url ? '...' : t.homeControl.stop}
                         </button>
                       </div>
                     ) : (
                       <p className="text-sm mt-2" style={{ color: 'var(--color-coral)' }}>
-                        Ikke tilgjengelig
+                        {t.homeControl.unavailable}
                       </p>
                     )}
                   </div>
@@ -949,7 +949,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
             </div>
           ) : (
             <p className="text-sm text-center py-4" style={{ color: 'var(--muted)' }}>
-              Ingen enheter funnet. Klikk «Synk» for å hente enheter.
+              {t.homeControl.noDevicesInAccount}
             </p>
           )}
         </div>
@@ -962,13 +962,13 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
           style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
         >
           <h4 className="font-medium mb-4" style={{ color: 'var(--foreground)' }}>
-            Legg til Somfy-konto
+            {t.homeControl.addSomfyAccount}
           </h4>
 
           <div className="space-y-4">
             <div>
               <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>
-                E-post
+                {t.homeControl.accountEmail}
               </label>
               <input
                 type="email"
@@ -981,7 +981,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
 
             <div>
               <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>
-                Passord
+                {t.homeControl.accountPassword}
               </label>
               <input
                 type="password"
@@ -994,16 +994,16 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
 
             <div>
               <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>
-                Region
+                {t.homeControl.region}
               </label>
               <select
                 value={server}
                 onChange={e => setServer(e.target.value as OverkizServer)}
                 className="input"
               >
-                {SERVER_OPTIONS.map(opt => (
+                {SERVER_OPTION_KEYS.map(opt => (
                   <option key={opt.value} value={opt.value}>
-                    {opt.label}
+                    {t.homeControl[opt.labelKey]}
                   </option>
                 ))}
               </select>
@@ -1031,7 +1031,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
                 disabled={testing || !email || !password}
                 className="btn btn-secondary"
               >
-                {testing ? 'Tester...' : 'Test tilkobling'}
+                {testing ? t.homeControl.testing : t.homeControl.testConnection}
               </button>
 
               {testResult?.success && (
@@ -1040,7 +1040,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
                   disabled={saving}
                   className="btn btn-primary"
                 >
-                  {saving ? 'Lagrer...' : 'Lagre konto'}
+                  {saving ? t.homeControl.saving : t.homeControl.saveAccount}
                 </button>
               )}
 
@@ -1072,13 +1072,13 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
             <line x1="12" y1="5" x2="12" y2="19"/>
             <line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
-          Legg til Somfy-konto
+          {t.homeControl.addSomfyAccount}
         </button>
       )}
 
       {accounts.length === 0 && !showAddForm && (
         <p className="text-sm text-center" style={{ color: 'var(--muted)' }}>
-          Koble til din Somfy TaHoma eller Connexoon for å styre screens og persienner.
+          {t.homeControl.connectSomfy}
         </p>
       )}
     </div>

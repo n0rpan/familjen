@@ -791,6 +791,7 @@ export interface TranslationStrings {
     allUp: string
     allDown: string
     stop: string
+    stopAll: string
     favoritePosition: string
     position: string
     unavailable: string
@@ -800,6 +801,8 @@ export interface TranslationStrings {
     syncing: string
     syncSuccess: string
     syncFailed: string
+    sync: string
+    synced: string
     authFailed: string
     addAccount: string
     deleteAccount: string
@@ -808,11 +811,50 @@ export interface TranslationStrings {
     accountPassword: string
     server: string
     testConnection: string
+    testing: string
     connectionSuccess: string
     connectionFailed: string
     deviceCount: string
     customName: string
     setPosition: string
+    // Group management
+    newGroup: string
+    editGroup: string
+    groupName: string
+    selectDevices: string
+    groupCreated: string
+    groupUpdated: string
+    groupDeleted: string
+    deleteGroupConfirm: string
+    couldNotSaveGroup: string
+    couldNotDeleteGroup: string
+    createDeviceGroup: string
+    // Account management
+    accountRemoved: string
+    couldNotRemoveAccount: string
+    couldNotSaveAccount: string
+    addSomfyAccount: string
+    saveAccount: string
+    removeAccount: string
+    removeAccountConfirm: string
+    // Device management
+    nameUpdated: string
+    couldNotSaveName: string
+    noDevicesInAccount: string
+    // Region labels
+    regionEurope: string
+    regionNorthAmerica: string
+    regionOceania: string
+    region: string
+    // Empty state
+    connectSomfy: string
+    // Misc
+    lastSynced: string
+    save: string
+    saving: string
+    update: string
+    create: string
+    cancel: string
   }
 
   // Push Notifications
