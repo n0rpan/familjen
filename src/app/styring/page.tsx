@@ -2,6 +2,7 @@
 
 import { useLanguage } from '@/lib/i18n/context'
 import { HomeControlPanel } from '@/components/integrations/HomeControlPanel'
+import { ToshibaACPanel } from '@/components/integrations/ToshibaACPanel'
 
 export default function StyringPage() {
   const { t } = useLanguage()
@@ -15,6 +16,10 @@ export default function StyringPage() {
         </p>
       </div>
 
+      {/* Toshiba AC devices */}
+      <ToshibaACPanel />
+
+      {/* Somfy screens/blinds */}
       <HomeControlPanel />
     </div>
   )
