@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
@@ -44,11 +44,26 @@ export default function StyringPage() {
   const [confirmedDevice, setConfirmedDevice] = useState<string | null>(null)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
+  // Refs for timeout cleanup
+  const messageTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const confirmedTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const sliderDebounceRef = useRef<NodeJS.Timeout | null>(null)
+
   const supabase = useMemo(() => createClient(), [])
 
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current)
+      if (confirmedTimeoutRef.current) clearTimeout(confirmedTimeoutRef.current)
+      if (sliderDebounceRef.current) clearTimeout(sliderDebounceRef.current)
+    }
+  }, [])
+
   const showMessage = (type: 'success' | 'error', text: string) => {
+    if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current)
     setMessage({ type, text })
-    setTimeout(() => setMessage(null), 3000)
+    messageTimeoutRef.current = setTimeout(() => setMessage(null), 3000)
   }
 
   const loadData = useCallback(async () => {
@@ -160,8 +175,9 @@ export default function StyringPage() {
           )
         )
         setSliderDevice(null)
+        if (confirmedTimeoutRef.current) clearTimeout(confirmedTimeoutRef.current)
         setConfirmedDevice(deviceUrl)
-        setTimeout(() => setConfirmedDevice(null), 2000)
+        confirmedTimeoutRef.current = setTimeout(() => setConfirmedDevice(null), 2000)
       } else {
         showMessage('error', data.error || 'Kommando feilet')
       }
@@ -173,6 +189,18 @@ export default function StyringPage() {
     }
   }
 
+  // Debounced slider submit - prevents rapid API calls when user adjusts quickly
+  const handleSliderSubmit = useCallback((
+    accountId: string,
+    deviceUrl: string,
+    position: number
+  ) => {
+    if (sliderDebounceRef.current) clearTimeout(sliderDebounceRef.current)
+    sliderDebounceRef.current = setTimeout(() => {
+      setDevicePosition(accountId, deviceUrl, position)
+    }, 150)
+  }, [])
+
   const controlGroup = async (
     groupId: string,
     command: 'open' | 'close' | 'stop'
@@ -182,7 +210,13 @@ export default function StyringPage() {
 
     setControllingGroup(groupId)
 
-    const groupDevices = devices.filter(d => group.device_ids.includes(d.id))
+    // Only control available devices
+    const groupDevices = devices.filter(d => group.device_ids.includes(d.id) && d.available)
+    if (groupDevices.length === 0) {
+      setControllingGroup(null)
+      return
+    }
+
     const devicesByAccount = groupDevices.reduce((acc, device) => {
       if (!acc[device.account_id]) {
         acc[device.account_id] = []
@@ -384,12 +418,12 @@ export default function StyringPage() {
                       }}
                       onMouseUp={() => {
                         if (sliderDevice === device.device_url) {
-                          setDevicePosition(device.account_id, device.device_url, sliderPosition)
+                          handleSliderSubmit(device.account_id, device.device_url, sliderPosition)
                         }
                       }}
                       onTouchEnd={() => {
                         if (sliderDevice === device.device_url) {
-                          setDevicePosition(device.account_id, device.device_url, sliderPosition)
+                          handleSliderSubmit(device.account_id, device.device_url, sliderPosition)
                         }
                       }}
                       disabled={controllingDevice === device.device_url}

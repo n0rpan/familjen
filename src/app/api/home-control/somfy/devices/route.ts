@@ -27,24 +27,47 @@ export async function GET(request: NextRequest) {
     const client = await getAuthenticatedClient(accountId)
     const devices = await client.getSupportedDevices()
 
-    // Sync devices to database
+    // Sync devices to database (preserves user customizations: custom_name, favorite, sort_order, is_hidden)
     for (const device of devices) {
-      await supabase
+      // Check if device already exists
+      const { data: existingDevice } = await supabase
         .from('home_control_devices')
-        .upsert({
-          account_id: accountId,
-          device_url: device.deviceUrl,
-          label: device.label,
-          ui_class: device.uiClass,
-          controllable_name: device.controllableName,
-          available: device.available,
-          position: device.position,
-          commands: device.commands,
-          raw_data: device.rawData,
-          updated_at: new Date().toISOString(),
-        }, {
-          onConflict: 'account_id,device_url',
-        })
+        .select('id')
+        .eq('account_id', accountId)
+        .eq('device_url', device.deviceUrl)
+        .single()
+
+      if (existingDevice) {
+        // Update only API-provided fields, preserve user customizations
+        await supabase
+          .from('home_control_devices')
+          .update({
+            label: device.label,
+            ui_class: device.uiClass,
+            controllable_name: device.controllableName,
+            available: device.available,
+            position: device.position,
+            commands: device.commands,
+            raw_data: device.rawData,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existingDevice.id)
+      } else {
+        // Insert new device with defaults
+        await supabase
+          .from('home_control_devices')
+          .insert({
+            account_id: accountId,
+            device_url: device.deviceUrl,
+            label: device.label,
+            ui_class: device.uiClass,
+            controllable_name: device.controllableName,
+            available: device.available,
+            position: device.position,
+            commands: device.commands,
+            raw_data: device.rawData,
+          })
+      }
     }
 
     // Update sync status
