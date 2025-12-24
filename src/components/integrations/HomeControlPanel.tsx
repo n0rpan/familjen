@@ -29,6 +29,12 @@ interface HomeControlGroup {
   device_ids: string[]
 }
 
+interface HomeControlAccount {
+  id: string
+  display_name: string
+  account_email: string | null
+}
+
 interface HomeControlPanelProps {
   compact?: boolean
 }
@@ -79,11 +85,13 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
   const { t } = useLanguage()
   const [devices, setDevices] = useState<HomeControlDevice[]>([])
   const [groups, setGroups] = useState<HomeControlGroup[]>([])
+  const [accounts, setAccounts] = useState<HomeControlAccount[]>([])
   const [loading, setLoading] = useState(true)
 
   // Control state
   const [controllingDevice, setControllingDevice] = useState<string | null>(null)
   const [controllingGroup, setControllingGroup] = useState<string | null>(null)
+  const [controllingAccount, setControllingAccount] = useState<string | null>(null)
   const [activeSlider, setActiveSlider] = useState<string | null>(null)
   const [sliderValue, setSliderValue] = useState(0)
   const [confirmedDevice, setConfirmedDevice] = useState<string | null>(null)
@@ -123,6 +131,13 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
       const { data: accountData } = await supabase.rpc('get_household_home_control_accounts')
 
       if (accountData && accountData.length > 0) {
+        // Store accounts for grouping display
+        setAccounts(accountData.map((a: { id: string; display_name: string; account_email: string | null }) => ({
+          id: a.id,
+          display_name: a.display_name,
+          account_email: a.account_email,
+        })))
+
         const accountIds = accountData.map((a: { id: string }) => a.id)
         const { data: deviceData } = await supabase
           .from('home_control_devices')
@@ -271,6 +286,73 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
     }
   }
 
+  // Control all devices in an account
+  const controlAccount = async (accountId: string, command: 'open' | 'close' | 'stop') => {
+    const accountDevices = devices.filter(d => d.account_id === accountId && d.available)
+    if (accountDevices.length === 0) return
+
+    setControllingAccount(accountId)
+    try {
+      const response = await fetch('/api/home-control/somfy/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountId,
+          devices: accountDevices.map(d => ({ deviceUrl: d.device_url, command })),
+        }),
+      })
+      const data = await response.json()
+
+      if (!data.success) {
+        showError(data.error || t.homeControl.commandFailed)
+      }
+
+      // Update positions for successful controls
+      if (command === 'open' || command === 'close') {
+        const newPosition = command === 'open' ? 0 : 100
+        setDevices(prev =>
+          prev.map(d =>
+            d.account_id === accountId ? { ...d, position: newPosition } : d
+          )
+        )
+      }
+    } catch (err) {
+      console.error('Account control failed:', err)
+      showError(t.homeControl.commandFailed)
+    } finally {
+      setControllingAccount(null)
+    }
+  }
+
+  // Group devices by account
+  const devicesByAccount = useMemo(() => {
+    const grouped: Record<string, HomeControlDevice[]> = {}
+    devices.forEach(device => {
+      if (!grouped[device.account_id]) {
+        grouped[device.account_id] = []
+      }
+      grouped[device.account_id].push(device)
+    })
+    // Sort devices within each account: favorites first, then by label
+    Object.keys(grouped).forEach(accountId => {
+      grouped[accountId].sort((a, b) => {
+        if (a.favorite !== b.favorite) return a.favorite ? -1 : 1
+        return (a.custom_name || a.label).localeCompare(b.custom_name || b.label)
+      })
+    })
+    return grouped
+  }, [devices])
+
+  // Get account display name
+  const getAccountName = (accountId: string) => {
+    const account = accounts.find(a => a.id === accountId)
+    if (!account) return ''
+    if (account.display_name && account.display_name !== account.account_email) {
+      return account.display_name
+    }
+    return account.account_email || account.display_name || ''
+  }
+
   // Handle slider interaction - use ref to avoid stale closure
   const handleSliderChange = (deviceUrl: string, value: number) => {
     setActiveSlider(deviceUrl)
@@ -287,13 +369,6 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
       setDevicePosition(accountId, deviceUrl, sliderValueRef.current)
     }
   }
-
-  // Get visible devices (favorites first)
-  const visibleDevices = useMemo(() => {
-    const favorites = devices.filter(d => d.favorite)
-    const nonFavorites = devices.filter(d => !d.favorite)
-    return [...favorites, ...nonFavorites]
-  }, [devices])
 
   const hasDevices = devices.length > 0 || groups.length > 0
 
@@ -441,144 +516,224 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
         </div>
       )}
 
-      {/* Individual Devices */}
-      <div className={compact ? 'space-y-2' : 'grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}>
-        {visibleDevices.map(device => {
-          const isControlling = controllingDevice === device.device_url
-          const isConfirmed = confirmedDevice === device.device_url
-          const isSliding = activeSlider === device.device_url
-          const currentPosition = isSliding ? sliderValue : (device.position ?? 0)
+      {/* Devices grouped by Account (Location) */}
+      {Object.entries(devicesByAccount).map(([accountId, accountDevices]) => {
+        const isControllingThisAccount = controllingAccount === accountId
+        const accountName = getAccountName(accountId)
 
-          return (
-            <div
-              key={device.id}
-              className="rounded-2xl p-4 transition-all relative"
-              style={{
-                background: 'var(--card)',
-                border: '1px solid var(--border)',
-                boxShadow: isConfirmed ? '0 0 0 2px var(--color-sage)' : 'none',
-              }}
-            >
-              {/* Loading overlay */}
-              {isControlling && (
-                <div className="absolute inset-0 flex items-center justify-center rounded-2xl z-10" style={{ background: 'rgba(var(--card-rgb, 255, 255, 255), 0.7)' }}>
-                  <span className="loading-spinner" style={{ width: 24, height: 24, borderWidth: 3, color: 'var(--color-sky)' }} />
-                </div>
-              )}
-              {/* Device Header */}
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                    style={{ background: 'rgba(126, 182, 196, 0.2)', color: 'var(--color-sky)' }}
-                  >
-                    {getDeviceIcon(device.ui_class)}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-semibold text-sm truncate" style={{ color: 'var(--foreground)' }}>
-                      {device.custom_name || device.label}
-                    </p>
-                    <p className="text-xs" style={{ color: isConfirmed ? 'var(--color-sage)' : 'var(--muted)' }}>
-                      {isConfirmed && '✓ '}
-                      {currentPosition === 0 ? t.homeControl.open : currentPosition === 100 ? t.homeControl.closed : `${currentPosition}%`}
-                    </p>
-                  </div>
-                </div>
-                {device.favorite && (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--color-honey)" stroke="var(--color-honey)" strokeWidth="2" aria-label={t.homeControl.favoritePosition}>
-                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+        return (
+          <div
+            key={accountId}
+            className="rounded-2xl p-4"
+            style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+          >
+            {/* Account Header with Quick Controls */}
+            <div className="flex items-center gap-3 mb-3">
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                style={{ background: 'rgba(213, 186, 124, 0.2)' }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2">
+                  <rect x="3" y="3" width="7" height="7"/>
+                  <rect x="14" y="3" width="7" height="7"/>
+                  <rect x="14" y="14" width="7" height="7"/>
+                  <rect x="3" y="14" width="7" height="7"/>
+                </svg>
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold" style={{ color: 'var(--foreground)' }}>
+                  {accountName}
+                </p>
+                <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                  {t.homeControl.deviceCount.replace('{count}', String(accountDevices.length))}
+                </p>
+              </div>
+            </div>
+
+            {/* Account Quick Control Buttons */}
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              <button
+                onClick={() => controlAccount(accountId, 'open')}
+                disabled={isControllingThisAccount}
+                className="control-btn control-btn-open"
+                aria-label={`${t.homeControl.allUp} ${accountName}`}
+              >
+                {isControllingThisAccount ? (
+                  <span className="loading-spinner" />
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <polyline points="18 15 12 9 6 15"/>
                   </svg>
                 )}
-              </div>
-
-              {device.available ? (
-                <>
-                  {/* Quick Action Buttons - 2x2 on mobile, 4 cols on larger */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
-                    <button
-                      onClick={() => controlDevice(device.account_id, device.device_url, 'open')}
-                      disabled={isControlling}
-                      className="control-btn control-btn-open"
-                      aria-label={`${t.homeControl.openAction} ${device.custom_name || device.label}`}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <polyline points="18 15 12 9 6 15"/>
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => controlDevice(device.account_id, device.device_url, 'stop')}
-                      disabled={isControlling}
-                      className="control-btn control-btn-stop"
-                      aria-label={`${t.homeControl.stop} ${device.custom_name || device.label}`}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <rect x="6" y="6" width="12" height="12"/>
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => controlDevice(device.account_id, device.device_url, 'close')}
-                      disabled={isControlling}
-                      className="control-btn control-btn-close"
-                      aria-label={`${t.homeControl.closeAction} ${device.custom_name || device.label}`}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <polyline points="6 9 12 15 18 9"/>
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => controlDevice(device.account_id, device.device_url, 'my')}
-                      disabled={isControlling}
-                      className="control-btn control-btn-fav"
-                      aria-label={`${t.homeControl.favoritePosition} ${device.custom_name || device.label}`}
-                      title={t.homeControl.favoritePosition}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1">
-                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-                      </svg>
-                    </button>
-                  </div>
-
-                  {/* Position Slider with improved touch area */}
-                  <div className="slider-container">
-                    <div className="slider-track">
-                      <div
-                        className="slider-fill"
-                        style={{ width: `${currentPosition}%` }}
-                      />
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={currentPosition}
-                      onChange={e => handleSliderChange(device.device_url, Number(e.target.value))}
-                      onMouseUp={() => handleSliderEnd(device.account_id, device.device_url)}
-                      onTouchEnd={() => handleSliderEnd(device.account_id, device.device_url)}
-                      disabled={isControlling}
-                      className="slider-input"
-                      aria-label={`${t.homeControl.position} ${device.custom_name || device.label}`}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={currentPosition}
-                      aria-valuetext={currentPosition === 0 ? t.homeControl.open : currentPosition === 100 ? t.homeControl.closed : `${currentPosition}%`}
-                    />
-                  </div>
-
-                  {/* Position labels - semantic */}
-                  <div className="flex justify-between text-xs mt-1" style={{ color: 'var(--muted)' }}>
-                    <span>{t.homeControl.open}</span>
-                    <span>{t.homeControl.closed}</span>
-                  </div>
-                </>
-              ) : (
-                <p className="text-sm py-2" style={{ color: 'var(--color-coral)' }}>
-                  {t.homeControl.unavailable}
-                </p>
-              )}
+                <span>{t.homeControl.allUp}</span>
+              </button>
+              <button
+                onClick={() => controlAccount(accountId, 'stop')}
+                disabled={isControllingThisAccount}
+                className="control-btn control-btn-stop"
+                aria-label={`${t.homeControl.stop} ${accountName}`}
+              >
+                {isControllingThisAccount ? (
+                  <span className="loading-spinner" />
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <rect x="6" y="6" width="12" height="12"/>
+                  </svg>
+                )}
+                <span>{t.homeControl.stop}</span>
+              </button>
+              <button
+                onClick={() => controlAccount(accountId, 'close')}
+                disabled={isControllingThisAccount}
+                className="control-btn control-btn-close"
+                aria-label={`${t.homeControl.allDown} ${accountName}`}
+              >
+                {isControllingThisAccount ? (
+                  <span className="loading-spinner" />
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <polyline points="6 9 12 15 18 9"/>
+                  </svg>
+                )}
+                <span>{t.homeControl.allDown}</span>
+              </button>
             </div>
-          )
-        })}
-      </div>
+
+            {/* Individual Devices in this Account */}
+            <div className={compact ? 'space-y-2' : 'grid gap-3 grid-cols-1 md:grid-cols-2'}>
+              {accountDevices.map(device => {
+                const isControlling = controllingDevice === device.device_url
+                const isConfirmed = confirmedDevice === device.device_url
+                const isSliding = activeSlider === device.device_url
+                const currentPosition = isSliding ? sliderValue : (device.position ?? 0)
+
+                return (
+                  <div
+                    key={device.id}
+                    className="rounded-xl p-3 transition-all relative"
+                    style={{
+                      background: 'var(--background)',
+                      border: '1px solid var(--border)',
+                      boxShadow: isConfirmed ? '0 0 0 2px var(--color-sage)' : 'none',
+                    }}
+                  >
+                    {/* Loading overlay */}
+                    {isControlling && (
+                      <div className="absolute inset-0 flex items-center justify-center rounded-xl z-10" style={{ background: 'rgba(var(--card-rgb, 255, 255, 255), 0.7)' }}>
+                        <span className="loading-spinner" style={{ width: 24, height: 24, borderWidth: 3, color: 'var(--color-sky)' }} />
+                      </div>
+                    )}
+                    {/* Device Header */}
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <div
+                          className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                          style={{ background: 'rgba(126, 182, 196, 0.2)', color: 'var(--color-sky)' }}
+                        >
+                          {getDeviceIcon(device.ui_class)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm truncate" style={{ color: 'var(--foreground)' }}>
+                            {device.custom_name || device.label}
+                          </p>
+                          <p className="text-xs" style={{ color: isConfirmed ? 'var(--color-sage)' : 'var(--muted)' }}>
+                            {isConfirmed && '✓ '}
+                            {currentPosition === 0 ? t.homeControl.open : currentPosition === 100 ? t.homeControl.closed : `${currentPosition}%`}
+                          </p>
+                        </div>
+                      </div>
+                      {device.favorite && (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--color-honey)" stroke="var(--color-honey)" strokeWidth="2" aria-label={t.homeControl.favoritePosition}>
+                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                        </svg>
+                      )}
+                    </div>
+
+                    {device.available ? (
+                      <>
+                        {/* Quick Action Buttons */}
+                        <div className="grid grid-cols-4 gap-1.5 mb-3">
+                          <button
+                            onClick={() => controlDevice(device.account_id, device.device_url, 'open')}
+                            disabled={isControlling}
+                            className="control-btn control-btn-open py-2"
+                            aria-label={`${t.homeControl.openAction} ${device.custom_name || device.label}`}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                              <polyline points="18 15 12 9 6 15"/>
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => controlDevice(device.account_id, device.device_url, 'stop')}
+                            disabled={isControlling}
+                            className="control-btn control-btn-stop py-2"
+                            aria-label={`${t.homeControl.stop} ${device.custom_name || device.label}`}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                              <rect x="6" y="6" width="12" height="12"/>
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => controlDevice(device.account_id, device.device_url, 'close')}
+                            disabled={isControlling}
+                            className="control-btn control-btn-close py-2"
+                            aria-label={`${t.homeControl.closeAction} ${device.custom_name || device.label}`}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                              <polyline points="6 9 12 15 18 9"/>
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => controlDevice(device.account_id, device.device_url, 'my')}
+                            disabled={isControlling}
+                            className="control-btn control-btn-fav py-2"
+                            aria-label={`${t.homeControl.favoritePosition} ${device.custom_name || device.label}`}
+                            title={t.homeControl.favoritePosition}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1">
+                              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                            </svg>
+                          </button>
+                        </div>
+
+                        {/* Position Slider */}
+                        <div className="slider-container">
+                          <div className="slider-track">
+                            <div
+                              className="slider-fill"
+                              style={{ width: `${currentPosition}%` }}
+                            />
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={currentPosition}
+                            onChange={e => handleSliderChange(device.device_url, Number(e.target.value))}
+                            onMouseUp={() => handleSliderEnd(device.account_id, device.device_url)}
+                            onTouchEnd={() => handleSliderEnd(device.account_id, device.device_url)}
+                            disabled={isControlling}
+                            className="slider-input"
+                            aria-label={`${t.homeControl.position} ${device.custom_name || device.label}`}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-valuenow={currentPosition}
+                            aria-valuetext={currentPosition === 0 ? t.homeControl.open : currentPosition === 100 ? t.homeControl.closed : `${currentPosition}%`}
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-xs py-1" style={{ color: 'var(--color-coral)' }}>
+                        {t.homeControl.unavailable}
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
 
       {/* Settings link */}
       {!compact && (

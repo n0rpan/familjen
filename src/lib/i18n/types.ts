@@ -882,6 +882,13 @@ export interface TranslationStrings {
     update: string
     create: string
     cancel: string
+    // Account location naming
+    locationName: string
+    locationNamePlaceholder: string
+    locationNameUpdated: string
+    editLocation: string
+    accounts: string
+    noGroupsOrDevices: string
   }
 
   // Push Notifications
