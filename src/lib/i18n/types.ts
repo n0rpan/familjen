@@ -902,6 +902,8 @@ export interface TranslationStrings {
     outdoorTemp: string
     powerOn: string
     powerOff: string
+    offline: string
+    stateUnknown: string
     decreaseTemp: string
     increaseTemp: string
     serviceType: string

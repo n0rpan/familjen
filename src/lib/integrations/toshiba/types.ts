@@ -39,7 +39,7 @@ export interface ToshibaACMapping {
   ACModelId: string
   MeritFeature: string
   AdapterId: string
-  ACStateData: ToshibaACState
+  ACStateData?: ToshibaACState | null // May be missing if device is offline
   Timezone: string
   FirmwareVersion: string
   IsEnergyConsumptionModel: boolean
@@ -176,15 +176,15 @@ export interface MappedToshibaDevice {
   model: string
   firmwareVersion: string
   timezone: string
-  // Current state
-  powerState: ToshibaPowerState
-  operationMode: ToshibaOperationMode
-  targetTemperature: number
+  // Current state (null if device is offline/unknown)
+  powerState: ToshibaPowerState | null
+  operationMode: ToshibaOperationMode | null
+  targetTemperature: number | null
   currentTemperature: number | null
   outdoorTemperature: number | null
-  fanSpeed: ToshibaFanSpeed
-  swingMode: ToshibaSwingMode
-  pureState: ToshibaPureState
+  fanSpeed: ToshibaFanSpeed | null
+  swingMode: ToshibaSwingMode | null
+  pureState: ToshibaPureState | null
   // Features
   hasEnergyConsumption: boolean
   hasAutoClean: boolean
