@@ -28,20 +28,26 @@ export async function GET(request: NextRequest) {
     const devices = await client.getSupportedDevices()
 
     // Sync devices to database (preserves user customizations: custom_name, favorite, sort_order, is_hidden)
-    for (const device of devices) {
-      // Check if device already exists
-      const { data: existingDevice } = await supabase
-        .from('home_control_devices')
-        .select('id')
-        .eq('account_id', accountId)
-        .eq('device_url', device.deviceUrl)
-        .single()
+    // Batch approach: fetch existing devices once, then batch updates and inserts
+    const { data: existingDevices } = await supabase
+      .from('home_control_devices')
+      .select('id, device_url')
+      .eq('account_id', accountId)
 
-      if (existingDevice) {
-        // Update only API-provided fields, preserve user customizations
-        await supabase
-          .from('home_control_devices')
-          .update({
+    const existingByUrl = new Map(
+      (existingDevices || []).map(d => [d.device_url, d.id])
+    )
+
+    const toUpdate: Array<{ id: string; data: Record<string, unknown> }> = []
+    const toInsert: Array<Record<string, unknown>> = []
+    const now = new Date().toISOString()
+
+    for (const device of devices) {
+      const existingId = existingByUrl.get(device.deviceUrl)
+      if (existingId) {
+        toUpdate.push({
+          id: existingId,
+          data: {
             label: device.label,
             ui_class: device.uiClass,
             controllable_name: device.controllableName,
@@ -49,25 +55,36 @@ export async function GET(request: NextRequest) {
             position: device.position,
             commands: device.commands,
             raw_data: device.rawData,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', existingDevice.id)
+            updated_at: now,
+          },
+        })
       } else {
-        // Insert new device with defaults
-        await supabase
-          .from('home_control_devices')
-          .insert({
-            account_id: accountId,
-            device_url: device.deviceUrl,
-            label: device.label,
-            ui_class: device.uiClass,
-            controllable_name: device.controllableName,
-            available: device.available,
-            position: device.position,
-            commands: device.commands,
-            raw_data: device.rawData,
-          })
+        toInsert.push({
+          account_id: accountId,
+          device_url: device.deviceUrl,
+          label: device.label,
+          ui_class: device.uiClass,
+          controllable_name: device.controllableName,
+          available: device.available,
+          position: device.position,
+          commands: device.commands,
+          raw_data: device.rawData,
+        })
       }
+    }
+
+    // Batch update existing devices (parallel updates)
+    if (toUpdate.length > 0) {
+      await Promise.all(
+        toUpdate.map(({ id, data }) =>
+          supabase.from('home_control_devices').update(data).eq('id', id)
+        )
+      )
+    }
+
+    // Batch insert new devices (single insert)
+    if (toInsert.length > 0) {
+      await supabase.from('home_control_devices').insert(toInsert)
     }
 
     // Update sync status

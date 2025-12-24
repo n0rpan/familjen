@@ -44,10 +44,11 @@ export default function StyringPage() {
   const [confirmedDevice, setConfirmedDevice] = useState<string | null>(null)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
-  // Refs for timeout cleanup
+  // Refs for timeout cleanup and stable function references
   const messageTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const confirmedTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const sliderDebounceRef = useRef<NodeJS.Timeout | null>(null)
+  const setDevicePositionRef = useRef<((accountId: string, deviceUrl: string, position: number) => Promise<void>) | null>(null)
 
   const supabase = useMemo(() => createClient(), [])
 
@@ -189,7 +190,11 @@ export default function StyringPage() {
     }
   }
 
+  // Keep ref updated with latest setDevicePosition
+  setDevicePositionRef.current = setDevicePosition
+
   // Debounced slider submit - prevents rapid API calls when user adjusts quickly
+  // Uses ref to avoid stale closure issues with setDevicePosition
   const handleSliderSubmit = useCallback((
     accountId: string,
     deviceUrl: string,
@@ -197,7 +202,7 @@ export default function StyringPage() {
   ) => {
     if (sliderDebounceRef.current) clearTimeout(sliderDebounceRef.current)
     sliderDebounceRef.current = setTimeout(() => {
-      setDevicePosition(accountId, deviceUrl, position)
+      setDevicePositionRef.current?.(accountId, deviceUrl, position)
     }, 150)
   }, [])
 
@@ -229,7 +234,7 @@ export default function StyringPage() {
     }, {} as Record<string, { deviceUrl: string; command: string }[]>)
 
     try {
-      await Promise.all(
+      const results = await Promise.allSettled(
         Object.entries(devicesByAccount).map(async ([accountId, devs]) => {
           const response = await fetch('/api/home-control/somfy/control', {
             method: 'POST',
@@ -241,8 +246,22 @@ export default function StyringPage() {
           if (!data.success) {
             throw new Error(data.error || 'Kommando feilet')
           }
+          return devs.length // Return device count for success tracking
         })
       )
+
+      // Check for partial failures
+      const failures = results.filter(r => r.status === 'rejected')
+      const successes = results.filter(r => r.status === 'fulfilled')
+
+      if (failures.length > 0 && successes.length > 0) {
+        // Partial success
+        showMessage('error', `${failures.length} av ${results.length} forespørsler feilet`)
+      } else if (failures.length > 0) {
+        // All failed
+        showMessage('error', 'Kommando feilet')
+      }
+      // If all succeeded, no message needed
     } catch (err) {
       console.error('Group control failed:', err)
       showMessage('error', 'Kommando feilet')

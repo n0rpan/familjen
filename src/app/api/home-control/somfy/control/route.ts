@@ -208,6 +208,25 @@ async function handleMultiDevice(body: MultiControlRequest, supabase: SupabaseCl
     )
   }
 
+  // Validate position for setPosition commands
+  const validCommands = ['open', 'close', 'stop', 'my', 'setPosition']
+  for (const device of devices) {
+    if (!validCommands.includes(device.command)) {
+      return NextResponse.json(
+        { success: false, error: `Invalid command: ${device.command}` },
+        { status: 400 }
+      )
+    }
+    if (device.command === 'setPosition') {
+      if (device.position === undefined || device.position < 0 || device.position > 100) {
+        return NextResponse.json(
+          { success: false, error: 'Position must be between 0 and 100 for setPosition command' },
+          { status: 400 }
+        )
+      }
+    }
+  }
+
   // SECURITY: Verify all devices belong to this account
   const deviceUrls = devices.map(d => d.deviceUrl)
   const { data: validDevices, error: deviceError } = await supabase
@@ -256,7 +275,7 @@ async function handleMultiDevice(body: MultiControlRequest, supabase: SupabaseCl
         break
       case 'setPosition':
         commandName = 'setClosure'
-        parameters = [device.position ?? 50]
+        parameters = [device.position!] // Already validated above
         break
       default:
         commandName = device.command

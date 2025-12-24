@@ -122,8 +122,6 @@ export class SomfyClient {
         signal: controller.signal,
       })
 
-      clearTimeout(timeoutId)
-
       if (!response.ok) {
         const errorText = await response.text().catch(() => 'Unknown error')
         throw new SomfyAuthError('Token refresh failed', errorText)
@@ -137,12 +135,13 @@ export class SomfyClient {
 
       this.log('Token refreshed successfully')
     } catch (error) {
-      clearTimeout(timeoutId)
       if (error instanceof SomfyError) throw error
       if (error instanceof Error && error.name === 'AbortError') {
         throw new SomfyError('Token refresh timed out')
       }
       throw new SomfyError(`Token refresh failed: ${error}`)
+    } finally {
+      clearTimeout(timeoutId)
     }
   }
 
@@ -418,8 +417,6 @@ export class SomfyClient {
         signal: controller.signal,
       })
 
-      clearTimeout(timeoutId)
-
       if (!response.ok) {
         const errorText = await response.text().catch(() => 'Unknown error')
 
@@ -436,12 +433,13 @@ export class SomfyClient {
 
       return response.json() as Promise<OverkizTokenResponse>
     } catch (error) {
-      clearTimeout(timeoutId)
       if (error instanceof SomfyError) throw error
       if (error instanceof Error && error.name === 'AbortError') {
         throw new SomfyError('OAuth request timed out')
       }
       throw new SomfyError(`OAuth request failed: ${error}`)
+    } finally {
+      clearTimeout(timeoutId)
     }
   }
 
@@ -481,8 +479,6 @@ export class SomfyClient {
 
       const response = await fetch(url, options)
 
-      clearTimeout(timeoutId)
-
       if (!response.ok) {
         const errorText = await response.text().catch(() => 'Unknown error')
 
@@ -506,12 +502,13 @@ export class SomfyClient {
 
       return JSON.parse(text) as T
     } catch (error) {
-      clearTimeout(timeoutId)
       if (error instanceof SomfyError) throw error
       if (error instanceof Error && error.name === 'AbortError') {
         throw new SomfyError('Request timed out')
       }
       throw new SomfyError(`Request failed: ${error}`)
+    } finally {
+      clearTimeout(timeoutId)
     }
   }
 
