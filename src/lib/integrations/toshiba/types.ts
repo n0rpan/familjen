@@ -33,6 +33,52 @@ export interface ToshibaLoginResponse {
 // AC Device / Mapping
 // ============================================================================
 
+/**
+ * Raw API response for device groups.
+ * The Toshiba API returns groups containing ACList arrays.
+ */
+export interface ToshibaDeviceGroup {
+  GroupId: string
+  GroupName: string
+  ConsumerId: string
+  TimeZone: string
+  ACList: ToshibaACDevice[]
+}
+
+/**
+ * Raw AC device from API.
+ * ACStateData is a hex-encoded string, not a JSON object.
+ */
+export interface ToshibaACDevice {
+  Id: string
+  DeviceUniqueId: string
+  Name: string
+  ACModelId: string
+  Description: string
+  CreatedDate: string
+  ACStateData: string | null // Hex-encoded state string (e.g., "304315313164001015fafe0b000010ff000000")
+  FirmwareUpgradeStatus: string
+  MeritFeature: string
+  AdapterType: string
+  FirmwareVersion: string
+  FirmwareCode: string
+  ModeValues: Array<{ Mode: string; Temp: string; FanSpeed: string }>
+  FunctionSettingsSupport: {
+    PowerSelSupport: boolean
+    PureSupport: boolean
+    AutoRebootSupport: boolean
+    FilterCleaningSupport: boolean
+    DeforstSupport: boolean
+    SelfCalHeatQuantitySupport: boolean
+    CalHeatQuantityOnColudSupport: boolean
+    FixGrillSupport: boolean
+    NumberProgramSupport: number
+  }
+}
+
+/**
+ * @deprecated Use ToshibaACDevice instead
+ */
 export interface ToshibaACMapping {
   // The API returns ACId, not Id
   ACId: string
