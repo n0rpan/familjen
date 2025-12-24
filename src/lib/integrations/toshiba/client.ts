@@ -52,14 +52,16 @@ const MODE_MAP: Record<string, ToshibaOperationMode> = {
 }
 
 // Fan speed code mappings
+// Note: 50/A0 = Auto, 31 = Quiet (user confirmed)
 const FAN_MAP: Record<string, ToshibaFanSpeed> = {
-  '31': 'AUTO',
-  '32': 'QUIET',
-  '33': 'LOW',
-  '34': 'MEDIUM_LOW',
-  '35': 'MEDIUM',
-  '36': 'MEDIUM_HIGH',
-  '37': 'HIGH',
+  '50': 'AUTO',   // Also seen as 'A0' on some models
+  'a0': 'AUTO',
+  '31': 'QUIET',  // Silent mode
+  '32': 'LOW',
+  '33': 'MEDIUM_LOW',
+  '34': 'MEDIUM',
+  '35': 'MEDIUM_HIGH',
+  '36': 'HIGH',
 }
 
 // Swing mode code mappings
@@ -68,6 +70,42 @@ const SWING_MAP: Record<string, ToshibaSwingMode> = {
   '41': 'ON',
   '42': 'VERTICAL',
   '43': 'HORIZONTAL',
+}
+
+// Reverse mappings for encoding control commands
+const POWER_ENCODE: Record<ToshibaPowerState, string> = {
+  'ON': '30',
+  'OFF': '31',
+}
+
+const MODE_ENCODE: Record<ToshibaOperationMode, string> = {
+  'AUTO': '41',
+  'COOL': '42',
+  'HEAT': '43',
+  'DRY': '44',
+  'FAN': '45',
+}
+
+const FAN_ENCODE: Record<ToshibaFanSpeed, string> = {
+  'AUTO': '50',
+  'QUIET': '31',
+  'LOW': '32',
+  'MEDIUM_LOW': '33',
+  'MEDIUM': '34',
+  'MEDIUM_HIGH': '35',
+  'HIGH': '36',
+}
+
+const SWING_ENCODE: Record<ToshibaSwingMode, string> = {
+  'OFF': '31',
+  'ON': '41',
+  'VERTICAL': '42',
+  'HORIZONTAL': '43',
+}
+
+const PURE_ENCODE: Record<'ON' | 'OFF', string> = {
+  'ON': '10',
+  'OFF': '00',
 }
 
 export class ToshibaClient {
@@ -466,11 +504,45 @@ export class ToshibaClient {
   // ==========================================================================
 
   /**
+   * Encode state values to API format (hex codes).
+   * The Toshiba API expects encoded values, not descriptive strings.
+   */
+  private encodeStateForAPI(state: Partial<ToshibaACState>): Record<string, string | number> {
+    const encoded: Record<string, string | number> = {}
+
+    if (state.ACPowerState !== undefined) {
+      encoded.ACPowerState = POWER_ENCODE[state.ACPowerState]
+    }
+    if (state.ACOperationMode !== undefined) {
+      encoded.ACOperationMode = MODE_ENCODE[state.ACOperationMode]
+    }
+    if (state.ACSetpointTemperature !== undefined) {
+      // Temperature is sent as hex string of the value
+      encoded.ACSetpointTemperature = state.ACSetpointTemperature.toString(16).padStart(2, '0')
+    }
+    if (state.ACFanSpeed !== undefined) {
+      encoded.ACFanSpeed = FAN_ENCODE[state.ACFanSpeed]
+    }
+    if (state.ACSwingMode !== undefined) {
+      encoded.ACSwingMode = SWING_ENCODE[state.ACSwingMode]
+    }
+    if (state.ACPureState !== undefined) {
+      encoded.ACPureState = PURE_ENCODE[state.ACPureState as 'ON' | 'OFF']
+    }
+
+    return encoded
+  }
+
+  /**
    * Set AC state via API.
    */
   private async setACState(acId: string, state: Partial<ToshibaACState>): Promise<void> {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), this.timeout)
+
+    // Encode state values to API format
+    const encodedState = this.encodeStateForAPI(state)
+    this.log('Sending encoded state:', encodedState)
 
     try {
       const response = await fetch(`${TOSHIBA_API.BASE_URL}${TOSHIBA_ENDPOINTS.SET_STATE}`, {
@@ -481,7 +553,7 @@ export class ToshibaClient {
         },
         body: JSON.stringify({
           ACId: acId,
-          ...state,
+          ...encodedState,
         }),
         signal: controller.signal,
       })
