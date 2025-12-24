@@ -728,4 +728,111 @@ describe('/api/openrouter/parse-action', () => {
       }
     }, 60000)
   })
+
+  describe('Image Analysis', () => {
+    // Small test image - a simple colored rectangle encoded as base64 JPEG
+    const TEST_IMAGE = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMCwsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wAARCAAyADIDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD9U6KKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD/9k='
+
+    it('analyzes image and returns action', async () => {
+      const request = createTestRequest('http://localhost:3000/api/openrouter/parse-action', {
+        method: 'POST',
+        body: {
+          input: '',
+          image: TEST_IMAGE,
+          context: defaultContext,
+        },
+      })
+
+      const response = await POST(request)
+      const data = await parseResponse<ParseActionResponse>(response)
+
+      expect(response.status).toBe(200)
+      expect('mode' in data && data.mode === 'action').toBe(true)
+      if ('actions' in data) {
+        // AI should return some interpretation of the image
+        expect(data.actions).toBeDefined()
+      }
+    }, 60000)
+
+    it('uses text instruction to guide image interpretation', async () => {
+      // First, send image without text
+      const requestWithoutText = createTestRequest('http://localhost:3000/api/openrouter/parse-action', {
+        method: 'POST',
+        body: {
+          input: '',
+          image: TEST_IMAGE,
+          context: defaultContext,
+        },
+      })
+
+      const responseWithoutText = await POST(requestWithoutText)
+      const dataWithoutText = await parseResponse<ParseActionResponse>(responseWithoutText)
+
+      // Then, send same image WITH text instruction
+      const requestWithText = createTestRequest('http://localhost:3000/api/openrouter/parse-action', {
+        method: 'POST',
+        body: {
+          input: 'dette er en gave til Emma',
+          image: TEST_IMAGE,
+          context: defaultContext,
+        },
+      })
+
+      const responseWithText = await POST(requestWithText)
+      const dataWithText = await parseResponse<ParseActionResponse>(responseWithText)
+
+      expect(responseWithText.status).toBe(200)
+
+      // With the text instruction, AI should interpret as wishlist item
+      if ('actions' in dataWithText && dataWithText.actions.length > 0) {
+        const action = dataWithText.actions[0]
+        // The text "dette er en gave til Emma" should guide interpretation toward wishlist
+        expect(action.type).toBe('wishlist_item')
+      }
+    }, 120000)
+
+    it('text instruction overrides automatic image interpretation', async () => {
+      const request = createTestRequest('http://localhost:3000/api/openrouter/parse-action', {
+        method: 'POST',
+        body: {
+          input: 'legg til på handlelista',
+          image: TEST_IMAGE,
+          context: defaultContext,
+        },
+      })
+
+      const response = await POST(request)
+      const data = await parseResponse<ParseActionResponse>(response)
+
+      expect(response.status).toBe(200)
+
+      if ('actions' in data && data.actions.length > 0) {
+        const action = data.actions[0]
+        // Text says "handlelista" so should be shopping_item
+        expect(action.type).toBe('shopping_item')
+      }
+    }, 60000)
+
+    it('interprets meal instruction with image', async () => {
+      const request = createTestRequest('http://localhost:3000/api/openrouter/parse-action', {
+        method: 'POST',
+        body: {
+          input: 'middag på fredag',
+          image: TEST_IMAGE,
+          context: defaultContext,
+        },
+      })
+
+      const response = await POST(request)
+      const data = await parseResponse<ParseActionResponse>(response)
+
+      expect(response.status).toBe(200)
+
+      if ('actions' in data && data.actions.length > 0) {
+        const action = data.actions[0]
+        // Text says "middag" so should be meal
+        expect(action.type).toBe('meal')
+      }
+    }, 60000)
+  })
 })
