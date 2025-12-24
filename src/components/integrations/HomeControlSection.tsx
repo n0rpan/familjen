@@ -732,134 +732,90 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
 
           {/* Devices for this account */}
           {devices.filter(d => d.account_id === account.id).length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+            <div className="space-y-3 mt-4">
               {devices
                 .filter(d => d.account_id === account.id)
                 .map(device => (
                   <div
                     key={device.id}
-                    className="rounded-lg p-3"
+                    className="rounded-xl p-4"
                     style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
                   >
-                    <div className="flex items-center justify-between mb-2">
+                    {/* Header: Name + Favorite */}
+                    <div className="flex items-start justify-between mb-1">
                       <div>
-                        <p className="font-medium text-sm" style={{ color: 'var(--foreground)' }}>
+                        <p className="font-semibold" style={{ color: 'var(--foreground)' }}>
                           {device.custom_name || device.label}
                         </p>
-                        <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                          {UI_CLASS_LABELS[device.ui_class] || device.ui_class}
-                          {device.position !== null && ` • ${device.position}%`}
+                        <p className="text-sm" style={{ color: 'var(--color-sage)' }}>
+                          {device.position ?? 0} %
                         </p>
                       </div>
-                      {!device.available && (
-                        <span
-                          className="text-xs px-2 py-0.5 rounded"
-                          style={{ background: 'rgba(232, 120, 109, 0.15)', color: 'var(--color-coral)' }}
+                      {device.available && (
+                        <button
+                          onClick={() => controlDevice(account.id, device.device_url, 'my')}
+                          disabled={controllingDevice === device.device_url}
+                          className="p-1"
+                          title="Favorittposisjon"
                         >
-                          Ikke tilgjengelig
-                        </span>
+                          <svg
+                            width="20"
+                            height="20"
+                            viewBox="0 0 24 24"
+                            fill={device.favorite ? 'var(--color-honey)' : 'none'}
+                            stroke="var(--color-honey)"
+                            strokeWidth="2"
+                          >
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                          </svg>
+                        </button>
                       )}
                     </div>
 
-                    {device.available && (
-                      <div className="space-y-2">
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => controlDevice(account.id, device.device_url, 'open')}
-                            disabled={controllingDevice === device.device_url}
-                            className="flex-1 btn btn-secondary text-xs py-1.5"
-                          >
-                            Opp
-                          </button>
-                          <button
-                            onClick={() => controlDevice(account.id, device.device_url, 'stop')}
-                            disabled={controllingDevice === device.device_url}
-                            className="flex-1 btn btn-secondary text-xs py-1.5"
-                          >
-                            Stopp
-                          </button>
-                          <button
-                            onClick={() => controlDevice(account.id, device.device_url, 'close')}
-                            disabled={controllingDevice === device.device_url}
-                            className="flex-1 btn btn-secondary text-xs py-1.5"
-                          >
-                            Ned
-                          </button>
-                          <button
-                            onClick={() => controlDevice(account.id, device.device_url, 'my')}
-                            disabled={controllingDevice === device.device_url}
-                            className="btn btn-secondary text-xs py-1.5"
-                            title="Favorittposisjon"
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => {
+                    {device.available ? (
+                      <div className="space-y-3">
+                        {/* Slider */}
+                        <div className="pt-2">
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={sliderDevice === device.device_url ? sliderPosition : (device.position ?? 0)}
+                            onChange={e => {
                               setSliderDevice(device.device_url)
-                              setSliderPosition(device.position ?? 50)
+                              setSliderPosition(Number(e.target.value))
+                            }}
+                            onMouseUp={() => {
+                              if (sliderDevice === device.device_url) {
+                                setDevicePosition(account.id, device.device_url, sliderPosition)
+                              }
+                            }}
+                            onTouchEnd={() => {
+                              if (sliderDevice === device.device_url) {
+                                setDevicePosition(account.id, device.device_url, sliderPosition)
+                              }
                             }}
                             disabled={controllingDevice === device.device_url}
-                            className="btn btn-secondary text-xs py-1.5"
-                            title="Velg posisjon"
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <line x1="4" y1="21" x2="4" y2="14"/>
-                              <line x1="4" y1="10" x2="4" y2="3"/>
-                              <line x1="12" y1="21" x2="12" y2="12"/>
-                              <line x1="12" y1="8" x2="12" y2="3"/>
-                              <line x1="20" y1="21" x2="20" y2="16"/>
-                              <line x1="20" y1="12" x2="20" y2="3"/>
-                              <line x1="1" y1="14" x2="7" y2="14"/>
-                              <line x1="9" y1="8" x2="15" y2="8"/>
-                              <line x1="17" y1="16" x2="23" y2="16"/>
-                            </svg>
-                          </button>
+                            className="w-full h-2 rounded-full appearance-none cursor-pointer"
+                            style={{
+                              background: `linear-gradient(to right, var(--color-sky) 0%, var(--color-sky) ${sliderDevice === device.device_url ? sliderPosition : (device.position ?? 0)}%, var(--border) ${sliderDevice === device.device_url ? sliderPosition : (device.position ?? 0)}%, var(--border) 100%)`,
+                            }}
+                          />
                         </div>
 
-                        {/* Position slider */}
-                        {sliderDevice === device.device_url && (
-                          <div
-                            className="p-2 rounded-lg"
-                            style={{ background: 'var(--background)' }}
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs" style={{ color: 'var(--muted)' }}>0%</span>
-                              <input
-                                type="range"
-                                min="0"
-                                max="100"
-                                value={sliderPosition}
-                                onChange={e => setSliderPosition(Number(e.target.value))}
-                                className="flex-1 h-2 rounded-lg appearance-none cursor-pointer"
-                                style={{ background: 'var(--border)' }}
-                              />
-                              <span className="text-xs" style={{ color: 'var(--muted)' }}>100%</span>
-                            </div>
-                            <div className="flex items-center justify-between mt-2">
-                              <span className="text-xs font-medium" style={{ color: 'var(--foreground)' }}>
-                                {sliderPosition}%
-                              </span>
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => setSliderDevice(null)}
-                                  className="btn btn-secondary text-xs py-1 px-2"
-                                >
-                                  Avbryt
-                                </button>
-                                <button
-                                  onClick={() => setDevicePosition(account.id, device.device_url, sliderPosition)}
-                                  disabled={controllingDevice === device.device_url}
-                                  className="btn btn-primary text-xs py-1 px-2"
-                                >
-                                  {controllingDevice === device.device_url ? 'Setter...' : 'Sett'}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        )}
+                        {/* Stop button */}
+                        <button
+                          onClick={() => controlDevice(account.id, device.device_url, 'stop')}
+                          disabled={controllingDevice === device.device_url}
+                          className="w-full btn btn-secondary text-sm py-2"
+                        >
+                          {controllingDevice === device.device_url ? '...' : 'Stopp'}
+                        </button>
                       </div>
+                    ) : (
+                      <p className="text-sm mt-2" style={{ color: 'var(--color-coral)' }}>
+                        Ikke tilgjengelig
+                      </p>
                     )}
                   </div>
                 ))}
