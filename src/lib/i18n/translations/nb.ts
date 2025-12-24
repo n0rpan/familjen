@@ -851,6 +851,12 @@ export const nb: TranslationStrings = {
     update: 'Oppdater',
     create: 'Opprett',
     cancel: 'Avbryt',
+    locationName: 'Stedsnavn',
+    locationNamePlaceholder: 'f.eks. Hytta',
+    locationNameUpdated: 'Stedsnavn oppdatert',
+    editLocation: 'Endre navn',
+    accounts: 'Kontoer',
+    noGroupsOrDevices: 'Ingen grupper eller enheter',
   },
 
   notifications: {

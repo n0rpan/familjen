@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import type { OverkizServer } from '@/lib/integrations/somfy'
 import { SOMFY_UI } from '@/lib/integrations/somfy/constants'
+import { getAccountDisplayName } from '@/lib/integrations/somfy/utils'
 
 interface HomeControlAccount {
   id: string
@@ -115,6 +116,11 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
   const [savingDevice, setSavingDevice] = useState(false)
   const [syncingAccount, setSyncingAccount] = useState<string | null>(null)
   const [togglingHidden, setTogglingHidden] = useState<string | null>(null)
+
+  // Edit account name state
+  const [editingAccount, setEditingAccount] = useState<string | null>(null)
+  const [editAccountName, setEditAccountName] = useState('')
+  const [savingAccountName, setSavingAccountName] = useState(false)
 
   const supabase = useMemo(() => createClient(), [])
 
@@ -228,6 +234,34 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
       console.error('Failed to delete account:', err)
       onMessage('error', t.homeControl.couldNotRemoveAccount)
     }
+  }
+
+  const saveAccountName = async (accountId: string) => {
+    if (!editAccountName.trim()) return
+    setSavingAccountName(true)
+    try {
+      const { error } = await supabase
+        .from('home_control_accounts')
+        .update({ display_name: editAccountName.trim() })
+        .eq('id', accountId)
+      if (error) throw error
+      setAccounts(accounts.map(a =>
+        a.id === accountId ? { ...a, display_name: editAccountName.trim() } : a
+      ))
+      setEditingAccount(null)
+      setEditAccountName('')
+      onMessage('success', t.homeControl.locationNameUpdated)
+    } catch (err) {
+      console.error('Failed to save account name:', err)
+      onMessage('error', t.homeControl.couldNotSaveName)
+    } finally {
+      setSavingAccountName(false)
+    }
+  }
+
+  const startEditingAccount = (account: HomeControlAccount) => {
+    setEditingAccount(account.id)
+    setEditAccountName(account.display_name || account.account_email || '')
   }
 
   const syncDevices = async (accountId: string) => {
@@ -373,10 +407,10 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
     setEditDeviceType(device.ui_class)
   }
 
-  // Get account by id for display
-  const getAccountEmail = (accountId: string) => {
+  // Get account display name by ID
+  const getAccountName = (accountId: string) => {
     const account = accounts.find(a => a.id === accountId)
-    return account?.account_email || account?.display_name || ''
+    return getAccountDisplayName(account)
   }
 
   // Group devices by account for the group form
@@ -414,47 +448,118 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
             className="rounded-xl p-4 mb-4"
             style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
           >
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="flex items-center gap-3 min-w-0">
-                <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                  style={{ background: 'rgba(126, 182, 196, 0.2)' }}
-                >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-sky)" strokeWidth="2">
-                    <rect x="3" y="3" width="18" height="18" rx="2"/>
-                    <line x1="9" y1="3" x2="9" y2="21"/>
-                  </svg>
+            {editingAccount === account.id ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>
+                    {t.homeControl.locationName}
+                  </label>
+                  <input
+                    type="text"
+                    value={editAccountName}
+                    onChange={e => setEditAccountName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && editAccountName.trim()) {
+                        saveAccountName(account.id)
+                      } else if (e.key === 'Escape') {
+                        setEditingAccount(null)
+                        setEditAccountName('')
+                      }
+                    }}
+                    className="input text-sm py-2"
+                    placeholder={t.homeControl.locationNamePlaceholder}
+                    autoFocus
+                  />
                 </div>
-                <div className="min-w-0">
-                  <p className="font-medium truncate" style={{ color: 'var(--foreground)' }}>
-                    {account.account_email || account.display_name}
-                  </p>
-                  <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                    {t.homeControl[SERVER_OPTION_KEYS.find(s => s.value === account.server)?.labelKey || 'regionEurope']}
-                    {account.last_sync_at && (
-                      <> &bull; {t.homeControl.lastSynced} {new Date(account.last_sync_at).toLocaleDateString()}</>
-                    )}
-                  </p>
+                <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                  {account.account_email}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => saveAccountName(account.id)}
+                    disabled={savingAccountName || !editAccountName.trim()}
+                    className="btn btn-primary text-sm py-2"
+                  >
+                    {savingAccountName ? t.homeControl.saving : t.homeControl.save}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditingAccount(null)
+                      setEditAccountName('')
+                    }}
+                    className="btn btn-secondary text-sm py-2"
+                  >
+                    {t.homeControl.cancel}
+                  </button>
                 </div>
               </div>
-              <div className="flex gap-2 shrink-0">
-                <button
-                  onClick={() => syncDevices(account.id)}
-                  disabled={syncingAccount === account.id}
-                  className="btn btn-secondary text-sm py-2 px-3"
-                >
-                  {syncingAccount === account.id ? t.homeControl.syncing : t.homeControl.sync}
-                </button>
-                <button
-                  onClick={() => deleteAccount(account.id)}
-                  disabled={syncingAccount === account.id}
-                  className="text-sm px-3 py-2 rounded-lg"
-                  style={{ color: 'var(--color-coral)' }}
-                >
-                  {t.homeControl.removeAccount}
-                </button>
+            ) : (
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ background: 'rgba(126, 182, 196, 0.2)' }}
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-sky)" strokeWidth="2">
+                      <rect x="3" y="3" width="18" height="18" rx="2"/>
+                      <line x1="9" y1="3" x2="9" y2="21"/>
+                    </svg>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium truncate" style={{ color: 'var(--foreground)' }}>
+                        {account.display_name !== account.account_email ? account.display_name : account.account_email}
+                      </p>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          startEditingAccount(account)
+                        }}
+                        className="px-2 py-1 rounded-md text-xs flex items-center gap-1 transition-colors"
+                        style={{
+                          background: 'rgba(126, 182, 196, 0.1)',
+                          color: 'var(--color-sky)',
+                        }}
+                        title={t.homeControl.editLocation}
+                        aria-label={t.homeControl.editLocation}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                        {t.homeControl.editLocation}
+                      </button>
+                    </div>
+                    <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                      {account.display_name !== account.account_email && account.account_email && (
+                        <>{account.account_email} &bull; </>
+                      )}
+                      {t.homeControl[SERVER_OPTION_KEYS.find(s => s.value === account.server)?.labelKey || 'regionEurope']}
+                      {account.last_sync_at && (
+                        <> &bull; {t.homeControl.lastSynced} {new Date(account.last_sync_at).toLocaleDateString()}</>
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={() => syncDevices(account.id)}
+                    disabled={syncingAccount === account.id}
+                    className="btn btn-secondary text-sm py-2 px-3"
+                  >
+                    {syncingAccount === account.id ? t.homeControl.syncing : t.homeControl.sync}
+                  </button>
+                  <button
+                    onClick={() => deleteAccount(account.id)}
+                    disabled={syncingAccount === account.id}
+                    className="text-sm px-3 py-2 rounded-lg"
+                    style={{ color: 'var(--color-coral)' }}
+                  >
+                    {t.homeControl.removeAccount}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         ))}
 
@@ -648,7 +753,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                       <p className="text-xs" style={{ color: 'var(--muted)' }}>
                         {getDeviceTypeLabel(device.ui_class, t.homeControl.deviceTypes)}
                         <span className="mx-1">&bull;</span>
-                        {getAccountEmail(device.account_id)}
+                        {getAccountName(device.account_id)}
                       </p>
                     </div>
                     <div className="flex gap-1 shrink-0">
@@ -803,7 +908,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                     {Object.entries(devicesByAccount).map(([accountId, accountDevices]) => (
                       <div key={accountId}>
                         <p className="text-xs font-medium mb-2 px-2" style={{ color: 'var(--color-sky)' }}>
-                          {getAccountEmail(accountId)}
+                          {getAccountName(accountId)}
                         </p>
                         <div className="space-y-1">
                           {accountDevices.map(device => (

@@ -850,6 +850,12 @@ export const en: TranslationStrings = {
     update: 'Update',
     create: 'Create',
     cancel: 'Cancel',
+    locationName: 'Location name',
+    locationNamePlaceholder: 'e.g. Cabin',
+    locationNameUpdated: 'Location name updated',
+    editLocation: 'Edit name',
+    accounts: 'Accounts',
+    noGroupsOrDevices: 'No groups or devices',
   },
 
   notifications: {

@@ -850,6 +850,12 @@ export const sv: TranslationStrings = {
     update: 'Uppdatera',
     create: 'Skapa',
     cancel: 'Avbryt',
+    locationName: 'Platsnamn',
+    locationNamePlaceholder: 't.ex. Stugan',
+    locationNameUpdated: 'Platsnamn uppdaterat',
+    editLocation: 'Ändra namn',
+    accounts: 'Konton',
+    noGroupsOrDevices: 'Inga grupper eller enheter',
   },
 
   notifications: {
