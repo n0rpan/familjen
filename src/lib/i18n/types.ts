@@ -889,6 +889,45 @@ export interface TranslationStrings {
     editLocation: string
     accounts: string
     noGroupsOrDevices: string
+    // Toshiba AC
+    noACUnits: string
+    noACUnitsDesc: string
+    acUnit: string
+    acUnits: string
+    temperature: string
+    mode: string
+    fanSpeed: string
+    swingMode: string
+    currentTemp: string
+    outdoorTemp: string
+    powerOn: string
+    powerOff: string
+    serviceType: string
+    username: string
+    usernamePlaceholder: string
+    connectSmartHome: string
+    acModes: {
+      AUTO: string
+      COOL: string
+      HEAT: string
+      DRY: string
+      FAN: string
+    }
+    fanSpeeds: {
+      AUTO: string
+      QUIET: string
+      LOW: string
+      MEDIUM_LOW: string
+      MEDIUM: string
+      MEDIUM_HIGH: string
+      HIGH: string
+    }
+    swingModes: {
+      OFF: string
+      ON: string
+      VERTICAL: string
+      HORIZONTAL: string
+    }
   }
 
   // Push Notifications

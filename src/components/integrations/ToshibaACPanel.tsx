@@ -152,6 +152,13 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
     loadData()
   }, [loadData])
 
+  // Haptic feedback for touch devices
+  const triggerHaptic = useCallback(() => {
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      navigator.vibrate(10)
+    }
+  }, [])
+
   const controlDevice = async (
     accountId: string,
     acId: string,
@@ -159,6 +166,7 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
     command: string,
     value?: string | number
   ) => {
+    triggerHaptic()
     setControllingDevice(deviceId)
     try {
       const response = await fetch('/api/home-control/toshiba/control', {
@@ -258,10 +266,10 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
           </svg>
         </div>
         <h3 className="font-medium mb-1" style={{ color: 'var(--foreground)' }}>
-          {'No AC Units'}
+          {t.homeControl.noACUnits}
         </h3>
         <p className="text-sm mb-4" style={{ color: 'var(--muted)' }}>
-          {'Connect your Toshiba account to control your AC units'}
+          {t.homeControl.noACUnitsDesc}
         </p>
         <TransitionLink
           href="/innstillinger"
@@ -321,7 +329,7 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
                   {accountName}
                 </p>
                 <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                  {accountDevices.length} {accountDevices.length === 1 ? 'AC unit' : 'AC units'}
+                  {accountDevices.length} {accountDevices.length === 1 ? t.homeControl.acUnit : t.homeControl.acUnits}
                 </p>
               </div>
               <svg
@@ -383,31 +391,48 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
                               {device.custom_name || device.name}
                             </p>
                             <p className="text-xs" style={{ color: isPoweredOn ? modeColor : 'var(--muted)' }}>
-                              {isPoweredOn ? device.operation_mode : 'OFF'}
-                              {isPoweredOn && device.current_temperature && (
-                                <> • {device.current_temperature}°C</>
-                              )}
+                              {isPoweredOn ? t.homeControl.acModes[device.operation_mode] : t.homeControl.powerOff}
                             </p>
                           </div>
                         </div>
 
-                        {/* Power Toggle */}
-                        <button
-                          onClick={() => controlDevice(device.account_id, device.ac_id, device.id, isPoweredOn ? 'turnOff' : 'turnOn')}
-                          disabled={isControlling}
-                          className="w-12 h-7 rounded-full transition-all relative"
-                          style={{
-                            background: isPoweredOn ? modeColor : 'var(--border)',
-                          }}
-                          aria-label={isPoweredOn ? 'Turn off' : 'Turn on'}
-                        >
-                          <div
-                            className="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"
+                        {/* Current/Outdoor Temps + Power Toggle */}
+                        <div className="flex items-center gap-3 shrink-0">
+                          {isPoweredOn && (device.current_temperature || device.outdoor_temperature) && (
+                            <div className="text-right">
+                              {device.current_temperature && (
+                                <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                                  {device.current_temperature}°C
+                                  <span className="text-xs font-normal ml-1" style={{ color: 'var(--muted)' }}>
+                                    {t.homeControl.currentTemp}
+                                  </span>
+                                </p>
+                              )}
+                              {device.outdoor_temperature && (
+                                <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                                  {t.homeControl.outdoorTemp}: {device.outdoor_temperature}°C
+                                </p>
+                              )}
+                            </div>
+                          )}
+                          {/* Power Toggle */}
+                          <button
+                            onClick={() => controlDevice(device.account_id, device.ac_id, device.id, isPoweredOn ? 'turnOff' : 'turnOn')}
+                            disabled={isControlling}
+                            className="w-12 h-7 rounded-full transition-all relative"
                             style={{
-                              left: isPoweredOn ? 'calc(100% - 1.625rem)' : '0.125rem',
+                              background: isPoweredOn ? modeColor : 'var(--border)',
                             }}
-                          />
-                        </button>
+                            aria-label={isPoweredOn ? t.homeControl.powerOff : t.homeControl.powerOn}
+                          >
+                            <div
+                              className="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"
+                              style={{
+                                left: isPoweredOn ? 'calc(100% - 1.625rem)' : '0.125rem',
+                              }}
+                            />
+                          </button>
+                        </div>
                       </div>
 
                       {/* Controls (only when powered on) */}
@@ -417,7 +442,7 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
                           <div className="mb-4">
                             <div className="flex items-center justify-between mb-2">
                               <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                                {'Temperature'}
+                                {t.homeControl.temperature}
                               </span>
                               <span className="text-lg font-semibold" style={{ color: modeColor }}>
                                 {device.target_temperature}°C
@@ -462,7 +487,7 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
                           {/* Mode Selection */}
                           <div className="mb-3">
                             <span className="text-xs block mb-2" style={{ color: 'var(--muted)' }}>
-                              {'Mode'}
+                              {t.homeControl.mode}
                             </span>
                             <div className="grid grid-cols-5 gap-1">
                               {OPERATION_MODES.map(mode => (
@@ -480,11 +505,11 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
                                       : '1px solid transparent',
                                     color: device.operation_mode === mode ? MODE_COLORS[mode] : 'var(--muted)',
                                   }}
-                                  aria-label={mode}
-                                  title={mode}
+                                  aria-label={t.homeControl.acModes[mode]}
+                                  title={t.homeControl.acModes[mode]}
                                 >
                                   {MODE_ICONS[mode]}
-                                  <span className="text-[10px]">{mode}</span>
+                                  <span className="text-[10px]">{t.homeControl.acModes[mode]}</span>
                                 </button>
                               ))}
                             </div>
@@ -493,7 +518,7 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
                           {/* Fan Speed */}
                           <div>
                             <span className="text-xs block mb-2" style={{ color: 'var(--muted)' }}>
-                              {'Fan Speed'}
+                              {t.homeControl.fanSpeed}
                             </span>
                             <div className="grid grid-cols-4 gap-1">
                               {FAN_SPEEDS.map(speed => (
@@ -511,8 +536,9 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
                                       : '1px solid var(--border)',
                                     color: device.fan_speed === speed ? modeColor : 'var(--muted)',
                                   }}
+                                  aria-label={t.homeControl.fanSpeeds[speed]}
                                 >
-                                  {speed.replace(/_/g, '\u00A0')}
+                                  {t.homeControl.fanSpeeds[speed]}
                                 </button>
                               ))}
                             </div>
