@@ -543,6 +543,7 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
           >
             {/* Account Header with Quick Controls */}
             <button
+              type="button"
               onClick={() => toggleAccountCollapse(accountId)}
               className="flex items-center gap-3 mb-3 w-full text-left"
             >
@@ -579,7 +580,7 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
             {/* Account Quick Control Buttons */}
             <div className={`grid grid-cols-3 gap-2 ${isCollapsed ? '' : 'mb-4'}`}>
               <button
-                onClick={() => controlAccount(accountId, 'open')}
+                onClick={(e) => { e.stopPropagation(); controlAccount(accountId, 'open') }}
                 disabled={isControllingThisAccount}
                 className="control-btn control-btn-open"
                 aria-label={`${t.homeControl.allUp} ${accountName}`}
@@ -594,7 +595,7 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
                 <span>{t.homeControl.allUp}</span>
               </button>
               <button
-                onClick={() => controlAccount(accountId, 'stop')}
+                onClick={(e) => { e.stopPropagation(); controlAccount(accountId, 'stop') }}
                 disabled={isControllingThisAccount}
                 className="control-btn control-btn-stop"
                 aria-label={`${t.homeControl.stop} ${accountName}`}
@@ -609,7 +610,7 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
                 <span>{t.homeControl.stop}</span>
               </button>
               <button
-                onClick={() => controlAccount(accountId, 'close')}
+                onClick={(e) => { e.stopPropagation(); controlAccount(accountId, 'close') }}
                 disabled={isControllingThisAccount}
                 className="control-btn control-btn-close"
                 aria-label={`${t.homeControl.allDown} ${accountName}`}
@@ -639,7 +640,7 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
                     key={device.id}
                     className="rounded-lg p-3 transition-all relative"
                     style={{
-                      background: 'rgba(0, 0, 0, 0.03)',
+                      background: 'color-mix(in srgb, var(--foreground) 3%, transparent)',
                       boxShadow: isConfirmed ? '0 0 0 2px var(--color-sage)' : 'none',
                     }}
                   >
