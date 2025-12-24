@@ -102,10 +102,20 @@ function CloseIcon() {
   )
 }
 
+function HomeControlIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2"/>
+      <line x1="9" y1="3" x2="9" y2="21"/>
+    </svg>
+  )
+}
+
 export function Header() {
   const pathname = usePathname()
   const [user, setUser] = useState<User | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [hasHomeControl, setHasHomeControl] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   const supabase = useMemo(() => createClient(), [])
@@ -132,7 +142,7 @@ export function Header() {
 
   // Check if current page is a secondary nav item (not in primary nav)
   const isSecondaryActive = useMemo(() =>
-    secondaryNav.some(item => pathname === item.href) || pathname === '/admin',
+    secondaryNav.some(item => pathname === item.href) || pathname === '/admin' || pathname === '/styring',
     [secondaryNav, pathname]
   )
 
@@ -144,6 +154,13 @@ export function Header() {
       // Check admin status from JWT app_metadata (set during login by syncUserAdminStatus)
       // This avoids RLS-related issues with querying allowed_emails
       setIsAdmin(user?.app_metadata?.is_admin === true)
+
+      // Check if user has home control accounts
+      if (user) {
+        const { data: accounts } = await supabase
+          .rpc('get_household_home_control_accounts')
+        setHasHomeControl(accounts && accounts.length > 0)
+      }
     }
     getUser()
 
@@ -247,26 +264,53 @@ export function Header() {
                       }}
                       role="menu"
                     >
-                      {secondaryNav.map((item) => {
-                        const isActive = pathname === item.href
-                        return (
-                          <TransitionLink
-                            key={item.href}
-                            href={item.href}
-                            onClick={() => setMoreMenuOpen(false)}
-                            className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-all duration-200 hover:bg-[var(--sand)]"
-                            style={{
-                              background: isActive ? 'var(--accent)' : 'transparent',
-                              color: isActive ? 'white' : 'var(--foreground)',
-                            }}
-                            role="menuitem"
-                            aria-current={isActive ? 'page' : undefined}
-                          >
-                            <item.icon />
-                            <span>{item.name}</span>
-                          </TransitionLink>
-                        )
-                      })}
+                      {/* Recipes */}
+                      <TransitionLink
+                        href={secondaryNav[0].href}
+                        onClick={() => setMoreMenuOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-all duration-200 hover:bg-[var(--sand)]"
+                        style={{
+                          background: pathname === secondaryNav[0].href ? 'var(--accent)' : 'transparent',
+                          color: pathname === secondaryNav[0].href ? 'white' : 'var(--foreground)',
+                        }}
+                        role="menuitem"
+                        aria-current={pathname === secondaryNav[0].href ? 'page' : undefined}
+                      >
+                        <BookIcon />
+                        <span>{secondaryNav[0].name}</span>
+                      </TransitionLink>
+                      {/* Home Control (before Settings) */}
+                      {hasHomeControl && (
+                        <TransitionLink
+                          href="/styring"
+                          onClick={() => setMoreMenuOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-all duration-200 hover:bg-[var(--sand)]"
+                          style={{
+                            background: pathname === '/styring' ? 'var(--accent)' : 'transparent',
+                            color: pathname === '/styring' ? 'white' : 'var(--foreground)',
+                          }}
+                          role="menuitem"
+                          aria-current={pathname === '/styring' ? 'page' : undefined}
+                        >
+                          <HomeControlIcon />
+                          <span>{t.nav.homeControl}</span>
+                        </TransitionLink>
+                      )}
+                      {/* Settings */}
+                      <TransitionLink
+                        href={secondaryNav[1].href}
+                        onClick={() => setMoreMenuOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-all duration-200 hover:bg-[var(--sand)]"
+                        style={{
+                          background: pathname === secondaryNav[1].href ? 'var(--accent)' : 'transparent',
+                          color: pathname === secondaryNav[1].href ? 'white' : 'var(--foreground)',
+                        }}
+                        role="menuitem"
+                        aria-current={pathname === secondaryNav[1].href ? 'page' : undefined}
+                      >
+                        <SettingsIcon />
+                        <span>{secondaryNav[1].name}</span>
+                      </TransitionLink>
                       {isAdmin && (
                         <TransitionLink
                           href="/admin"
@@ -423,25 +467,52 @@ export function Header() {
 
         {/* Menu items */}
         <div className="px-4 pb-6 space-y-1">
-          {secondaryNav.map((item) => {
-            const isActive = pathname === item.href
-            return (
-              <TransitionLink
-                key={item.href}
-                href={item.href}
-                onClick={() => setMoreMenuOpen(false)}
-                className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 touch-feedback focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-                style={{
-                  background: isActive ? 'var(--accent)' : 'transparent',
-                  color: isActive ? 'white' : 'var(--foreground)',
-                }}
-                aria-current={isActive ? 'page' : undefined}
-              >
-                <item.icon />
-                <span className="text-base font-medium">{item.name}</span>
-              </TransitionLink>
-            )
-          })}
+          {/* Recipes */}
+          <TransitionLink
+            href={secondaryNav[0].href}
+            onClick={() => setMoreMenuOpen(false)}
+            className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 touch-feedback focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+            style={{
+              background: pathname === secondaryNav[0].href ? 'var(--accent)' : 'transparent',
+              color: pathname === secondaryNav[0].href ? 'white' : 'var(--foreground)',
+            }}
+            aria-current={pathname === secondaryNav[0].href ? 'page' : undefined}
+          >
+            <BookIcon />
+            <span className="text-base font-medium">{secondaryNav[0].name}</span>
+          </TransitionLink>
+
+          {/* Home Control (before Settings) */}
+          {hasHomeControl && (
+            <TransitionLink
+              href="/styring"
+              onClick={() => setMoreMenuOpen(false)}
+              className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 touch-feedback focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+              style={{
+                background: pathname === '/styring' ? 'var(--accent)' : 'transparent',
+                color: pathname === '/styring' ? 'white' : 'var(--foreground)',
+              }}
+              aria-current={pathname === '/styring' ? 'page' : undefined}
+            >
+              <HomeControlIcon />
+              <span className="text-base font-medium">{t.nav.homeControl}</span>
+            </TransitionLink>
+          )}
+
+          {/* Settings */}
+          <TransitionLink
+            href={secondaryNav[1].href}
+            onClick={() => setMoreMenuOpen(false)}
+            className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 touch-feedback focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+            style={{
+              background: pathname === secondaryNav[1].href ? 'var(--accent)' : 'transparent',
+              color: pathname === secondaryNav[1].href ? 'white' : 'var(--foreground)',
+            }}
+            aria-current={pathname === secondaryNav[1].href ? 'page' : undefined}
+          >
+            <SettingsIcon />
+            <span className="text-base font-medium">{secondaryNav[1].name}</span>
+          </TransitionLink>
 
           {/* Admin link (only for admins) */}
           {isAdmin && (

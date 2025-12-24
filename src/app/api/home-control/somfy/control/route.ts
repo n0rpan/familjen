@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { SupabaseClient } from '@supabase/supabase-js'
 import { getAuthenticatedClient, clearCachedTokens, SomfyAuthError } from '@/lib/integrations/somfy'
+import { SOMFY_API, POSITION } from '@/lib/integrations/somfy/constants'
 
 type ControlCommand = 'open' | 'close' | 'stop' | 'my' | 'setPosition'
 
@@ -21,9 +23,23 @@ interface MultiControlRequest {
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    const supabase = await createClient()
+  const supabase = await createClient()
 
+  // Parse body once at the start to avoid double-consumption issues
+  let body: ControlRequest | MultiControlRequest
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json(
+      { success: false, error: 'Invalid JSON body' },
+      { status: 400 }
+    )
+  }
+
+  // Extract accountId for potential token clearing on auth errors
+  const accountId = body?.accountId
+
+  try {
     // Verify user is authenticated
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
@@ -33,16 +49,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const body = await request.json() as ControlRequest | MultiControlRequest
-
     // Handle single device control
     if ('deviceUrl' in body) {
-      return handleSingleDevice(body)
+      return handleSingleDevice(body, supabase)
     }
 
     // Handle multi-device control
     if ('devices' in body && Array.isArray(body.devices)) {
-      return handleMultiDevice(body)
+      return handleMultiDevice(body, supabase)
     }
 
     return NextResponse.json(
@@ -53,15 +67,13 @@ export async function POST(request: NextRequest) {
     console.error('Somfy control error:', error)
 
     if (error instanceof SomfyAuthError) {
-      // Try to extract accountId from request to clear cached tokens
-      try {
-        const body = await request.clone().json()
-        const accountId = body?.accountId
-        if (accountId) {
+      // Clear cached tokens for this account
+      if (accountId) {
+        try {
           await clearCachedTokens(accountId)
+        } catch {
+          // Ignore errors when clearing tokens
         }
-      } catch {
-        // Ignore errors when clearing tokens
       }
 
       return NextResponse.json(
@@ -78,7 +90,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function handleSingleDevice(body: ControlRequest) {
+async function handleSingleDevice(body: ControlRequest, supabase: SupabaseClient) {
   const { accountId, deviceUrl, command, position } = body
 
   if (!accountId || !deviceUrl || !command) {
@@ -97,16 +109,30 @@ async function handleSingleDevice(body: ControlRequest) {
     )
   }
 
-  if (command === 'setPosition' && (position === undefined || position < 0 || position > 100)) {
+  if (command === 'setPosition' && (position === undefined || position < POSITION.MIN || position > POSITION.MAX)) {
     return NextResponse.json(
       { success: false, error: 'Position must be between 0 and 100' },
       { status: 400 }
     )
   }
 
+  // SECURITY: Verify device belongs to this account (prevents controlling other households' devices)
+  const { data: device, error: deviceError } = await supabase
+    .from('home_control_devices')
+    .select('id')
+    .eq('account_id', accountId)
+    .eq('device_url', deviceUrl)
+    .single()
+
+  if (deviceError || !device) {
+    return NextResponse.json(
+      { success: false, error: 'Device not found or access denied' },
+      { status: 403 }
+    )
+  }
+
   // Get authenticated client (uses cached tokens when available)
   const client = await getAuthenticatedClient(accountId)
-  const supabase = await createClient()
 
   let execId: string
   switch (command) {
@@ -165,13 +191,65 @@ async function handleSingleDevice(body: ControlRequest) {
   })
 }
 
-async function handleMultiDevice(body: MultiControlRequest) {
+async function handleMultiDevice(body: MultiControlRequest, supabase: SupabaseClient) {
   const { accountId, devices } = body
 
   if (!accountId || !devices || devices.length === 0) {
     return NextResponse.json(
       { success: false, error: 'accountId and devices are required' },
       { status: 400 }
+    )
+  }
+
+  // Limit batch size to prevent API abuse
+  if (devices.length > SOMFY_API.MAX_BATCH_DEVICES) {
+    return NextResponse.json(
+      { success: false, error: `Maximum ${SOMFY_API.MAX_BATCH_DEVICES} devices per batch` },
+      { status: 400 }
+    )
+  }
+
+  // Validate position for setPosition commands
+  const validCommands = ['open', 'close', 'stop', 'my', 'setPosition']
+  for (const device of devices) {
+    if (!validCommands.includes(device.command)) {
+      return NextResponse.json(
+        { success: false, error: `Invalid command: ${device.command}` },
+        { status: 400 }
+      )
+    }
+    if (device.command === 'setPosition') {
+      if (device.position === undefined || device.position < POSITION.MIN || device.position > POSITION.MAX) {
+        return NextResponse.json(
+          { success: false, error: `Position must be between ${POSITION.MIN} and ${POSITION.MAX} for setPosition command` },
+          { status: 400 }
+        )
+      }
+    }
+  }
+
+  // SECURITY: Verify all devices belong to this account
+  const deviceUrls = devices.map(d => d.deviceUrl)
+  const { data: validDevices, error: deviceError } = await supabase
+    .from('home_control_devices')
+    .select('device_url')
+    .eq('account_id', accountId)
+    .in('device_url', deviceUrls)
+
+  if (deviceError) {
+    return NextResponse.json(
+      { success: false, error: 'Failed to validate devices' },
+      { status: 500 }
+    )
+  }
+
+  const validDeviceUrls = new Set(validDevices?.map(d => d.device_url) || [])
+  const invalidDevices = deviceUrls.filter(url => !validDeviceUrls.has(url))
+
+  if (invalidDevices.length > 0) {
+    return NextResponse.json(
+      { success: false, error: 'One or more devices not found or access denied' },
+      { status: 403 }
     )
   }
 
@@ -198,7 +276,7 @@ async function handleMultiDevice(body: MultiControlRequest) {
         break
       case 'setPosition':
         commandName = 'setClosure'
-        parameters = [device.position ?? 50]
+        parameters = [device.position!] // Already validated above
         break
       default:
         commandName = device.command

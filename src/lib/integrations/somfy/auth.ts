@@ -8,6 +8,13 @@ import { createClient } from '@/lib/supabase/server'
 import { SomfyClient, SomfyAuthError } from './index'
 import type { OverkizServer } from './types'
 
+/**
+ * In-flight authentication promises to prevent race conditions.
+ * When multiple concurrent requests need auth for the same account,
+ * they will share the same Promise instead of triggering parallel refreshes.
+ */
+const authInFlight = new Map<string, Promise<SomfyClient>>()
+
 interface CachedTokens {
   accessToken: string
   refreshToken: string | null
@@ -24,10 +31,35 @@ interface CachedTokens {
  * 3. If refresh fails or no cached tokens, does a full login
  * 4. Saves new tokens to the database after successful auth
  *
+ * Uses mutex pattern to prevent race conditions when multiple
+ * concurrent requests need authentication for the same account.
+ *
  * @param accountId - The home_control_accounts ID
  * @returns An authenticated SomfyClient
  */
 export async function getAuthenticatedClient(accountId: string): Promise<SomfyClient> {
+  // Check for in-flight auth operation for this account
+  const existingAuth = authInFlight.get(accountId)
+  if (existingAuth) {
+    return existingAuth
+  }
+
+  // Create new auth promise and store it
+  const authPromise = performAuthentication(accountId)
+  authInFlight.set(accountId, authPromise)
+
+  try {
+    return await authPromise
+  } finally {
+    // Clean up after completion (success or failure)
+    authInFlight.delete(accountId)
+  }
+}
+
+/**
+ * Internal function that performs the actual authentication.
+ */
+async function performAuthentication(accountId: string): Promise<SomfyClient> {
   const supabase = await createClient()
 
   // Get account details

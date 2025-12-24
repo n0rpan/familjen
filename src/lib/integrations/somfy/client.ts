@@ -27,8 +27,7 @@ import {
   SomfyAuthError,
   isSupportedDevice,
 } from './types'
-
-const DEFAULT_TIMEOUT = 30000 // 30 seconds
+import { SOMFY_API } from './constants'
 
 export class SomfyClient {
   private accessToken: string | null = null
@@ -42,7 +41,7 @@ export class SomfyClient {
     const server: OverkizServer = options.server ?? 'somfy_europe'
     this.serverConfig = OVERKIZ_SERVERS[server]
     this.debug = options.debug ?? process.env.SOMFY_DEBUG === 'true'
-    this.timeout = options.timeout ?? DEFAULT_TIMEOUT
+    this.timeout = options.timeout ?? SOMFY_API.TIMEOUT_MS
   }
 
   // ==========================================================================
@@ -63,7 +62,7 @@ export class SomfyClient {
     // Use the OAuth access token directly for API calls
     this.accessToken = tokenResponse.access_token
     this.refreshToken = tokenResponse.refresh_token
-    this.tokenExpiry = Date.now() + (tokenResponse.expires_in * 1000) - 60000 // Subtract 1 min for safety
+    this.tokenExpiry = Date.now() + (tokenResponse.expires_in * 1000) - SOMFY_API.TOKEN_REFRESH_MARGIN_MS
 
     this.log('Login successful')
   }
@@ -122,8 +121,6 @@ export class SomfyClient {
         signal: controller.signal,
       })
 
-      clearTimeout(timeoutId)
-
       if (!response.ok) {
         const errorText = await response.text().catch(() => 'Unknown error')
         throw new SomfyAuthError('Token refresh failed', errorText)
@@ -133,16 +130,17 @@ export class SomfyClient {
 
       this.accessToken = tokenResponse.access_token
       this.refreshToken = tokenResponse.refresh_token
-      this.tokenExpiry = Date.now() + (tokenResponse.expires_in * 1000) - 60000
+      this.tokenExpiry = Date.now() + (tokenResponse.expires_in * 1000) - SOMFY_API.TOKEN_REFRESH_MARGIN_MS
 
       this.log('Token refreshed successfully')
     } catch (error) {
-      clearTimeout(timeoutId)
       if (error instanceof SomfyError) throw error
       if (error instanceof Error && error.name === 'AbortError') {
         throw new SomfyError('Token refresh timed out')
       }
       throw new SomfyError(`Token refresh failed: ${error}`)
+    } finally {
+      clearTimeout(timeoutId)
     }
   }
 
@@ -418,8 +416,6 @@ export class SomfyClient {
         signal: controller.signal,
       })
 
-      clearTimeout(timeoutId)
-
       if (!response.ok) {
         const errorText = await response.text().catch(() => 'Unknown error')
 
@@ -436,12 +432,13 @@ export class SomfyClient {
 
       return response.json() as Promise<OverkizTokenResponse>
     } catch (error) {
-      clearTimeout(timeoutId)
       if (error instanceof SomfyError) throw error
       if (error instanceof Error && error.name === 'AbortError') {
         throw new SomfyError('OAuth request timed out')
       }
       throw new SomfyError(`OAuth request failed: ${error}`)
+    } finally {
+      clearTimeout(timeoutId)
     }
   }
 
@@ -481,8 +478,6 @@ export class SomfyClient {
 
       const response = await fetch(url, options)
 
-      clearTimeout(timeoutId)
-
       if (!response.ok) {
         const errorText = await response.text().catch(() => 'Unknown error')
 
@@ -506,12 +501,13 @@ export class SomfyClient {
 
       return JSON.parse(text) as T
     } catch (error) {
-      clearTimeout(timeoutId)
       if (error instanceof SomfyError) throw error
       if (error instanceof Error && error.name === 'AbortError') {
         throw new SomfyError('Request timed out')
       }
       throw new SomfyError(`Request failed: ${error}`)
+    } finally {
+      clearTimeout(timeoutId)
     }
   }
 

@@ -27,11 +27,39 @@ export async function GET(request: NextRequest) {
     const client = await getAuthenticatedClient(accountId)
     const devices = await client.getSupportedDevices()
 
-    // Sync devices to database
+    // Sync devices to database (preserves user customizations: custom_name, favorite, sort_order, is_hidden)
+    // Batch approach: fetch existing devices once, then batch updates and inserts
+    const { data: existingDevices } = await supabase
+      .from('home_control_devices')
+      .select('id, device_url')
+      .eq('account_id', accountId)
+
+    const existingByUrl = new Map(
+      (existingDevices || []).map(d => [d.device_url, d.id])
+    )
+
+    const toUpdate: Array<{ id: string; data: Record<string, unknown> }> = []
+    const toInsert: Array<Record<string, unknown>> = []
+    const now = new Date().toISOString()
+
     for (const device of devices) {
-      await supabase
-        .from('home_control_devices')
-        .upsert({
+      const existingId = existingByUrl.get(device.deviceUrl)
+      if (existingId) {
+        toUpdate.push({
+          id: existingId,
+          data: {
+            label: device.label,
+            ui_class: device.uiClass,
+            controllable_name: device.controllableName,
+            available: device.available,
+            position: device.position,
+            commands: device.commands,
+            raw_data: device.rawData,
+            updated_at: now,
+          },
+        })
+      } else {
+        toInsert.push({
           account_id: accountId,
           device_url: device.deviceUrl,
           label: device.label,
@@ -41,10 +69,22 @@ export async function GET(request: NextRequest) {
           position: device.position,
           commands: device.commands,
           raw_data: device.rawData,
-          updated_at: new Date().toISOString(),
-        }, {
-          onConflict: 'account_id,device_url',
         })
+      }
+    }
+
+    // Batch update existing devices (parallel updates)
+    if (toUpdate.length > 0) {
+      await Promise.all(
+        toUpdate.map(({ id, data }) =>
+          supabase.from('home_control_devices').update(data).eq('id', id)
+        )
+      )
+    }
+
+    // Batch insert new devices (single insert)
+    if (toInsert.length > 0) {
+      await supabase.from('home_control_devices').insert(toInsert)
     }
 
     // Update sync status
