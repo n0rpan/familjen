@@ -554,7 +554,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                           e.stopPropagation()
                           startEditingAccount(account)
                         }}
-                        className="px-2 py-1 rounded-md text-xs flex items-center gap-1 transition-colors"
+                        className="px-2.5 py-2 rounded-md text-xs flex items-center gap-1 transition-colors min-h-[44px]"
                         style={{
                           background: 'rgba(126, 182, 196, 0.1)',
                           color: 'var(--color-sky)',

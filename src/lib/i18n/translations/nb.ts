@@ -870,6 +870,8 @@ export const nb: TranslationStrings = {
     outdoorTemp: 'Ute',
     powerOn: 'Slå på',
     powerOff: 'Slå av',
+    decreaseTemp: 'Senk temperatur',
+    increaseTemp: 'Øk temperatur',
     serviceType: 'Tjenestetype',
     username: 'Brukernavn',
     usernamePlaceholder: 'Ditt Toshiba-brukernavn',

@@ -286,7 +286,7 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
       {/* Error Toast */}
       {error && (
         <div
-          className="fixed z-50 px-4 py-3 rounded-xl shadow-lg animate-slide-up left-4 right-4 sm:left-auto sm:right-4 sm:max-w-sm"
+          className="fixed z-50 px-4 py-3 rounded-xl shadow-lg animate-slide-up left-4 right-4 sm:left-auto sm:right-4 sm:max-w-sm flex items-center justify-between gap-3"
           style={{
             top: 'max(1rem, env(safe-area-inset-top, 0px) + 0.5rem)',
             background: 'var(--color-coral)',
@@ -294,7 +294,17 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
           }}
           role="alert"
         >
-          {error}
+          <span>{error}</span>
+          <button
+            onClick={() => setError(null)}
+            className="shrink-0 p-1 rounded hover:bg-white/20 transition-colors"
+            aria-label={t.common.close}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
         </div>
       )}
 
@@ -454,7 +464,7 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
                                 disabled={isControlling || device.target_temperature <= TEMPERATURE.MIN}
                                 className="w-11 h-11 rounded-lg flex items-center justify-center disabled:opacity-40"
                                 style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
-                                aria-label="Decrease temperature"
+                                aria-label={t.homeControl.decreaseTemp}
                               >
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                   <line x1="5" y1="12" x2="19" y2="12"/>
@@ -474,7 +484,7 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
                                 disabled={isControlling || device.target_temperature >= TEMPERATURE.MAX}
                                 className="w-11 h-11 rounded-lg flex items-center justify-center disabled:opacity-40"
                                 style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
-                                aria-label="Increase temperature"
+                                aria-label={t.homeControl.increaseTemp}
                               >
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                   <line x1="12" y1="5" x2="12" y2="19"/>
@@ -526,7 +536,7 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
                                   key={speed}
                                   onClick={() => controlDevice(device.account_id, device.ac_id, device.id, 'fanSpeed', speed)}
                                   disabled={isControlling}
-                                  className="px-1.5 py-1.5 rounded text-[11px] transition-all text-center min-h-[36px]"
+                                  className="px-1.5 py-2.5 rounded text-[11px] transition-all text-center min-h-[44px]"
                                   style={{
                                     background: device.fan_speed === speed
                                       ? `color-mix(in srgb, ${modeColor} 20%, transparent)`

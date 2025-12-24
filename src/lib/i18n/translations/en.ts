@@ -869,6 +869,8 @@ export const en: TranslationStrings = {
     outdoorTemp: 'Outside',
     powerOn: 'Turn on',
     powerOff: 'Turn off',
+    decreaseTemp: 'Decrease temperature',
+    increaseTemp: 'Increase temperature',
     serviceType: 'Service Type',
     username: 'Username',
     usernamePlaceholder: 'Your Toshiba username',
