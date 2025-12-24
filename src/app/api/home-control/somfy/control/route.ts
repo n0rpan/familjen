@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { getAuthenticatedClient, clearCachedTokens, SomfyAuthError } from '@/lib/integrations/somfy'
+import { SOMFY_API, POSITION } from '@/lib/integrations/somfy/constants'
 
 type ControlCommand = 'open' | 'close' | 'stop' | 'my' | 'setPosition'
 
@@ -108,7 +109,7 @@ async function handleSingleDevice(body: ControlRequest, supabase: SupabaseClient
     )
   }
 
-  if (command === 'setPosition' && (position === undefined || position < 0 || position > 100)) {
+  if (command === 'setPosition' && (position === undefined || position < POSITION.MIN || position > POSITION.MAX)) {
     return NextResponse.json(
       { success: false, error: 'Position must be between 0 and 100' },
       { status: 400 }
@@ -201,9 +202,9 @@ async function handleMultiDevice(body: MultiControlRequest, supabase: SupabaseCl
   }
 
   // Limit batch size to prevent API abuse
-  if (devices.length > 50) {
+  if (devices.length > SOMFY_API.MAX_BATCH_DEVICES) {
     return NextResponse.json(
-      { success: false, error: 'Maximum 50 devices per batch' },
+      { success: false, error: `Maximum ${SOMFY_API.MAX_BATCH_DEVICES} devices per batch` },
       { status: 400 }
     )
   }
@@ -218,9 +219,9 @@ async function handleMultiDevice(body: MultiControlRequest, supabase: SupabaseCl
       )
     }
     if (device.command === 'setPosition') {
-      if (device.position === undefined || device.position < 0 || device.position > 100) {
+      if (device.position === undefined || device.position < POSITION.MIN || device.position > POSITION.MAX) {
         return NextResponse.json(
-          { success: false, error: 'Position must be between 0 and 100 for setPosition command' },
+          { success: false, error: `Position must be between ${POSITION.MIN} and ${POSITION.MAX} for setPosition command` },
           { status: 400 }
         )
       }

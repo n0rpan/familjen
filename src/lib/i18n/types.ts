@@ -780,6 +780,41 @@ export interface TranslationStrings {
     confirmDelete: string
   }
 
+  // Home Control (Somfy)
+  homeControl: {
+    title: string
+    groups: string
+    devices: string
+    noDevices: string
+    noDevicesDesc: string
+    goToSettings: string
+    allUp: string
+    allDown: string
+    stop: string
+    favoritePosition: string
+    position: string
+    unavailable: string
+    commandFailed: string
+    partialFailure: string
+    syncDevices: string
+    syncing: string
+    syncSuccess: string
+    syncFailed: string
+    authFailed: string
+    addAccount: string
+    deleteAccount: string
+    deleteAccountConfirm: string
+    accountEmail: string
+    accountPassword: string
+    server: string
+    testConnection: string
+    connectionSuccess: string
+    connectionFailed: string
+    deviceCount: string
+    customName: string
+    setPosition: string
+  }
+
   // Push Notifications
   notifications: {
     title: string

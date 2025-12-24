@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import { TransitionLink } from '@/components/TransitionLink'
+import { SOMFY_UI } from '@/lib/integrations/somfy/constants'
 
 interface HomeControlDevice {
   id: string
@@ -64,7 +65,7 @@ export default function StyringPage() {
   const showMessage = (type: 'success' | 'error', text: string) => {
     if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current)
     setMessage({ type, text })
-    messageTimeoutRef.current = setTimeout(() => setMessage(null), 3000)
+    messageTimeoutRef.current = setTimeout(() => setMessage(null), SOMFY_UI.MESSAGE_DURATION_MS)
   }
 
   const loadData = useCallback(async () => {
@@ -143,11 +144,11 @@ export default function StyringPage() {
       const data = await response.json()
 
       if (!data.success) {
-        showMessage('error', data.error || 'Kommando feilet')
+        showMessage('error', data.error || t.homeControl.commandFailed)
       }
     } catch (err) {
       console.error('Control failed:', err)
-      showMessage('error', 'Kommando feilet')
+      showMessage('error', t.homeControl.commandFailed)
     } finally {
       setControllingDevice(null)
     }
@@ -178,13 +179,13 @@ export default function StyringPage() {
         setSliderDevice(null)
         if (confirmedTimeoutRef.current) clearTimeout(confirmedTimeoutRef.current)
         setConfirmedDevice(deviceUrl)
-        confirmedTimeoutRef.current = setTimeout(() => setConfirmedDevice(null), 2000)
+        confirmedTimeoutRef.current = setTimeout(() => setConfirmedDevice(null), SOMFY_UI.CONFIRMATION_DURATION_MS)
       } else {
-        showMessage('error', data.error || 'Kommando feilet')
+        showMessage('error', data.error || t.homeControl.commandFailed)
       }
     } catch (err) {
       console.error('Position control failed:', err)
-      showMessage('error', 'Kommando feilet')
+      showMessage('error', t.homeControl.commandFailed)
     } finally {
       setControllingDevice(null)
     }
@@ -203,7 +204,7 @@ export default function StyringPage() {
     if (sliderDebounceRef.current) clearTimeout(sliderDebounceRef.current)
     sliderDebounceRef.current = setTimeout(() => {
       setDevicePositionRef.current?.(accountId, deviceUrl, position)
-    }, 150)
+    }, SOMFY_UI.SLIDER_DEBOUNCE_MS)
   }, [])
 
   const controlGroup = async (
@@ -244,7 +245,7 @@ export default function StyringPage() {
 
           const data = await response.json()
           if (!data.success) {
-            throw new Error(data.error || 'Kommando feilet')
+            throw new Error(data.error || t.homeControl.commandFailed)
           }
           return devs.length // Return device count for success tracking
         })
@@ -256,15 +257,15 @@ export default function StyringPage() {
 
       if (failures.length > 0 && successes.length > 0) {
         // Partial success
-        showMessage('error', `${failures.length} av ${results.length} forespørsler feilet`)
+        showMessage('error', t.homeControl.partialFailure.replace('{failed}', String(failures.length)).replace('{total}', String(results.length)))
       } else if (failures.length > 0) {
         // All failed
-        showMessage('error', 'Kommando feilet')
+        showMessage('error', t.homeControl.commandFailed)
       }
       // If all succeeded, no message needed
     } catch (err) {
       console.error('Group control failed:', err)
-      showMessage('error', 'Kommando feilet')
+      showMessage('error', t.homeControl.commandFailed)
     } finally {
       setControllingGroup(null)
     }
@@ -319,7 +320,7 @@ export default function StyringPage() {
       {groups.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-sm font-medium" style={{ color: 'var(--muted)' }}>
-            Grupper
+            {t.homeControl.groups}
           </h2>
           {groups.map(group => (
             <div
@@ -344,7 +345,7 @@ export default function StyringPage() {
                     {group.name}
                   </p>
                   <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                    {group.device_ids.length} enheter
+                    {t.homeControl.deviceCount.replace('{count}', String(group.device_ids.length))}
                   </p>
                 </div>
               </div>
@@ -354,21 +355,21 @@ export default function StyringPage() {
                   disabled={controllingGroup === group.id}
                   className="flex-1 btn btn-secondary text-sm py-2"
                 >
-                  {controllingGroup === group.id ? '...' : 'Alle opp'}
+                  {controllingGroup === group.id ? '...' : t.homeControl.allUp}
                 </button>
                 <button
                   onClick={() => controlGroup(group.id, 'stop')}
                   disabled={controllingGroup === group.id}
                   className="flex-1 btn btn-secondary text-sm py-2"
                 >
-                  {controllingGroup === group.id ? '...' : 'Stopp'}
+                  {controllingGroup === group.id ? '...' : t.homeControl.stop}
                 </button>
                 <button
                   onClick={() => controlGroup(group.id, 'close')}
                   disabled={controllingGroup === group.id}
                   className="flex-1 btn btn-secondary text-sm py-2"
                 >
-                  {controllingGroup === group.id ? '...' : 'Alle ned'}
+                  {controllingGroup === group.id ? '...' : t.homeControl.allDown}
                 </button>
               </div>
             </div>
@@ -380,7 +381,7 @@ export default function StyringPage() {
       {devices.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-sm font-medium" style={{ color: 'var(--muted)' }}>
-            Enheter
+            {t.homeControl.devices}
           </h2>
           {devices.map(device => (
             <div
@@ -407,7 +408,7 @@ export default function StyringPage() {
                     onClick={() => controlDevice(device.account_id, device.device_url, 'my')}
                     disabled={controllingDevice === device.device_url}
                     className="p-1"
-                    title="Favorittposisjon"
+                    title={t.homeControl.favoritePosition}
                   >
                     <svg
                       width="20"
@@ -446,6 +447,11 @@ export default function StyringPage() {
                         }
                       }}
                       disabled={controllingDevice === device.device_url}
+                      aria-label={`${t.homeControl.position} ${device.custom_name || device.label}`}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={sliderDevice === device.device_url ? sliderPosition : (device.position ?? 0)}
+                      aria-valuetext={`${sliderDevice === device.device_url ? sliderPosition : (device.position ?? 0)}%`}
                       className="w-full h-2 rounded-full appearance-none cursor-pointer"
                       style={{
                         background: `linear-gradient(to right, var(--color-sky) 0%, var(--color-sky) ${sliderDevice === device.device_url ? sliderPosition : (device.position ?? 0)}%, var(--border) ${sliderDevice === device.device_url ? sliderPosition : (device.position ?? 0)}%, var(--border) 100%)`,
@@ -457,12 +463,12 @@ export default function StyringPage() {
                     disabled={controllingDevice === device.device_url}
                     className="w-full btn btn-secondary text-sm py-2"
                   >
-                    {controllingDevice === device.device_url ? '...' : 'Stopp'}
+                    {controllingDevice === device.device_url ? '...' : t.homeControl.stop}
                   </button>
                 </div>
               ) : (
                 <p className="text-sm mt-2" style={{ color: 'var(--color-coral)' }}>
-                  Ikke tilgjengelig
+                  {t.homeControl.unavailable}
                 </p>
               )}
             </div>
@@ -485,13 +491,13 @@ export default function StyringPage() {
             </svg>
           </div>
           <p className="font-medium mb-2" style={{ color: 'var(--foreground)' }}>
-            Ingen enheter funnet
+            {t.homeControl.noDevices}
           </p>
           <p className="text-sm mb-4" style={{ color: 'var(--muted)' }}>
-            Synkroniser enhetene dine i innstillinger
+            {t.homeControl.noDevicesDesc}
           </p>
           <TransitionLink href="/innstillinger" className="btn btn-primary">
-            Gå til innstillinger
+            {t.homeControl.goToSettings}
           </TransitionLink>
         </div>
       )}

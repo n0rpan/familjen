@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import type { OverkizServer } from '@/lib/integrations/somfy'
+import { SOMFY_UI } from '@/lib/integrations/somfy/constants'
 
 interface HomeControlAccount {
   id: string
@@ -64,6 +65,29 @@ const UI_CLASS_LABELS: Record<string, string> = {
   ExteriorVenetianBlind: 'Utvendig persienne',
   Blind: 'Rullegardin',
   Curtain: 'Gardin',
+}
+
+/**
+ * Sanitize device name input to prevent XSS and limit length.
+ */
+function sanitizeDeviceName(name: string): string {
+  // Trim whitespace
+  let sanitized = name.trim()
+
+  // Limit length
+  if (sanitized.length > SOMFY_UI.MAX_DEVICE_NAME_LENGTH) {
+    sanitized = sanitized.substring(0, SOMFY_UI.MAX_DEVICE_NAME_LENGTH)
+  }
+
+  // Escape HTML entities to prevent XSS
+  sanitized = sanitized
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+
+  return sanitized
 }
 
 export function HomeControlSection({ householdId, onMessage }: HomeControlSectionProps) {
@@ -338,9 +362,13 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
   const saveDeviceName = async (deviceId: string, newName: string) => {
     setSavingDevice(true)
     try {
+      // Sanitize input to prevent XSS and limit length
+      const sanitizedName = sanitizeDeviceName(newName)
+      const finalName = sanitizedName || null
+
       const { error } = await supabase
         .from('home_control_devices')
-        .update({ custom_name: newName.trim() || null })
+        .update({ custom_name: finalName })
         .eq('id', deviceId)
 
       if (error) throw error
@@ -348,7 +376,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
       // Update local state
       setDevices(prev =>
         prev.map(d =>
-          d.id === deviceId ? { ...d, custom_name: newName.trim() || null } : d
+          d.id === deviceId ? { ...d, custom_name: finalName } : d
         )
       )
       setEditingDevice(null)
@@ -790,6 +818,7 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
                             type="text"
                             value={editDeviceName}
                             onChange={e => setEditDeviceName(e.target.value)}
+                            maxLength={SOMFY_UI.MAX_DEVICE_NAME_LENGTH}
                             className="input text-sm py-1 px-2 w-full"
                             placeholder={device.label}
                             autoFocus
@@ -898,6 +927,11 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
                               }
                             }}
                             disabled={controllingDevice === device.device_url}
+                            aria-label={`Posisjon ${device.custom_name || device.label}`}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-valuenow={sliderDevice === device.device_url ? sliderPosition : (device.position ?? 0)}
+                            aria-valuetext={`${sliderDevice === device.device_url ? sliderPosition : (device.position ?? 0)}%`}
                             className="w-full h-2 rounded-full appearance-none cursor-pointer"
                             style={{
                               background: `linear-gradient(to right, var(--color-sky) 0%, var(--color-sky) ${sliderDevice === device.device_url ? sliderPosition : (device.position ?? 0)}%, var(--border) ${sliderDevice === device.device_url ? sliderPosition : (device.position ?? 0)}%, var(--border) 100%)`,
