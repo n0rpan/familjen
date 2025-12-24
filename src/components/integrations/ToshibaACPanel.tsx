@@ -129,7 +129,14 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
       if (accountData && accountData.length > 0) {
         setAccounts(accountData)
 
-        // Get Toshiba AC devices
+        // Get IDs of devices that are already in groups (to filter them out)
+        const { data: groupedDevices } = await supabase
+          .from('home_control_group_toshiba_devices')
+          .select('toshiba_device_id')
+
+        const groupedDeviceIds = new Set(groupedDevices?.map(d => d.toshiba_device_id) || [])
+
+        // Get Toshiba AC devices (excluding ones already in groups)
         const { data: deviceData } = await supabase
           .from('toshiba_ac_devices')
           .select('*')
@@ -138,7 +145,9 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
           .order('favorite', { ascending: false })
           .order('name')
 
-        setDevices(deviceData || [])
+        // Filter out devices that are in groups
+        const ungroupedDevices = (deviceData || []).filter(d => !groupedDeviceIds.has(d.id))
+        setDevices(ungroupedDevices)
       }
     } catch (err) {
       console.error('Failed to load Toshiba AC data:', err)
