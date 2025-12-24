@@ -16,11 +16,11 @@ export default function StyringPage() {
         </p>
       </div>
 
-      {/* Toshiba AC devices */}
-      <ToshibaACPanel />
-
       {/* Somfy screens/blinds */}
       <HomeControlPanel />
+
+      {/* Toshiba AC devices */}
+      <ToshibaACPanel />
     </div>
   )
 }
