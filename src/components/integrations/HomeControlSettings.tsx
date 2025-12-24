@@ -7,9 +7,11 @@ import type { OverkizServer } from '@/lib/integrations/somfy'
 import { SOMFY_UI } from '@/lib/integrations/somfy/constants'
 import { getAccountDisplayName } from '@/lib/integrations/somfy/utils'
 
+type ServiceType = 'somfy' | 'toshiba'
+
 interface HomeControlAccount {
   id: string
-  service: string
+  service: ServiceType
   display_name: string
   account_email: string | null
   server: string
@@ -93,6 +95,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
   const [editingGroup, setEditingGroup] = useState<HomeControlGroup | null>(null)
 
   // Form state
+  const [serviceType, setServiceType] = useState<ServiceType>('somfy')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [server, setServer] = useState<OverkizServer>('somfy_europe')
@@ -172,10 +175,18 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
     setTestResult(null)
 
     try {
-      const response = await fetch('/api/home-control/somfy/test-connection', {
+      const endpoint = serviceType === 'toshiba'
+        ? '/api/home-control/toshiba/test-connection'
+        : '/api/home-control/somfy/test-connection'
+
+      const body = serviceType === 'toshiba'
+        ? { username: email, password }
+        : { email, password, server }
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, server }),
+        body: JSON.stringify(body),
       })
       const data = await response.json()
       setTestResult(data.success
@@ -197,21 +208,30 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
     setSaving(true)
 
     try {
+      const credentials = serviceType === 'toshiba'
+        ? { username: email, password }
+        : { email, password }
+
       const { data, error } = await supabase.rpc('upsert_home_control_account', {
         p_household_id: householdId,
-        p_service: 'somfy',
+        p_service: serviceType,
         p_display_name: email,
-        p_credentials: { email, password },
+        p_credentials: credentials,
         p_account_email: email,
-        p_server: server,
+        p_server: serviceType === 'somfy' ? server : null,
       })
       if (error) throw error
 
-      await fetch(`/api/home-control/somfy/devices?accountId=${data}`, { method: 'POST' })
+      const syncEndpoint = serviceType === 'toshiba'
+        ? `/api/home-control/toshiba/devices?accountId=${data}`
+        : `/api/home-control/somfy/devices?accountId=${data}`
+
+      await fetch(syncEndpoint, { method: 'POST' })
       onMessage('success', t.homeControl.syncSuccess)
       setShowAddForm(false)
       setEmail('')
       setPassword('')
+      setServiceType('somfy')
       setTestResult(null)
       await loadAccounts()
     } catch (err) {
@@ -264,17 +284,21 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
     setEditAccountName(account.display_name || account.account_email || '')
   }
 
-  const syncDevices = async (accountId: string) => {
+  const syncDevices = async (accountId: string, service: ServiceType) => {
     setSyncingAccount(accountId)
     try {
-      const response = await fetch(`/api/home-control/somfy/devices?accountId=${accountId}`, { method: 'POST' })
+      const endpoint = service === 'toshiba'
+        ? `/api/home-control/toshiba/devices?accountId=${accountId}`
+        : `/api/home-control/somfy/devices?accountId=${accountId}`
+
+      const response = await fetch(endpoint, { method: 'POST' })
       const data = await response.json()
 
       if (data.success) {
-        setDevices(prev => {
-          const filtered = prev.filter(d => d.account_id !== accountId)
-          return [...filtered, ...data.devices]
-        })
+        // For Toshiba, devices come from toshiba_ac_devices table
+        // For Somfy, devices come from home_control_devices table
+        // Just reload all accounts to get fresh data
+        await loadAccounts()
         onMessage('success', t.homeControl.synced.replace('{count}', String(data.devices.length)))
       } else {
         onMessage('error', data.error || t.homeControl.syncFailed)
@@ -498,15 +522,30 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                 <div className="flex items-center gap-3 min-w-0">
                   <div
                     className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                    style={{ background: 'rgba(126, 182, 196, 0.2)' }}
+                    style={{ background: account.service === 'toshiba' ? 'rgba(232, 120, 109, 0.2)' : 'rgba(126, 182, 196, 0.2)' }}
                   >
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-sky)" strokeWidth="2">
-                      <rect x="3" y="3" width="18" height="18" rx="2"/>
-                      <line x1="9" y1="3" x2="9" y2="21"/>
-                    </svg>
+                    {account.service === 'toshiba' ? (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-coral)" strokeWidth="2">
+                        <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2z"/>
+                        <path d="M12 6v6l4 2"/>
+                        <path d="M8 14h8"/>
+                        <path d="M8 18h8"/>
+                      </svg>
+                    ) : (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-sky)" strokeWidth="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2"/>
+                        <line x1="9" y1="3" x2="9" y2="21"/>
+                      </svg>
+                    )}
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
+                      <span className="text-xs px-1.5 py-0.5 rounded" style={{
+                        background: account.service === 'toshiba' ? 'rgba(232, 120, 109, 0.15)' : 'rgba(126, 182, 196, 0.15)',
+                        color: account.service === 'toshiba' ? 'var(--color-coral)' : 'var(--color-sky)',
+                      }}>
+                        {account.service === 'toshiba' ? 'Toshiba AC' : 'Somfy'}
+                      </span>
                       <p className="font-medium truncate" style={{ color: 'var(--foreground)' }}>
                         {account.display_name !== account.account_email ? account.display_name : account.account_email}
                       </p>
@@ -515,7 +554,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                           e.stopPropagation()
                           startEditingAccount(account)
                         }}
-                        className="px-2 py-1 rounded-md text-xs flex items-center gap-1 transition-colors"
+                        className="px-2.5 py-2 rounded-md text-xs flex items-center gap-1 transition-colors min-h-[44px]"
                         style={{
                           background: 'rgba(126, 182, 196, 0.1)',
                           color: 'var(--color-sky)',
@@ -534,7 +573,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                       {account.display_name !== account.account_email && account.account_email && (
                         <>{account.account_email} &bull; </>
                       )}
-                      {t.homeControl[SERVER_OPTION_KEYS.find(s => s.value === account.server)?.labelKey || 'regionEurope']}
+                      {account.service === 'somfy' && t.homeControl[SERVER_OPTION_KEYS.find(s => s.value === account.server)?.labelKey || 'regionEurope']}
                       {account.last_sync_at && (
                         <> &bull; {t.homeControl.lastSynced} {new Date(account.last_sync_at).toLocaleDateString()}</>
                       )}
@@ -543,7 +582,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                 </div>
                 <div className="flex gap-2 shrink-0">
                   <button
-                    onClick={() => syncDevices(account.id)}
+                    onClick={() => syncDevices(account.id, account.service)}
                     disabled={syncingAccount === account.id}
                     className="btn btn-secondary text-sm py-2 px-3"
                   >
@@ -570,19 +609,64 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
             style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
           >
             <h4 className="font-medium mb-4" style={{ color: 'var(--foreground)' }}>
-              {t.homeControl.addSomfyAccount}
+              {t.homeControl.addAccount || 'Add Account'}
             </h4>
             <div className="space-y-4">
+              {/* Service Type Selector */}
+              <div>
+                <label className="block text-xs mb-2" style={{ color: 'var(--muted)' }}>
+                  {t.homeControl.serviceType || 'Service Type'}
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setServiceType('somfy'); setTestResult(null) }}
+                    className="p-3 rounded-lg flex items-center gap-2 transition-all"
+                    style={{
+                      background: serviceType === 'somfy' ? 'rgba(126, 182, 196, 0.15)' : 'var(--background)',
+                      border: serviceType === 'somfy' ? '2px solid var(--color-sky)' : '1px solid var(--border)',
+                    }}
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={serviceType === 'somfy' ? 'var(--color-sky)' : 'var(--muted)'} strokeWidth="2">
+                      <rect x="3" y="3" width="18" height="18" rx="2"/>
+                      <line x1="9" y1="3" x2="9" y2="21"/>
+                    </svg>
+                    <span className="text-sm font-medium" style={{ color: serviceType === 'somfy' ? 'var(--color-sky)' : 'var(--muted)' }}>
+                      Somfy
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setServiceType('toshiba'); setTestResult(null) }}
+                    className="p-3 rounded-lg flex items-center gap-2 transition-all"
+                    style={{
+                      background: serviceType === 'toshiba' ? 'rgba(232, 120, 109, 0.15)' : 'var(--background)',
+                      border: serviceType === 'toshiba' ? '2px solid var(--color-coral)' : '1px solid var(--border)',
+                    }}
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={serviceType === 'toshiba' ? 'var(--color-coral)' : 'var(--muted)'} strokeWidth="2">
+                      <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2z"/>
+                      <path d="M12 6v6l4 2"/>
+                      <path d="M8 14h8"/>
+                      <path d="M8 18h8"/>
+                    </svg>
+                    <span className="text-sm font-medium" style={{ color: serviceType === 'toshiba' ? 'var(--color-coral)' : 'var(--muted)' }}>
+                      Toshiba AC
+                    </span>
+                  </button>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>
-                  {t.homeControl.accountEmail}
+                  {serviceType === 'toshiba' ? (t.homeControl.username || 'Username') : t.homeControl.accountEmail}
                 </label>
                 <input
-                  type="email"
+                  type={serviceType === 'toshiba' ? 'text' : 'email'}
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   className="input"
-                  placeholder={t.homeControl.emailPlaceholder}
+                  placeholder={serviceType === 'toshiba' ? (t.homeControl.usernamePlaceholder || 'Your Toshiba username') : t.homeControl.emailPlaceholder}
                 />
               </div>
               <div>
@@ -596,22 +680,24 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                   className="input"
                 />
               </div>
-              <div>
-                <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>
-                  {t.homeControl.region}
-                </label>
-                <select
-                  value={server}
-                  onChange={e => setServer(e.target.value as OverkizServer)}
-                  className="input"
-                >
-                  {SERVER_OPTION_KEYS.map(opt => (
-                    <option key={opt.value} value={opt.value}>
-                      {t.homeControl[opt.labelKey]}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {serviceType === 'somfy' && (
+                <div>
+                  <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>
+                    {t.homeControl.region}
+                  </label>
+                  <select
+                    value={server}
+                    onChange={e => setServer(e.target.value as OverkizServer)}
+                    className="input"
+                  >
+                    {SERVER_OPTION_KEYS.map(opt => (
+                      <option key={opt.value} value={opt.value}>
+                        {t.homeControl[opt.labelKey]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {testResult && (
                 <div
@@ -645,6 +731,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                     setShowAddForm(false)
                     setEmail('')
                     setPassword('')
+                    setServiceType('somfy')
                     setTestResult(null)
                   }}
                   className="btn btn-secondary"
@@ -664,7 +751,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
               <line x1="12" y1="5" x2="12" y2="19"/>
               <line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
-            {t.homeControl.addSomfyAccount}
+            {t.homeControl.addAccount || 'Add Smart Home Account'}
           </button>
         )}
       </div>
@@ -998,7 +1085,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
 
       {accounts.length === 0 && !showAddForm && (
         <p className="text-sm text-center" style={{ color: 'var(--muted)' }}>
-          {t.homeControl.connectSomfy}
+          {t.homeControl.connectSmartHome || 'Connect your Somfy or Toshiba AC account to control your devices'}
         </p>
       )}
     </div>
