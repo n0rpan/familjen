@@ -77,16 +77,30 @@ export async function GET(request: NextRequest) {
 
     // Batch update existing devices
     if (toUpdate.length > 0) {
-      await Promise.all(
+      const updateResults = await Promise.all(
         toUpdate.map(({ id, data }) =>
           supabase.from('toshiba_ac_devices').update(data).eq('id', id)
         )
       )
+      const updateErrors = updateResults.filter(r => r.error)
+      if (updateErrors.length > 0) {
+        console.error('Failed to update some devices:', updateErrors.map(r => r.error))
+      }
     }
 
     // Batch insert new devices
     if (toInsert.length > 0) {
-      await supabase.from('toshiba_ac_devices').insert(toInsert)
+      console.log('Inserting devices:', JSON.stringify(toInsert, null, 2))
+      const { data: insertedData, error: insertError } = await supabase
+        .from('toshiba_ac_devices')
+        .insert(toInsert)
+        .select()
+
+      if (insertError) {
+        console.error('Failed to insert devices:', insertError)
+        throw new Error(`Failed to insert devices: ${insertError.message}`)
+      }
+      console.log('Inserted devices:', insertedData)
     }
 
     // Update sync status
