@@ -796,10 +796,30 @@ export interface TranslationStrings {
     position: string
     open: string
     closed: string
+    closeAction: string
+    openAction: string
     deviceType: string
     showDevice: string
     hideDevice: string
+    editDevice: string
+    deleteGroup: string
+    editGroupLabel: string
     exampleGroupName: string
+    emailPlaceholder: string
+    deviceTypes: {
+      ExteriorScreen: string
+      Screen: string
+      RollerShutter: string
+      Awning: string
+      Pergola: string
+      GarageDoor: string
+      Gate: string
+      Window: string
+      VenetianBlind: string
+      ExteriorVenetianBlind: string
+      Blind: string
+      Curtain: string
+    }
     unavailable: string
     commandFailed: string
     partialFailure: string

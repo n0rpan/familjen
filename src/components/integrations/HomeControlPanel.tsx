@@ -452,12 +452,19 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
           return (
             <div
               key={device.id}
-              className="rounded-2xl p-4 transition-all"
+              className="rounded-2xl p-4 transition-all relative"
               style={{
                 background: 'var(--card)',
-                border: isConfirmed ? '2px solid var(--color-sage)' : '1px solid var(--border)',
+                border: '1px solid var(--border)',
+                boxShadow: isConfirmed ? '0 0 0 2px var(--color-sage)' : 'none',
               }}
             >
+              {/* Loading overlay */}
+              {isControlling && (
+                <div className="absolute inset-0 flex items-center justify-center rounded-2xl z-10" style={{ background: 'rgba(var(--card-rgb, 255, 255, 255), 0.7)' }}>
+                  <span className="loading-spinner" style={{ width: 24, height: 24, borderWidth: 3, color: 'var(--color-sky)' }} />
+                </div>
+              )}
               {/* Device Header */}
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -486,21 +493,17 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
 
               {device.available ? (
                 <>
-                  {/* Quick Action Buttons with labels */}
-                  <div className="grid grid-cols-4 gap-2 mb-4">
+                  {/* Quick Action Buttons - 2x2 on mobile, 4 cols on larger */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
                     <button
                       onClick={() => controlDevice(device.account_id, device.device_url, 'open')}
                       disabled={isControlling}
                       className="control-btn control-btn-open"
-                      aria-label={`${t.homeControl.open} ${device.custom_name || device.label}`}
+                      aria-label={`${t.homeControl.openAction} ${device.custom_name || device.label}`}
                     >
-                      {isControlling ? (
-                        <span className="loading-spinner" />
-                      ) : (
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                          <polyline points="18 15 12 9 6 15"/>
-                        </svg>
-                      )}
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <polyline points="18 15 12 9 6 15"/>
+                      </svg>
                     </button>
                     <button
                       onClick={() => controlDevice(device.account_id, device.device_url, 'stop')}
@@ -508,46 +511,30 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
                       className="control-btn control-btn-stop"
                       aria-label={`${t.homeControl.stop} ${device.custom_name || device.label}`}
                     >
-                      {isControlling ? (
-                        <span className="loading-spinner" />
-                      ) : (
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                          <rect x="6" y="6" width="12" height="12"/>
-                        </svg>
-                      )}
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <rect x="6" y="6" width="12" height="12"/>
+                      </svg>
                     </button>
                     <button
                       onClick={() => controlDevice(device.account_id, device.device_url, 'close')}
                       disabled={isControlling}
                       className="control-btn control-btn-close"
-                      aria-label={`${t.homeControl.closed} ${device.custom_name || device.label}`}
+                      aria-label={`${t.homeControl.closeAction} ${device.custom_name || device.label}`}
                     >
-                      {isControlling ? (
-                        <span className="loading-spinner" />
-                      ) : (
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                          <polyline points="6 9 12 15 18 9"/>
-                        </svg>
-                      )}
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <polyline points="6 9 12 15 18 9"/>
+                      </svg>
                     </button>
                     <button
                       onClick={() => controlDevice(device.account_id, device.device_url, 'my')}
                       disabled={isControlling}
-                      className="control-btn"
-                      style={{
-                        background: 'rgba(229, 185, 94, 0.15)',
-                        color: 'var(--color-honey)'
-                      }}
+                      className="control-btn control-btn-fav"
                       aria-label={`${t.homeControl.favoritePosition} ${device.custom_name || device.label}`}
                       title={t.homeControl.favoritePosition}
                     >
-                      {isControlling ? (
-                        <span className="loading-spinner" />
-                      ) : (
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1">
-                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-                        </svg>
-                      )}
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                      </svg>
                     </button>
                   </div>
 

@@ -52,25 +52,26 @@ const SERVER_OPTION_KEYS: { value: OverkizServer; labelKey: 'regionEurope' | 're
   { value: 'somfy_oceania', labelKey: 'regionOceania' },
 ]
 
-const UI_CLASS_LABELS: Record<string, string> = {
-  ExteriorScreen: 'Utvendig screen',
-  Screen: 'Screen',
-  RollerShutter: 'Rullegardin',
-  Awning: 'Markise',
-  Pergola: 'Pergola',
-  GarageDoor: 'Garasjeport',
-  Gate: 'Port',
-  Window: 'Vindu',
-  VenetianBlind: 'Persienne',
-  ExteriorVenetianBlind: 'Utvendig persienne',
-  Blind: 'Rullegardin',
-  Curtain: 'Gardin',
-}
+const UI_CLASS_KEYS = [
+  'ExteriorScreen',
+  'Screen',
+  'RollerShutter',
+  'Awning',
+  'Pergola',
+  'GarageDoor',
+  'Gate',
+  'Window',
+  'VenetianBlind',
+  'ExteriorVenetianBlind',
+  'Blind',
+  'Curtain',
+] as const
 
-const UI_CLASS_OPTIONS = Object.entries(UI_CLASS_LABELS).map(([value, label]) => ({
-  value,
-  label,
-}))
+type DeviceTypeKey = typeof UI_CLASS_KEYS[number]
+
+function getDeviceTypeLabel(uiClass: string, deviceTypes: Record<string, string>): string {
+  return deviceTypes[uiClass as DeviceTypeKey] || uiClass
+}
 
 function sanitizeDeviceName(name: string): string {
   let sanitized = name.trim()
@@ -113,6 +114,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
   const [editDeviceType, setEditDeviceType] = useState('')
   const [savingDevice, setSavingDevice] = useState(false)
   const [syncingAccount, setSyncingAccount] = useState<string | null>(null)
+  const [togglingHidden, setTogglingHidden] = useState<string | null>(null)
 
   const supabase = useMemo(() => createClient(), [])
 
@@ -287,6 +289,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
   }
 
   const toggleDeviceHidden = async (deviceId: string, hidden: boolean) => {
+    setTogglingHidden(deviceId)
     try {
       const { error } = await supabase
         .from('home_control_devices')
@@ -300,6 +303,9 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
       )
     } catch (err) {
       console.error('Failed to toggle device visibility:', err)
+      onMessage('error', t.homeControl.commandFailed)
+    } finally {
+      setTogglingHidden(null)
     }
   }
 
@@ -471,7 +477,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   className="input"
-                  placeholder="din@epost.no"
+                  placeholder={t.homeControl.emailPlaceholder}
                 />
               </div>
               <div>
@@ -599,8 +605,10 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                         onChange={e => setEditDeviceType(e.target.value)}
                         className="input text-sm py-2"
                       >
-                        {UI_CLASS_OPTIONS.map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        {UI_CLASS_KEYS.map(key => (
+                          <option key={key} value={key}>
+                            {getDeviceTypeLabel(key, t.homeControl.deviceTypes)}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -638,7 +646,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                         )}
                       </div>
                       <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                        {UI_CLASS_LABELS[device.ui_class] || device.ui_class}
+                        {getDeviceTypeLabel(device.ui_class, t.homeControl.deviceTypes)}
                         <span className="mx-1">&bull;</span>
                         {getAccountEmail(device.account_id)}
                       </p>
@@ -647,7 +655,8 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                       <button
                         onClick={() => startEditingDevice(device)}
                         className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-                        title={t.common.edit}
+                        title={t.homeControl.editDevice}
+                        aria-label={`${t.homeControl.editDevice}: ${device.custom_name || device.label}`}
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2">
                           <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
@@ -656,11 +665,14 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                       </button>
                       <button
                         onClick={() => toggleDeviceHidden(device.id, !device.is_hidden)}
-                        className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                        disabled={togglingHidden === device.id}
+                        className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50"
                         title={device.is_hidden ? t.homeControl.showDevice : t.homeControl.hideDevice}
                         aria-label={device.is_hidden ? t.homeControl.showDevice : t.homeControl.hideDevice}
                       >
-                        {device.is_hidden ? (
+                        {togglingHidden === device.id ? (
+                          <span className="loading-spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
+                        ) : device.is_hidden ? (
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2">
                             <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
                             <line x1="1" y1="1" x2="23" y2="23"/>
@@ -736,6 +748,8 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                   <button
                     onClick={() => openEditGroup(group)}
                     className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                    title={t.homeControl.editGroupLabel}
+                    aria-label={`${t.homeControl.editGroupLabel}: ${group.name}`}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2">
                       <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
@@ -745,6 +759,8 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                   <button
                     onClick={() => deleteGroup(group.id)}
                     className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                    title={t.homeControl.deleteGroup}
+                    aria-label={`${t.homeControl.deleteGroup}: ${group.name}`}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-coral)" strokeWidth="2">
                       <polyline points="3 6 5 6 21 6"/>
@@ -817,7 +833,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                                   {device.custom_name || device.label}
                                 </span>
                                 <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                                  {UI_CLASS_LABELS[device.ui_class] || device.ui_class}
+                                  {getDeviceTypeLabel(device.ui_class, t.homeControl.deviceTypes)}
                                 </span>
                               </div>
                             </label>

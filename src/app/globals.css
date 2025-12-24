@@ -672,6 +672,35 @@ a, button, [role="button"], input, select, textarea {
   transform: scale(0.98);
 }
 
+.control-btn-fav {
+  background: rgba(229, 185, 94, 0.15);
+  color: var(--color-honey);
+}
+
+.control-btn-fav:hover:not(:disabled) {
+  background: rgba(229, 185, 94, 0.25);
+}
+
+.control-btn-fav:active:not(:disabled) {
+  background: rgba(229, 185, 94, 0.35);
+  transform: scale(0.98);
+}
+
+/* Focus visible styles for accessibility */
+.control-btn:focus-visible {
+  outline: 2px solid var(--color-sky);
+  outline-offset: 2px;
+}
+
+.slider-input:focus-visible {
+  outline: none;
+}
+
+.slider-input:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--color-sky);
+  outline-offset: 2px;
+}
+
 /* Touch device optimizations for control buttons */
 @media (hover: none) {
   .control-btn {
@@ -705,6 +734,35 @@ a, button, [role="button"], input, select, textarea {
 
 .control-btn .loading-spinner {
   opacity: 0.8;
+}
+
+/* Reduced motion support for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .control-btn {
+    transition: none;
+  }
+
+  .control-btn:active:not(:disabled) {
+    transform: none;
+  }
+
+  .slider-fill {
+    transition: none;
+  }
+
+  .slider-input::-webkit-slider-thumb {
+    transition: none;
+  }
+
+  .slider-input::-moz-range-thumb {
+    transition: none;
+  }
+
+  .loading-spinner {
+    animation: none;
+    border-top-color: currentColor;
+    opacity: 0.5;
+  }
 }
 
 /* Mobile header spacing - accounts for fixed header + safe area + content spacing */
