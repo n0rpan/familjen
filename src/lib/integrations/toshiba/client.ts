@@ -169,6 +169,11 @@ export class ToshibaClient {
       `${TOSHIBA_ENDPOINTS.GET_DEVICES}?consumerId=${this.consumerId}`
     )
 
+    // Debug: Log first device to see actual API structure
+    if (data && data.length > 0) {
+      this.log('First device from API:', JSON.stringify(data[0], null, 2))
+    }
+
     return data ?? []
   }
 
@@ -288,8 +293,17 @@ export class ToshibaClient {
     // Handle case where ACStateData may be missing (device offline)
     const hasState = state !== null && state !== undefined
 
+    // The API returns ACId (confirmed from Toshiba AC Control reference)
+    // Also try Id as fallback for compatibility
+    const acId = device.ACId ?? device.Id
+
+    if (!acId) {
+      console.error('[ToshibaClient] Device has no ID field. Raw device:', JSON.stringify(device, null, 2))
+      throw new Error('Device is missing ID field')
+    }
+
     return {
-      acId: device.Id,
+      acId: String(acId),
       name: device.Name,
       model: device.ACModelId,
       firmwareVersion: device.FirmwareVersion,
