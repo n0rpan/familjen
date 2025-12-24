@@ -16,7 +16,8 @@
 import {
   type ToshibaClientOptions,
   type ToshibaLoginResponse,
-  type ToshibaACMapping,
+  type ToshibaDeviceGroup,
+  type ToshibaACDevice,
   type ToshibaACState,
   type ToshibaAPIResponse,
   type ToshibaOperationMode,
@@ -28,6 +29,84 @@ import {
   ToshibaAuthError,
 } from './types'
 import { TOSHIBA_API, TOSHIBA_ENDPOINTS } from './constants'
+
+// Hex state byte positions (based on Toshiba AC Control reference)
+const STATE_OFFSETS = {
+  POWER: 0,
+  MODE: 1,
+  TEMP: 2,
+  FAN: 4,
+  SWING: 5,
+  PURE: 6,
+  INDOOR_TEMP: 11,
+  OUTDOOR_TEMP: 12,
+} as const
+
+// Mode code mappings
+const MODE_MAP: Record<string, ToshibaOperationMode> = {
+  '41': 'AUTO',
+  '42': 'COOL',
+  '43': 'HEAT',
+  '44': 'DRY',
+  '45': 'FAN',
+}
+
+// Fan speed code mappings
+// Note: 50/A0 = Auto, 31 = Quiet (user confirmed)
+const FAN_MAP: Record<string, ToshibaFanSpeed> = {
+  '50': 'AUTO',   // Also seen as 'A0' on some models
+  'a0': 'AUTO',
+  '31': 'QUIET',  // Silent mode
+  '32': 'LOW',
+  '33': 'MEDIUM_LOW',
+  '34': 'MEDIUM',
+  '35': 'MEDIUM_HIGH',
+  '36': 'HIGH',
+}
+
+// Swing mode code mappings
+const SWING_MAP: Record<string, ToshibaSwingMode> = {
+  '31': 'OFF',
+  '41': 'ON',
+  '42': 'VERTICAL',
+  '43': 'HORIZONTAL',
+}
+
+// Reverse mappings for encoding control commands
+const POWER_ENCODE: Record<ToshibaPowerState, string> = {
+  'ON': '30',
+  'OFF': '31',
+}
+
+const MODE_ENCODE: Record<ToshibaOperationMode, string> = {
+  'AUTO': '41',
+  'COOL': '42',
+  'HEAT': '43',
+  'DRY': '44',
+  'FAN': '45',
+}
+
+const FAN_ENCODE: Record<ToshibaFanSpeed, string> = {
+  'AUTO': '50',
+  'QUIET': '31',
+  'LOW': '32',
+  'MEDIUM_LOW': '33',
+  'MEDIUM': '34',
+  'MEDIUM_HIGH': '35',
+  'HIGH': '36',
+}
+
+const SWING_ENCODE: Record<ToshibaSwingMode, string> = {
+  'OFF': '31',
+  'ON': '41',
+  'VERTICAL': '42',
+  'HORIZONTAL': '43',
+}
+
+const PURE_ENCODE: Record<'ON' | 'OFF', string> = {
+  'ON': '10',
+  'OFF': '00',
+}
 
 export class ToshibaClient {
   private accessToken: string | null = null
@@ -161,20 +240,40 @@ export class ToshibaClient {
 
   /**
    * Get all registered AC devices.
+   * The API returns groups with ACList arrays - we flatten them.
    */
-  async getDevices(): Promise<ToshibaACMapping[]> {
+  async getDevices(): Promise<ToshibaACDevice[]> {
     this.log('Fetching devices')
 
-    const data = await this.authenticatedFetch<ToshibaACMapping[]>(
+    const groups = await this.authenticatedFetch<ToshibaDeviceGroup[]>(
       `${TOSHIBA_ENDPOINTS.GET_DEVICES}?consumerId=${this.consumerId}`
     )
 
-    // Debug: Log first device to see actual API structure
-    if (data && data.length > 0) {
-      this.log('First device from API:', JSON.stringify(data[0], null, 2))
+    if (!groups || groups.length === 0) {
+      this.log('No device groups found')
+      return []
     }
 
-    return data ?? []
+    // Flatten all ACList arrays from all groups
+    const devices: ToshibaACDevice[] = []
+    for (const group of groups) {
+      if (group.ACList && Array.isArray(group.ACList)) {
+        for (const device of group.ACList) {
+          // Attach timezone from group to each device
+          devices.push({
+            ...device,
+            _timezone: group.TimeZone,
+          } as ToshibaACDevice & { _timezone: string })
+        }
+      }
+    }
+
+    this.log(`Found ${devices.length} devices across ${groups.length} groups`)
+    if (devices.length > 0) {
+      this.log('First device:', devices[0].Name, 'ID:', devices[0].Id)
+    }
+
+    return devices
   }
 
   /**
@@ -200,6 +299,84 @@ export class ToshibaClient {
   async getMappedDevices(): Promise<MappedToshibaDevice[]> {
     const devices = await this.getDevices()
     return devices.map(device => this.mapDeviceToDb(device))
+  }
+
+  /**
+   * Decode hex state string to extract device state values.
+   * The ACStateData is a hex-encoded string where each byte pair represents a value.
+   */
+  private decodeHexState(hexState: string | null): {
+    powerState: ToshibaPowerState | null
+    operationMode: ToshibaOperationMode | null
+    targetTemperature: number | null
+    fanSpeed: ToshibaFanSpeed | null
+    swingMode: ToshibaSwingMode | null
+    pureState: 'ON' | 'OFF' | null
+    indoorTemperature: number | null
+    outdoorTemperature: number | null
+  } {
+    if (!hexState || hexState.length < 26) {
+      return {
+        powerState: null,
+        operationMode: null,
+        targetTemperature: null,
+        fanSpeed: null,
+        swingMode: null,
+        pureState: null,
+        indoorTemperature: null,
+        outdoorTemperature: null,
+      }
+    }
+
+    // Extract byte pairs (each byte = 2 hex chars)
+    const getByte = (offset: number): string => hexState.slice(offset * 2, offset * 2 + 2)
+
+    // Power state: 30 = ON, 31 = OFF
+    const powerByte = getByte(STATE_OFFSETS.POWER)
+    const powerState: ToshibaPowerState | null = powerByte === '30' ? 'ON' : powerByte === '31' ? 'OFF' : null
+
+    // Operation mode: 41=AUTO, 42=COOL, 43=HEAT, 44=DRY, 45=FAN
+    const modeByte = getByte(STATE_OFFSETS.MODE)
+    const operationMode = MODE_MAP[modeByte] ?? null
+
+    // Target temperature: hex value is the temperature
+    const tempByte = getByte(STATE_OFFSETS.TEMP)
+    const targetTemperature = tempByte ? parseInt(tempByte, 16) : null
+
+    // Fan speed
+    const fanByte = getByte(STATE_OFFSETS.FAN)
+    const fanSpeed = FAN_MAP[fanByte] ?? null
+
+    // Swing mode
+    const swingByte = getByte(STATE_OFFSETS.SWING)
+    const swingMode = SWING_MAP[swingByte] ?? null
+
+    // Pure/ionizer state
+    const pureByte = getByte(STATE_OFFSETS.PURE)
+    const pureState: 'ON' | 'OFF' | null = pureByte === '10' ? 'ON' : pureByte === '00' ? 'OFF' : null
+
+    // Indoor temperature (offset may vary, using common position)
+    const indoorByte = getByte(STATE_OFFSETS.INDOOR_TEMP)
+    const indoorTemperature = indoorByte && indoorByte !== 'fe' && indoorByte !== 'ff'
+      ? parseInt(indoorByte, 16)
+      : null
+
+    // Outdoor temperature
+    const outdoorByte = getByte(STATE_OFFSETS.OUTDOOR_TEMP)
+    const outdoorTemperature = outdoorByte && outdoorByte !== 'fe' && outdoorByte !== 'ff'
+      ? parseInt(outdoorByte, 16) - 128 // Often offset by 128
+      : null
+
+    return {
+      powerState,
+      operationMode,
+      targetTemperature,
+      fanSpeed,
+      swingMode,
+      pureState,
+      indoorTemperature,
+      outdoorTemperature: outdoorTemperature !== null && outdoorTemperature > -50 && outdoorTemperature < 60 ? outdoorTemperature : null,
+    }
   }
 
   // ==========================================================================
@@ -287,42 +464,38 @@ export class ToshibaClient {
   /**
    * Map a Toshiba AC device to our simplified format.
    */
-  mapDeviceToDb(device: ToshibaACMapping): MappedToshibaDevice {
-    const state = device.ACStateData
-
-    // Handle case where ACStateData may be missing (device offline)
-    const hasState = state !== null && state !== undefined
-
-    // The API returns ACId (confirmed from Toshiba AC Control reference)
-    // Also try Id as fallback for compatibility
-    const acId = device.ACId ?? device.Id
-
-    if (!acId) {
+  mapDeviceToDb(device: ToshibaACDevice & { _timezone?: string }): MappedToshibaDevice {
+    if (!device.Id) {
       console.error('[ToshibaClient] Device has no ID field. Raw device:', JSON.stringify(device, null, 2))
       throw new Error('Device is missing ID field')
     }
 
+    // Decode the hex state string
+    const state = this.decodeHexState(device.ACStateData)
+
+    this.log('Decoded state for', device.Name, ':', JSON.stringify(state))
+
     return {
-      acId: String(acId),
+      acId: device.Id,
       name: device.Name,
       model: device.ACModelId,
       firmwareVersion: device.FirmwareVersion,
-      timezone: device.Timezone,
-      // Current state (null if device is offline/unknown)
-      powerState: hasState ? state.ACPowerState : null,
-      operationMode: hasState ? state.ACOperationMode : null,
-      targetTemperature: hasState ? state.ACSetpointTemperature : null,
-      currentTemperature: hasState ? (state.ACIndoorTemperature ?? null) : null,
-      outdoorTemperature: hasState ? (state.ACOutdoorTemperature ?? null) : null,
-      fanSpeed: hasState ? state.ACFanSpeed : null,
-      swingMode: hasState ? state.ACSwingMode : null,
-      pureState: hasState ? state.ACPureState : null,
-      // Features
-      hasEnergyConsumption: device.IsEnergyConsumptionModel,
-      hasAutoClean: device.IsAutoCleanPresent,
+      timezone: device._timezone ?? '',
+      // Current state from decoded hex
+      powerState: state.powerState,
+      operationMode: state.operationMode,
+      targetTemperature: state.targetTemperature,
+      currentTemperature: state.indoorTemperature,
+      outdoorTemperature: state.outdoorTemperature,
+      fanSpeed: state.fanSpeed,
+      swingMode: state.swingMode,
+      pureState: state.pureState,
+      // Features - check FunctionSettingsSupport
+      hasEnergyConsumption: false, // Would need separate API call
+      hasAutoClean: device.FunctionSettingsSupport?.FilterCleaningSupport ?? false,
       meritFeature: device.MeritFeature,
-      // Raw data
-      rawData: device,
+      // Raw data - cast to match expected type
+      rawData: device as unknown as import('./types').ToshibaACMapping,
     }
   }
 
@@ -331,11 +504,45 @@ export class ToshibaClient {
   // ==========================================================================
 
   /**
+   * Encode state values to API format (hex codes).
+   * The Toshiba API expects encoded values, not descriptive strings.
+   */
+  private encodeStateForAPI(state: Partial<ToshibaACState>): Record<string, string | number> {
+    const encoded: Record<string, string | number> = {}
+
+    if (state.ACPowerState !== undefined) {
+      encoded.ACPowerState = POWER_ENCODE[state.ACPowerState]
+    }
+    if (state.ACOperationMode !== undefined) {
+      encoded.ACOperationMode = MODE_ENCODE[state.ACOperationMode]
+    }
+    if (state.ACSetpointTemperature !== undefined) {
+      // Temperature is sent as hex string of the value
+      encoded.ACSetpointTemperature = state.ACSetpointTemperature.toString(16).padStart(2, '0')
+    }
+    if (state.ACFanSpeed !== undefined) {
+      encoded.ACFanSpeed = FAN_ENCODE[state.ACFanSpeed]
+    }
+    if (state.ACSwingMode !== undefined) {
+      encoded.ACSwingMode = SWING_ENCODE[state.ACSwingMode]
+    }
+    if (state.ACPureState !== undefined) {
+      encoded.ACPureState = PURE_ENCODE[state.ACPureState as 'ON' | 'OFF']
+    }
+
+    return encoded
+  }
+
+  /**
    * Set AC state via API.
    */
   private async setACState(acId: string, state: Partial<ToshibaACState>): Promise<void> {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), this.timeout)
+
+    // Encode state values to API format
+    const encodedState = this.encodeStateForAPI(state)
+    this.log('Sending encoded state:', encodedState)
 
     try {
       const response = await fetch(`${TOSHIBA_API.BASE_URL}${TOSHIBA_ENDPOINTS.SET_STATE}`, {
@@ -346,7 +553,7 @@ export class ToshibaClient {
         },
         body: JSON.stringify({
           ACId: acId,
-          ...state,
+          ...encodedState,
         }),
         signal: controller.signal,
       })

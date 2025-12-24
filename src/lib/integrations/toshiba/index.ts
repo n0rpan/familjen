@@ -1,6 +1,8 @@
 export { ToshibaClient } from './client'
 export {
   type ToshibaClientOptions,
+  type ToshibaDeviceGroup,
+  type ToshibaACDevice,
   type ToshibaACMapping,
   type ToshibaACState,
   type ToshibaOperationMode,
