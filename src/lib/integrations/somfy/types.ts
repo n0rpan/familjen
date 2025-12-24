@@ -211,6 +211,20 @@ export interface OverkizServerConfig {
   clientSecret: string
 }
 
+/**
+ * Overkiz server configurations for different Somfy regions.
+ *
+ * NOTE: The clientId and clientSecret values are PUBLIC OAuth credentials used by
+ * all Somfy/Overkiz mobile apps and open-source integrations. They are NOT secret.
+ *
+ * These credentials are widely documented and used by:
+ * - python-overkiz-api (https://github.com/iMicknl/python-overkiz-api)
+ * - Home Assistant Overkiz integration
+ * - Various other open-source home automation projects
+ *
+ * They identify the "app" making requests, not the user. User authentication
+ * is handled separately via the password grant flow with user-specific credentials.
+ */
 export const OVERKIZ_SERVERS: Record<OverkizServer, OverkizServerConfig> = {
   somfy_europe: {
     name: 'Somfy Europe',
