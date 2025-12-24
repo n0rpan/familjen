@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { SomfyClient, SomfyAuthError } from '@/lib/integrations/somfy'
-import type { OverkizServer } from '@/lib/integrations/somfy'
+import { getAuthenticatedClient, clearCachedTokens, SomfyAuthError } from '@/lib/integrations/somfy'
 
 export async function GET(request: NextRequest) {
   try {
@@ -24,40 +23,8 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Get account details
-    const { data: account, error: accountError } = await supabase
-      .from('home_control_accounts')
-      .select('id, server')
-      .eq('id', accountId)
-      .single()
-
-    if (accountError || !account) {
-      return NextResponse.json(
-        { success: false, error: 'Account not found' },
-        { status: 404 }
-      )
-    }
-
-    // Get credentials
-    const { data: credentials, error: credError } = await supabase
-      .rpc('get_home_control_credentials', { p_account_id: accountId })
-
-    if (credError || !credentials) {
-      return NextResponse.json(
-        { success: false, error: 'Could not retrieve credentials' },
-        { status: 500 }
-      )
-    }
-
-    const { email, password } = credentials as { email: string; password: string }
-
-    // Get devices from Somfy
-    const client = new SomfyClient({
-      server: (account.server || 'somfy_europe') as OverkizServer,
-      debug: process.env.NODE_ENV === 'development',
-    })
-
-    await client.login(email, password)
+    // Get authenticated client (uses cached tokens when available)
+    const client = await getAuthenticatedClient(accountId)
     const devices = await client.getSupportedDevices()
 
     // Sync devices to database
@@ -103,15 +70,18 @@ export async function GET(request: NextRequest) {
     console.error('Somfy devices error:', error)
 
     if (error instanceof SomfyAuthError) {
-      // Update sync status to auth_failed
+      // Update sync status to auth_failed and clear cached tokens
       const supabase = await createClient()
       const accountId = new URL(request.url).searchParams.get('accountId')
       if (accountId) {
-        await supabase.rpc('update_home_control_sync_status', {
-          p_account_id: accountId,
-          p_status: 'auth_failed',
-          p_error: 'Authentication failed',
-        })
+        await Promise.all([
+          supabase.rpc('update_home_control_sync_status', {
+            p_account_id: accountId,
+            p_status: 'auth_failed',
+            p_error: 'Authentication failed',
+          }),
+          clearCachedTokens(accountId),
+        ])
       }
 
       return NextResponse.json(

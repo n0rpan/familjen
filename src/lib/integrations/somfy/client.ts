@@ -93,6 +93,68 @@ export class SomfyClient {
   }
 
   /**
+   * Refresh the access token using the refresh token.
+   */
+  async refreshAccessToken(): Promise<void> {
+    if (!this.refreshToken) {
+      throw new SomfyAuthError('No refresh token available')
+    }
+
+    this.log('Refreshing access token')
+
+    const params = new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: this.refreshToken,
+      client_id: this.serverConfig.clientId,
+      client_secret: this.serverConfig.clientSecret,
+    })
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout)
+
+    try {
+      const response = await fetch(this.serverConfig.authEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: params.toString(),
+        signal: controller.signal,
+      })
+
+      clearTimeout(timeoutId)
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error')
+        throw new SomfyAuthError('Token refresh failed', errorText)
+      }
+
+      const tokenResponse = await response.json() as OverkizTokenResponse
+
+      this.accessToken = tokenResponse.access_token
+      this.refreshToken = tokenResponse.refresh_token
+      this.tokenExpiry = Date.now() + (tokenResponse.expires_in * 1000) - 60000
+
+      this.log('Token refreshed successfully')
+    } catch (error) {
+      clearTimeout(timeoutId)
+      if (error instanceof SomfyError) throw error
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new SomfyError('Token refresh timed out')
+      }
+      throw new SomfyError(`Token refresh failed: ${error}`)
+    }
+  }
+
+  /**
+   * Get the token expiry time (for caching purposes).
+   */
+  getTokenExpiresIn(): number {
+    const remaining = this.tokenExpiry - Date.now()
+    return Math.max(0, Math.floor(remaining / 1000))
+  }
+
+  /**
    * Clear authentication state.
    */
   logout(): void {

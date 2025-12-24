@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { SomfyClient, SomfyAuthError } from '@/lib/integrations/somfy'
-import type { OverkizServer } from '@/lib/integrations/somfy'
+import { getAuthenticatedClient, clearCachedTokens, SomfyAuthError } from '@/lib/integrations/somfy'
 
 type ControlCommand = 'open' | 'close' | 'stop' | 'my' | 'setPosition'
 
@@ -38,12 +37,12 @@ export async function POST(request: NextRequest) {
 
     // Handle single device control
     if ('deviceUrl' in body) {
-      return handleSingleDevice(supabase, body)
+      return handleSingleDevice(body)
     }
 
     // Handle multi-device control
     if ('devices' in body && Array.isArray(body.devices)) {
-      return handleMultiDevice(supabase, body)
+      return handleMultiDevice(body)
     }
 
     return NextResponse.json(
@@ -68,10 +67,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function handleSingleDevice(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  body: ControlRequest
-) {
+async function handleSingleDevice(body: ControlRequest) {
   const { accountId, deviceUrl, command, position } = body
 
   if (!accountId || !deviceUrl || !command) {
@@ -97,39 +93,9 @@ async function handleSingleDevice(
     )
   }
 
-  // Get account and credentials
-  const { data: account, error: accountError } = await supabase
-    .from('home_control_accounts')
-    .select('id, server')
-    .eq('id', accountId)
-    .single()
-
-  if (accountError || !account) {
-    return NextResponse.json(
-      { success: false, error: 'Account not found' },
-      { status: 404 }
-    )
-  }
-
-  const { data: credentials, error: credError } = await supabase
-    .rpc('get_home_control_credentials', { p_account_id: accountId })
-
-  if (credError || !credentials) {
-    return NextResponse.json(
-      { success: false, error: 'Could not retrieve credentials' },
-      { status: 500 }
-    )
-  }
-
-  const { email, password } = credentials as { email: string; password: string }
-
-  // Execute command
-  const client = new SomfyClient({
-    server: (account.server || 'somfy_europe') as OverkizServer,
-    debug: process.env.NODE_ENV === 'development',
-  })
-
-  await client.login(email, password)
+  // Get authenticated client (uses cached tokens when available)
+  const client = await getAuthenticatedClient(accountId)
+  const supabase = await createClient()
 
   let execId: string
   switch (command) {
@@ -188,10 +154,7 @@ async function handleSingleDevice(
   })
 }
 
-async function handleMultiDevice(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  body: MultiControlRequest
-) {
+async function handleMultiDevice(body: MultiControlRequest) {
   const { accountId, devices } = body
 
   if (!accountId || !devices || devices.length === 0) {
@@ -201,39 +164,8 @@ async function handleMultiDevice(
     )
   }
 
-  // Get account and credentials
-  const { data: account, error: accountError } = await supabase
-    .from('home_control_accounts')
-    .select('id, server')
-    .eq('id', accountId)
-    .single()
-
-  if (accountError || !account) {
-    return NextResponse.json(
-      { success: false, error: 'Account not found' },
-      { status: 404 }
-    )
-  }
-
-  const { data: credentials, error: credError } = await supabase
-    .rpc('get_home_control_credentials', { p_account_id: accountId })
-
-  if (credError || !credentials) {
-    return NextResponse.json(
-      { success: false, error: 'Could not retrieve credentials' },
-      { status: 500 }
-    )
-  }
-
-  const { email, password } = credentials as { email: string; password: string }
-
-  // Execute commands
-  const client = new SomfyClient({
-    server: (account.server || 'somfy_europe') as OverkizServer,
-    debug: process.env.NODE_ENV === 'development',
-  })
-
-  await client.login(email, password)
+  // Get authenticated client (uses cached tokens when available)
+  const client = await getAuthenticatedClient(accountId)
 
   // Build actions for all devices
   const actions = devices.map(device => {

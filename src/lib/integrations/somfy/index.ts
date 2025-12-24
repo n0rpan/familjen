@@ -13,3 +13,4 @@ export {
   SomfyAuthError,
   isSupportedDevice,
 } from './types'
+export { getAuthenticatedClient, clearCachedTokens } from './auth'

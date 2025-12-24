@@ -31,6 +31,15 @@ interface HomeControlDevice {
   is_hidden: boolean
 }
 
+interface HomeControlGroup {
+  id: string
+  household_id: string
+  name: string
+  icon: string | null
+  sort_order: number
+  device_ids: string[]
+}
+
 interface HomeControlSectionProps {
   householdId: string
   onMessage: (type: 'success' | 'error', text: string) => void
@@ -61,8 +70,11 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
   const { t } = useLanguage()
   const [accounts, setAccounts] = useState<HomeControlAccount[]>([])
   const [devices, setDevices] = useState<HomeControlDevice[]>([])
+  const [groups, setGroups] = useState<HomeControlGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
+  const [showGroupForm, setShowGroupForm] = useState(false)
+  const [editingGroup, setEditingGroup] = useState<HomeControlGroup | null>(null)
 
   // Form state
   const [email, setEmail] = useState('')
@@ -76,9 +88,17 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
     error?: string
   } | null>(null)
 
+  // Group form state
+  const [groupName, setGroupName] = useState('')
+  const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([])
+  const [savingGroup, setSavingGroup] = useState(false)
+
   // Control state
   const [controllingDevice, setControllingDevice] = useState<string | null>(null)
+  const [controllingGroup, setControllingGroup] = useState<string | null>(null)
   const [syncingAccount, setSyncingAccount] = useState<string | null>(null)
+  const [sliderDevice, setSliderDevice] = useState<string | null>(null)
+  const [sliderPosition, setSliderPosition] = useState(50)
 
   const supabase = useMemo(() => createClient(), [])
 
@@ -101,6 +121,27 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
           .order('label')
 
         setDevices(deviceData || [])
+      }
+
+      // Load groups
+      const { data: groupData } = await supabase
+        .from('home_control_groups')
+        .select(`
+          id,
+          household_id,
+          name,
+          icon,
+          sort_order,
+          home_control_group_devices (device_id)
+        `)
+        .order('sort_order')
+        .order('name')
+
+      if (groupData) {
+        setGroups(groupData.map(g => ({
+          ...g,
+          device_ids: g.home_control_group_devices?.map((d: { device_id: string }) => d.device_id) || [],
+        })))
       }
     } catch (err) {
       console.error('Failed to load home control accounts:', err)
@@ -250,6 +291,176 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
     }
   }
 
+  const setDevicePosition = async (
+    accountId: string,
+    deviceUrl: string,
+    position: number
+  ) => {
+    setControllingDevice(deviceUrl)
+
+    try {
+      const response = await fetch('/api/home-control/somfy/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accountId, deviceUrl, command: 'setPosition', position }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        // Update local state
+        setDevices(prev =>
+          prev.map(d =>
+            d.device_url === deviceUrl ? { ...d, position } : d
+          )
+        )
+        setSliderDevice(null)
+      } else {
+        onMessage('error', data.error || 'Kommando feilet')
+      }
+    } catch (err) {
+      console.error('Position control failed:', err)
+      onMessage('error', 'Kommando feilet')
+    } finally {
+      setControllingDevice(null)
+    }
+  }
+
+  const controlGroup = async (
+    groupId: string,
+    command: 'open' | 'close' | 'stop'
+  ) => {
+    const group = groups.find(g => g.id === groupId)
+    if (!group || group.device_ids.length === 0) return
+
+    setControllingGroup(groupId)
+
+    // Get devices for this group
+    const groupDevices = devices.filter(d => group.device_ids.includes(d.id))
+
+    // Group devices by account
+    const devicesByAccount = groupDevices.reduce((acc, device) => {
+      if (!acc[device.account_id]) {
+        acc[device.account_id] = []
+      }
+      acc[device.account_id].push({
+        deviceUrl: device.device_url,
+        command,
+      })
+      return acc
+    }, {} as Record<string, { deviceUrl: string; command: string }[]>)
+
+    try {
+      // Execute for each account
+      await Promise.all(
+        Object.entries(devicesByAccount).map(async ([accountId, devs]) => {
+          const response = await fetch('/api/home-control/somfy/control', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ accountId, devices: devs }),
+          })
+
+          const data = await response.json()
+          if (!data.success) {
+            throw new Error(data.error || 'Kommando feilet')
+          }
+        })
+      )
+    } catch (err) {
+      console.error('Group control failed:', err)
+      onMessage('error', 'Kommando feilet')
+    } finally {
+      setControllingGroup(null)
+    }
+  }
+
+  const saveGroup = async () => {
+    if (!groupName.trim() || selectedDeviceIds.length === 0) return
+
+    setSavingGroup(true)
+    try {
+      if (editingGroup) {
+        // Update existing group
+        await supabase
+          .from('home_control_groups')
+          .update({ name: groupName.trim() })
+          .eq('id', editingGroup.id)
+
+        // Update memberships
+        await supabase
+          .from('home_control_group_devices')
+          .delete()
+          .eq('group_id', editingGroup.id)
+
+        await supabase
+          .from('home_control_group_devices')
+          .insert(selectedDeviceIds.map(deviceId => ({
+            group_id: editingGroup.id,
+            device_id: deviceId,
+          })))
+
+        onMessage('success', 'Gruppe oppdatert')
+      } else {
+        // Create new group
+        const { data: newGroup, error } = await supabase
+          .from('home_control_groups')
+          .insert({
+            household_id: householdId,
+            name: groupName.trim(),
+          })
+          .select('id')
+          .single()
+
+        if (error) throw error
+
+        // Add device memberships
+        await supabase
+          .from('home_control_group_devices')
+          .insert(selectedDeviceIds.map(deviceId => ({
+            group_id: newGroup.id,
+            device_id: deviceId,
+          })))
+
+        onMessage('success', 'Gruppe opprettet')
+      }
+
+      setShowGroupForm(false)
+      setEditingGroup(null)
+      setGroupName('')
+      setSelectedDeviceIds([])
+      await loadAccounts()
+    } catch (err) {
+      console.error('Failed to save group:', err)
+      onMessage('error', 'Kunne ikke lagre gruppe')
+    } finally {
+      setSavingGroup(false)
+    }
+  }
+
+  const deleteGroup = async (groupId: string) => {
+    if (!confirm('Er du sikker på at du vil slette denne gruppen?')) return
+
+    try {
+      await supabase
+        .from('home_control_groups')
+        .delete()
+        .eq('id', groupId)
+
+      setGroups(groups.filter(g => g.id !== groupId))
+      onMessage('success', 'Gruppe slettet')
+    } catch (err) {
+      console.error('Failed to delete group:', err)
+      onMessage('error', 'Kunne ikke slette gruppe')
+    }
+  }
+
+  const openEditGroup = (group: HomeControlGroup) => {
+    setEditingGroup(group)
+    setGroupName(group.name)
+    setSelectedDeviceIds(group.device_ids)
+    setShowGroupForm(true)
+  }
+
   if (loading) {
     return (
       <div className="animate-pulse space-y-4">
@@ -261,6 +472,215 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
 
   return (
     <div className="space-y-6">
+      {/* Device Groups */}
+      {groups.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="font-medium text-sm" style={{ color: 'var(--foreground)' }}>
+              Grupper
+            </h4>
+            {devices.length > 0 && (
+              <button
+                onClick={() => {
+                  setShowGroupForm(true)
+                  setEditingGroup(null)
+                  setGroupName('')
+                  setSelectedDeviceIds([])
+                }}
+                className="text-xs"
+                style={{ color: 'var(--color-sky)' }}
+              >
+                + Ny gruppe
+              </button>
+            )}
+          </div>
+          {groups.map(group => (
+            <div
+              key={group.id}
+              className="rounded-xl p-3"
+              style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-8 h-8 rounded-lg flex items-center justify-center"
+                    style={{ background: 'rgba(213, 186, 124, 0.2)' }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2">
+                      <rect x="3" y="3" width="7" height="7"/>
+                      <rect x="14" y="3" width="7" height="7"/>
+                      <rect x="14" y="14" width="7" height="7"/>
+                      <rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="font-medium text-sm" style={{ color: 'var(--foreground)' }}>
+                      {group.name}
+                    </p>
+                    <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                      {group.device_ids.length} enheter
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => openEditGroup(group)}
+                    className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                    title="Rediger gruppe"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => deleteGroup(group.id)}
+                    className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                    title="Slett gruppe"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-coral)" strokeWidth="2">
+                      <polyline points="3 6 5 6 21 6"/>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => controlGroup(group.id, 'open')}
+                  disabled={controllingGroup === group.id}
+                  className="flex-1 btn btn-secondary text-xs py-1.5"
+                >
+                  {controllingGroup === group.id ? '...' : 'Alle opp'}
+                </button>
+                <button
+                  onClick={() => controlGroup(group.id, 'stop')}
+                  disabled={controllingGroup === group.id}
+                  className="flex-1 btn btn-secondary text-xs py-1.5"
+                >
+                  {controllingGroup === group.id ? '...' : 'Stopp alle'}
+                </button>
+                <button
+                  onClick={() => controlGroup(group.id, 'close')}
+                  disabled={controllingGroup === group.id}
+                  className="flex-1 btn btn-secondary text-xs py-1.5"
+                >
+                  {controllingGroup === group.id ? '...' : 'Alle ned'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Group form */}
+      {showGroupForm && (
+        <div
+          className="rounded-xl p-4"
+          style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
+        >
+          <h4 className="font-medium mb-4" style={{ color: 'var(--foreground)' }}>
+            {editingGroup ? 'Rediger gruppe' : 'Ny gruppe'}
+          </h4>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>
+                Gruppenavn
+              </label>
+              <input
+                type="text"
+                value={groupName}
+                onChange={e => setGroupName(e.target.value)}
+                className="input"
+                placeholder="f.eks. Stue"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs mb-2" style={{ color: 'var(--muted)' }}>
+                Velg enheter
+              </label>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {devices.map(device => (
+                  <label
+                    key={device.id}
+                    className="flex items-center gap-2 p-2 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
+                    style={{ background: selectedDeviceIds.includes(device.id) ? 'rgba(126, 182, 196, 0.1)' : 'transparent' }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedDeviceIds.includes(device.id)}
+                      onChange={e => {
+                        if (e.target.checked) {
+                          setSelectedDeviceIds([...selectedDeviceIds, device.id])
+                        } else {
+                          setSelectedDeviceIds(selectedDeviceIds.filter(id => id !== device.id))
+                        }
+                      }}
+                      className="rounded"
+                    />
+                    <span className="text-sm" style={{ color: 'var(--foreground)' }}>
+                      {device.custom_name || device.label}
+                    </span>
+                    <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                      ({UI_CLASS_LABELS[device.ui_class] || device.ui_class})
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={saveGroup}
+                disabled={savingGroup || !groupName.trim() || selectedDeviceIds.length === 0}
+                className="btn btn-primary"
+              >
+                {savingGroup ? 'Lagrer...' : editingGroup ? 'Oppdater' : 'Opprett'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowGroupForm(false)
+                  setEditingGroup(null)
+                  setGroupName('')
+                  setSelectedDeviceIds([])
+                }}
+                className="btn btn-secondary"
+              >
+                {t.common.cancel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add group button (when no groups exist but devices exist) */}
+      {groups.length === 0 && devices.length > 0 && !showGroupForm && (
+        <button
+          onClick={() => {
+            setShowGroupForm(true)
+            setEditingGroup(null)
+            setGroupName('')
+            setSelectedDeviceIds([])
+          }}
+          className="w-full py-3 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2"
+          style={{
+            background: 'var(--background)',
+            border: '1px dashed var(--border)',
+            color: 'var(--muted)',
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="3" width="7" height="7"/>
+            <rect x="14" y="3" width="7" height="7"/>
+            <rect x="14" y="14" width="7" height="7"/>
+            <rect x="3" y="14" width="7" height="7"/>
+          </svg>
+          Opprett enhetsgruppe
+        </button>
+      )}
+
       {/* Existing accounts */}
       {accounts.map(account => (
         <div
@@ -342,38 +762,103 @@ export function HomeControlSection({ householdId, onMessage }: HomeControlSectio
                     </div>
 
                     {device.available && (
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => controlDevice(account.id, device.device_url, 'open')}
-                          disabled={controllingDevice === device.device_url}
-                          className="flex-1 btn btn-secondary text-xs py-1.5"
-                        >
-                          Opp
-                        </button>
-                        <button
-                          onClick={() => controlDevice(account.id, device.device_url, 'stop')}
-                          disabled={controllingDevice === device.device_url}
-                          className="flex-1 btn btn-secondary text-xs py-1.5"
-                        >
-                          Stopp
-                        </button>
-                        <button
-                          onClick={() => controlDevice(account.id, device.device_url, 'close')}
-                          disabled={controllingDevice === device.device_url}
-                          className="flex-1 btn btn-secondary text-xs py-1.5"
-                        >
-                          Ned
-                        </button>
-                        <button
-                          onClick={() => controlDevice(account.id, device.device_url, 'my')}
-                          disabled={controllingDevice === device.device_url}
-                          className="btn btn-secondary text-xs py-1.5"
-                          title="Favorittposisjon"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-                          </svg>
-                        </button>
+                      <div className="space-y-2">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => controlDevice(account.id, device.device_url, 'open')}
+                            disabled={controllingDevice === device.device_url}
+                            className="flex-1 btn btn-secondary text-xs py-1.5"
+                          >
+                            Opp
+                          </button>
+                          <button
+                            onClick={() => controlDevice(account.id, device.device_url, 'stop')}
+                            disabled={controllingDevice === device.device_url}
+                            className="flex-1 btn btn-secondary text-xs py-1.5"
+                          >
+                            Stopp
+                          </button>
+                          <button
+                            onClick={() => controlDevice(account.id, device.device_url, 'close')}
+                            disabled={controllingDevice === device.device_url}
+                            className="flex-1 btn btn-secondary text-xs py-1.5"
+                          >
+                            Ned
+                          </button>
+                          <button
+                            onClick={() => controlDevice(account.id, device.device_url, 'my')}
+                            disabled={controllingDevice === device.device_url}
+                            className="btn btn-secondary text-xs py-1.5"
+                            title="Favorittposisjon"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSliderDevice(device.device_url)
+                              setSliderPosition(device.position ?? 50)
+                            }}
+                            disabled={controllingDevice === device.device_url}
+                            className="btn btn-secondary text-xs py-1.5"
+                            title="Velg posisjon"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <line x1="4" y1="21" x2="4" y2="14"/>
+                              <line x1="4" y1="10" x2="4" y2="3"/>
+                              <line x1="12" y1="21" x2="12" y2="12"/>
+                              <line x1="12" y1="8" x2="12" y2="3"/>
+                              <line x1="20" y1="21" x2="20" y2="16"/>
+                              <line x1="20" y1="12" x2="20" y2="3"/>
+                              <line x1="1" y1="14" x2="7" y2="14"/>
+                              <line x1="9" y1="8" x2="15" y2="8"/>
+                              <line x1="17" y1="16" x2="23" y2="16"/>
+                            </svg>
+                          </button>
+                        </div>
+
+                        {/* Position slider */}
+                        {sliderDevice === device.device_url && (
+                          <div
+                            className="p-2 rounded-lg"
+                            style={{ background: 'var(--background)' }}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs" style={{ color: 'var(--muted)' }}>0%</span>
+                              <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                value={sliderPosition}
+                                onChange={e => setSliderPosition(Number(e.target.value))}
+                                className="flex-1 h-2 rounded-lg appearance-none cursor-pointer"
+                                style={{ background: 'var(--border)' }}
+                              />
+                              <span className="text-xs" style={{ color: 'var(--muted)' }}>100%</span>
+                            </div>
+                            <div className="flex items-center justify-between mt-2">
+                              <span className="text-xs font-medium" style={{ color: 'var(--foreground)' }}>
+                                {sliderPosition}%
+                              </span>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => setSliderDevice(null)}
+                                  className="btn btn-secondary text-xs py-1 px-2"
+                                >
+                                  Avbryt
+                                </button>
+                                <button
+                                  onClick={() => setDevicePosition(account.id, device.device_url, sliderPosition)}
+                                  disabled={controllingDevice === device.device_url}
+                                  className="btn btn-primary text-xs py-1 px-2"
+                                >
+                                  {controllingDevice === device.device_url ? 'Setter...' : 'Sett'}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
