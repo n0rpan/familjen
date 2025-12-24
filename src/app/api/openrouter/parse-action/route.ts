@@ -12,7 +12,6 @@ import type { MealSuggestion } from '@/lib/types'
 const parseActionSchema = z.object({
   input: z.string().max(500).optional().default(''),
   image: z.string().optional(), // Base64 data URI for image analysis
-  imageCategoryHint: z.enum(['gift', 'event', 'task', 'other']).optional(), // User-selected category hint
   context: z.object({
     today: z.string(),
     children: z.array(z.object({
@@ -156,7 +155,7 @@ export async function POST(request: Request) {
     if (!validation.success) {
       return NextResponse.json({ error: 'Ugyldig forespørsel' }, { status: 400 })
     }
-    const { input, image, imageCategoryHint, context } = validation.data
+    const { input, image, context } = validation.data
     const hasImage = Boolean(image)
 
     // Detect request mode
@@ -195,7 +194,7 @@ export async function POST(request: Request) {
     // Build the prompt
     const systemPrompt = buildSystemPrompt(context)
     const userPrompt = hasImage
-      ? buildVisionUserPrompt(input, image!, context, currentMember?.name, imageCategoryHint)
+      ? buildVisionUserPrompt(input, image!, context, currentMember?.name)
       : buildUserPrompt(input, context, currentMember?.name)
 
     // Call OpenRouter API
@@ -561,8 +560,7 @@ function buildVisionUserPrompt(
   input: string,
   _image: string,
   context: z.infer<typeof parseActionSchema>['context'],
-  currentUserName?: string,
-  categoryHint?: 'gift' | 'event' | 'task' | 'other'
+  currentUserName?: string
 ): string {
   const baseContext = `
 Kontekst:
@@ -572,57 +570,19 @@ Kontekst:
 - Voksne: ${context.members.map(m => m.name).join(', ') || 'ingen'}`
 
   const childrenOptions = context.children.map(c => `{ "label": "${c.name}", "value": "${c.id}" }`).join(', ')
-  const membersOptions = context.members.map(m => `{ "label": "${m.name}", "value": "${m.id}" }`).join(', ')
   const allPersonOptions = [...context.children.map(c => `{ "label": "${c.name}", "value": "${c.id}" }`), ...context.members.map(m => `{ "label": "${m.name}", "value": "${m.id}" }`)].join(', ')
 
-  // If user provided additional text context, include it
-  const userNote = input.trim() ? `\nBrukerens tilleggsinformasjon: "${input}"` : ''
+  // If user provided additional text context, include it as a strong directive
+  const userNote = input.trim()
+    ? `\n\nBRUKERENS INSTRUKSJON (VIKTIG - følg denne!): "${input}"
+Brukeren har gitt denne instruksjonen for hvordan bildet skal tolkes. Prioriter brukerens instruksjon over automatisk tolkning.`
+    : ''
 
-  // Build category-specific guidance based on user's hint
-  let categoryGuidance = ''
-  if (categoryHint === 'gift') {
-    categoryGuidance = `
-BRUKERENS KATEGORI-VALG: GAVE/ØNSKELISTE
-Brukeren har indikert at dette bildet viser noe de ønsker seg (gave, produkt, leke, etc.).
-- Tolk bildet som et produkt/ønske for ønskelisten
-- Returner: wishlist_item med operation="add"
-- Finn: Produktnavn, beskrivelse, ca. pris hvis synlig
-- VIKTIG: wishlist_item MÅ ALLTID ha needs_clarification for person_id:
-  {
-    "needs_clarification": {
-      "field": "person_id",
-      "question": "Hvem sin ønskeliste skal dette på?",
-      "options": [${allPersonOptions}]
-    }
-  }
-`
-  } else if (categoryHint === 'event') {
-    categoryGuidance = `
-BRUKERENS KATEGORI-VALG: HENDELSE
-Brukeren har indikert at dette bildet viser en hendelse/avtale (invitasjon, arrangement, etc.).
-- Tolk bildet som informasjon om en hendelse
-- Finn: Dato, klokkeslett, sted, hva slags hendelse
-- For barnerelaterte hendelser (bursdag, skolearrangement, etc.): Returner child_task med task_type="appointment"
-- For voksen-hendelser (jobbmøte, familiearrangement, etc.): Returner member_event
-- VIKTIG: Sett needs_clarification for child_id/member_id hvis du ikke vet hvem det gjelder
-- Barn til valg: [${childrenOptions}]
-- Voksne til valg: [${membersOptions}]
-`
-  } else if (categoryHint === 'task') {
-    categoryGuidance = `
-BRUKERENS KATEGORI-VALG: OPPGAVE
-Brukeren har indikert at dette bildet viser en oppgave/påminnelse (huskelapp, påminnelse, handleliste, etc.).
-- Tolk bildet som en oppgave eller påminnelse
-- For barnerelaterte oppgaver (ta med, huske, avtale): Returner child_task med passende task_type
-- For handleliste/kjøpeliste: Returner shopping_item med operation="add" for hver vare
-- For middagsplan/mat: Returner meal med dato
-- VIKTIG: Sett needs_clarification for child_id hvis det gjelder barn men du ikke vet hvilket
-- Barn til valg: [${childrenOptions}]
-`
-  }
+  return `Analyser dette bildet og bestem hva det viser.
+${userNote}
 
-  // If no category hint, show all possible types
-  const defaultGuidance = categoryHint ? '' : `
+${baseContext}
+
 MULIGE BILDETYPER (analyser og bestem automatisk):
 
 1. INVITASJON / HENDELSE
@@ -651,12 +611,6 @@ MULIGE BILDETYPER (analyser og bestem automatisk):
 
 6. ANNET
    - Prøv å tolk innholdet og returner passende handling
-`
-
-  return `Analyser dette bildet og bestem hva det viser.
-${categoryGuidance}${defaultGuidance}
-${baseContext}
-${userNote}
 
 VIKTIG:
 - Barn til valg (for needs_clarification): [${childrenOptions}]

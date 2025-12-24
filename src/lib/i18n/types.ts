@@ -777,13 +777,6 @@ export interface TranslationStrings {
     undo: string
     parsing: string
     confirmDelete: string
-    // Image category selection
-    whatIsThis: string
-    categoryGift: string
-    categoryEvent: string
-    categoryTask: string
-    categoryOther: string
-    changeCategory: string
   }
 
   // Push Notifications

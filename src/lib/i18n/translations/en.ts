@@ -752,13 +752,6 @@ export const en: TranslationStrings = {
     undo: 'Undo',
     parsing: 'Parsing...',
     confirmDelete: 'Are you sure you want to delete this?',
-    // Image category selection
-    whatIsThis: 'What is this?',
-    categoryGift: 'Gift',
-    categoryEvent: 'Event',
-    categoryTask: 'Task',
-    categoryOther: 'Other',
-    changeCategory: 'Change type',
   },
 
   notifications: {

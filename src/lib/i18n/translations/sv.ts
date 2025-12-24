@@ -752,13 +752,6 @@ export const sv: TranslationStrings = {
     undo: 'Ångra',
     parsing: 'Tolkar...',
     confirmDelete: 'Är du säker på att du vill ta bort detta?',
-    // Image category selection
-    whatIsThis: 'Vad är detta?',
-    categoryGift: 'Present',
-    categoryEvent: 'Händelse',
-    categoryTask: 'Uppgift',
-    categoryOther: 'Annat',
-    changeCategory: 'Ändra typ',
   },
 
   notifications: {
