@@ -5,17 +5,6 @@ import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import { TransitionLink } from '@/components/TransitionLink'
 
-interface HomeControlAccount {
-  id: string
-  service: string
-  display_name: string
-  account_email: string | null
-  server: string
-  last_sync_at: string | null
-  last_sync_status: string
-  last_sync_error: string | null
-}
-
 interface HomeControlDevice {
   id: string
   account_id: string
@@ -41,7 +30,7 @@ interface HomeControlGroup {
 }
 
 interface HomeControlPanelProps {
-  compact?: boolean // For embedding in other pages
+  compact?: boolean
 }
 
 const UI_CLASS_ICONS: Record<string, React.ReactNode> = {
@@ -88,7 +77,6 @@ const getDeviceIcon = (uiClass: string) => {
 
 export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
   const { t } = useLanguage()
-  const [accounts, setAccounts] = useState<HomeControlAccount[]>([])
   const [devices, setDevices] = useState<HomeControlDevice[]>([])
   const [groups, setGroups] = useState<HomeControlGroup[]>([])
   const [loading, setLoading] = useState(true)
@@ -99,20 +87,47 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
   const [activeSlider, setActiveSlider] = useState<string | null>(null)
   const [sliderValue, setSliderValue] = useState(0)
   const [confirmedDevice, setConfirmedDevice] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  // Refs
   const sliderTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const confirmTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const sliderValueRef = useRef(0) // Use ref to avoid stale closure
 
   const supabase = useMemo(() => createClient(), [])
+
+  // Cleanup all timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (sliderTimeoutRef.current) clearTimeout(sliderTimeoutRef.current)
+      if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current)
+      if (confirmTimeoutRef.current) clearTimeout(confirmTimeoutRef.current)
+    }
+  }, [])
+
+  const showError = useCallback((message: string) => {
+    if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current)
+    setError(message)
+    errorTimeoutRef.current = setTimeout(() => setError(null), 4000)
+  }, [])
+
+  const showConfirmation = useCallback((deviceUrl: string) => {
+    if (confirmTimeoutRef.current) clearTimeout(confirmTimeoutRef.current)
+    setConfirmedDevice(deviceUrl)
+    confirmTimeoutRef.current = setTimeout(() => setConfirmedDevice(null), 2000)
+  }, [])
 
   const loadData = useCallback(async () => {
     try {
       const { data: accountData } = await supabase.rpc('get_household_home_control_accounts')
-      setAccounts(accountData || [])
 
       if (accountData && accountData.length > 0) {
+        const accountIds = accountData.map((a: { id: string }) => a.id)
         const { data: deviceData } = await supabase
           .from('home_control_devices')
           .select('*')
-          .in('account_id', accountData.map((a: HomeControlAccount) => a.id))
+          .in('account_id', accountIds)
           .eq('is_hidden', false)
           .order('favorite', { ascending: false })
           .order('label')
@@ -133,10 +148,11 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
       }
     } catch (err) {
       console.error('Failed to load home control data:', err)
+      showError(t.homeControl.syncFailed)
     } finally {
       setLoading(false)
     }
-  }, [supabase])
+  }, [supabase, showError, t.homeControl.syncFailed])
 
   useEffect(() => {
     loadData()
@@ -157,18 +173,19 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
       const data = await response.json()
 
       if (data.success) {
-        // Update position based on command
         if (command === 'open' || command === 'close') {
           const newPosition = command === 'open' ? 0 : 100
           setDevices(prev =>
             prev.map(d => d.device_url === deviceUrl ? { ...d, position: newPosition } : d)
           )
         }
-        setConfirmedDevice(deviceUrl)
-        setTimeout(() => setConfirmedDevice(null), 2000)
+        showConfirmation(deviceUrl)
+      } else {
+        showError(data.error || t.homeControl.commandFailed)
       }
     } catch (err) {
       console.error('Control failed:', err)
+      showError(t.homeControl.commandFailed)
     } finally {
       setControllingDevice(null)
     }
@@ -188,11 +205,13 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
         setDevices(prev =>
           prev.map(d => d.device_url === deviceUrl ? { ...d, position } : d)
         )
-        setConfirmedDevice(deviceUrl)
-        setTimeout(() => setConfirmedDevice(null), 2000)
+        showConfirmation(deviceUrl)
+      } else {
+        showError(data.error || t.homeControl.commandFailed)
       }
     } catch (err) {
       console.error('Position control failed:', err)
+      showError(t.homeControl.commandFailed)
     } finally {
       setControllingDevice(null)
       setActiveSlider(null)
@@ -204,7 +223,13 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
     if (!group || group.device_ids.length === 0) return
 
     setControllingGroup(groupId)
-    const groupDevices = devices.filter(d => group.device_ids.includes(d.id))
+    const groupDevices = devices.filter(d => group.device_ids.includes(d.id) && d.available)
+
+    if (groupDevices.length === 0) {
+      setControllingGroup(null)
+      return
+    }
+
     const devicesByAccount = groupDevices.reduce((acc, device) => {
       if (!acc[device.account_id]) acc[device.account_id] = []
       acc[device.account_id].push({ deviceUrl: device.device_url, command })
@@ -212,16 +237,24 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
     }, {} as Record<string, { deviceUrl: string; command: string }[]>)
 
     try {
-      await Promise.all(
+      const results = await Promise.allSettled(
         Object.entries(devicesByAccount).map(async ([accountId, devs]) => {
-          await fetch('/api/home-control/somfy/control', {
+          const response = await fetch('/api/home-control/somfy/control', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ accountId, devices: devs }),
           })
+          return response.json()
         })
       )
-      // Update positions for group devices
+
+      const failures = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.success))
+
+      if (failures.length > 0) {
+        showError(t.homeControl.partialFailure.replace('{failed}', String(failures.length)).replace('{total}', String(results.length)))
+      }
+
+      // Update positions for successful controls
       if (command === 'open' || command === 'close') {
         const newPosition = command === 'open' ? 0 : 100
         setDevices(prev =>
@@ -232,17 +265,18 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
       }
     } catch (err) {
       console.error('Group control failed:', err)
+      showError(t.homeControl.commandFailed)
     } finally {
       setControllingGroup(null)
     }
   }
 
-  // Handle slider interaction with debounce
+  // Handle slider interaction - use ref to avoid stale closure
   const handleSliderChange = (deviceUrl: string, value: number) => {
     setActiveSlider(deviceUrl)
     setSliderValue(value)
+    sliderValueRef.current = value
 
-    // Clear existing timeout
     if (sliderTimeoutRef.current) {
       clearTimeout(sliderTimeoutRef.current)
     }
@@ -250,25 +284,24 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
 
   const handleSliderEnd = (accountId: string, deviceUrl: string) => {
     if (activeSlider === deviceUrl) {
-      setDevicePosition(accountId, deviceUrl, sliderValue)
+      setDevicePosition(accountId, deviceUrl, sliderValueRef.current)
     }
   }
 
-  // Get visible devices (favorites first, then others)
+  // Get visible devices (favorites first)
   const visibleDevices = useMemo(() => {
     const favorites = devices.filter(d => d.favorite)
     const nonFavorites = devices.filter(d => !d.favorite)
     return [...favorites, ...nonFavorites]
   }, [devices])
 
-  // Check if we have any devices configured
   const hasDevices = devices.length > 0 || groups.length > 0
 
   if (loading) {
     return (
       <div className="animate-pulse space-y-3">
-        <div className="h-20 rounded-2xl" style={{ background: 'var(--card)' }} />
-        <div className="h-20 rounded-2xl" style={{ background: 'var(--card)' }} />
+        <div className="h-24 rounded-2xl" style={{ background: 'var(--card)' }} />
+        <div className="h-24 rounded-2xl" style={{ background: 'var(--card)' }} />
       </div>
     )
   }
@@ -306,72 +339,105 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
 
   return (
     <div className="space-y-4">
+      {/* Error Toast */}
+      {error && (
+        <div
+          className="fixed z-50 px-4 py-3 rounded-xl shadow-lg animate-slide-up left-4 right-4 sm:left-auto sm:right-4 sm:max-w-sm"
+          style={{
+            top: 'max(1rem, env(safe-area-inset-top, 0px) + 0.5rem)',
+            background: 'var(--color-coral)',
+            color: 'white',
+          }}
+          role="alert"
+        >
+          {error}
+        </div>
+      )}
+
       {/* Groups - Quick Controls */}
       {groups.length > 0 && (
         <div className="space-y-2">
-          {groups.map(group => (
-            <div
-              key={group.id}
-              className="rounded-2xl p-4"
-              style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-            >
-              <div className="flex items-center gap-3 mb-3">
-                <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                  style={{ background: 'rgba(213, 186, 124, 0.2)' }}
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2">
-                    <rect x="3" y="3" width="7" height="7"/>
-                    <rect x="14" y="3" width="7" height="7"/>
-                    <rect x="14" y="14" width="7" height="7"/>
-                    <rect x="3" y="14" width="7" height="7"/>
-                  </svg>
+          {groups.map(group => {
+            const isControlling = controllingGroup === group.id
+            return (
+              <div
+                key={group.id}
+                className="rounded-2xl p-4"
+                style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ background: 'rgba(213, 186, 124, 0.2)' }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2">
+                      <rect x="3" y="3" width="7" height="7"/>
+                      <rect x="14" y="3" width="7" height="7"/>
+                      <rect x="14" y="14" width="7" height="7"/>
+                      <rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold" style={{ color: 'var(--foreground)' }}>
+                      {group.name}
+                    </p>
+                    <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                      {t.homeControl.deviceCount.replace('{count}', String(group.device_ids.length))}
+                    </p>
+                  </div>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold" style={{ color: 'var(--foreground)' }}>
-                    {group.name}
-                  </p>
-                  <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                    {t.homeControl.deviceCount.replace('{count}', String(group.device_ids.length))}
-                  </p>
-                </div>
-              </div>
 
-              {/* Group Control Buttons */}
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  onClick={() => controlGroup(group.id, 'open')}
-                  disabled={controllingGroup === group.id}
-                  className="control-btn control-btn-open"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <polyline points="18 15 12 9 6 15"/>
-                  </svg>
-                  <span>{t.homeControl.allUp}</span>
-                </button>
-                <button
-                  onClick={() => controlGroup(group.id, 'stop')}
-                  disabled={controllingGroup === group.id}
-                  className="control-btn control-btn-stop"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <rect x="6" y="6" width="12" height="12"/>
-                  </svg>
-                  <span>{t.homeControl.stop}</span>
-                </button>
-                <button
-                  onClick={() => controlGroup(group.id, 'close')}
-                  disabled={controllingGroup === group.id}
-                  className="control-btn control-btn-close"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <polyline points="6 9 12 15 18 9"/>
-                  </svg>
-                  <span>{t.homeControl.allDown}</span>
-                </button>
+                {/* Group Control Buttons */}
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => controlGroup(group.id, 'open')}
+                    disabled={isControlling}
+                    className="control-btn control-btn-open"
+                    aria-label={`${t.homeControl.allUp} ${group.name}`}
+                  >
+                    {isControlling ? (
+                      <span className="loading-spinner" />
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <polyline points="18 15 12 9 6 15"/>
+                      </svg>
+                    )}
+                    <span>{t.homeControl.allUp}</span>
+                  </button>
+                  <button
+                    onClick={() => controlGroup(group.id, 'stop')}
+                    disabled={isControlling}
+                    className="control-btn control-btn-stop"
+                    aria-label={`${t.homeControl.stop} ${group.name}`}
+                  >
+                    {isControlling ? (
+                      <span className="loading-spinner" />
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <rect x="6" y="6" width="12" height="12"/>
+                      </svg>
+                    )}
+                    <span>{t.homeControl.stop}</span>
+                  </button>
+                  <button
+                    onClick={() => controlGroup(group.id, 'close')}
+                    disabled={isControlling}
+                    className="control-btn control-btn-close"
+                    aria-label={`${t.homeControl.allDown} ${group.name}`}
+                  >
+                    {isControlling ? (
+                      <span className="loading-spinner" />
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <polyline points="6 9 12 15 18 9"/>
+                      </svg>
+                    )}
+                    <span>{t.homeControl.allDown}</span>
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -407,12 +473,12 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
                     </p>
                     <p className="text-xs" style={{ color: isConfirmed ? 'var(--color-sage)' : 'var(--muted)' }}>
                       {isConfirmed && '✓ '}
-                      {currentPosition}%
+                      {currentPosition === 0 ? t.homeControl.open : currentPosition === 100 ? t.homeControl.closed : `${currentPosition}%`}
                     </p>
                   </div>
                 </div>
                 {device.favorite && (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--color-honey)" stroke="var(--color-honey)" strokeWidth="2">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--color-honey)" stroke="var(--color-honey)" strokeWidth="2" aria-label={t.homeControl.favoritePosition}>
                     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
                   </svg>
                 )}
@@ -420,34 +486,68 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
 
               {device.available ? (
                 <>
-                  {/* Quick Action Buttons */}
-                  <div className="grid grid-cols-3 gap-2 mb-4">
+                  {/* Quick Action Buttons with labels */}
+                  <div className="grid grid-cols-4 gap-2 mb-4">
                     <button
                       onClick={() => controlDevice(device.account_id, device.device_url, 'open')}
                       disabled={isControlling}
                       className="control-btn control-btn-open"
+                      aria-label={`${t.homeControl.open} ${device.custom_name || device.label}`}
                     >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <polyline points="18 15 12 9 6 15"/>
-                      </svg>
+                      {isControlling ? (
+                        <span className="loading-spinner" />
+                      ) : (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <polyline points="18 15 12 9 6 15"/>
+                        </svg>
+                      )}
                     </button>
                     <button
                       onClick={() => controlDevice(device.account_id, device.device_url, 'stop')}
                       disabled={isControlling}
                       className="control-btn control-btn-stop"
+                      aria-label={`${t.homeControl.stop} ${device.custom_name || device.label}`}
                     >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <rect x="6" y="6" width="12" height="12"/>
-                      </svg>
+                      {isControlling ? (
+                        <span className="loading-spinner" />
+                      ) : (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <rect x="6" y="6" width="12" height="12"/>
+                        </svg>
+                      )}
                     </button>
                     <button
                       onClick={() => controlDevice(device.account_id, device.device_url, 'close')}
                       disabled={isControlling}
                       className="control-btn control-btn-close"
+                      aria-label={`${t.homeControl.closed} ${device.custom_name || device.label}`}
                     >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <polyline points="6 9 12 15 18 9"/>
-                      </svg>
+                      {isControlling ? (
+                        <span className="loading-spinner" />
+                      ) : (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => controlDevice(device.account_id, device.device_url, 'my')}
+                      disabled={isControlling}
+                      className="control-btn"
+                      style={{
+                        background: 'rgba(229, 185, 94, 0.15)',
+                        color: 'var(--color-honey)'
+                      }}
+                      aria-label={`${t.homeControl.favoritePosition} ${device.custom_name || device.label}`}
+                      title={t.homeControl.favoritePosition}
+                    >
+                      {isControlling ? (
+                        <span className="loading-spinner" />
+                      ) : (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1">
+                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                        </svg>
+                      )}
                     </button>
                   </div>
 
@@ -470,13 +570,17 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
                       disabled={isControlling}
                       className="slider-input"
                       aria-label={`${t.homeControl.position} ${device.custom_name || device.label}`}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={currentPosition}
+                      aria-valuetext={currentPosition === 0 ? t.homeControl.open : currentPosition === 100 ? t.homeControl.closed : `${currentPosition}%`}
                     />
                   </div>
 
-                  {/* Position labels */}
+                  {/* Position labels - semantic */}
                   <div className="flex justify-between text-xs mt-1" style={{ color: 'var(--muted)' }}>
-                    <span>0%</span>
-                    <span>100%</span>
+                    <span>{t.homeControl.open}</span>
+                    <span>{t.homeControl.closed}</span>
                   </div>
                 </>
               ) : (

@@ -592,7 +592,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                     </div>
                     <div>
                       <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>
-                        Type
+                        {t.homeControl.deviceType}
                       </label>
                       <select
                         value={editDeviceType}
@@ -657,7 +657,8 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                       <button
                         onClick={() => toggleDeviceHidden(device.id, !device.is_hidden)}
                         className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-                        title={device.is_hidden ? 'Show' : 'Hide'}
+                        title={device.is_hidden ? t.homeControl.showDevice : t.homeControl.hideDevice}
+                        aria-label={device.is_hidden ? t.homeControl.showDevice : t.homeControl.hideDevice}
                       >
                         {device.is_hidden ? (
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2">
@@ -774,7 +775,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                     value={groupName}
                     onChange={e => setGroupName(e.target.value)}
                     className="input"
-                    placeholder="f.eks. Stue"
+                    placeholder={t.homeControl.exampleGroupName}
                   />
                 </div>
 

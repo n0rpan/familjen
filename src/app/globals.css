@@ -693,6 +693,20 @@ a, button, [role="button"], input, select, textarea {
   }
 }
 
+/* Loading spinner for control buttons */
+.loading-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.control-btn .loading-spinner {
+  opacity: 0.8;
+}
+
 /* Mobile header spacing - accounts for fixed header + safe area + content spacing */
 .pt-mobile-header {
   padding-top: calc(4.5rem + env(safe-area-inset-top, 0px));

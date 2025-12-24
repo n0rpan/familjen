@@ -794,6 +794,12 @@ export interface TranslationStrings {
     stopAll: string
     favoritePosition: string
     position: string
+    open: string
+    closed: string
+    deviceType: string
+    showDevice: string
+    hideDevice: string
+    exampleGroupName: string
     unavailable: string
     commandFailed: string
     partialFailure: string
