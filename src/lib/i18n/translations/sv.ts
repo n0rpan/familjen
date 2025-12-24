@@ -9,6 +9,7 @@ export const sv: TranslationStrings = {
     recipes: 'Recept',
     rememberList: 'Kom-ihåg-lista',
     shoppingList: 'Inköpslista',
+    homeControl: 'Styrning',
     settings: 'Inställningar',
     admin: 'Admin',
     logout: 'Logga ut',

@@ -17,6 +17,7 @@ export interface TranslationStrings {
     recipes: string
     rememberList: string
     shoppingList: string
+    homeControl: string
     settings: string
     admin: string
     logout: string

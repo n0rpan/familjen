@@ -9,6 +9,7 @@ export const nb: TranslationStrings = {
     recipes: 'Oppskrifter',
     rememberList: 'Huskeliste',
     shoppingList: 'Handleliste',
+    homeControl: 'Styring',
     settings: 'Innstillinger',
     admin: 'Admin',
     logout: 'Logg ut',

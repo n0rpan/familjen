@@ -9,6 +9,7 @@ export const en: TranslationStrings = {
     recipes: 'Recipes',
     rememberList: 'Remember List',
     shoppingList: 'Shopping List',
+    homeControl: 'Control',
     settings: 'Settings',
     admin: 'Admin',
     logout: 'Log out',
