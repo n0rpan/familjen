@@ -273,7 +273,6 @@ export function UniversalAIInput({
       setImagePreview(base64)
 
       // Parse immediately - AI will analyze and suggest action type
-      // User can change the type afterwards using the type switcher
       parseInput(input || '', base64)
     } catch (err) {
       console.error('Image compression failed:', err)
@@ -281,7 +280,7 @@ export function UniversalAIInput({
     } finally {
       setIsCompressing(false)
     }
-  }, [])
+  }, [input, parseInput])
 
   const handleRemoveImage = useCallback(() => {
     setSelectedImage(null)
