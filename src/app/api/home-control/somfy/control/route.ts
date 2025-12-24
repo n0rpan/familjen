@@ -53,6 +53,17 @@ export async function POST(request: NextRequest) {
     console.error('Somfy control error:', error)
 
     if (error instanceof SomfyAuthError) {
+      // Try to extract accountId from request to clear cached tokens
+      try {
+        const body = await request.clone().json()
+        const accountId = body?.accountId
+        if (accountId) {
+          await clearCachedTokens(accountId)
+        }
+      } catch {
+        // Ignore errors when clearing tokens
+      }
+
       return NextResponse.json(
         { success: false, error: 'Authentication failed' },
         { status: 401 }
