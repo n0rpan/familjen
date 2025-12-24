@@ -108,6 +108,10 @@ async function performAuthentication(accountId: string): Promise<ToshibaClient> 
   const { username, password } = credentials as { username: string; password: string }
   await client.login(username, password)
 
+  // Brief delay after fresh login to allow Toshiba cloud to sync device states
+  // Some devices don't have ACStateData immediately available after login
+  await new Promise(resolve => setTimeout(resolve, 2000))
+
   // Save tokens for future use
   const tokens = client.getTokens()
   await supabase.rpc('update_toshiba_tokens', {
