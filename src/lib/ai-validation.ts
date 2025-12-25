@@ -73,7 +73,8 @@ export async function validateMealSuggestions(
   // Build meals description
   const mealsDesc = meals.map(m => {
     const ingredients = m.ingredients.map(i => i.item).join(', ')
-    return `- ${m.day}: "${m.name}" - Ingredienser: ${ingredients}`
+    const desc = m.description ? ` - "${m.description}"` : ''
+    return `- ${m.day}: "${m.name}"${desc}\n  Ingredienser: ${ingredients}`
   }).join('\n')
 
   const prompt = `Du er en ernæringsekspert som validerer ukemenyer for familier.
