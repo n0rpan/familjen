@@ -7,9 +7,11 @@ import { TransitionLink } from '@/components/TransitionLink'
 import { getAccountDisplayName } from '@/lib/integrations/somfy/utils'
 import {
   TEMPERATURE,
+} from '@/lib/integrations/toshiba/constants'
+import {
   type ToshibaOperationMode,
   type ToshibaPowerState,
-} from '@/lib/integrations/toshiba'
+} from '@/lib/integrations/toshiba/types'
 
 interface HomeControlDevice {
   id: string
