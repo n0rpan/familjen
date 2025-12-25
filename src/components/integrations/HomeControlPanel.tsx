@@ -833,7 +833,8 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
                                 {isOffline ? (t.homeControl?.offline || 'Offline') : isOn ? (
                                   <>
                                     {t.homeControl?.acModes?.[modeKey] || device.operation_mode}
-                                    {device.target_temperature && ` • ${device.target_temperature}°`}
+                                    {device.current_temperature != null && ` • ${device.current_temperature}°`}
+                                    {device.target_temperature != null && ` → ${device.target_temperature}°`}
                                   </>
                                 ) : (t.homeControl?.powerOff || 'Off')}
                               </p>
@@ -950,7 +951,8 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
                                 {isOffline ? (t.homeControl?.offline || 'Offline') : isOn ? (
                                   <>
                                     {t.homeControl?.acModes?.[modeKey] || device.operation_mode}
-                                    {device.target_temperature && ` • ${device.target_temperature}°`}
+                                    {device.current_temperature != null && ` • ${device.current_temperature}°`}
+                                    {device.target_temperature != null && ` → ${device.target_temperature}°`}
                                   </>
                                 ) : (t.homeControl?.powerOff || 'Off')}
                               </p>
