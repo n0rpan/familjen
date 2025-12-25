@@ -8,30 +8,53 @@ import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limi
 import { extractJSON } from '@/lib/json-extract'
 import { formatDateISO } from '@/lib/utils'
 import { validateMealSuggestions } from '@/lib/ai-validation'
+import { sanitizePromptInput, sanitizePromptArray } from '@/lib/sanitize'
 
 /**
- * Sanitize user input to prevent prompt injection attacks.
- * - Removes newlines, control characters
- * - Limits length
- * - Strips common injection patterns
+ * JSON Schema for structured output from meal suggestion API.
+ * Using structured outputs ensures valid JSON and reduces parsing errors.
+ * See: https://openrouter.ai/docs/guides/features/structured-outputs
  */
-function sanitizeInput(input: string, maxLength = 100): string {
-  if (!input) return ''
-  return input
-    .replace(/[\r\n\t]/g, ' ')           // Remove newlines/tabs
-    .replace(/\s+/g, ' ')                 // Collapse whitespace
-    .replace(/[<>{}[\]]/g, '')            // Remove brackets that could be injection markers
-    .slice(0, maxLength)                  // Limit length
-    .trim()
-}
-
-/**
- * Sanitize an array of user inputs (e.g., allergies list)
- */
-function sanitizeArray(items: string[], maxItemLength = 50): string[] {
-  return items
-    .map(item => sanitizeInput(item, maxItemLength))
-    .filter(item => item.length > 0 && item.length <= maxItemLength)
+const MEAL_SUGGESTION_SCHEMA = {
+  type: 'json_schema',
+  json_schema: {
+    name: 'meal_suggestions',
+    strict: true,
+    schema: {
+      type: 'object',
+      properties: {
+        suggestions: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              day: { type: 'string', description: 'Date in YYYY-MM-DD format' },
+              name: { type: 'string', description: 'Name of the dish' },
+              description: { type: 'string', description: 'Short description of the dish' },
+              ingredients: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    item: { type: 'string' },
+                    amount: { type: 'string' },
+                  },
+                  required: ['item', 'amount'],
+                  additionalProperties: false,
+                },
+              },
+              is_quick: { type: 'boolean' },
+              is_kid_friendly: { type: 'boolean' },
+            },
+            required: ['day', 'name', 'description', 'ingredients', 'is_quick', 'is_kid_friendly'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['suggestions'],
+      additionalProperties: false,
+    },
+  },
 }
 
 // Helper to calculate age from birth date
@@ -136,7 +159,7 @@ export async function POST(request: Request) {
     if (childrenResult.data) {
       for (const child of childrenResult.data) {
         const rawAllergies = (child.allergies as string[]) || []
-        const allergies = sanitizeArray(rawAllergies)
+        const allergies = sanitizePromptArray(rawAllergies)
         // Add to combined set
         allergies.forEach(a => allAllergiesSet.add(a.toLowerCase()))
         if (child.birth_date) {
@@ -153,7 +176,7 @@ export async function POST(request: Request) {
     if (membersResult.data) {
       for (const member of membersResult.data) {
         const rawAllergies = (member.allergies as string[]) || []
-        const allergies = sanitizeArray(rawAllergies)
+        const allergies = sanitizePromptArray(rawAllergies)
         allergies.forEach(a => allAllergiesSet.add(a.toLowerCase()))
       }
     }
@@ -163,7 +186,6 @@ export async function POST(request: Request) {
     // Get recipes
     const recipes = recipesResult.data || []
     const favoriteRecipes = recipes.filter(r => r.is_favorite)
-    const quickRecipes = recipes.filter(r => r.is_quick)
 
     // Get recent meals for context
     const recentMealNames = (recentMealsResult.data || [])
@@ -181,7 +203,7 @@ export async function POST(request: Request) {
 
     // Get week-specific context (sanitized to prevent prompt injection)
     const weekContext = weekContextResult.data?.context
-      ? sanitizeInput(weekContextResult.data.context, 500)
+      ? sanitizePromptInput(weekContextResult.data.context, 500)
       : null
 
     // Determine which days need suggestions
@@ -248,10 +270,9 @@ export async function POST(request: Request) {
         parentCount,
         recipes,
         favoriteRecipes,
-        quickRecipes,
         recentMealNames,
         holidays,
-        defaultContext: household.ai_meal_context ? sanitizeInput(household.ai_meal_context, 500) : null,
+        defaultContext: household.ai_meal_context ? sanitizePromptInput(household.ai_meal_context, 500) : null,
         weekContext,
         season,
         allAllergies,
@@ -310,6 +331,7 @@ Ikke inkluder noe annet enn JSON i svaret.`,
             ],
             temperature: 0.4,
             max_tokens: 2000,
+            response_format: MEAL_SUGGESTION_SCHEMA,
           }),
           signal: controller.signal,
         })
@@ -353,7 +375,7 @@ Ikke inkluder noe annet enn JSON i svaret.`,
       validatedMeals = [...validatedMeals, ...validation.validMeals]
 
       // Log quality issues as warnings
-      const qualityIssues = validation.issues.filter(i => i.type !== 'allergen')
+      const qualityIssues = validation.issues.filter(i => i.type !== 'allergen' && i.type !== 'safety')
       if (qualityIssues.length > 0) {
         console.log('[Menu Quality]', qualityIssues.map(i => `${i.mealName}: ${i.reason}`).join(', '))
       }
@@ -395,7 +417,6 @@ interface PromptContext {
   parentCount: number  // Number of adults in household
   recipes: { id: string; name: string; is_favorite: boolean; is_quick: boolean; is_kid_friendly: boolean }[]
   favoriteRecipes: { name: string }[]
-  quickRecipes: { name: string }[]
   recentMealNames: string[]
   holidays: { date: string; name: string }[]
   defaultContext: string | null

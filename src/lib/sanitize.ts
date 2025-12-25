@@ -126,3 +126,30 @@ export function sanitizeExternalMessage(input: ExternalMessageInput): SanitizedE
     message_date: input.message_date ? String(input.message_date) : null, // Dates are already validated elsewhere
   }
 }
+
+/**
+ * Sanitize user input to prevent prompt injection attacks in AI prompts.
+ * - Removes newlines, tabs, and control characters
+ * - Collapses multiple spaces
+ * - Removes brackets that could be injection markers
+ * - Limits length
+ */
+export function sanitizePromptInput(input: string, maxLength = 100): string {
+  if (!input) return ''
+  return input
+    .replace(/[\r\n\t]/g, ' ')           // Remove newlines/tabs
+    .replace(/\s+/g, ' ')                 // Collapse whitespace
+    .replace(/[<>{}[\]]/g, '')            // Remove brackets that could be injection markers
+    .slice(0, maxLength)                  // Limit length
+    .trim()
+}
+
+/**
+ * Sanitize an array of strings for AI prompts (e.g., allergies list).
+ * Filters out empty items after sanitization.
+ */
+export function sanitizePromptArray(items: string[], maxItemLength = 50): string[] {
+  return items
+    .map(item => sanitizePromptInput(item, maxItemLength))
+    .filter(item => item.length > 0)
+}

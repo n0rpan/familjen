@@ -4,19 +4,51 @@
  */
 
 import { extractJSON } from './json-extract'
+import { sanitizePromptInput, sanitizePromptArray } from './sanitize'
 import type { MealSuggestion } from './types'
 
+/** Valid issue types for meal validation */
+const VALID_ISSUE_TYPES = ['allergen', 'safety', 'quality', 'variety'] as const
+type IssueType = typeof VALID_ISSUE_TYPES[number]
+
 /**
- * Sanitize user input to prevent prompt injection attacks.
+ * JSON Schema for structured output from validation API.
+ * See: https://openrouter.ai/docs/guides/features/structured-outputs
  */
-function sanitizeInput(input: string, maxLength = 50): string {
-  if (!input) return ''
-  return input
-    .replace(/[\r\n\t]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .replace(/[<>{}[\]]/g, '')
-    .slice(0, maxLength)
-    .trim()
+const VALIDATION_SCHEMA = {
+  type: 'json_schema',
+  json_schema: {
+    name: 'meal_validation',
+    strict: true,
+    schema: {
+      type: 'object',
+      properties: {
+        valid_meals: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Dates of valid meals in YYYY-MM-DD format',
+        },
+        issues: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              day: { type: 'string' },
+              meal_name: { type: 'string' },
+              type: { type: 'string', enum: ['allergen', 'safety', 'quality', 'variety'] },
+              reason: { type: 'string' },
+              ingredient: { type: ['string', 'null'] },
+            },
+            required: ['day', 'meal_name', 'type', 'reason'],
+            additionalProperties: false,
+          },
+        },
+        overall_feedback: { type: ['string', 'null'] },
+      },
+      required: ['valid_meals', 'issues'],
+      additionalProperties: false,
+    },
+  },
 }
 
 export interface MealValidationResult {
@@ -29,7 +61,7 @@ export interface MealValidationResult {
 export interface MealIssue {
   mealName: string
   day: string
-  type: 'allergen' | 'safety' | 'quality' | 'variety'
+  type: IssueType
   reason: string
   ingredient?: string
 }
@@ -46,11 +78,16 @@ interface ValidationResponse {
   issues: Array<{
     day: string
     meal_name: string
-    type: 'allergen' | 'safety' | 'quality' | 'variety'
+    type: string  // Validated against VALID_ISSUE_TYPES at runtime
     reason: string
     ingredient?: string
   }>
   overall_feedback?: string
+}
+
+/** Check if a string is a valid issue type */
+function isValidIssueType(type: string): type is IssueType {
+  return VALID_ISSUE_TYPES.includes(type as IssueType)
 }
 
 /**
@@ -75,17 +112,18 @@ export async function validateMealSuggestions(
     return { isValid: true, issues: [], validMeals: meals, invalidMeals: [] }
   }
 
-  // Build family description
+  // Build family description (sanitize names to prevent prompt injection)
   const childrenDesc = family.childrenAges.length > 0
-    ? family.childrenAges.map((c, i) =>
-        family.shareNamesWithAi ? `${c.name} (${c.age} år)` : `Barn ${i + 1} (${c.age} år)`
-      ).join(', ')
+    ? family.childrenAges.map((c, i) => {
+        const safeName = family.shareNamesWithAi ? sanitizePromptInput(c.name, 50) : `Barn ${i + 1}`
+        return `${safeName} (${c.age} år)`
+      }).join(', ')
     : 'ingen barn'
 
   const familyDesc = `${family.parentCount} voksne og ${family.childrenAges.length} barn (${childrenDesc})`
 
   // Sanitize allergies to prevent prompt injection
-  const sanitizedAllergies = family.allergies.map(a => sanitizeInput(a)).filter(Boolean)
+  const sanitizedAllergies = sanitizePromptArray(family.allergies)
 
   // Build meals description
   const mealsDesc = meals.map(m => {
@@ -157,6 +195,7 @@ Svar BARE med gyldig JSON (ingen markdown):
         messages: [{ role: 'user', content: prompt }],
         temperature: 0, // Deterministic for safety
         max_tokens: 500,
+        response_format: VALIDATION_SCHEMA,
       }),
       signal: controller.signal,
     })
@@ -183,14 +222,20 @@ Svar BARE med gyldig JSON (ingen markdown):
       return { isValid: true, issues: [], validMeals: meals, invalidMeals: [] }
     }
 
-    // Process results
-    const issues: MealIssue[] = (parsed.issues || []).map(issue => ({
-      mealName: issue.meal_name,
-      day: issue.day,
-      type: issue.type,
-      reason: issue.reason,
-      ingredient: issue.ingredient,
-    }))
+    // Process results (validate issue types, treat unknown types as 'safety' to be cautious)
+    const issues: MealIssue[] = (parsed.issues || []).map(issue => {
+      const validType = isValidIssueType(issue.type) ? issue.type : 'safety'
+      if (!isValidIssueType(issue.type)) {
+        console.warn(`[AI Validation] Unknown issue type "${issue.type}", treating as safety issue`)
+      }
+      return {
+        mealName: issue.meal_name,
+        day: issue.day,
+        type: validType,
+        reason: issue.reason,
+        ingredient: issue.ingredient,
+      }
+    })
 
     // Separate valid and invalid meals
     // Only allergen and safety issues cause rejection; quality/variety are warnings
