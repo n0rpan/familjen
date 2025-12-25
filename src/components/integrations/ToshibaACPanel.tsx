@@ -5,14 +5,14 @@ import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import { TransitionLink } from '@/components/TransitionLink'
 import { getAccountDisplayName } from '@/lib/integrations/somfy/utils'
+import { TEMPERATURE } from '@/lib/integrations/toshiba/constants'
 import {
-  TEMPERATURE,
   FAN_SPEEDS,
   OPERATION_MODES,
   type ToshibaOperationMode,
   type ToshibaFanSpeed,
   type ToshibaPowerState,
-} from '@/lib/integrations/toshiba'
+} from '@/lib/integrations/toshiba/types'
 
 interface ToshibaACDevice {
   id: string
