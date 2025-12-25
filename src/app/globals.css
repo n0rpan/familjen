@@ -738,6 +738,31 @@ a, button, [role="button"], input, select, textarea {
 
 /* Reduced motion support for accessibility */
 @media (prefers-reduced-motion: reduce) {
+  /* Disable all animations globally */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  /* But keep view transitions completely disabled (no flicker) */
+  ::view-transition-old(root),
+  ::view-transition-new(root),
+  ::view-transition-old(page-content),
+  ::view-transition-new(page-content) {
+    animation: none !important;
+  }
+
+  /* Disable page animations */
+  .animate-fade-in,
+  .animate-slide-up,
+  .animate-pulse-soft {
+    animation: none;
+    opacity: 1;
+  }
+
   .control-btn {
     transition: none;
   }
@@ -762,6 +787,11 @@ a, button, [role="button"], input, select, textarea {
     animation: none;
     border-top-color: currentColor;
     opacity: 0.5;
+  }
+
+  /* Skeleton loading - show static placeholder */
+  .animate-pulse {
+    animation: none;
   }
 }
 

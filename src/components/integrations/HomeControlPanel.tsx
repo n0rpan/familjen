@@ -5,6 +5,11 @@ import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import { TransitionLink } from '@/components/TransitionLink'
 import { getAccountDisplayName } from '@/lib/integrations/somfy/utils'
+import {
+  TEMPERATURE,
+  type ToshibaOperationMode,
+  type ToshibaPowerState,
+} from '@/lib/integrations/toshiba'
 
 interface HomeControlDevice {
   id: string
@@ -28,6 +33,19 @@ interface HomeControlGroup {
   icon: string | null
   sort_order: number
   device_ids: string[]
+  toshiba_device_ids: string[]
+}
+
+interface ToshibaDeviceInGroup {
+  id: string
+  account_id: string
+  ac_id: string
+  name: string
+  custom_name: string | null
+  power_state: ToshibaPowerState | null
+  operation_mode: ToshibaOperationMode | null
+  target_temperature: number | null
+  current_temperature: number | null
 }
 
 interface HomeControlAccount {
@@ -87,12 +105,15 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
   const [devices, setDevices] = useState<HomeControlDevice[]>([])
   const [groups, setGroups] = useState<HomeControlGroup[]>([])
   const [accounts, setAccounts] = useState<HomeControlAccount[]>([])
+  const [toshibaDevicesInGroups, setToshibaDevicesInGroups] = useState<ToshibaDeviceInGroup[]>([])
   const [loading, setLoading] = useState(true)
 
   // Control state
   const [controllingDevice, setControllingDevice] = useState<string | null>(null)
   const [controllingGroup, setControllingGroup] = useState<string | null>(null)
   const [controllingAccount, setControllingAccount] = useState<string | null>(null)
+  const [controllingToshibaDevice, setControllingToshibaDevice] = useState<string | null>(null)
+  const [confirmedToshibaDevice, setConfirmedToshibaDevice] = useState<string | null>(null)
   const [activeSlider, setActiveSlider] = useState<string | null>(null)
   const [sliderValue, setSliderValue] = useState(0)
   const [confirmedDevice, setConfirmedDevice] = useState<string | null>(null)
@@ -130,6 +151,12 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
     confirmTimeoutRef.current = setTimeout(() => setConfirmedDevice(null), 2000)
   }, [])
 
+  const showToshibaConfirmation = useCallback((deviceId: string) => {
+    if (confirmTimeoutRef.current) clearTimeout(confirmTimeoutRef.current)
+    setConfirmedToshibaDevice(deviceId)
+    confirmTimeoutRef.current = setTimeout(() => setConfirmedToshibaDevice(null), 2000)
+  }, [])
+
   const loadData = useCallback(async () => {
     try {
       const { data: accountData } = await supabase.rpc('get_household_home_control_accounts')
@@ -155,15 +182,33 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
 
       const { data: groupData } = await supabase
         .from('home_control_groups')
-        .select(`id, household_id, name, icon, sort_order, home_control_group_devices (device_id)`)
+        .select(`
+          id, household_id, name, icon, sort_order,
+          home_control_group_devices (device_id),
+          home_control_group_toshiba_devices (toshiba_device_id)
+        `)
         .order('sort_order')
         .order('name')
 
       if (groupData) {
-        setGroups(groupData.map(g => ({
+        const mappedGroups = groupData.map(g => ({
           ...g,
           device_ids: g.home_control_group_devices?.map((d: { device_id: string }) => d.device_id) || [],
-        })))
+          toshiba_device_ids: g.home_control_group_toshiba_devices?.map((d: { toshiba_device_id: string }) => d.toshiba_device_id) || [],
+        }))
+        setGroups(mappedGroups)
+
+        // Fetch Toshiba devices that are in any group
+        const allToshibaDeviceIds = mappedGroups.flatMap(g => g.toshiba_device_ids)
+        if (allToshibaDeviceIds.length > 0) {
+          const { data: toshibaData } = await supabase
+            .from('toshiba_ac_devices')
+            .select('id, account_id, ac_id, name, custom_name, power_state, operation_mode, target_temperature, current_temperature')
+            .in('id', allToshibaDeviceIds)
+            .eq('is_hidden', false)
+
+          setToshibaDevicesInGroups(toshibaData || [])
+        }
       }
     } catch (err) {
       console.error('Failed to load home control data:', err)
@@ -328,6 +373,57 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
     }
   }
 
+  // Control Toshiba AC device in group
+  const controlToshibaDevice = async (
+    device: ToshibaDeviceInGroup,
+    command: string,
+    value?: string | number
+  ) => {
+    setControllingToshibaDevice(device.id)
+    try {
+      const response = await fetch('/api/home-control/toshiba/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountId: device.account_id,
+          acId: device.ac_id,
+          command,
+          value,
+        }),
+      })
+      const data = await response.json()
+
+      if (data.success) {
+        // Update local state
+        setToshibaDevicesInGroups(prev =>
+          prev.map(d => {
+            if (d.id !== device.id) return d
+            switch (command) {
+              case 'power':
+                return { ...d, power_state: value as ToshibaPowerState }
+              case 'temperature':
+                return { ...d, target_temperature: value as number }
+              case 'turnOn':
+                return { ...d, power_state: 'ON' as ToshibaPowerState }
+              case 'turnOff':
+                return { ...d, power_state: 'OFF' as ToshibaPowerState }
+              default:
+                return d
+            }
+          })
+        )
+        showToshibaConfirmation(device.id)
+      } else {
+        showError(data.error || t.homeControl.commandFailed)
+      }
+    } catch (err) {
+      console.error('Toshiba control failed:', err)
+      showError(t.homeControl.commandFailed)
+    } finally {
+      setControllingToshibaDevice(null)
+    }
+  }
+
   // Group devices by account
   const devicesByAccount = useMemo(() => {
     const grouped: Record<string, HomeControlDevice[]> = {}
@@ -387,9 +483,55 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
 
   if (loading) {
     return (
-      <div className="animate-pulse space-y-3">
-        <div className="h-24 rounded-2xl" style={{ background: 'var(--card)' }} />
-        <div className="h-24 rounded-2xl" style={{ background: 'var(--card)' }} />
+      <div className="animate-pulse space-y-4">
+        {/* Group skeleton */}
+        <div className="rounded-2xl p-4" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-xl" style={{ background: 'rgba(213, 186, 124, 0.2)' }} />
+            <div className="flex-1">
+              <div className="h-4 w-28 rounded mb-1" style={{ background: 'var(--border)' }} />
+              <div className="h-3 w-16 rounded" style={{ background: 'var(--border)' }} />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="h-10 rounded-lg" style={{ background: 'var(--border)' }} />
+            <div className="h-10 rounded-lg" style={{ background: 'var(--border)' }} />
+            <div className="h-10 rounded-lg" style={{ background: 'var(--border)' }} />
+          </div>
+        </div>
+        {/* Account section skeleton */}
+        <div className="rounded-2xl p-4" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-xl" style={{ background: 'rgba(213, 186, 124, 0.2)' }} />
+            <div className="flex-1">
+              <div className="h-4 w-32 rounded mb-1" style={{ background: 'var(--border)' }} />
+              <div className="h-3 w-20 rounded" style={{ background: 'var(--border)' }} />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 mb-4">
+            <div className="h-10 rounded-lg" style={{ background: 'var(--border)' }} />
+            <div className="h-10 rounded-lg" style={{ background: 'var(--border)' }} />
+            <div className="h-10 rounded-lg" style={{ background: 'var(--border)' }} />
+          </div>
+          {/* Device cards skeleton */}
+          <div className="space-y-2">
+            <div className="rounded-lg p-3" style={{ background: 'color-mix(in srgb, var(--foreground) 3%, transparent)' }}>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 rounded-lg" style={{ background: 'var(--border)' }} />
+                <div className="flex-1">
+                  <div className="h-4 w-24 rounded mb-1" style={{ background: 'var(--border)' }} />
+                  <div className="h-3 w-16 rounded" style={{ background: 'var(--border)' }} />
+                </div>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5 mb-3">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className="h-9 rounded-lg" style={{ background: 'var(--border)' }} />
+                ))}
+              </div>
+              <div className="h-3 rounded-full" style={{ background: 'var(--border)' }} />
+            </div>
+          </div>
+        </div>
       </div>
     )
   }
@@ -447,6 +589,8 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
         <div className="space-y-2">
           {groups.map(group => {
             const isControlling = controllingGroup === group.id
+            const groupToshibaDevices = toshibaDevicesInGroups.filter(d => group.toshiba_device_ids.includes(d.id))
+            const totalDevices = group.device_ids.length + groupToshibaDevices.length
             return (
               <div
                 key={group.id}
@@ -470,59 +614,174 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
                       {group.name}
                     </p>
                     <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                      {t.homeControl.deviceCount.replace('{count}', String(group.device_ids.length))}
+                      {t.homeControl.deviceCount.replace('{count}', String(totalDevices))}
                     </p>
                   </div>
                 </div>
 
-                {/* Group Control Buttons */}
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    onClick={() => controlGroup(group.id, 'open')}
-                    disabled={isControlling}
-                    className="control-btn control-btn-open"
-                    aria-label={`${t.homeControl.allUp} ${group.name}`}
-                  >
-                    {isControlling ? (
-                      <span className="loading-spinner" />
-                    ) : (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <polyline points="18 15 12 9 6 15"/>
-                      </svg>
-                    )}
-                    <span>{t.homeControl.allUp}</span>
-                  </button>
-                  <button
-                    onClick={() => controlGroup(group.id, 'stop')}
-                    disabled={isControlling}
-                    className="control-btn control-btn-stop"
-                    aria-label={`${t.homeControl.stop} ${group.name}`}
-                  >
-                    {isControlling ? (
-                      <span className="loading-spinner" />
-                    ) : (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <rect x="6" y="6" width="12" height="12"/>
-                      </svg>
-                    )}
-                    <span>{t.homeControl.stop}</span>
-                  </button>
-                  <button
-                    onClick={() => controlGroup(group.id, 'close')}
-                    disabled={isControlling}
-                    className="control-btn control-btn-close"
-                    aria-label={`${t.homeControl.allDown} ${group.name}`}
-                  >
-                    {isControlling ? (
-                      <span className="loading-spinner" />
-                    ) : (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <polyline points="6 9 12 15 18 9"/>
-                      </svg>
-                    )}
-                    <span>{t.homeControl.allDown}</span>
-                  </button>
-                </div>
+                {/* Group Control Buttons (for Somfy screens) */}
+                {group.device_ids.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      onClick={() => controlGroup(group.id, 'open')}
+                      disabled={isControlling}
+                      className="control-btn control-btn-open"
+                      aria-label={`${t.homeControl.allUp} ${group.name}`}
+                    >
+                      {isControlling ? (
+                        <span className="loading-spinner" />
+                      ) : (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <polyline points="18 15 12 9 6 15"/>
+                        </svg>
+                      )}
+                      <span>{t.homeControl.allUp}</span>
+                    </button>
+                    <button
+                      onClick={() => controlGroup(group.id, 'stop')}
+                      disabled={isControlling}
+                      className="control-btn control-btn-stop"
+                      aria-label={`${t.homeControl.stop} ${group.name}`}
+                    >
+                      {isControlling ? (
+                        <span className="loading-spinner" />
+                      ) : (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <rect x="6" y="6" width="12" height="12"/>
+                        </svg>
+                      )}
+                      <span>{t.homeControl.stop}</span>
+                    </button>
+                    <button
+                      onClick={() => controlGroup(group.id, 'close')}
+                      disabled={isControlling}
+                      className="control-btn control-btn-close"
+                      aria-label={`${t.homeControl.allDown} ${group.name}`}
+                    >
+                      {isControlling ? (
+                        <span className="loading-spinner" />
+                      ) : (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                      )}
+                      <span>{t.homeControl.allDown}</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Toshiba AC devices in this group */}
+                {groupToshibaDevices.length > 0 && (
+                  <div className={group.device_ids.length > 0 ? 'mt-3 pt-3 border-t' : ''} style={{ borderColor: 'var(--border)' }}>
+                    {groupToshibaDevices.map(device => {
+                      const isOn = device.power_state === 'ON'
+                      const isOffline = device.power_state === null
+                      const isControlling = controllingToshibaDevice === device.id
+                      const isConfirmed = confirmedToshibaDevice === device.id
+                      const modeKey = device.operation_mode as keyof typeof t.homeControl.acModes
+                      return (
+                        <div
+                          key={device.id}
+                          className="rounded-lg p-3 mb-2 last:mb-0 transition-all relative"
+                          style={{
+                            background: 'color-mix(in srgb, var(--foreground) 3%, transparent)',
+                            boxShadow: isConfirmed ? '0 0 0 2px var(--color-sage)' : 'none',
+                            opacity: isOffline ? 0.7 : 1,
+                          }}
+                        >
+                          {/* Loading overlay */}
+                          {isControlling && (
+                            <div className="absolute inset-0 flex items-center justify-center rounded-lg z-10" style={{ background: 'rgba(var(--card-rgb, 255, 255, 255), 0.7)' }}>
+                              <span className="loading-spinner" style={{ width: 20, height: 20, borderWidth: 2, color: 'var(--color-coral)' }} />
+                            </div>
+                          )}
+                          <div className="flex items-center gap-3">
+                            <div
+                              className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+                              style={{
+                                background: isOffline ? 'rgba(128, 128, 128, 0.2)' : isOn ? 'rgba(232, 120, 109, 0.2)' : 'rgba(128, 128, 128, 0.2)',
+                              }}
+                            >
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={isOffline ? 'var(--muted)' : isOn ? 'var(--color-coral)' : 'var(--muted)'} strokeWidth="2">
+                                <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2z"/>
+                                <path d="M12 6v6l4 2"/>
+                              </svg>
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium truncate" style={{ color: 'var(--foreground)' }}>
+                                {device.custom_name || device.name}
+                              </p>
+                              <p className="text-xs" style={{ color: isConfirmed ? 'var(--color-sage)' : 'var(--muted)' }}>
+                                {isConfirmed && '✓ '}
+                                {isOffline ? (t.homeControl?.offline || 'Offline') : isOn ? (
+                                  <>
+                                    {t.homeControl?.acModes?.[modeKey] || device.operation_mode}
+                                    {device.target_temperature && ` • ${device.target_temperature}°`}
+                                  </>
+                                ) : (t.homeControl?.powerOff || 'Off')}
+                              </p>
+                            </div>
+
+                            {/* Quick Controls */}
+                            {!isOffline && (
+                              <div className="flex items-center gap-2 shrink-0">
+                                {/* Temperature controls (only when on) */}
+                                {isOn && device.target_temperature !== null && (
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      onClick={() => controlToshibaDevice(device, 'temperature', Math.max(TEMPERATURE.MIN, device.target_temperature! - 1))}
+                                      disabled={isControlling || device.target_temperature <= TEMPERATURE.MIN}
+                                      className="w-9 h-9 rounded-lg flex items-center justify-center disabled:opacity-40 transition-colors"
+                                      style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
+                                      aria-label={t.homeControl?.decreaseTemp || 'Decrease temperature'}
+                                    >
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="5" y1="12" x2="19" y2="12"/>
+                                      </svg>
+                                    </button>
+                                    <span className="text-sm font-medium w-10 text-center" style={{ color: 'var(--foreground)' }}>
+                                      {device.target_temperature}°
+                                    </span>
+                                    <button
+                                      onClick={() => controlToshibaDevice(device, 'temperature', Math.min(TEMPERATURE.MAX, device.target_temperature! + 1))}
+                                      disabled={isControlling || device.target_temperature >= TEMPERATURE.MAX}
+                                      className="w-9 h-9 rounded-lg flex items-center justify-center disabled:opacity-40 transition-colors"
+                                      style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
+                                      aria-label={t.homeControl?.increaseTemp || 'Increase temperature'}
+                                    >
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="12" y1="5" x2="12" y2="19"/>
+                                        <line x1="5" y1="12" x2="19" y2="12"/>
+                                      </svg>
+                                    </button>
+                                  </div>
+                                )}
+
+                                {/* Power toggle */}
+                                <button
+                                  onClick={() => controlToshibaDevice(device, isOn ? 'turnOff' : 'turnOn')}
+                                  disabled={isControlling}
+                                  className="w-12 h-7 rounded-full transition-all relative"
+                                  style={{
+                                    background: isOn ? 'var(--color-coral)' : 'var(--border)',
+                                  }}
+                                  aria-label={isOn ? (t.homeControl?.powerOff || 'Turn off') : (t.homeControl?.powerOn || 'Turn on')}
+                                >
+                                  <div
+                                    className="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"
+                                    style={{
+                                      left: isOn ? 'calc(100% - 1.625rem)' : '0.125rem',
+                                    }}
+                                  />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             )
           })}

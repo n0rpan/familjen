@@ -42,6 +42,14 @@ interface HomeControlGroup {
   icon: string | null
   sort_order: number
   device_ids: string[]
+  toshiba_device_ids: string[]
+}
+
+interface ToshibaDevice {
+  id: string
+  account_id: string
+  name: string
+  custom_name: string | null
 }
 
 interface HomeControlSettingsProps {
@@ -88,6 +96,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
   const { t } = useLanguage()
   const [accounts, setAccounts] = useState<HomeControlAccount[]>([])
   const [devices, setDevices] = useState<HomeControlDevice[]>([])
+  const [toshibaDevices, setToshibaDevices] = useState<ToshibaDevice[]>([])
   const [groups, setGroups] = useState<HomeControlGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
@@ -110,6 +119,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
   // Group form state
   const [groupName, setGroupName] = useState('')
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([])
+  const [selectedToshibaDeviceIds, setSelectedToshibaDeviceIds] = useState<string[]>([])
   const [savingGroup, setSavingGroup] = useState(false)
 
   // Edit device state
@@ -134,20 +144,37 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
       setAccounts(data || [])
 
       if (data && data.length > 0) {
-        const { data: deviceData } = await supabase
-          .from('home_control_devices')
-          .select('*')
-          .in('account_id', data.map((a: HomeControlAccount) => a.id))
-          .order('favorite', { ascending: false })
-          .order('label')
-        setDevices(deviceData || [])
+        // Load Somfy devices
+        const somfyAccounts = data.filter((a: HomeControlAccount) => a.service === 'somfy')
+        if (somfyAccounts.length > 0) {
+          const { data: deviceData } = await supabase
+            .from('home_control_devices')
+            .select('*')
+            .in('account_id', somfyAccounts.map((a: HomeControlAccount) => a.id))
+            .order('favorite', { ascending: false })
+            .order('label')
+          setDevices(deviceData || [])
+        }
+
+        // Load Toshiba devices
+        const toshibaAccounts = data.filter((a: HomeControlAccount) => a.service === 'toshiba')
+        if (toshibaAccounts.length > 0) {
+          const { data: toshibaData } = await supabase
+            .from('toshiba_ac_devices')
+            .select('id, account_id, name, custom_name')
+            .in('account_id', toshibaAccounts.map((a: HomeControlAccount) => a.id))
+            .eq('is_hidden', false)
+            .order('name')
+          setToshibaDevices(toshibaData || [])
+        }
       }
 
       const { data: groupData } = await supabase
         .from('home_control_groups')
         .select(`
           id, household_id, name, icon, sort_order,
-          home_control_group_devices (device_id)
+          home_control_group_devices (device_id),
+          home_control_group_toshiba_devices (toshiba_device_id)
         `)
         .order('sort_order')
         .order('name')
@@ -156,6 +183,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
         setGroups(groupData.map(g => ({
           ...g,
           device_ids: g.home_control_group_devices?.map((d: { device_id: string }) => d.device_id) || [],
+          toshiba_device_ids: g.home_control_group_toshiba_devices?.map((d: { toshiba_device_id: string }) => d.toshiba_device_id) || [],
         })))
       }
     } catch (err) {
@@ -368,16 +396,29 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
   }
 
   const saveGroup = async () => {
-    if (!groupName.trim() || selectedDeviceIds.length === 0) return
+    // Need at least a name and at least one device (Somfy or Toshiba)
+    if (!groupName.trim() || (selectedDeviceIds.length === 0 && selectedToshibaDeviceIds.length === 0)) return
     setSavingGroup(true)
 
     try {
       if (editingGroup) {
         await supabase.from('home_control_groups').update({ name: groupName.trim() }).eq('id', editingGroup.id)
+
+        // Update Somfy device assignments
         await supabase.from('home_control_group_devices').delete().eq('group_id', editingGroup.id)
-        await supabase.from('home_control_group_devices').insert(
-          selectedDeviceIds.map(deviceId => ({ group_id: editingGroup.id, device_id: deviceId }))
-        )
+        if (selectedDeviceIds.length > 0) {
+          await supabase.from('home_control_group_devices').insert(
+            selectedDeviceIds.map(deviceId => ({ group_id: editingGroup.id, device_id: deviceId }))
+          )
+        }
+
+        // Update Toshiba device assignments
+        await supabase.from('home_control_group_toshiba_devices').delete().eq('group_id', editingGroup.id)
+        if (selectedToshibaDeviceIds.length > 0) {
+          await supabase.from('home_control_group_toshiba_devices').insert(
+            selectedToshibaDeviceIds.map(deviceId => ({ group_id: editingGroup.id, toshiba_device_id: deviceId }))
+          )
+        }
         onMessage('success', t.homeControl.groupUpdated)
       } else {
         const { data: newGroup, error } = await supabase
@@ -387,9 +428,19 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
           .single()
         if (error) throw error
 
-        await supabase.from('home_control_group_devices').insert(
-          selectedDeviceIds.map(deviceId => ({ group_id: newGroup.id, device_id: deviceId }))
-        )
+        // Add Somfy devices to group
+        if (selectedDeviceIds.length > 0) {
+          await supabase.from('home_control_group_devices').insert(
+            selectedDeviceIds.map(deviceId => ({ group_id: newGroup.id, device_id: deviceId }))
+          )
+        }
+
+        // Add Toshiba devices to group
+        if (selectedToshibaDeviceIds.length > 0) {
+          await supabase.from('home_control_group_toshiba_devices').insert(
+            selectedToshibaDeviceIds.map(deviceId => ({ group_id: newGroup.id, toshiba_device_id: deviceId }))
+          )
+        }
         onMessage('success', t.homeControl.groupCreated)
       }
 
@@ -397,6 +448,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
       setEditingGroup(null)
       setGroupName('')
       setSelectedDeviceIds([])
+      setSelectedToshibaDeviceIds([])
       await loadAccounts()
     } catch (err) {
       console.error('Failed to save group:', err)
@@ -422,6 +474,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
     setEditingGroup(group)
     setGroupName(group.name)
     setSelectedDeviceIds(group.device_ids)
+    setSelectedToshibaDeviceIds(group.toshiba_device_ids || [])
     setShowGroupForm(true)
   }
 
@@ -992,6 +1045,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                     {t.homeControl.selectDevices}
                   </label>
                   <div className="space-y-4 max-h-64 overflow-y-auto">
+                    {/* Somfy devices */}
                     {Object.entries(devicesByAccount).map(([accountId, accountDevices]) => (
                       <div key={accountId}>
                         <p className="text-xs font-medium mb-2 px-2" style={{ color: 'var(--color-sky)' }}>
@@ -1033,13 +1087,56 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                         </div>
                       </div>
                     ))}
+
+                    {/* Toshiba AC devices */}
+                    {toshibaDevices.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium mb-2 px-2" style={{ color: 'var(--color-coral)' }}>
+                          Toshiba AC
+                        </p>
+                        <div className="space-y-1">
+                          {toshibaDevices.map(device => (
+                            <label
+                              key={device.id}
+                              className="flex items-center gap-3 p-2 rounded-lg cursor-pointer"
+                              style={{
+                                background: selectedToshibaDeviceIds.includes(device.id)
+                                  ? 'rgba(232, 120, 109, 0.1)'
+                                  : 'transparent'
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedToshibaDeviceIds.includes(device.id)}
+                                onChange={e => {
+                                  if (e.target.checked) {
+                                    setSelectedToshibaDeviceIds([...selectedToshibaDeviceIds, device.id])
+                                  } else {
+                                    setSelectedToshibaDeviceIds(selectedToshibaDeviceIds.filter(id => id !== device.id))
+                                  }
+                                }}
+                                className="rounded w-5 h-5"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <span className="text-sm block truncate" style={{ color: 'var(--foreground)' }}>
+                                  {device.custom_name || device.name}
+                                </span>
+                                <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                                  {t.homeControl?.acUnit || 'AC Unit'}
+                                </span>
+                              </div>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={saveGroup}
-                    disabled={savingGroup || !groupName.trim() || selectedDeviceIds.length === 0}
+                    disabled={savingGroup || !groupName.trim() || (selectedDeviceIds.length === 0 && selectedToshibaDeviceIds.length === 0)}
                     className="btn btn-primary"
                   >
                     {savingGroup ? t.homeControl.saving : editingGroup ? t.homeControl.update : t.homeControl.create}
@@ -1050,6 +1147,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                       setEditingGroup(null)
                       setGroupName('')
                       setSelectedDeviceIds([])
+                      setSelectedToshibaDeviceIds([])
                     }}
                     className="btn btn-secondary"
                   >

@@ -129,7 +129,14 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
       if (accountData && accountData.length > 0) {
         setAccounts(accountData)
 
-        // Get Toshiba AC devices
+        // Get IDs of devices that are already in groups (to filter them out)
+        const { data: groupedDevices } = await supabase
+          .from('home_control_group_toshiba_devices')
+          .select('toshiba_device_id')
+
+        const groupedDeviceIds = new Set(groupedDevices?.map(d => d.toshiba_device_id) || [])
+
+        // Get Toshiba AC devices (excluding ones already in groups)
         const { data: deviceData } = await supabase
           .from('toshiba_ac_devices')
           .select('*')
@@ -138,7 +145,9 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
           .order('favorite', { ascending: false })
           .order('name')
 
-        setDevices(deviceData || [])
+        // Filter out devices that are in groups
+        const ungroupedDevices = (deviceData || []).filter(d => !groupedDeviceIds.has(d.id))
+        setDevices(ungroupedDevices)
       }
     } catch (err) {
       console.error('Failed to load Toshiba AC data:', err)
@@ -241,9 +250,55 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
 
   if (loading) {
     return (
-      <div className="animate-pulse space-y-3">
-        <div className="h-32 rounded-2xl" style={{ background: 'var(--card)' }} />
-        <div className="h-32 rounded-2xl" style={{ background: 'var(--card)' }} />
+      <div className="animate-pulse space-y-4">
+        {/* Skeleton for account section */}
+        <div className="rounded-2xl p-4" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+          {/* Account header skeleton */}
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-xl" style={{ background: 'rgba(232, 120, 109, 0.2)' }} />
+            <div className="flex-1">
+              <div className="h-4 w-32 rounded mb-1" style={{ background: 'var(--border)' }} />
+              <div className="h-3 w-16 rounded" style={{ background: 'var(--border)' }} />
+            </div>
+          </div>
+          {/* Device card skeleton */}
+          <div className="rounded-xl p-4" style={{ background: 'var(--background)', border: '1px solid var(--border)' }}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-10 h-10 rounded-lg" style={{ background: 'var(--border)' }} />
+                <div>
+                  <div className="h-4 w-24 rounded mb-1" style={{ background: 'var(--border)' }} />
+                  <div className="h-3 w-16 rounded" style={{ background: 'var(--border)' }} />
+                </div>
+              </div>
+              <div className="w-12 h-7 rounded-full" style={{ background: 'var(--border)' }} />
+            </div>
+            {/* Temperature slider skeleton */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="h-3 w-16 rounded" style={{ background: 'var(--border)' }} />
+                <div className="h-5 w-12 rounded" style={{ background: 'var(--border)' }} />
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-11 h-11 rounded-lg" style={{ background: 'var(--border)' }} />
+                <div className="flex-1 h-2 rounded-full" style={{ background: 'var(--border)' }} />
+                <div className="w-11 h-11 rounded-lg" style={{ background: 'var(--border)' }} />
+              </div>
+            </div>
+            {/* Mode buttons skeleton */}
+            <div className="grid grid-cols-5 gap-1 mb-3">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="h-12 rounded-lg" style={{ background: 'var(--border)' }} />
+              ))}
+            </div>
+            {/* Fan speed skeleton */}
+            <div className="flex flex-wrap gap-1">
+              {[...Array(7)].map((_, i) => (
+                <div key={i} className="h-11 flex-1 min-w-[calc(25%-3px)] rounded" style={{ background: 'var(--border)' }} />
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     )
   }
@@ -547,13 +602,13 @@ export function ToshibaACPanel({ compact = false }: ToshibaACPanelProps) {
                             <span className="text-xs block mb-2" style={{ color: 'var(--muted)' }}>
                               {t.homeControl.fanSpeed}
                             </span>
-                            <div className="grid grid-cols-4 gap-1">
+                            <div className="flex flex-wrap gap-1">
                               {FAN_SPEEDS.map(speed => (
                                 <button
                                   key={speed}
                                   onClick={() => controlDevice(device.account_id, device.ac_id, device.id, 'fanSpeed', speed)}
                                   disabled={isControlling}
-                                  className="px-1.5 py-2.5 rounded text-[11px] transition-all text-center min-h-[44px]"
+                                  className="px-2.5 py-2 rounded text-[11px] transition-all text-center min-h-[44px] flex-1 min-w-[calc(25%-3px)]"
                                   style={{
                                     background: device.fan_speed === speed
                                       ? `color-mix(in srgb, ${modeColor} 20%, transparent)`
