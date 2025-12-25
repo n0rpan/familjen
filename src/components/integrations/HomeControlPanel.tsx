@@ -48,6 +48,7 @@ interface ToshibaDeviceInGroup {
   operation_mode: ToshibaOperationMode | null
   target_temperature: number | null
   current_temperature: number | null
+  outdoor_temperature: number | null
 }
 
 interface HomeControlAccount {
@@ -205,7 +206,7 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
         if (allToshibaDeviceIds.length > 0) {
           const { data: toshibaData } = await supabase
             .from('toshiba_ac_devices')
-            .select('id, account_id, ac_id, name, custom_name, power_state, operation_mode, target_temperature, current_temperature')
+            .select('id, account_id, ac_id, name, custom_name, power_state, operation_mode, target_temperature, current_temperature, outdoor_temperature')
             .in('id', allToshibaDeviceIds)
             .eq('is_hidden', false)
 
@@ -593,6 +594,8 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
             const isControlling = controllingGroup === group.id
             const groupToshibaDevices = toshibaDevicesInGroups.filter(d => group.toshiba_device_ids.includes(d.id))
             const totalDevices = group.device_ids.length + groupToshibaDevices.length
+            // Get outdoor temperature from any Toshiba device in this group
+            const outdoorTemp = groupToshibaDevices.find(d => d.outdoor_temperature !== null)?.outdoor_temperature
             return (
               <div
                 key={group.id}
@@ -619,6 +622,15 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
                       {t.homeControl.deviceCount.replace('{count}', String(totalDevices))}
                     </p>
                   </div>
+                  {/* Outdoor temperature from AC unit */}
+                  {outdoorTemp !== undefined && outdoorTemp !== null && (
+                    <div className="flex items-center gap-1 shrink-0" style={{ color: 'var(--muted)' }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/>
+                      </svg>
+                      <span className="text-sm font-medium">{outdoorTemp}°</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Group Control Buttons (for Somfy screens) */}
