@@ -486,12 +486,12 @@ export class MelCloudClient {
     // Update local cache optimistically
     if (currentState) {
       const updatedState = { ...currentState }
-      if ('Power' in updates) updatedState.Power = updates.Power as boolean
-      if ('OperationMode' in updates) updatedState.OperationMode = updates.OperationMode as number
-      if ('SetTemperature' in updates) updatedState.SetTemperature = updates.SetTemperature as number
-      if ('SetFanSpeed' in updates) updatedState.FanSpeed = updates.SetFanSpeed as number
-      if ('VaneVertical' in updates) updatedState.VaneVertical = updates.VaneVertical as number
-      if ('VaneHorizontal' in updates) updatedState.VaneHorizontal = updates.VaneHorizontal as number
+      if ('Power' in updates && typeof updates.Power === 'boolean') updatedState.Power = updates.Power
+      if ('OperationMode' in updates && typeof updates.OperationMode === 'number') updatedState.OperationMode = updates.OperationMode
+      if ('SetTemperature' in updates && typeof updates.SetTemperature === 'number') updatedState.SetTemperature = updates.SetTemperature
+      if ('SetFanSpeed' in updates && typeof updates.SetFanSpeed === 'number') updatedState.FanSpeed = updates.SetFanSpeed
+      if ('VaneVertical' in updates && typeof updates.VaneVertical === 'number') updatedState.VaneVertical = updates.VaneVertical
+      if ('VaneHorizontal' in updates && typeof updates.VaneHorizontal === 'number') updatedState.VaneHorizontal = updates.VaneHorizontal
 
       this.deviceCache[deviceId] = {
         buildingId,

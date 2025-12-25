@@ -172,7 +172,7 @@ export interface MelCloudATADeviceData {
   AutomaticFanSpeed: boolean
   VaneVertical: number
   VaneHorizontal: number
-  OperationMode: MelCloudOperationMode
+  OperationMode: number // API returns numeric values (1=HEAT, 2=DRY, 3=COOL, 7=FAN, 8=AUTO)
   EffectiveFlags: number
   InStandbyMode: boolean
   DemandPercentage: number
