@@ -66,45 +66,38 @@ export function SkeletonCard({ className = '' }: { className?: string }) {
   )
 }
 
+// Collapsed section skeleton (matches CollapsibleSection when closed)
+function CollapsedSectionSkeleton() {
+  return (
+    <div
+      className="rounded-2xl overflow-hidden"
+      style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+    >
+      <div className="p-4 sm:p-6 flex items-center gap-3">
+        <Skeleton height={40} width={40} borderRadius={12} />
+        <div className="flex-1 min-w-0">
+          <Skeleton height={18} width={140} borderRadius={8} className="mb-1" />
+          <Skeleton height={14} width={180} borderRadius={6} />
+        </div>
+        <Skeleton height={20} width={20} borderRadius={4} />
+      </div>
+    </div>
+  )
+}
+
 // Settings page skeleton
 export function SettingsPageSkeleton() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
       <div>
         <Skeleton height={32} width={180} borderRadius={12} className="mb-2" />
         <Skeleton height={20} width={220} borderRadius={8} />
       </div>
 
-      {/* Profile section */}
-      <SkeletonCard />
-
-      {/* Other sections */}
-      {[1, 2, 3].map((i) => (
-        <div
-          key={i}
-          className="rounded-2xl p-6"
-          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-        >
-          <div className="flex items-center gap-3 mb-4">
-            <Skeleton height={40} width={40} borderRadius={12} />
-            <div>
-              <Skeleton height={20} width={150} borderRadius={8} className="mb-1" />
-              <Skeleton height={14} width={200} borderRadius={6} />
-            </div>
-          </div>
-          <div className="space-y-3">
-            {[1, 2].map((j) => (
-              <div key={j} className="flex items-center justify-between p-3 rounded-xl" style={{ background: 'var(--card-alt)' }}>
-                <div className="flex items-center gap-3">
-                  <SkeletonCircle size={36} />
-                  <Skeleton height={16} width={120} borderRadius={8} />
-                </div>
-                <Skeleton height={24} width={60} borderRadius={8} />
-              </div>
-            ))}
-          </div>
-        </div>
+      {/* Collapsed sections (matching the default collapsed state) */}
+      {[1, 2, 3, 4, 5, 6].map((i) => (
+        <CollapsedSectionSkeleton key={i} />
       ))}
     </div>
   )

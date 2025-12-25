@@ -917,7 +917,7 @@ export default function SettingsPage() {
           </svg>
         }
         title={t.settings.childrenTitle || 'Barn'}
-        description={`${children.length} ${children.length === 1 ? 'barn' : 'barn'} registrert`}
+        description={`${children.length} barn`}
         color="var(--color-honey)"
       >
         <ChildrenSection
