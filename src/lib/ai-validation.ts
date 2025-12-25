@@ -90,12 +90,9 @@ ${mealsDesc}
 VALIDER MENYEN:
 
 1. SIKKERHET (KRITISK - null toleranse):
-   - Er dette EKTE, SPISELIG mat? Avvis ALLE retter som:
-     - Inneholder ikke-mat (elektronikk, plast, metall, kjemikalier, etc.)
-     - Er fiktive/fantasiretter (fra filmer, spill, bøker)
-     - Har tullenavn eller ingredienser som ikke finnes
-     - Inneholder farlige eller uspiselige ting
-   - EKSEMPLER som må avvises: "Ork-suppe", "harddisk", "minnepinne", "Mordor-kjøtt"
+   - Avvis retter som IKKE er ekte, spiselig mat
+   - Alle ingredienser må være reelle matvarer du kan kjøpe i en butikk
+   - Avvis: fiktive retter, tullenavn, ikke-spiselige ting, farlige ingredienser
 
 2. ALLERGENER (KRITISK - null toleranse):
    - Sjekk ALLE ingredienser for allergener
