@@ -23,7 +23,6 @@ import {
   ChildrenSection,
   MembersSection,
   AIPreferencesSection,
-  HouseholdAdminSection,
   FamilyCalendarSection,
 } from './sections'
 import { CollapsibleSection, SectionGroupLabel } from './components'
@@ -1306,6 +1305,13 @@ export default function SettingsPage() {
           onNewMemberChange={setNewMember}
           onAddMember={addMember}
           onDeleteMember={deleteMember}
+          isHouseholdAdmin={myProfile?.is_household_admin}
+          inviteEmail={inviteEmail}
+          invitedEmails={invitedEmails}
+          savingInvite={savingInvite}
+          onInviteEmailChange={setInviteEmail}
+          onInviteUser={inviteUser}
+          onRemoveInvite={removeInvite}
         />
       </CollapsibleSection>
 
@@ -1486,41 +1492,80 @@ export default function SettingsPage() {
         />
       </CollapsibleSection>
 
-      {/* ========== ADMINISTRATION (Admin only) ========== */}
-      {myProfile?.is_household_admin && (
-        <CollapsibleSection
-          icon={
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="3"/>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-            </svg>
-          }
-          title={t.settings.administrationTitle || 'Administrasjon'}
-          description={t.settings.administrationDesc || 'Husstandsinnstillinger og tilgang'}
-          color="var(--color-coral)"
-        >
-          <HouseholdAdminSection
-            household={household}
-            inviteEmail={inviteEmail}
-            invitedEmails={invitedEmails}
-            savingInvite={savingInvite}
-            showDeleteConfirm={showDeleteConfirm}
-            deleteConfirmText={deleteConfirmText}
-            t={t}
-            onInviteEmailChange={setInviteEmail}
-            onInviteUser={inviteUser}
-            onRemoveInvite={removeInvite}
-            onShowDeleteConfirmChange={setShowDeleteConfirm}
-            onDeleteConfirmTextChange={setDeleteConfirmText}
-            onDeleteHousehold={deleteHousehold}
-          />
-        </CollapsibleSection>
-      )}
-
       {/* ============================================================ */}
       {/* GROUP 5: ACCOUNT (Dangerous actions at bottom)               */}
       {/* ============================================================ */}
       <SectionGroupLabel label={t.settings?.accountTitle || 'Konto'} />
+
+      {/* Delete Household (admin only) */}
+      {myProfile?.is_household_admin && (
+        <CollapsibleSection
+          icon={
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+          }
+          title={t.settings.dangerZone || 'Slett husstand'}
+          description={household?.name || ''}
+          color="var(--color-coral)"
+        >
+          {!showDeleteConfirm ? (
+            <div>
+              <p className="text-sm mb-4" style={{ color: 'var(--muted)' }}>
+                Sletter husstanden og alle tilknyttede data permanent.
+              </p>
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="text-sm font-medium transition-opacity hover:opacity-70"
+                style={{ color: 'var(--color-coral)' }}
+              >
+                {t.common.delete} {t.settings.household.toLowerCase()}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div
+                className="p-4 rounded-xl"
+                style={{ background: 'rgba(232, 120, 109, 0.1)' }}
+              >
+                <p className="text-sm font-medium mb-2" style={{ color: 'var(--color-coral)' }}>
+                  {t.common.confirmDelete}
+                </p>
+                <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                  Skriv &quot;<strong>{household?.name}</strong>&quot; for å bekrefte
+                </p>
+              </div>
+              <input
+                type="text"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder={household?.name || ''}
+                className="input"
+              />
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowDeleteConfirm(false)
+                    setDeleteConfirmText('')
+                  }}
+                  className="btn btn-secondary"
+                >
+                  {t.common.cancel}
+                </button>
+                <button
+                  onClick={deleteHousehold}
+                  disabled={deleteConfirmText !== household?.name}
+                  className="btn text-white disabled:opacity-50"
+                  style={{ background: 'var(--color-coral)' }}
+                >
+                  {t.common.delete}
+                </button>
+              </div>
+            </div>
+          )}
+        </CollapsibleSection>
+      )}
 
       {/* Delete Account */}
       <CollapsibleSection
