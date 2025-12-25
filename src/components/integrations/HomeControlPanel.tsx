@@ -81,6 +81,7 @@ interface HomeControlAccount {
 
 interface HomeControlPanelProps {
   compact?: boolean
+  showSettingsLink?: boolean
 }
 
 const UI_CLASS_ICONS: Record<string, React.ReactNode> = {
@@ -125,7 +126,7 @@ const getDeviceIcon = (uiClass: string) => {
   return UI_CLASS_ICONS[uiClass] || UI_CLASS_ICONS.Screen
 }
 
-export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
+export function HomeControlPanel({ compact = false, showSettingsLink = true }: HomeControlPanelProps) {
   const { t } = useLanguage()
   const [devices, setDevices] = useState<HomeControlDevice[]>([])
   const [groups, setGroups] = useState<HomeControlGroup[]>([])
@@ -1264,7 +1265,7 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
       })}
 
       {/* Settings link */}
-      {!compact && (
+      {!compact && showSettingsLink && (
         <div className="text-center pt-2">
           <TransitionLink
             href="/innstillinger"
