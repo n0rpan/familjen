@@ -1,7 +1,7 @@
 'use client'
 
 import { memo } from 'react'
-import type { HouseholdMember, AllowedEmail } from '@/lib/types'
+import type { HouseholdMember } from '@/lib/types'
 import type { TranslationStrings } from '@/lib/i18n/types'
 
 interface MembersSectionProps {
@@ -19,14 +19,6 @@ interface MembersSectionProps {
   onNewMemberChange: (member: MembersSectionProps['newMember']) => void
   onAddMember: (e: React.FormEvent) => void
   onDeleteMember: (id: string) => void
-  // Invite functionality (admin only)
-  isHouseholdAdmin?: boolean
-  inviteEmail?: string
-  invitedEmails?: AllowedEmail[]
-  savingInvite?: boolean
-  onInviteEmailChange?: (email: string) => void
-  onInviteUser?: (e: React.FormEvent) => void
-  onRemoveInvite?: (emailId: string) => void
 }
 
 export const MembersSection = memo(function MembersSection({
@@ -37,41 +29,9 @@ export const MembersSection = memo(function MembersSection({
   onNewMemberChange,
   onAddMember,
   onDeleteMember,
-  isHouseholdAdmin,
-  inviteEmail,
-  invitedEmails,
-  savingInvite,
-  onInviteEmailChange,
-  onInviteUser,
-  onRemoveInvite,
 }: MembersSectionProps) {
   return (
-    <section
-      className="rounded-2xl p-6 md:p-8"
-      style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-    >
-      <div className="flex items-center gap-3 mb-6">
-        <div
-          className="w-10 h-10 rounded-xl flex items-center justify-center"
-          style={{ background: 'rgba(232, 120, 109, 0.15)' }}
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-            <circle cx="9" cy="7" r="4"/>
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-          </svg>
-        </div>
-        <div>
-          <h2 className="text-xl font-semibold" style={{ color: 'var(--foreground)' }}>
-            {t.settings.members}
-          </h2>
-          <p className="text-sm" style={{ color: 'var(--muted)' }}>
-            {t.week.selectPicker}
-          </p>
-        </div>
-      </div>
-
+    <div className="space-y-4">
       {/* Existing members */}
       <div className="space-y-2 mb-6">
         {members.length === 0 ? (
@@ -131,94 +91,40 @@ export const MembersSection = memo(function MembersSection({
         )}
       </div>
 
-      {/* Invite users section (admin only) */}
-      {isHouseholdAdmin && onInviteUser && onInviteEmailChange && (
-        <div className="mb-6 pt-6" style={{ borderTop: '1px solid var(--border)' }}>
-          <p className="text-sm font-medium mb-3" style={{ color: 'var(--foreground)' }}>
-            {t.admin.addUser}
-          </p>
-          <form onSubmit={onInviteUser} className="flex flex-col sm:flex-row gap-2">
-            <input
-              type="email"
-              value={inviteEmail || ''}
-              onChange={(e) => onInviteEmailChange(e.target.value)}
-              placeholder={t.admin.emailPlaceholder}
-              className="input flex-1"
-              required
-            />
-            <button
-              type="submit"
-              disabled={savingInvite || !inviteEmail?.trim()}
-              className="btn btn-primary"
-            >
-              {savingInvite ? t.common.saving : t.common.add}
-            </button>
-          </form>
-          <p className="text-xs mt-2" style={{ color: 'var(--muted)' }}>
-            {t.admin.usersAddedViaSettings}
-          </p>
-
-          {/* Invited emails list */}
-          {invitedEmails && invitedEmails.length > 0 && (
-            <div className="mt-4">
-              <p className="text-xs font-medium mb-2" style={{ color: 'var(--muted)' }}>
-                Inviterte brukere
-              </p>
-              <div className="space-y-2">
-                {invitedEmails.map((email) => (
-                  <div
-                    key={email.id}
-                    className="flex items-center justify-between p-3 rounded-xl"
-                    style={{ background: 'var(--background)' }}
-                  >
-                    <span className="text-sm" style={{ color: 'var(--foreground)' }}>
-                      {email.email}
-                    </span>
-                    {onRemoveInvite && (
-                      <button
-                        onClick={() => onRemoveInvite(email.id)}
-                        className="p-1 rounded hover:bg-red-50 transition-colors"
-                        style={{ color: 'var(--muted)' }}
-                        title="Fjern invitasjon"
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <line x1="18" y1="6" x2="6" y2="18"/>
-                          <line x1="6" y1="6" x2="18" y2="18"/>
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Add new member form */}
       <form onSubmit={onAddMember} className="pt-6" style={{ borderTop: '1px solid var(--border)' }}>
         <p className="text-sm font-medium mb-4" style={{ color: 'var(--foreground)' }}>
           {t.settings.addMember}
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-          <input
-            type="text"
-            placeholder={t.settings.memberName}
-            value={newMember.name}
-            onChange={(e) => onNewMemberChange({ ...newMember, name: e.target.value })}
-            className="input"
-            required
-          />
-          <input
-            type="text"
-            placeholder={t.settings.shortNamePlaceholder}
-            value={newMember.short_name}
-            onChange={(e) => onNewMemberChange({ ...newMember, short_name: e.target.value })}
-            className="input"
-          />
           <div>
             <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>
-              {t.settings.memberEmail}
+              {t.settings.memberName}
+            </label>
+            <input
+              type="text"
+              placeholder={t.settings.memberName}
+              value={newMember.name}
+              onChange={(e) => onNewMemberChange({ ...newMember, name: e.target.value })}
+              className="input"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>
+              {t.settings.memberShortName} ({t.common.optional})
+            </label>
+            <input
+              type="text"
+              placeholder={t.settings.shortNamePlaceholder}
+              value={newMember.short_name}
+              onChange={(e) => onNewMemberChange({ ...newMember, short_name: e.target.value })}
+              className="input"
+            />
+          </div>
+          <div>
+            <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>
+              {t.settings.memberEmailLabel || 'E-post (gir app-tilgang)'}
             </label>
             <input
               type="email"
@@ -228,7 +134,7 @@ export const MembersSection = memo(function MembersSection({
               className="input"
             />
             <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
-              {t.admin.becomesHouseholdAdmin}
+              {t.settings.memberEmailHint || 'Kun nødvendig hvis de skal logge inn i appen'}
             </p>
           </div>
           <div>
@@ -299,6 +205,6 @@ export const MembersSection = memo(function MembersSection({
           </button>
         </div>
       </form>
-    </section>
+    </div>
   )
 })

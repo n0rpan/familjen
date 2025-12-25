@@ -273,6 +273,8 @@ export interface TranslationStrings {
     memberName: string
     memberShortName: string
     memberEmail: string
+    memberEmailLabel: string
+    memberEmailHint: string
     memberWorkEmail: string
     memberBirthDate: string
     memberAllergies: string
