@@ -7,6 +7,7 @@ import { aiSuggestRequestSchema, validateRequest } from '@/lib/schemas'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 import { extractJSON } from '@/lib/json-extract'
 import { formatDateISO } from '@/lib/utils'
+import { validateMealSuggestions } from '@/lib/ai-validation'
 
 // Helper to calculate age from birth date
 function calculateAge(birthDate: string): number {
@@ -291,54 +292,28 @@ Ikke inkluder noe annet enn JSON i svaret.`,
       return NextResponse.json({ error: 'Kunne ikke tolke AI-svar' }, { status: 500 })
     }
 
-    let suggestions: MealSuggestion[] = parsed.suggestions || []
+    const suggestions: MealSuggestion[] = parsed.suggestions || []
 
-    // SAFETY NET: Filter out any meals containing allergens (AI sometimes ignores constraints)
-    if (allAllergies.length > 0) {
-      suggestions = suggestions.filter(meal => {
-        const mealText = [
-          meal.name.toLowerCase(),
-          meal.description?.toLowerCase() || '',
-          ...meal.ingredients.map(i => i.item.toLowerCase()),
-        ].join(' ')
+    // AI-based validation: check allergens, variety, and family appropriateness
+    const parentCount = membersResult.data?.length || 2
+    const mealValidation = await validateMealSuggestions(
+      suggestions,
+      {
+        allergies: allAllergies,
+        childrenAges: childrenAges.map(c => ({ name: c.name, age: c.age })),
+        parentCount,
+        shareNamesWithAi: household.share_names_with_ai ?? true,
+      },
+      model
+    )
 
-        // Check if any allergen appears in meal text
-        for (const allergy of allAllergies) {
-          const allergyLower = allergy.toLowerCase()
-
-          // Skip false positive patterns
-          if (mealText.includes(allergyLower)) {
-            // Common false positives to exclude
-            const falsePositives = [
-              { pattern: /kokos\s*melk/i, allergy: 'melk' },
-              { pattern: /melkefri/i, allergy: 'melk' },
-              { pattern: /\(uten\s+\w+\)/i, allergy: allergyLower },
-              { pattern: /uten\s+melk/i, allergy: 'melk' },
-              { pattern: /muskatnøtt/i, allergy: 'nøtt' },
-              { pattern: /nøttefri/i, allergy: 'nøtt' },
-              { pattern: /eggfri/i, allergy: 'egg' },
-              { pattern: /glutenfri/i, allergy: 'gluten' },
-            ]
-
-            let isFalsePositive = false
-            for (const fp of falsePositives) {
-              if (fp.allergy === allergyLower && fp.pattern.test(mealText)) {
-                isFalsePositive = true
-                break
-              }
-            }
-
-            if (!isFalsePositive) {
-              console.warn(`[Allergen Filter] Removing "${meal.name}" - contains "${allergy}"`)
-              return false
-            }
-          }
-        }
-        return true
-      })
+    // Log any quality/variety issues as warnings (not blocking)
+    const qualityIssues = mealValidation.issues.filter(i => i.type !== 'allergen')
+    if (qualityIssues.length > 0) {
+      console.log('[Menu Quality]', qualityIssues.map(i => `${i.mealName}: ${i.reason}`).join(', '))
     }
 
-    return NextResponse.json({ suggestions })
+    return NextResponse.json({ suggestions: mealValidation.validMeals })
   } catch (error) {
     console.error('Suggest meals error:', error)
     return NextResponse.json({ error: 'En feil oppstod' }, { status: 500 })
