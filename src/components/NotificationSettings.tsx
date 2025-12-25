@@ -112,16 +112,13 @@ export function NotificationSettings() {
   // Not supported
   if (!isSupported) {
     return (
-      <div className="card p-6">
-        <h3 className="text-lg font-semibold mb-2">{t.notifications.title}</h3>
-        <div className="p-4 rounded-xl" style={{ background: 'rgba(232, 120, 109, 0.1)' }}>
-          <p className="font-medium" style={{ color: 'var(--color-coral)' }}>
-            {t.notifications.unsupported}
-          </p>
-          <p className="text-sm text-[var(--muted)] mt-1">
-            {t.notifications.unsupportedDesc}
-          </p>
-        </div>
+      <div className="p-4 rounded-xl" style={{ background: 'rgba(232, 120, 109, 0.1)' }}>
+        <p className="font-medium" style={{ color: 'var(--color-coral)' }}>
+          {t.notifications.unsupported}
+        </p>
+        <p className="text-sm text-[var(--muted)] mt-1">
+          {t.notifications.unsupportedDesc}
+        </p>
       </div>
     )
   }
@@ -129,27 +126,23 @@ export function NotificationSettings() {
   // Permission denied
   if (permission === 'denied') {
     return (
-      <div className="card p-6">
-        <h3 className="text-lg font-semibold mb-2">{t.notifications.title}</h3>
-        <div className="p-4 rounded-xl" style={{ background: 'rgba(232, 120, 109, 0.1)' }}>
-          <p className="font-medium" style={{ color: 'var(--color-coral)' }}>
-            {t.notifications.denied}
-          </p>
-          <p className="text-sm text-[var(--muted)] mt-1">
-            {t.notifications.deniedDesc}
-          </p>
-        </div>
+      <div className="p-4 rounded-xl" style={{ background: 'rgba(232, 120, 109, 0.1)' }}>
+        <p className="font-medium" style={{ color: 'var(--color-coral)' }}>
+          {t.notifications.denied}
+        </p>
+        <p className="text-sm text-[var(--muted)] mt-1">
+          {t.notifications.deniedDesc}
+        </p>
       </div>
     )
   }
 
   return (
-    <div className="card p-6">
-      <h3 className="text-lg font-semibold mb-2">{t.notifications.title}</h3>
-      <p className="text-sm text-[var(--muted)] mb-4">{t.notifications.description}</p>
+    <div className="space-y-4">
+      <p className="text-sm text-[var(--muted)]">{t.notifications.description}</p>
 
       {/* Enable/Disable toggle */}
-      <div className="flex items-center justify-between p-4 rounded-xl mb-4" style={{ background: 'var(--card-alt)' }}>
+      <div className="flex items-center justify-between p-4 rounded-xl" style={{ background: 'var(--card-alt)' }}>
         <div>
           <p className="font-medium">
             {isSubscribed ? t.notifications.enabled : t.notifications.disabled}
