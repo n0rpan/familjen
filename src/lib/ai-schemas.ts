@@ -2,8 +2,104 @@
  * Shared JSON schemas for OpenRouter structured outputs.
  * These ensure consistent, parseable responses from AI calls.
  *
+ * All AI endpoints should import schemas from this file for consistency.
+ *
  * @see https://openrouter.ai/docs/guides/features/structured-outputs
  */
+
+// =============================================================================
+// MEAL SUGGESTION SCHEMAS
+// =============================================================================
+
+/**
+ * Schema for meal suggestions from the AI.
+ * Used by both /api/openrouter/suggest and parse-action suggest mode.
+ */
+export const MEAL_SUGGESTION_SCHEMA = {
+  type: 'json_schema',
+  json_schema: {
+    name: 'meal_suggestions',
+    strict: true,
+    schema: {
+      type: 'object',
+      properties: {
+        suggestions: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              day: { type: 'string', description: 'Date in YYYY-MM-DD format' },
+              name: { type: 'string', description: 'Name of the dish' },
+              description: { type: 'string', description: 'Short description of the dish' },
+              ingredients: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    item: { type: 'string' },
+                    amount: { type: 'string' },
+                  },
+                  required: ['item', 'amount'],
+                  additionalProperties: false,
+                },
+              },
+              is_quick: { type: 'boolean' },
+              is_kid_friendly: { type: 'boolean' },
+            },
+            required: ['day', 'name', 'description', 'ingredients', 'is_quick', 'is_kid_friendly'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['suggestions'],
+      additionalProperties: false,
+    },
+  },
+}
+
+/**
+ * Schema for meal validation responses.
+ * Used by ai-validation.ts to check meal safety and quality.
+ */
+export const MEAL_VALIDATION_SCHEMA = {
+  type: 'json_schema',
+  json_schema: {
+    name: 'meal_validation',
+    strict: true,
+    schema: {
+      type: 'object',
+      properties: {
+        valid_meals: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Dates of valid meals in YYYY-MM-DD format',
+        },
+        issues: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              day: { type: 'string' },
+              meal_name: { type: 'string' },
+              type: { type: 'string', enum: ['allergen', 'safety', 'quality', 'variety'] },
+              reason: { type: 'string' },
+              ingredient: { type: ['string', 'null'] },
+            },
+            required: ['day', 'meal_name', 'type', 'reason'],
+            additionalProperties: false,
+          },
+        },
+        overall_feedback: { type: ['string', 'null'] },
+      },
+      required: ['valid_meals', 'issues'],
+      additionalProperties: false,
+    },
+  },
+}
+
+// =============================================================================
+// ACTION PARSING SCHEMAS
+// =============================================================================
 
 /**
  * Schema for the universal AI input action parsing.
@@ -76,6 +172,10 @@ export const ACTION_PARSE_SCHEMA = {
   },
 }
 
+// =============================================================================
+// SEARCH & FEED SCHEMAS
+// =============================================================================
+
 /**
  * Schema for feed/ask question answering.
  */
@@ -115,50 +215,6 @@ export const SEARCH_SUMMARY_SCHEMA = {
         summary: { type: 'string', description: 'A concise summary answering the search query' },
       },
       required: ['summary'],
-      additionalProperties: false,
-    },
-  },
-}
-
-/**
- * Schema for quick meal suggestions (from parse-action suggest mode).
- * Simpler than full meal suggestion schema.
- */
-export const QUICK_MEAL_SUGGEST_SCHEMA = {
-  type: 'json_schema',
-  json_schema: {
-    name: 'quick_meal_suggestions',
-    strict: true,
-    schema: {
-      type: 'object',
-      properties: {
-        suggestions: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              day: { type: 'string', description: 'Date in YYYY-MM-DD format' },
-              name: { type: 'string' },
-              description: { type: 'string' },
-              ingredients: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    item: { type: 'string' },
-                    amount: { type: 'string' },
-                  },
-                  required: ['item', 'amount'],
-                  additionalProperties: false,
-                },
-              },
-            },
-            required: ['day', 'name', 'description', 'ingredients'],
-            additionalProperties: false,
-          },
-        },
-      },
-      required: ['suggestions'],
       additionalProperties: false,
     },
   },

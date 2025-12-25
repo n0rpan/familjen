@@ -5,51 +5,12 @@
 
 import { extractJSON } from './json-extract'
 import { sanitizePromptInput, sanitizePromptArray } from './sanitize'
+import { MEAL_VALIDATION_SCHEMA } from './ai-schemas'
 import type { MealSuggestion } from './types'
 
 /** Valid issue types for meal validation */
 const VALID_ISSUE_TYPES = ['allergen', 'safety', 'quality', 'variety'] as const
 type IssueType = typeof VALID_ISSUE_TYPES[number]
-
-/**
- * JSON Schema for structured output from validation API.
- * See: https://openrouter.ai/docs/guides/features/structured-outputs
- */
-const VALIDATION_SCHEMA = {
-  type: 'json_schema',
-  json_schema: {
-    name: 'meal_validation',
-    strict: true,
-    schema: {
-      type: 'object',
-      properties: {
-        valid_meals: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Dates of valid meals in YYYY-MM-DD format',
-        },
-        issues: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              day: { type: 'string' },
-              meal_name: { type: 'string' },
-              type: { type: 'string', enum: ['allergen', 'safety', 'quality', 'variety'] },
-              reason: { type: 'string' },
-              ingredient: { type: ['string', 'null'] },
-            },
-            required: ['day', 'meal_name', 'type', 'reason'],
-            additionalProperties: false,
-          },
-        },
-        overall_feedback: { type: ['string', 'null'] },
-      },
-      required: ['valid_meals', 'issues'],
-      additionalProperties: false,
-    },
-  },
-}
 
 export interface MealValidationResult {
   isValid: boolean
@@ -195,7 +156,7 @@ Svar BARE med gyldig JSON (ingen markdown):
         messages: [{ role: 'user', content: prompt }],
         temperature: 0, // Deterministic for safety
         max_tokens: 500,
-        response_format: VALIDATION_SCHEMA,
+        response_format: MEAL_VALIDATION_SCHEMA,
       }),
       signal: controller.signal,
     })

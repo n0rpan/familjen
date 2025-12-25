@@ -9,53 +9,7 @@ import { extractJSON } from '@/lib/json-extract'
 import { formatDateISO } from '@/lib/utils'
 import { validateMealSuggestions } from '@/lib/ai-validation'
 import { sanitizePromptInput, sanitizePromptArray } from '@/lib/sanitize'
-
-/**
- * JSON Schema for structured output from meal suggestion API.
- * Using structured outputs ensures valid JSON and reduces parsing errors.
- * See: https://openrouter.ai/docs/guides/features/structured-outputs
- */
-const MEAL_SUGGESTION_SCHEMA = {
-  type: 'json_schema',
-  json_schema: {
-    name: 'meal_suggestions',
-    strict: true,
-    schema: {
-      type: 'object',
-      properties: {
-        suggestions: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              day: { type: 'string', description: 'Date in YYYY-MM-DD format' },
-              name: { type: 'string', description: 'Name of the dish' },
-              description: { type: 'string', description: 'Short description of the dish' },
-              ingredients: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    item: { type: 'string' },
-                    amount: { type: 'string' },
-                  },
-                  required: ['item', 'amount'],
-                  additionalProperties: false,
-                },
-              },
-              is_quick: { type: 'boolean' },
-              is_kid_friendly: { type: 'boolean' },
-            },
-            required: ['day', 'name', 'description', 'ingredients', 'is_quick', 'is_kid_friendly'],
-            additionalProperties: false,
-          },
-        },
-      },
-      required: ['suggestions'],
-      additionalProperties: false,
-    },
-  },
-}
+import { MEAL_SUGGESTION_SCHEMA } from '@/lib/ai-schemas'
 
 // Helper to calculate age from birth date
 function calculateAge(birthDate: string): number {

@@ -6,7 +6,8 @@ import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limi
 import { extractJSON } from '@/lib/json-extract'
 import { formatDateISO } from '@/lib/utils'
 import { sanitizePromptInput, sanitizePromptArray } from '@/lib/sanitize'
-import { ACTION_PARSE_SCHEMA, SEARCH_SUMMARY_SCHEMA, QUICK_MEAL_SUGGEST_SCHEMA } from '@/lib/ai-schemas'
+import { ACTION_PARSE_SCHEMA, SEARCH_SUMMARY_SCHEMA, MEAL_SUGGESTION_SCHEMA } from '@/lib/ai-schemas'
+import { validateMealSuggestions, type FamilyContext } from '@/lib/ai-validation'
 import { z } from 'zod'
 import type { MealSuggestion } from '@/lib/types'
 
@@ -1051,7 +1052,7 @@ Regler:
         ],
         temperature: 0.4,
         max_tokens: 1500,
-        response_format: QUICK_MEAL_SUGGEST_SCHEMA,
+        response_format: MEAL_SUGGESTION_SCHEMA,
       }),
     })
 
@@ -1073,47 +1074,40 @@ Regler:
       return NextResponse.json({ error: 'Kunne ikke tolke middagsforslag' }, { status: 500 })
     }
 
-    let suggestions = Array.isArray(parsed.suggestions) ? parsed.suggestions : []
+    const suggestions = Array.isArray(parsed.suggestions) ? parsed.suggestions : []
 
-    // Filter out allergens
-    if (allAllergies.length > 0) {
-      suggestions = suggestions.filter(meal => {
-        const mealText = [
-          meal.name.toLowerCase(),
-          meal.description?.toLowerCase() || '',
-          ...meal.ingredients.map(i => i.item.toLowerCase()),
-        ].join(' ')
-
-        for (const allergy of allAllergies) {
-          if (mealText.includes(allergy)) {
-            // Check for false positives
-            const falsePositives = [
-              { pattern: /kokos\s*melk/i, allergy: 'melk' },
-              { pattern: /melkefri/i, allergy: 'melk' },
-              { pattern: /nøttefri/i, allergy: 'nøtt' },
-            ]
-
-            let isFalsePositive = false
-            for (const fp of falsePositives) {
-              if (fp.allergy === allergy && fp.pattern.test(mealText)) {
-                isFalsePositive = true
-                break
-              }
-            }
-
-            if (!isFalsePositive) {
-              console.warn(`[Allergen Filter] Removing "${meal.name}" - contains "${allergy}"`)
-              return false
-            }
-          }
-        }
-        return true
+    // Build family context for AI validation
+    const childrenAges = (childrenResult.data || [])
+      .filter(c => c.birth_date)
+      .map(c => {
+        const birth = new Date(c.birth_date!)
+        const today = new Date()
+        let age = today.getFullYear() - birth.getFullYear()
+        const monthDiff = today.getMonth() - birth.getMonth()
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) age--
+        return { name: c.name, age }
       })
+
+    const parentCount = (membersResult.data || []).length
+
+    const familyContext: FamilyContext = {
+      allergies: allAllergies,
+      childrenAges,
+      parentCount,
+      shareNamesWithAi: household.share_names_with_ai ?? true,
+    }
+
+    // Validate suggestions using AI (same as main suggest endpoint)
+    const validation = await validateMealSuggestions(suggestions, familyContext, model)
+
+    // Log any issues
+    if (validation.issues.length > 0) {
+      console.log('[Parse-Action Suggest] Validation issues:', validation.issues.map(i => `${i.mealName}: ${i.reason}`).join(', '))
     }
 
     return NextResponse.json({
       mode: 'suggest',
-      suggestions,
+      suggestions: validation.validMeals,
     } as SuggestResponse)
   } catch (error) {
     console.error('Suggest error:', error)
