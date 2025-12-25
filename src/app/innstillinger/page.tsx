@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import type { Child, HouseholdMember, Household, AllowedEmail, ChildColor, SettingsCacheData } from '@/lib/types'
+import type { Child, HouseholdMember, Household, ChildColor, SettingsCacheData } from '@/lib/types'
 import { getCachedSettingsData, getSettingsCacheKey } from '@/lib/prefetch/fetchers'
 import { setCache } from '@/lib/cache'
 import { CHILD_COLORS } from '@/lib/colors'
@@ -46,9 +46,6 @@ export default function SettingsPage() {
   const [syncingICS, setSyncingICS] = useState(false)
 
   // Household admin features
-  const [inviteEmail, setInviteEmail] = useState('')
-  const [invitedEmails, setInvitedEmails] = useState<AllowedEmail[]>([])
-  const [savingInvite, setSavingInvite] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
 
@@ -167,7 +164,6 @@ export default function SettingsPage() {
           setChildren(cached.children)
           setMyProfile(cached.myProfile)
           setConnectedCalendarEmail(cached.connectedCalendarEmail)
-          setInvitedEmails(cached.invitedEmails)
 
           // Set profile form from cached myProfile
           if (cached.myProfile) {
@@ -244,18 +240,12 @@ export default function SettingsPage() {
       }
 
       // Variables to store fresh data for cache
-      let freshInvitedEmails: AllowedEmail[] = []
       let freshCalendarEmail: string | null = null
 
       // If household admin, load admin-specific data (lower priority - admin section at bottom)
       if (myMember?.is_household_admin && householdData) {
         // Fetch these in parallel - both needed for admin section
-        const [emailsResult, eventCountResult, calendarEmailResult] = await Promise.all([
-          supabase
-            .from('allowed_emails')
-            .select('*')
-            .eq('invited_by_household_id', householdData.id)
-            .order('created_at', { ascending: false }),
+        const [eventCountResult, calendarEmailResult] = await Promise.all([
           supabase
             .from('household_events')
             .select('*', { count: 'exact', head: true })
@@ -263,8 +253,6 @@ export default function SettingsPage() {
           supabase.rpc('get_connected_calendar_email'),
         ])
 
-        freshInvitedEmails = emailsResult.data || []
-        setInvitedEmails(freshInvitedEmails)
         setFamilyCalendarEventCount(eventCountResult.count || 0)
         if (!calendarEmailResult.error) {
           freshCalendarEmail = calendarEmailResult.data || null
@@ -288,7 +276,6 @@ export default function SettingsPage() {
           children: childrenResult.data || [],
           myProfile: myMember || null,
           connectedCalendarEmail: freshCalendarEmail,
-          invitedEmails: freshInvitedEmails,
           timestamp: Date.now(),
         }
         setCache(cacheKey, cacheData).catch(() => {
@@ -515,53 +502,6 @@ export default function SettingsPage() {
       showMessage('error', errorMessage)
     } finally {
       setSyncingFamilyCalendar(false)
-    }
-  }
-
-  // Invite user to household (avoid full reload)
-  const inviteUser = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!inviteEmail.trim() || !household) return
-
-    setSavingInvite(true)
-    const { data, error } = await supabase
-      .from('allowed_emails')
-      .insert({
-        email: inviteEmail.toLowerCase().trim(),
-        invited_by_household_id: household.id,
-      })
-      .select()
-      .single()
-
-    if (error) {
-      if (error.code === '23505') {
-        showMessage('error', t.admin.emailExists)
-      } else {
-        showMessage('error', t.errors.saveFailed)
-      }
-    } else if (data) {
-      setInvitedEmails([data, ...invitedEmails])
-      showMessage('success', t.success.emailAdded)
-      setInviteEmail('')
-    }
-    setSavingInvite(false)
-  }
-
-  // Remove invite (optimistic update)
-  const removeInvite = async (emailId: string) => {
-    if (!confirm(t.common.confirmDelete)) return
-
-    const previousEmails = invitedEmails
-    setInvitedEmails(invitedEmails.filter(e => e.id !== emailId))
-
-    const { error } = await supabase
-      .from('allowed_emails')
-      .delete()
-      .eq('id', emailId)
-
-    if (error) {
-      setInvitedEmails(previousEmails)
-      showMessage('error', t.errors.deleteFailed)
     }
   }
 

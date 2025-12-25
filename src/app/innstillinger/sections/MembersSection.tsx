@@ -31,32 +31,7 @@ export const MembersSection = memo(function MembersSection({
   onDeleteMember,
 }: MembersSectionProps) {
   return (
-    <section
-      className="rounded-2xl p-6 md:p-8"
-      style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-    >
-      <div className="flex items-center gap-3 mb-6">
-        <div
-          className="w-10 h-10 rounded-xl flex items-center justify-center"
-          style={{ background: 'rgba(232, 120, 109, 0.15)' }}
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-            <circle cx="9" cy="7" r="4"/>
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-          </svg>
-        </div>
-        <div>
-          <h2 className="text-xl font-semibold" style={{ color: 'var(--foreground)' }}>
-            {t.settings.members}
-          </h2>
-          <p className="text-sm" style={{ color: 'var(--muted)' }}>
-            {t.week.selectPicker}
-          </p>
-        </div>
-      </div>
-
+    <div className="space-y-4">
       {/* Existing members */}
       <div className="space-y-2 mb-6">
         {members.length === 0 ? (
@@ -122,21 +97,31 @@ export const MembersSection = memo(function MembersSection({
           {t.settings.addMember}
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-          <input
-            type="text"
-            placeholder={t.settings.memberName}
-            value={newMember.name}
-            onChange={(e) => onNewMemberChange({ ...newMember, name: e.target.value })}
-            className="input"
-            required
-          />
-          <input
-            type="text"
-            placeholder={t.settings.shortNamePlaceholder}
-            value={newMember.short_name}
-            onChange={(e) => onNewMemberChange({ ...newMember, short_name: e.target.value })}
-            className="input"
-          />
+          <div>
+            <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>
+              {t.settings.memberName}
+            </label>
+            <input
+              type="text"
+              placeholder={t.settings.memberName}
+              value={newMember.name}
+              onChange={(e) => onNewMemberChange({ ...newMember, name: e.target.value })}
+              className="input"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>
+              {t.settings.memberShortName} ({t.common.optional})
+            </label>
+            <input
+              type="text"
+              placeholder={t.settings.shortNamePlaceholder}
+              value={newMember.short_name}
+              onChange={(e) => onNewMemberChange({ ...newMember, short_name: e.target.value })}
+              className="input"
+            />
+          </div>
           <div>
             <label className="block text-xs mb-1" style={{ color: 'var(--muted)' }}>
               {t.settings.memberEmailLabel || 'E-post (gir app-tilgang)'}
@@ -220,6 +205,6 @@ export const MembersSection = memo(function MembersSection({
           </button>
         </div>
       </form>
-    </section>
+    </div>
   )
 })

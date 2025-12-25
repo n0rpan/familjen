@@ -65,7 +65,6 @@ export interface SettingsCacheData {
   children: Child[]
   myProfile: HouseholdMember | null
   connectedCalendarEmail: string | null
-  invitedEmails: AllowedEmail[]
   timestamp: number
 }
 
