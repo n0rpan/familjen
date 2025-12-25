@@ -24,12 +24,12 @@ export function CollapsibleSection({
 
   return (
     <div
-      className="rounded-2xl"
+      className="rounded-2xl overflow-hidden"
       style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
     >
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full p-6 flex items-center gap-3 text-left hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+        className="w-full p-4 sm:p-6 flex items-center gap-3 text-left hover:bg-black/5 dark:hover:bg-white/5 transition-colors rounded-t-2xl"
         aria-expanded={isOpen}
         aria-controls={contentId}
       >
@@ -66,11 +66,11 @@ export function CollapsibleSection({
 
       <div
         id={contentId}
-        className={`transition-all duration-200 ease-in-out ${
-          isOpen ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0 overflow-hidden'
+        className={`transition-all duration-200 ease-in-out overflow-hidden ${
+          isOpen ? 'max-h-[5000px] opacity-100' : 'max-h-0 opacity-0'
         }`}
       >
-        <div className="px-6 pb-6 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+        <div className="px-4 sm:px-6 pb-6 pt-2 border-t relative" style={{ borderColor: 'var(--border)' }}>
           {children}
         </div>
       </div>

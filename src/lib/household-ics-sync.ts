@@ -86,10 +86,27 @@ export async function syncHouseholdICS(
       }
     })
 
-    // Delete ALL existing ICS events for this household within sync window
-    // Then insert fresh data from ICS feed (source of truth)
-    // Note: We can't use upsert with partial unique index, so we delete+insert instead
-    const { error: deleteError } = await supabase
+    // Upsert events from ICS feed (update if ics_uid already exists)
+    // This handles both new events and updates to existing events
+    if (eventsToUpsert.length > 0) {
+      const { error: upsertError } = await supabase
+        .from('household_events')
+        .upsert(eventsToUpsert, {
+          onConflict: 'household_id,ics_uid',
+          ignoreDuplicates: false, // Update existing records
+        })
+
+      if (upsertError) {
+        console.error(`[Household ICS] Upsert error:`, upsertError)
+        throw new Error(`Failed to sync events: ${upsertError.message}`)
+      }
+    }
+
+    // Delete events that are no longer in the ICS feed (within sync window)
+    const icsUids = eventsToUpsert.map((e) => e.ics_uid).filter(Boolean)
+
+    // Build delete query for events within date range
+    let deleteQuery = supabase
       .from('household_events')
       .delete()
       .eq('household_id', household.id)
@@ -97,20 +114,16 @@ export async function syncHouseholdICS(
       .gte('event_date', formatDateISO(startDate))
       .lte('event_date', formatDateISO(endDate))
 
-    if (deleteError) {
-      console.error(`[Household ICS] Delete error:`, deleteError)
+    // If we have UIDs from the feed, exclude them from deletion
+    if (icsUids.length > 0) {
+      // Use filter to exclude UIDs that are in the current feed
+      deleteQuery = deleteQuery.filter('ics_uid', 'not.in', `(${icsUids.join(',')})`)
     }
 
-    // Insert all events from ICS feed
-    if (eventsToUpsert.length > 0) {
-      const { error: insertError } = await supabase
-        .from('household_events')
-        .insert(eventsToUpsert)
+    const { error: deleteError } = await deleteQuery
 
-      if (insertError) {
-        console.error(`[Household ICS] Insert error:`, insertError)
-        throw new Error(`Failed to insert events: ${insertError.message}`)
-      }
+    if (deleteError) {
+      console.error(`[Household ICS] Delete stale events error:`, deleteError)
     }
 
     // Update sync status

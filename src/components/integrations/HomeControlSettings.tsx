@@ -620,7 +620,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                 </div>
               </div>
             ) : (
-              <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <div
                     className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
@@ -689,7 +689,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                     </p>
                   </div>
                 </div>
-                <div className="flex gap-2 shrink-0">
+                <div className="flex gap-2 shrink-0 flex-wrap justify-end">
                   <button
                     onClick={() => syncDevices(account.id, account.service)}
                     disabled={syncingAccount === account.id}
@@ -726,7 +726,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                 <label className="block text-xs mb-2" style={{ color: 'var(--muted)' }}>
                   {t.homeControl.serviceType || 'Service Type'}
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-1 sm:gap-2">
                   <button
                     type="button"
                     onClick={() => { setServiceType('somfy'); setTestResult(null) }}

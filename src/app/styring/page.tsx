@@ -10,10 +10,10 @@ export default function StyringPage() {
   const { t } = useLanguage()
 
   return (
-    <div className="page-container animate-fade-in">
-      <div className="page-header mb-6">
-        <h1 className="page-title">{t.nav.homeControl}</h1>
-        <p style={{ color: 'var(--muted)' }}>
+    <div className="space-y-4 animate-fade-in">
+      <div className="mb-2">
+        <h1 className="text-3xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>{t.nav.homeControl}</h1>
+        <p className="mt-2" style={{ color: 'var(--muted)' }}>
           {t.homeControl.connectSomfyToshiba}
         </p>
       </div>

@@ -252,14 +252,18 @@ export interface TranslationStrings {
     // Section headers
     familyTitle: string
     familyDesc: string
+    childrenTitle: string
+    membersTitle: string
     mySettingsTitle: string
     mySettingsDesc: string
     integrationsTitle: string
     integrationsDesc: string
+    advancedTitle: string
     aiPreferencesTitle: string
     aiPreferencesDesc: string
     administrationTitle: string
     administrationDesc: string
+    accountTitle: string
     // Legacy
     household: string
     householdName: string

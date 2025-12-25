@@ -244,14 +244,18 @@ export const sv: TranslationStrings = {
     // Section headers
     familyTitle: 'Familj',
     familyDesc: 'Hantera barn och hushållsmedlemmar',
+    childrenTitle: 'Barn',
+    membersTitle: 'Hushållsmedlemmar',
     mySettingsTitle: 'Mina inställningar',
     mySettingsDesc: 'Personliga preferenser och profil',
     integrationsTitle: 'Integrationer',
     integrationsDesc: 'Anslut till externa tjänster',
+    advancedTitle: 'Avancerat',
     aiPreferencesTitle: 'AI-inställningar',
     aiPreferencesDesc: 'Anpassa AI-assistenten för din familj',
     administrationTitle: 'Administration',
     administrationDesc: 'Hushållsinställningar och åtkomst',
+    accountTitle: 'Konto',
     // Legacy
     household: 'Hushåll',
     householdName: 'Hushållsnamn',
