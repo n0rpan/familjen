@@ -87,8 +87,8 @@ async function performAuthentication(accountId: string): Promise<ToshibaClient> 
     p_account_id: accountId,
   })
 
-  if (cachedTokens && !cachedTokens.isExpired) {
-    // Use cached access token
+  if (cachedTokens && !cachedTokens.isExpired && cachedTokens.sasToken) {
+    // Use cached access token (only if SAS token is available for AMQP)
     client.loginWithToken(
       cachedTokens.accessToken,
       cachedTokens.consumerId,
