@@ -1305,13 +1305,6 @@ export default function SettingsPage() {
           onNewMemberChange={setNewMember}
           onAddMember={addMember}
           onDeleteMember={deleteMember}
-          isHouseholdAdmin={myProfile?.is_household_admin}
-          inviteEmail={inviteEmail}
-          invitedEmails={invitedEmails}
-          savingInvite={savingInvite}
-          onInviteEmailChange={setInviteEmail}
-          onInviteUser={inviteUser}
-          onRemoveInvite={removeInvite}
         />
       </CollapsibleSection>
 
