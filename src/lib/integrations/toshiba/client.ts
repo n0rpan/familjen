@@ -5,14 +5,20 @@
  * Based on: https://github.com/KaSroka/Toshiba-AC-control
  *           https://gist.github.com/h4de5/7f97db0f4efc265e48904d4a84dab4fb
  *
+ * Architecture:
+ * - HTTP API: Used for login, device registration, and getting device state
+ * - AMQP (Azure IoT Hub): Used for sending control commands to devices
+ *
  * Usage:
  *   const client = new ToshibaClient()
  *   await client.login(username, password)
  *   const devices = await client.getDevices()
- *   await client.setPowerState(acId, 'ON')
- *   await client.setTemperature(acId, 22)
+ *   await client.setPowerState(acId, deviceUniqueId, 'ON')
+ *   await client.setTemperature(acId, deviceUniqueId, 22)
  */
 
+import { Client as IoTHubClient, Message } from 'azure-iot-device'
+import { Amqp } from 'azure-iot-device-amqp'
 import {
   type ToshibaClientOptions,
   type ToshibaLoginResponse,
@@ -35,11 +41,15 @@ const STATE_OFFSETS = {
   POWER: 0,
   MODE: 1,
   TEMP: 2,
-  FAN: 4,
-  SWING: 5,
-  PURE: 6,
-  INDOOR_TEMP: 11,
-  OUTDOOR_TEMP: 12,
+  FAN: 3,      // Corrected: Fan is at position 3 (not 4)
+  SWING: 4,    // Corrected: Swing is at position 4 (not 5)
+  POWER_SEL: 5,
+  MERIT_A: 6,
+  MERIT_B: 7,
+  PURE: 8,
+  INDOOR_TEMP: 9,
+  OUTDOOR_TEMP: 10,
+  SELF_CLEANING: 15,
 } as const
 
 // Mode code mappings
@@ -54,7 +64,8 @@ const MODE_MAP: Record<string, ToshibaOperationMode> = {
 // Fan speed code mappings
 // Note: 50/A0 = Auto, 31 = Quiet (user confirmed)
 const FAN_MAP: Record<string, ToshibaFanSpeed> = {
-  '50': 'AUTO',   // Also seen as 'A0' on some models
+  '41': 'AUTO',   // Corrected: 41 is auto per fcu_state.py
+  '50': 'AUTO',   // Also seen as 50 on some models
   'a0': 'AUTO',
   '31': 'QUIET',  // Silent mode
   '32': 'LOW',
@@ -87,7 +98,7 @@ const MODE_ENCODE: Record<ToshibaOperationMode, string> = {
 }
 
 const FAN_ENCODE: Record<ToshibaFanSpeed, string> = {
-  'AUTO': '50',
+  'AUTO': '41',
   'QUIET': '31',
   'LOW': '32',
   'MEDIUM_LOW': '33',
@@ -104,16 +115,34 @@ const SWING_ENCODE: Record<ToshibaSwingMode, string> = {
 }
 
 const PURE_ENCODE: Record<'ON' | 'OFF', string> = {
-  'ON': '10',
-  'OFF': '00',
+  'ON': '18',  // Corrected per fcu_state.py
+  'OFF': '10',
+}
+
+// Device cache to store device info including DeviceUniqueId
+interface DeviceCache {
+  [acId: string]: {
+    deviceUniqueId: string
+    currentStateHex: string | null
+  }
 }
 
 export class ToshibaClient {
   private accessToken: string | null = null
   private consumerId: string | null = null
+  private username: string | null = null
   private tokenExpiry: number = 0
   private debug: boolean
   private timeout: number
+
+  // AMQP connection
+  private sasToken: string | null = null
+  private deviceId: string | null = null
+  private amqpClient: IoTHubClient | null = null
+  private amqpConnected: boolean = false
+
+  // Device cache for storing DeviceUniqueId mapping
+  private deviceCache: DeviceCache = {}
 
   constructor(options: ToshibaClientOptions = {}) {
     this.debug = options.debug ?? process.env.TOSHIBA_DEBUG === 'true'
@@ -168,9 +197,13 @@ export class ToshibaClient {
 
       this.accessToken = data.ResObj.access_token
       this.consumerId = data.ResObj.consumerId
+      this.username = username
       this.tokenExpiry = Date.now() + TOSHIBA_API.TOKEN_VALIDITY_MS - TOSHIBA_API.TOKEN_REFRESH_MARGIN_MS
 
       this.log('Login successful, consumerId:', this.consumerId)
+
+      // Register mobile device to get SAS token for AMQP
+      await this.registerMobileDevice()
     } catch (error) {
       if (error instanceof ToshibaError) throw error
       if (error instanceof Error && error.name === 'AbortError') {
@@ -183,11 +216,163 @@ export class ToshibaClient {
   }
 
   /**
+   * Register mobile device to get SAS token for Azure IoT Hub.
+   */
+  private async registerMobileDevice(): Promise<void> {
+    if (!this.accessToken || !this.username) {
+      throw new ToshibaAuthError('Not authenticated. Call login() first.')
+    }
+
+    // Generate a unique device ID based on username
+    this.deviceId = this.generateDeviceId(this.username)
+    this.log('Registering mobile device with ID:', this.deviceId)
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout)
+
+    try {
+      const response = await fetch(`${TOSHIBA_API.BASE_URL}${TOSHIBA_ENDPOINTS.REGISTER_MOBILE_DEVICE}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.accessToken}`,
+        },
+        body: JSON.stringify({
+          Username: this.username,
+          DeviceID: this.deviceId,
+          DeviceType: '1',
+        }),
+        signal: controller.signal,
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error')
+        throw new ToshibaError(
+          `RegisterMobileDevice failed: ${response.status} ${response.statusText}`,
+          response.status,
+          errorText
+        )
+      }
+
+      const data = await response.json() as ToshibaAPIResponse<{ SasToken: string }>
+
+      if (!data.IsSuccess || !data.ResObj?.SasToken) {
+        throw new ToshibaError(data.Message || 'Failed to register mobile device')
+      }
+
+      this.sasToken = data.ResObj.SasToken
+      this.log('Mobile device registered, got SAS token')
+    } catch (error) {
+      if (error instanceof ToshibaError) throw error
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new ToshibaError('RegisterMobileDevice request timed out')
+      }
+      throw new ToshibaError(`RegisterMobileDevice failed: ${error}`)
+    } finally {
+      clearTimeout(timeoutId)
+    }
+  }
+
+  /**
+   * Generate a unique device ID based on username.
+   * This matches the Python library's approach.
+   */
+  private generateDeviceId(username: string): string {
+    // Use a hash of username + fixed salt to generate consistent device ID
+    const salt = 'familjen-toshiba-ac'
+    const combined = username + salt
+    let hash = 0
+    for (let i = 0; i < combined.length; i++) {
+      const char = combined.charCodeAt(i)
+      hash = ((hash << 5) - hash) + char
+      hash = hash & hash // Convert to 32-bit integer
+    }
+    return `familjen-${Math.abs(hash).toString(16).padStart(8, '0')}`
+  }
+
+  /**
+   * Connect to Azure IoT Hub via AMQP.
+   */
+  private async connectAmqp(): Promise<void> {
+    if (this.amqpConnected && this.amqpClient) {
+      return
+    }
+
+    if (!this.sasToken) {
+      throw new ToshibaError('No SAS token available. Call login() first.')
+    }
+
+    this.log('Connecting to Azure IoT Hub via AMQP...')
+
+    try {
+      // Create client from SAS token using AMQP transport
+      this.amqpClient = IoTHubClient.fromSharedAccessSignature(this.sasToken, Amqp)
+
+      await new Promise<void>((resolve, reject) => {
+        this.amqpClient!.open((err) => {
+          if (err) {
+            reject(new ToshibaError(`AMQP connection failed: ${err.message}`))
+          } else {
+            resolve()
+          }
+        })
+      })
+
+      this.amqpConnected = true
+      this.log('AMQP connected successfully')
+    } catch (error) {
+      this.amqpClient = null
+      this.amqpConnected = false
+      throw error
+    }
+  }
+
+  /**
+   * Send a command message via AMQP.
+   */
+  private async sendAmqpMessage(message: object): Promise<void> {
+    await this.connectAmqp()
+
+    if (!this.amqpClient) {
+      throw new ToshibaError('AMQP client not available')
+    }
+
+    const messageStr = JSON.stringify(message)
+    this.log('Sending AMQP message:', messageStr)
+
+    const msg = new Message(messageStr)
+    msg.contentType = 'application/json'
+    msg.contentEncoding = 'utf-8'
+    // Set custom property to identify as mobile app message
+    msg.properties.add('type', 'mob')
+
+    await new Promise<void>((resolve, reject) => {
+      this.amqpClient!.sendEvent(msg, (err) => {
+        if (err) {
+          reject(new ToshibaError(`Failed to send AMQP message: ${err.message}`))
+        } else {
+          resolve()
+        }
+      })
+    })
+
+    this.log('AMQP message sent successfully')
+  }
+
+  /**
    * Login using existing tokens (for stored credentials).
    */
-  loginWithToken(accessToken: string, consumerId: string, expiry?: number): void {
+  loginWithToken(
+    accessToken: string,
+    consumerId: string,
+    sasToken?: string,
+    deviceId?: string,
+    expiry?: number
+  ): void {
     this.accessToken = accessToken
     this.consumerId = consumerId
+    this.sasToken = sasToken ?? null
+    this.deviceId = deviceId ?? null
     this.tokenExpiry = expiry ?? Date.now() + TOSHIBA_API.TOKEN_VALIDITY_MS
     this.log('Logged in with existing token')
   }
@@ -217,19 +402,40 @@ export class ToshibaClient {
   /**
    * Clear authentication state.
    */
-  logout(): void {
+  async logout(): Promise<void> {
+    // Disconnect AMQP if connected
+    if (this.amqpClient && this.amqpConnected) {
+      await new Promise<void>((resolve) => {
+        this.amqpClient!.close(() => resolve())
+      })
+    }
+
     this.accessToken = null
     this.consumerId = null
+    this.username = null
     this.tokenExpiry = 0
+    this.sasToken = null
+    this.deviceId = null
+    this.amqpClient = null
+    this.amqpConnected = false
+    this.deviceCache = {}
   }
 
   /**
    * Get current tokens for storage.
    */
-  getTokens(): { accessToken: string | null; consumerId: string | null; expiry: number } {
+  getTokens(): {
+    accessToken: string | null
+    consumerId: string | null
+    sasToken: string | null
+    deviceId: string | null
+    expiry: number
+  } {
     return {
       accessToken: this.accessToken,
       consumerId: this.consumerId,
+      sasToken: this.sasToken,
+      deviceId: this.deviceId,
       expiry: this.tokenExpiry,
     }
   }
@@ -260,17 +466,25 @@ export class ToshibaClient {
       if (group.ACList && Array.isArray(group.ACList)) {
         for (const device of group.ACList) {
           // Attach timezone from group to each device
-          devices.push({
+          const deviceWithTimezone = {
             ...device,
             _timezone: group.TimeZone,
-          } as ToshibaACDevice & { _timezone: string })
+          } as ToshibaACDevice & { _timezone: string }
+
+          devices.push(deviceWithTimezone)
+
+          // Cache device info for AMQP commands
+          this.deviceCache[device.Id] = {
+            deviceUniqueId: device.DeviceUniqueId,
+            currentStateHex: device.ACStateData,
+          }
         }
       }
     }
 
     this.log(`Found ${devices.length} devices across ${groups.length} groups`)
     if (devices.length > 0) {
-      this.log('First device:', devices[0].Name, 'ID:', devices[0].Id)
+      this.log('First device:', devices[0].Name, 'ID:', devices[0].Id, 'UniqueId:', devices[0].DeviceUniqueId)
     }
 
     return devices
@@ -315,7 +529,7 @@ export class ToshibaClient {
     indoorTemperature: number | null
     outdoorTemperature: number | null
   } {
-    if (!hexState || hexState.length < 26) {
+    if (!hexState || hexState.length < 20) {
       return {
         powerState: null,
         operationMode: null,
@@ -329,7 +543,7 @@ export class ToshibaClient {
     }
 
     // Extract byte pairs (each byte = 2 hex chars)
-    const getByte = (offset: number): string => hexState.slice(offset * 2, offset * 2 + 2)
+    const getByte = (offset: number): string => hexState.slice(offset * 2, offset * 2 + 2).toLowerCase()
 
     // Power state: 30 = ON, 31 = OFF
     const powerByte = getByte(STATE_OFFSETS.POWER)
@@ -353,9 +567,9 @@ export class ToshibaClient {
 
     // Pure/ionizer state
     const pureByte = getByte(STATE_OFFSETS.PURE)
-    const pureState: 'ON' | 'OFF' | null = pureByte === '10' ? 'ON' : pureByte === '00' ? 'OFF' : null
+    const pureState: 'ON' | 'OFF' | null = pureByte === '18' ? 'ON' : pureByte === '10' ? 'OFF' : null
 
-    // Indoor temperature (offset may vary, using common position)
+    // Indoor temperature
     const indoorByte = getByte(STATE_OFFSETS.INDOOR_TEMP)
     const indoorTemperature = indoorByte && indoorByte !== 'fe' && indoorByte !== 'ff'
       ? parseInt(indoorByte, 16)
@@ -380,15 +594,30 @@ export class ToshibaClient {
   }
 
   // ==========================================================================
-  // Control Commands
+  // Control Commands (via AMQP)
   // ==========================================================================
+
+  /**
+   * Get the DeviceUniqueId for an AC unit.
+   * This is needed for AMQP commands.
+   */
+  getDeviceUniqueId(acId: string): string | null {
+    return this.deviceCache[acId]?.deviceUniqueId ?? null
+  }
+
+  /**
+   * Get the current state hex string for an AC unit.
+   */
+  getCurrentStateHex(acId: string): string | null {
+    return this.deviceCache[acId]?.currentStateHex ?? null
+  }
 
   /**
    * Set power state (ON/OFF).
    */
   async setPowerState(acId: string, state: ToshibaPowerState): Promise<void> {
     this.log('Setting power state:', state, 'for device:', acId)
-    await this.setACState(acId, { ACPowerState: state })
+    await this.sendCommand(acId, { power: state })
   }
 
   /**
@@ -396,7 +625,7 @@ export class ToshibaClient {
    */
   async setOperationMode(acId: string, mode: ToshibaOperationMode): Promise<void> {
     this.log('Setting operation mode:', mode, 'for device:', acId)
-    await this.setACState(acId, { ACOperationMode: mode })
+    await this.sendCommand(acId, { mode })
   }
 
   /**
@@ -406,7 +635,7 @@ export class ToshibaClient {
     // Clamp to valid range
     const temp = Math.max(17, Math.min(30, temperature))
     this.log('Setting temperature:', temp, 'for device:', acId)
-    await this.setACState(acId, { ACSetpointTemperature: temp })
+    await this.sendCommand(acId, { temperature: temp })
   }
 
   /**
@@ -414,7 +643,7 @@ export class ToshibaClient {
    */
   async setFanSpeed(acId: string, speed: ToshibaFanSpeed): Promise<void> {
     this.log('Setting fan speed:', speed, 'for device:', acId)
-    await this.setACState(acId, { ACFanSpeed: speed })
+    await this.sendCommand(acId, { fanSpeed: speed })
   }
 
   /**
@@ -422,7 +651,7 @@ export class ToshibaClient {
    */
   async setSwingMode(acId: string, mode: ToshibaSwingMode): Promise<void> {
     this.log('Setting swing mode:', mode, 'for device:', acId)
-    await this.setACState(acId, { ACSwingMode: mode })
+    await this.sendCommand(acId, { swingMode: mode })
   }
 
   /**
@@ -430,7 +659,7 @@ export class ToshibaClient {
    */
   async setPureState(acId: string, state: 'ON' | 'OFF'): Promise<void> {
     this.log('Setting pure state:', state, 'for device:', acId)
-    await this.setACState(acId, { ACPureState: state })
+    await this.sendCommand(acId, { pure: state })
   }
 
   /**
@@ -441,12 +670,12 @@ export class ToshibaClient {
     mode?: ToshibaOperationMode,
     temperature?: number
   ): Promise<void> {
-    const state: Partial<ToshibaACState> = { ACPowerState: 'ON' }
-    if (mode) state.ACOperationMode = mode
-    if (temperature) state.ACSetpointTemperature = Math.max(17, Math.min(30, temperature))
-
     this.log('Turning on device:', acId, 'mode:', mode, 'temp:', temperature)
-    await this.setACState(acId, state)
+    await this.sendCommand(acId, {
+      power: 'ON',
+      mode,
+      temperature: temperature ? Math.max(17, Math.min(30, temperature)) : undefined,
+    })
   }
 
   /**
@@ -454,7 +683,7 @@ export class ToshibaClient {
    */
   async turnOff(acId: string): Promise<void> {
     this.log('Turning off device:', acId)
-    await this.setACState(acId, { ACPowerState: 'OFF' })
+    await this.sendCommand(acId, { power: 'OFF' })
   }
 
   // ==========================================================================
@@ -504,90 +733,90 @@ export class ToshibaClient {
   // ==========================================================================
 
   /**
-   * Encode state values to API format (hex codes).
-   * The Toshiba API expects encoded values, not descriptive strings.
+   * Build a command state hex string.
+   * Updates only the specified values, using 'ff' for unchanged bytes.
    */
-  private encodeStateForAPI(state: Partial<ToshibaACState>): Record<string, string | number> {
-    const encoded: Record<string, string | number> = {}
+  private buildCommandState(options: {
+    power?: ToshibaPowerState
+    mode?: ToshibaOperationMode
+    temperature?: number
+    fanSpeed?: ToshibaFanSpeed
+    swingMode?: ToshibaSwingMode
+    pure?: 'ON' | 'OFF'
+  }): string {
+    // 19-byte state array, initialized to 'ff' (unchanged)
+    const state: string[] = new Array(19).fill('ff')
 
-    if (state.ACPowerState !== undefined) {
-      encoded.ACPowerState = POWER_ENCODE[state.ACPowerState]
+    if (options.power !== undefined) {
+      state[STATE_OFFSETS.POWER] = POWER_ENCODE[options.power]
     }
-    if (state.ACOperationMode !== undefined) {
-      encoded.ACOperationMode = MODE_ENCODE[state.ACOperationMode]
+    if (options.mode !== undefined) {
+      state[STATE_OFFSETS.MODE] = MODE_ENCODE[options.mode]
     }
-    if (state.ACSetpointTemperature !== undefined) {
-      // Temperature is sent as hex string of the value
-      encoded.ACSetpointTemperature = state.ACSetpointTemperature.toString(16).padStart(2, '0')
+    if (options.temperature !== undefined) {
+      state[STATE_OFFSETS.TEMP] = options.temperature.toString(16).padStart(2, '0')
     }
-    if (state.ACFanSpeed !== undefined) {
-      encoded.ACFanSpeed = FAN_ENCODE[state.ACFanSpeed]
+    if (options.fanSpeed !== undefined) {
+      state[STATE_OFFSETS.FAN] = FAN_ENCODE[options.fanSpeed]
     }
-    if (state.ACSwingMode !== undefined) {
-      encoded.ACSwingMode = SWING_ENCODE[state.ACSwingMode]
+    if (options.swingMode !== undefined) {
+      state[STATE_OFFSETS.SWING] = SWING_ENCODE[options.swingMode]
     }
-    if (state.ACPureState !== undefined) {
-      encoded.ACPureState = PURE_ENCODE[state.ACPureState as 'ON' | 'OFF']
+    if (options.pure !== undefined) {
+      state[STATE_OFFSETS.PURE] = PURE_ENCODE[options.pure]
     }
 
-    return encoded
+    return state.join('')
   }
 
   /**
-   * Set AC state via API.
+   * Send a command to the AC via AMQP.
    */
-  private async setACState(acId: string, state: Partial<ToshibaACState>): Promise<void> {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), this.timeout)
-
-    // Encode state values to API format
-    const encodedState = this.encodeStateForAPI(state)
-    this.log('Sending encoded state:', encodedState)
-
-    try {
-      const response = await fetch(`${TOSHIBA_API.BASE_URL}${TOSHIBA_ENDPOINTS.SET_STATE}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.accessToken}`,
-        },
-        body: JSON.stringify({
-          ACId: acId,
-          ...encodedState,
-        }),
-        signal: controller.signal,
-      })
-
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => 'Unknown error')
-
-        if (response.status === 401) {
-          this.accessToken = null
-          throw new ToshibaAuthError('Authentication expired', errorText)
-        }
-
-        throw new ToshibaError(
-          `Set state failed: ${response.status} ${response.statusText}`,
-          response.status,
-          errorText
-        )
+  private async sendCommand(acId: string, options: {
+    power?: ToshibaPowerState
+    mode?: ToshibaOperationMode
+    temperature?: number
+    fanSpeed?: ToshibaFanSpeed
+    swingMode?: ToshibaSwingMode
+    pure?: 'ON' | 'OFF'
+  }): Promise<void> {
+    const deviceUniqueId = this.getDeviceUniqueId(acId)
+    if (!deviceUniqueId) {
+      // Try to fetch devices to populate cache
+      await this.getDevices()
+      const uniqueId = this.getDeviceUniqueId(acId)
+      if (!uniqueId) {
+        throw new ToshibaError(`Device not found in cache: ${acId}. Call getDevices() first.`)
       }
+    }
 
-      const data = await response.json() as ToshibaAPIResponse<unknown>
+    const targetId = this.getDeviceUniqueId(acId)!
+    const stateHex = this.buildCommandState(options)
 
-      if (!data.IsSuccess) {
-        throw new ToshibaError(data.Message || 'Failed to set AC state')
+    const message = {
+      sourceId: this.deviceId,
+      messageId: Date.now().toString(),
+      targetId: [targetId],
+      cmd: 'CMD_FCU_TO_AC',
+      payload: { data: stateHex },
+      timeStamp: Date.now().toString(),
+    }
+
+    await this.sendAmqpMessage(message)
+
+    // Update cached state if we know the current state
+    const cachedDevice = this.deviceCache[acId]
+    if (cachedDevice?.currentStateHex) {
+      // Merge new values into cached state
+      const currentState = cachedDevice.currentStateHex
+      const newState = stateHex
+      let mergedState = ''
+      for (let i = 0; i < Math.max(currentState.length, newState.length); i += 2) {
+        const currentByte = currentState.slice(i, i + 2)
+        const newByte = newState.slice(i, i + 2)
+        mergedState += (newByte !== 'ff' ? newByte : currentByte) || 'ff'
       }
-
-      this.log('State updated successfully')
-    } catch (error) {
-      if (error instanceof ToshibaError) throw error
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new ToshibaError('Set state request timed out')
-      }
-      throw new ToshibaError(`Set state failed: ${error}`)
-    } finally {
-      clearTimeout(timeoutId)
+      cachedDevice.currentStateHex = mergedState.slice(0, 38) // 19 bytes = 38 hex chars
     }
   }
 

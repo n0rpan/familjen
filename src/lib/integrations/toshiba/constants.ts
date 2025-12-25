@@ -26,9 +26,9 @@ export const TOSHIBA_API = {
  */
 export const TOSHIBA_ENDPOINTS = {
   LOGIN: '/api/Consumer/Login',
+  REGISTER_MOBILE_DEVICE: '/api/Consumer/RegisterMobileDevice',
   GET_DEVICES: '/api/AC/GetConsumerACMapping',
   GET_STATE: '/api/AC/GetCurrentACState',
-  SET_STATE: '/api/AC/SetACState',
   GET_SETTINGS: '/api/AC/GetConsumerProgramSettings',
 } as const
 

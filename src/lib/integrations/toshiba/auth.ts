@@ -18,6 +18,8 @@ const authInFlight = new Map<string, Promise<ToshibaClient>>()
 interface CachedTokens {
   accessToken: string
   consumerId: string
+  sasToken?: string
+  deviceId?: string
   expiry: string
   isExpired: boolean
 }
@@ -90,6 +92,8 @@ async function performAuthentication(accountId: string): Promise<ToshibaClient> 
     client.loginWithToken(
       cachedTokens.accessToken,
       cachedTokens.consumerId,
+      cachedTokens.sasToken,
+      cachedTokens.deviceId,
       new Date(cachedTokens.expiry).getTime()
     )
     return client
@@ -118,6 +122,8 @@ async function performAuthentication(accountId: string): Promise<ToshibaClient> 
     p_account_id: accountId,
     p_access_token: tokens.accessToken,
     p_consumer_id: tokens.consumerId,
+    p_sas_token: tokens.sasToken,
+    p_device_id: tokens.deviceId,
     p_expires_in: client.getTokenExpiresIn(),
   })
 
