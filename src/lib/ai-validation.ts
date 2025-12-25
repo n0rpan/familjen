@@ -6,6 +6,19 @@
 import { extractJSON } from './json-extract'
 import type { MealSuggestion } from './types'
 
+/**
+ * Sanitize user input to prevent prompt injection attacks.
+ */
+function sanitizeInput(input: string, maxLength = 50): string {
+  if (!input) return ''
+  return input
+    .replace(/[\r\n\t]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/[<>{}[\]]/g, '')
+    .slice(0, maxLength)
+    .trim()
+}
+
 export interface MealValidationResult {
   isValid: boolean
   issues: MealIssue[]
@@ -71,6 +84,9 @@ export async function validateMealSuggestions(
 
   const familyDesc = `${family.parentCount} voksne og ${family.childrenAges.length} barn (${childrenDesc})`
 
+  // Sanitize allergies to prevent prompt injection
+  const sanitizedAllergies = family.allergies.map(a => sanitizeInput(a)).filter(Boolean)
+
   // Build meals description
   const mealsDesc = meals.map(m => {
     const ingredients = m.ingredients.map(i => i.item).join(', ')
@@ -82,7 +98,7 @@ export async function validateMealSuggestions(
 
 FAMILIEN:
 - ${familyDesc}
-${family.allergies.length > 0 ? `- ALLERGIER (KRITISK): ${family.allergies.join(', ')}` : '- Ingen allergier'}
+${sanitizedAllergies.length > 0 ? `- ALLERGIER (KRITISK): ${sanitizedAllergies.join(', ')}` : '- Ingen allergier'}
 
 FORESLÅTT MENY:
 ${mealsDesc}

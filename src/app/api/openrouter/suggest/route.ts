@@ -9,6 +9,31 @@ import { extractJSON } from '@/lib/json-extract'
 import { formatDateISO } from '@/lib/utils'
 import { validateMealSuggestions } from '@/lib/ai-validation'
 
+/**
+ * Sanitize user input to prevent prompt injection attacks.
+ * - Removes newlines, control characters
+ * - Limits length
+ * - Strips common injection patterns
+ */
+function sanitizeInput(input: string, maxLength = 100): string {
+  if (!input) return ''
+  return input
+    .replace(/[\r\n\t]/g, ' ')           // Remove newlines/tabs
+    .replace(/\s+/g, ' ')                 // Collapse whitespace
+    .replace(/[<>{}[\]]/g, '')            // Remove brackets that could be injection markers
+    .slice(0, maxLength)                  // Limit length
+    .trim()
+}
+
+/**
+ * Sanitize an array of user inputs (e.g., allergies list)
+ */
+function sanitizeArray(items: string[], maxItemLength = 50): string[] {
+  return items
+    .map(item => sanitizeInput(item, maxItemLength))
+    .filter(item => item.length > 0 && item.length <= maxItemLength)
+}
+
 // Helper to calculate age from birth date
 function calculateAge(birthDate: string): number {
   const today = new Date()
@@ -105,12 +130,13 @@ export async function POST(request: Request) {
       supabase.from('week_contexts').select('context').eq('household_id', household.id).eq('week_start', weekStart).maybeSingle(),
     ])
 
-    // Process children's ages and allergies
+    // Process children's ages and allergies (sanitized to prevent prompt injection)
     const childrenAges: { name: string; age: number; allergies: string[] }[] = []
     const allAllergiesSet = new Set<string>()
     if (childrenResult.data) {
       for (const child of childrenResult.data) {
-        const allergies = (child.allergies as string[]) || []
+        const rawAllergies = (child.allergies as string[]) || []
+        const allergies = sanitizeArray(rawAllergies)
         // Add to combined set
         allergies.forEach(a => allAllergiesSet.add(a.toLowerCase()))
         if (child.birth_date) {
@@ -126,7 +152,8 @@ export async function POST(request: Request) {
     // Also add allergies from household members (parents)
     if (membersResult.data) {
       for (const member of membersResult.data) {
-        const allergies = (member.allergies as string[]) || []
+        const rawAllergies = (member.allergies as string[]) || []
+        const allergies = sanitizeArray(rawAllergies)
         allergies.forEach(a => allAllergiesSet.add(a.toLowerCase()))
       }
     }
@@ -152,8 +179,10 @@ export async function POST(request: Request) {
     // Get holidays for the week
     const holidays = (holidaysResult.data || []).map(h => ({ date: h.date, name: h.name }))
 
-    // Get week-specific context
-    const weekContext = weekContextResult.data?.context || null
+    // Get week-specific context (sanitized to prevent prompt injection)
+    const weekContext = weekContextResult.data?.context
+      ? sanitizeInput(weekContextResult.data.context, 500)
+      : null
 
     // Determine which days need suggestions
     const daysNeedingSuggestions: { date: string; partial?: string }[] = []
@@ -222,7 +251,7 @@ export async function POST(request: Request) {
         quickRecipes,
         recentMealNames,
         holidays,
-        defaultContext: household.ai_meal_context,
+        defaultContext: household.ai_meal_context ? sanitizeInput(household.ai_meal_context, 500) : null,
         weekContext,
         season,
         allAllergies,
