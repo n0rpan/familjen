@@ -391,21 +391,21 @@ export class MelCloudClient {
   mapDeviceToDb(device: MelCloudDevice): MappedMelCloudDevice {
     const data = device.Device
 
-    // Decode values - cast to number for map lookup
+    // Decode values - convert to number for map lookup
     const operationMode = data?.OperationMode !== undefined
-      ? OPERATION_MODE_MAP[data.OperationMode as number] ?? null
+      ? OPERATION_MODE_MAP[Number(data.OperationMode)] ?? null
       : null
 
     const fanSpeed = data?.FanSpeed !== undefined
-      ? FAN_SPEED_MAP[data.FanSpeed as number] ?? 'AUTO'
+      ? FAN_SPEED_MAP[Number(data.FanSpeed)] ?? 'AUTO'
       : null
 
     const vaneVertical = data?.VaneVertical !== undefined
-      ? VANE_VERTICAL_MAP[data.VaneVertical as number] ?? null
+      ? VANE_VERTICAL_MAP[Number(data.VaneVertical)] ?? null
       : null
 
     const vaneHorizontal = data?.VaneHorizontal !== undefined
-      ? VANE_HORIZONTAL_MAP[data.VaneHorizontal as number] ?? null
+      ? VANE_HORIZONTAL_MAP[Number(data.VaneHorizontal)] ?? null
       : null
 
     return {
