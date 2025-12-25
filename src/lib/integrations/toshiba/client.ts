@@ -37,7 +37,8 @@ import {
 import { TOSHIBA_API, TOSHIBA_ENDPOINTS } from './constants'
 
 // Hex state byte positions for READING ACStateData from API
-// Note: Command format (for sending) may use different positions
+// Based on: https://github.com/KaSroka/Toshiba-AC-control/blob/main/toshiba_ac/device.py
+// Note: Command format (for sending) uses different positions
 const STATE_OFFSETS_READ = {
   POWER: 0,
   MODE: 1,
@@ -45,8 +46,8 @@ const STATE_OFFSETS_READ = {
   FAN: 4,
   SWING: 5,
   PURE: 6,
-  INDOOR_TEMP: 11,
-  OUTDOOR_TEMP: 12,
+  INDOOR_TEMP: 10,   // Position 10 per Python library
+  OUTDOOR_TEMP: 11,  // Position 11 per Python library
 } as const
 
 // Hex state byte positions for WRITING commands via AMQP
@@ -525,6 +526,16 @@ export class ToshibaClient {
 
     // Extract byte pairs (each byte = 2 hex chars)
     const getByte = (offset: number): string => hexState.slice(offset * 2, offset * 2 + 2).toLowerCase()
+
+    // Debug: Log hex state and all byte positions to find correct temperature offsets
+    if (this.debug) {
+      console.log('[ToshibaClient] Raw ACStateData:', hexState)
+      console.log('[ToshibaClient] Bytes:', Array.from({ length: Math.min(20, hexState.length / 2) }, (_, i) => {
+        const byte = getByte(i)
+        const val = parseInt(byte, 16)
+        return `[${i}]=${byte}(${val})`
+      }).join(' '))
+    }
 
     // Power state: 30 = ON, 31 = OFF
     const powerByte = getByte(STATE_OFFSETS_READ.POWER)
