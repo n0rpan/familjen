@@ -75,6 +75,17 @@ describe('/api/openrouter/suggest', () => {
     vi.clearAllMocks()
   })
 
+  /**
+   * Allergy Handling Tests
+   *
+   * The production API now uses a 3-step process:
+   * 1. Generation AI - creates meal suggestions
+   * 2. Validation AI - checks for allergens, menu quality, family fit
+   * 3. Retry loop - if validation fails, regenerates failed days (max 3 attempts)
+   *
+   * Tests verify the FINAL output using an independent AI check.
+   * This ensures the entire generate-validate pipeline works correctly.
+   */
   describe('Allergy Handling', () => {
     it('excludes dairy when milk allergy is specified', async () => {
       // Setup mock with milk allergy
@@ -271,7 +282,7 @@ describe('/api/openrouter/suggest', () => {
       expect(response.status).toBe(200)
       // Should return suggestions for weekdays
       expect(data.suggestions).toBeDefined()
-    }, 60000)
+    }, 120000)
   })
 
   describe('Meal Planning Logic', () => {
@@ -306,7 +317,7 @@ describe('/api/openrouter/suggest', () => {
         expect(suggestionDays).not.toContain(mondayDate)
         expect(suggestionDays).not.toContain(tuesdayStr)
       }
-    }, 60000)
+    }, 120000)
 
     it('enhances partial meal names', async () => {
       mockSupabase.client = createMockSupabaseClient({})
@@ -336,7 +347,7 @@ describe('/api/openrouter/suggest', () => {
           expect(mondaySuggestion.name.toLowerCase()).toMatch(/kylling|chicken/)
         }
       }
-    }, 60000)
+    }, 120000)
 
     it('returns empty suggestions when all weekdays have meals', async () => {
       mockSupabase.client = createMockSupabaseClient({})
@@ -362,7 +373,7 @@ describe('/api/openrouter/suggest', () => {
 
       expect(response.status).toBe(200)
       expect(data.suggestions).toEqual([])
-    }, 60000)
+    }, 120000)
   })
 
   describe('Response Format', () => {
@@ -399,6 +410,6 @@ describe('/api/openrouter/suggest', () => {
           expect(suggestion.ingredients[0]).toHaveProperty('amount')
         }
       }
-    }, 60000)
+    }, 120000)
   })
 })
