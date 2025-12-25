@@ -27,6 +27,30 @@ export async function GET(request: NextRequest) {
     const client = await getAuthenticatedClient(accountId)
     const devices = await client.getMappedDevices()
 
+    // DEBUG: Extract raw hex state for debugging temperature byte positions
+    const debugInfo = devices.map(device => {
+      const rawData = device.rawData as { ACStateData?: string } | undefined
+      const hexState = rawData?.ACStateData || ''
+      const bytes: string[] = []
+      for (let i = 0; i < Math.min(25, hexState.length / 2); i++) {
+        const byte = hexState.slice(i * 2, i * 2 + 2).toLowerCase()
+        const val = parseInt(byte, 16)
+        const tempVal = val - 128
+        bytes.push(`[${i}]=${byte}(${val}${val >= 15 && val <= 35 ? '°?' : ''}${tempVal >= -20 && tempVal <= 45 ? ` out:${tempVal}°?` : ''})`)
+      }
+      return {
+        name: device.name,
+        hexState,
+        hexLength: hexState.length,
+        bytes: bytes.join(' '),
+        extracted: {
+          currentTemperature: device.currentTemperature,
+          outdoorTemperature: device.outdoorTemperature,
+          targetTemperature: device.targetTemperature,
+        }
+      }
+    })
+
     // Sync devices to database (preserves user customizations: custom_name, favorite, sort_order, is_hidden)
     const { data: existingDevices } = await supabase
       .from('toshiba_ac_devices')
@@ -121,6 +145,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       devices: dbDevices || [],
+      // DEBUG: Remove after fixing temperature parsing
+      _debug: debugInfo,
     })
   } catch (error) {
     console.error('Toshiba devices error:', error)
