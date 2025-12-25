@@ -1302,7 +1302,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
 
       {accounts.length === 0 && !showAddForm && (
         <p className="text-sm text-center" style={{ color: 'var(--muted)' }}>
-          {t.homeControl.connectSmartHome || 'Connect your Somfy or Toshiba AC account to control your devices'}
+          {t.homeControl.connectSmartHome || 'Connect your Somfy, Toshiba, or Mitsubishi AC account to control your devices'}
         </p>
       )}
     </div>
