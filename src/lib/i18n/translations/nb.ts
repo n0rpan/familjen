@@ -244,14 +244,18 @@ export const nb: TranslationStrings = {
     // Section headers
     familyTitle: 'Familie',
     familyDesc: 'Administrer barn og husstandsmedlemmer',
+    childrenTitle: 'Barn',
+    membersTitle: 'Husstandsmedlemmer',
     mySettingsTitle: 'Mine innstillinger',
     mySettingsDesc: 'Personlige preferanser og profil',
     integrationsTitle: 'Integrasjoner',
     integrationsDesc: 'Koble til eksterne tjenester',
+    advancedTitle: 'Avansert',
     aiPreferencesTitle: 'AI-preferanser',
     aiPreferencesDesc: 'Tilpass AI-assistenten for din familie',
     administrationTitle: 'Administrasjon',
     administrationDesc: 'Husstandsinnstillinger og tilgang',
+    accountTitle: 'Konto',
     // Legacy
     household: 'Husstand',
     householdName: 'Hustandsnavn',

@@ -25,7 +25,7 @@ import {
   AIPreferencesSection,
   HouseholdAdminSection,
 } from './sections'
-import { CollapsibleSection } from './components'
+import { CollapsibleSection, SectionGroupLabel } from './components'
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
@@ -906,67 +906,12 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* ========== CHILDREN ========== */}
-      <CollapsibleSection
-        icon={
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="9" cy="7" r="4"/>
-            <path d="M2 21v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2"/>
-            <path d="M17 11a3 3 0 1 0 0-6"/>
-            <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
-          </svg>
-        }
-        title={t.settings.childrenTitle || 'Barn'}
-        description={`${children.length} barn`}
-        color="var(--color-honey)"
-      >
-        <ChildrenSection
-        children={children}
-        editingChildId={editingChildId}
-        editingChildForm={editingChildForm}
-        newChild={newChild}
-        newAllergy={newAllergy}
-        saving={saving}
-        t={t}
-        onEditingChildFormChange={setEditingChildForm}
-        onNewChildChange={setNewChild}
-        onNewAllergyChange={setNewAllergy}
-        onStartEdit={startEditChild}
-        onCancelEdit={cancelEditChild}
-        onSaveEdit={saveEditingChild}
-        onAddChild={addChild}
-        onDeleteChild={deleteChild}
-        onAddAllergy={addAllergyToForm}
-        onRemoveAllergy={removeAllergyFromForm}
-      />
-      </CollapsibleSection>
+      {/* ============================================================ */}
+      {/* GROUP 1: PERSONAL SETTINGS                                    */}
+      {/* ============================================================ */}
+      <SectionGroupLabel label={t.settings.mySettingsTitle || 'Mine innstillinger'} />
 
-      {/* ========== HOUSEHOLD MEMBERS ========== */}
-      <CollapsibleSection
-        icon={
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-            <circle cx="9" cy="7" r="4"/>
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-          </svg>
-        }
-        title={t.settings.membersTitle || 'Husstandsmedlemmer'}
-        description={`${members.length} ${members.length === 1 ? 'medlem' : 'medlemmer'}`}
-        color="var(--color-sage)"
-      >
-        <MembersSection
-        members={members}
-        newMember={newMember}
-        saving={saving}
-        t={t}
-        onNewMemberChange={setNewMember}
-        onAddMember={addMember}
-        onDeleteMember={deleteMember}
-      />
-      </CollapsibleSection>
-
-      {/* ========== MY PROFILE ========== */}
+      {/* My Profile */}
       {myProfile && (
         <CollapsibleSection
           icon={
@@ -1106,14 +1051,7 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <div className="flex gap-2">
-                <button
-                  onClick={saveProfile}
-                  disabled={savingProfile || !profileForm.name}
-                  className="btn btn-primary"
-                >
-                  {savingProfile ? t.common.saving : t.common.save}
-                </button>
+              <div className="flex gap-3 pt-2">
                 <button
                   onClick={() => {
                     setEditingProfile(false)
@@ -1131,68 +1069,70 @@ export default function SettingsPage() {
                 >
                   {t.common.cancel}
                 </button>
+                <button
+                  onClick={saveProfile}
+                  disabled={saving}
+                  className="btn btn-primary"
+                >
+                  {saving ? t.common.saving : t.common.save}
+                </button>
               </div>
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <p className="text-xs" style={{ color: 'var(--muted)' }}>{t.settings.memberName}</p>
+                  <p className="text-xs mb-1" style={{ color: 'var(--muted)' }}>{t.settings.memberName}</p>
                   <p className="font-medium" style={{ color: 'var(--foreground)' }}>{myProfile.name}</p>
                 </div>
-                <div>
-                  <p className="text-xs" style={{ color: 'var(--muted)' }}>{t.settings.memberShortName}</p>
-                  <p className="font-medium" style={{ color: 'var(--foreground)' }}>{myProfile.short_name || '-'}</p>
-                </div>
-                <div>
-                  <p className="text-xs" style={{ color: 'var(--muted)' }}>{t.settings.memberBirthDate}</p>
-                  <p className="font-medium" style={{ color: 'var(--foreground)' }}>{myProfile.birth_date || '-'}</p>
-                </div>
-                <div>
-                  <p className="text-xs" style={{ color: 'var(--muted)' }}>{t.settings.memberWorkEmail}</p>
-                  <p className="font-medium truncate" style={{ color: 'var(--foreground)' }}>{myProfile.work_email || '-'}</p>
-                </div>
+                {myProfile.short_name && (
+                  <div>
+                    <p className="text-xs mb-1" style={{ color: 'var(--muted)' }}>{t.settings.memberShortName}</p>
+                    <p className="font-medium" style={{ color: 'var(--foreground)' }}>{myProfile.short_name}</p>
+                  </div>
+                )}
+                {myProfile.birth_date && (
+                  <div>
+                    <p className="text-xs mb-1" style={{ color: 'var(--muted)' }}>{t.settings.memberBirthDate}</p>
+                    <p className="font-medium" style={{ color: 'var(--foreground)' }}>
+                      {new Date(myProfile.birth_date).toLocaleDateString(language, { day: 'numeric', month: 'long', year: 'numeric' })}
+                    </p>
+                  </div>
+                )}
+                {myProfile.work_email && (
+                  <div>
+                    <p className="text-xs mb-1" style={{ color: 'var(--muted)' }}>{t.settings.memberWorkEmail}</p>
+                    <p className="font-medium" style={{ color: 'var(--foreground)' }}>{myProfile.work_email}</p>
+                  </div>
+                )}
               </div>
-
-              {/* Allergies display */}
-              <div className="mt-4">
-                <p className="text-xs mb-2" style={{ color: 'var(--muted)' }}>{t.settings.memberAllergies}</p>
-                {myProfile.allergies && myProfile.allergies.length > 0 ? (
+              {myProfile.allergies && myProfile.allergies.length > 0 && (
+                <div>
+                  <p className="text-xs mb-2" style={{ color: 'var(--muted)' }}>{t.settings.memberAllergies}</p>
                   <div className="flex flex-wrap gap-2">
                     {myProfile.allergies.map((allergy) => (
                       <span
                         key={allergy}
-                        className="text-xs px-2 py-1 rounded-full"
+                        className="px-3 py-1 rounded-full text-sm"
                         style={{ background: 'rgba(232, 120, 109, 0.15)', color: 'var(--color-coral)' }}
                       >
                         {allergy}
                       </span>
                     ))}
                   </div>
-                ) : (
-                  <p className="text-sm" style={{ color: 'var(--muted)' }}>{t.settings.noRegistered}</p>
-                )}
-              </div>
-
-              {/* ICS Calendar display */}
+                </div>
+              )}
               {myProfile.ics_calendar_url && (
-                <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
+                <div
+                  className="p-4 rounded-xl"
+                  style={{ background: 'var(--card-alt)' }}
+                >
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-xs mb-1" style={{ color: 'var(--muted)' }}>Kalender-URL (ICS)</p>
-                      <p className="text-sm font-medium truncate" style={{ color: 'var(--foreground)', maxWidth: '300px' }}>
-                        {myProfile.ics_calendar_url.replace(/https?:\/\//, '').split('/')[0]}
+                      <p className="text-sm font-mono truncate max-w-[200px] sm:max-w-none" style={{ color: 'var(--foreground)' }}>
+                        {myProfile.ics_calendar_url.substring(0, 50)}...
                       </p>
-                      {myProfile.ics_last_sync_at && (
-                        <p className="text-xs mt-1" style={{ color: 'var(--color-sage)' }}>
-                          Sist synkronisert: {new Date(myProfile.ics_last_sync_at).toLocaleString('nb-NO')}
-                        </p>
-                      )}
-                      {myProfile.ics_sync_error && (
-                        <p className="text-xs mt-1" style={{ color: 'var(--color-coral)' }}>
-                          Feil: {myProfile.ics_sync_error}
-                        </p>
-                      )}
                     </div>
                     <button
                       onClick={syncICSCalendar}
@@ -1226,36 +1166,158 @@ export default function SettingsPage() {
         </CollapsibleSection>
       )}
 
-      {/* Calendar Sync Hint */}
-      {connectedCalendarEmail && (
-        <CollapsibleSection
-          icon={
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-              <line x1="16" y1="2" x2="16" y2="6"/>
-              <line x1="8" y1="2" x2="8" y2="6"/>
-              <line x1="3" y1="10" x2="21" y2="10"/>
-            </svg>
-          }
-          title={t.settings?.calendarSyncHint || 'Automatisk kalendersynk'}
-          description={connectedCalendarEmail}
-          color="var(--color-honey)"
-        >
-          <p className="text-sm" style={{ color: 'var(--muted)' }}>
-            {t.settings?.calendarSyncDesc || 'Send kalenderinvitasjoner til denne adressen for å automatisk legge dem til i familieplanen:'}
-          </p>
-          <div
-            className="mt-3 px-3 py-2 rounded-lg text-sm font-mono inline-block"
-            style={{ background: 'var(--background)', color: 'var(--foreground)' }}
-          >
-            {connectedCalendarEmail}
-          </div>
-        </CollapsibleSection>
+      {/* Language Settings */}
+      <CollapsibleSection
+        icon={
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="2" y1="12" x2="22" y2="12"/>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+          </svg>
+        }
+        title={t.settings.language}
+        description={LANGUAGES.find(l => l.code === language)?.name || t.settings.selectLanguage}
+        color="var(--color-lavender)"
+      >
+        <div className="flex flex-wrap gap-3">
+          {LANGUAGES.map((lang) => (
+            <button
+              key={lang.code}
+              onClick={async () => {
+                setLanguage(lang.code)
+                if (myProfile?.id) {
+                  await supabase
+                    .from('household_members')
+                    .update({ language_preference: lang.code })
+                    .eq('id', myProfile.id)
+                }
+                showMessage('success', t.success.saved)
+              }}
+              className="flex items-center gap-3 px-5 py-3 rounded-xl transition-all duration-200 hover:scale-[1.02]"
+              style={{
+                background: language === lang.code ? 'var(--accent)' : 'var(--background)',
+                color: language === lang.code ? 'white' : 'var(--foreground)',
+                border: `1px solid ${language === lang.code ? 'var(--accent)' : 'var(--border)'}`,
+              }}
+            >
+              <span className="text-xl">{lang.flag}</span>
+              <span className="font-medium">{lang.name}</span>
+              {language === lang.code && (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                  <polyline points="20,6 9,17 4,12"/>
+                </svg>
+              )}
+            </button>
+          ))}
+        </div>
+      </CollapsibleSection>
+
+      {/* Notification Settings */}
+      <CollapsibleSection
+        icon={
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+          </svg>
+        }
+        title={t.notifications?.title || 'Varsler'}
+        description={t.notifications?.description || 'Motta varsler om hendelser'}
+        color="var(--color-coral)"
+      >
+        <NotificationSettings />
+      </CollapsibleSection>
+
+      {/* Install App */}
+      <CollapsibleSection
+        icon={
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+        }
+        title={t.install?.title || 'Installer app'}
+        description={t.install?.description || 'Installer som app på enheten din'}
+        color="var(--color-sky)"
+      >
+        <InstallPrompt />
+      </CollapsibleSection>
+
+      {/* ============================================================ */}
+      {/* GROUP 2: FAMILY                                              */}
+      {/* ============================================================ */}
+      <SectionGroupLabel label={t.settings.familyTitle || 'Familie'} />
+
+      {/* Children */}
+      <CollapsibleSection
+        icon={
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M2 21v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2"/>
+            <path d="M17 11a3 3 0 1 0 0-6"/>
+            <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+          </svg>
+        }
+        title={t.settings.childrenTitle || 'Barn'}
+        description={`${children.length} barn`}
+        color="var(--color-honey)"
+      >
+        <ChildrenSection
+          children={children}
+          editingChildId={editingChildId}
+          editingChildForm={editingChildForm}
+          newChild={newChild}
+          newAllergy={newAllergy}
+          saving={saving}
+          t={t}
+          onEditingChildFormChange={setEditingChildForm}
+          onNewChildChange={setNewChild}
+          onNewAllergyChange={setNewAllergy}
+          onStartEdit={startEditChild}
+          onCancelEdit={cancelEditChild}
+          onSaveEdit={saveEditingChild}
+          onAddChild={addChild}
+          onDeleteChild={deleteChild}
+          onAddAllergy={addAllergyToForm}
+          onRemoveAllergy={removeAllergyFromForm}
+        />
+      </CollapsibleSection>
+
+      {/* Household Members */}
+      <CollapsibleSection
+        icon={
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+        }
+        title={t.settings.membersTitle || 'Husstandsmedlemmer'}
+        description={`${members.length} ${members.length === 1 ? 'medlem' : 'medlemmer'}`}
+        color="var(--color-sage)"
+      >
+        <MembersSection
+          members={members}
+          newMember={newMember}
+          saving={saving}
+          t={t}
+          onNewMemberChange={setNewMember}
+          onAddMember={addMember}
+          onDeleteMember={deleteMember}
+        />
+      </CollapsibleSection>
+
+      {/* ============================================================ */}
+      {/* GROUP 3: INTEGRATIONS (if enabled or calendar connected)    */}
+      {/* ============================================================ */}
+      {(household?.external_integrations_enabled || connectedCalendarEmail) && (
+        <SectionGroupLabel label={t.settings?.integrationsTitle || 'Integrasjoner'} />
       )}
 
-      {/* ========== INTEGRATIONS ========== */}
       {household?.external_integrations_enabled && (
         <>
+
           {/* Spond Integration */}
           <CollapsibleSection
             icon={
@@ -1373,160 +1435,39 @@ export default function SettingsPage() {
         </>
       )}
 
-      {/* ========== NOTIFICATION SETTINGS ========== */}
-      <CollapsibleSection
-        icon={
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-          </svg>
-        }
-        title={t.notifications?.title || 'Varsler'}
-        description={t.notifications?.description || 'Motta varsler om hendelser'}
-        color="var(--color-coral)"
-      >
-        <NotificationSettings />
-      </CollapsibleSection>
-
-      {/* ========== INSTALL APP ========== */}
-      <CollapsibleSection
-        icon={
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="7 10 12 15 17 10"/>
-            <line x1="12" y1="15" x2="12" y2="3"/>
-          </svg>
-        }
-        title={t.install?.title || 'Installer app'}
-        description={t.install?.description || 'Installer som app på enheten din'}
-        color="var(--color-sky)"
-      >
-        <InstallPrompt />
-      </CollapsibleSection>
-
-      {/* ========== LANGUAGE SETTINGS ========== */}
-      <CollapsibleSection
-        icon={
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10"/>
-            <line x1="2" y1="12" x2="22" y2="12"/>
-            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-          </svg>
-        }
-        title={t.settings.language}
-        description={t.settings.selectLanguage}
-        color="var(--color-lavender)"
-      >
-        <div className="flex flex-wrap gap-3">
-          {LANGUAGES.map((lang) => (
-            <button
-              key={lang.code}
-              onClick={async () => {
-                setLanguage(lang.code)
-                // Also save to database if user has a profile
-                if (myProfile?.id) {
-                  await supabase
-                    .from('household_members')
-                    .update({ language_preference: lang.code })
-                    .eq('id', myProfile.id)
-                }
-                showMessage('success', t.success.saved)
-              }}
-              className="flex items-center gap-3 px-5 py-3 rounded-xl transition-all duration-200 hover:scale-[1.02]"
-              style={{
-                background: language === lang.code ? 'var(--accent)' : 'var(--background)',
-                color: language === lang.code ? 'white' : 'var(--foreground)',
-                border: `1px solid ${language === lang.code ? 'var(--accent)' : 'var(--border)'}`,
-              }}
-            >
-              <span className="text-xl">{lang.flag}</span>
-              <span className="font-medium">{lang.name}</span>
-              {language === lang.code && (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                  <polyline points="20,6 9,17 4,12"/>
-                </svg>
-              )}
-            </button>
-          ))}
-        </div>
-      </CollapsibleSection>
-
-      {/* ========== ACCOUNT SECTION ========== */}
-      <CollapsibleSection
-        icon={
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-            <circle cx="12" cy="7" r="4"/>
-          </svg>
-        }
-        title={t.account?.title || 'Konto'}
-        description={t.account?.deleteAccountDesc || 'Administrer kontoen din'}
-        color="var(--color-coral)"
-      >
-        {!showDeleteAccountConfirm ? (
-          <div>
-            <p className="text-sm mb-4" style={{ color: 'var(--muted)' }}>
-              {t.account?.deleteAccountDesc || 'Fjerner deg fra husstanden og sletter dine data'}
-            </p>
-            <button
-              onClick={() => setShowDeleteAccountConfirm(true)}
-              className="text-sm font-medium transition-opacity hover:opacity-70"
-              style={{ color: 'var(--color-coral)' }}
-            >
-              {t.account?.deleteAccount || 'Slett min konto'}
-            </button>
+      {/* Calendar Sync Hint - Shows if Google Calendar is connected */}
+      {connectedCalendarEmail && (
+        <CollapsibleSection
+          icon={
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+          }
+          title={t.settings?.calendarSyncHint || 'Automatisk kalendersynk'}
+          description={connectedCalendarEmail}
+          color="var(--color-honey)"
+        >
+          <p className="text-sm" style={{ color: 'var(--muted)' }}>
+            {t.settings?.calendarSyncDesc || 'Send kalenderinvitasjoner til denne adressen for å automatisk legge dem til i familieplanen:'}
+          </p>
+          <div
+            className="mt-3 px-3 py-2 rounded-lg text-sm font-mono inline-block"
+            style={{ background: 'var(--background)', color: 'var(--foreground)' }}
+          >
+            {connectedCalendarEmail}
           </div>
-        ) : (
-          <div className="space-y-4">
-            <div
-              className="p-4 rounded-xl"
-              style={{ background: 'rgba(232, 120, 109, 0.1)' }}
-            >
-              <p className="text-sm font-medium mb-3" style={{ color: 'var(--color-coral)' }}>
-                {t.account?.deleteAccount || 'Slett min konto'}
-              </p>
-              <ul className="text-sm space-y-1" style={{ color: 'var(--muted)' }}>
-                <li>• {t.account?.deleteAccountWarning1 || 'Fjerne deg fra husstanden'}</li>
-                <li>• {t.account?.deleteAccountWarning2 || 'Slette alle dine personlige data'}</li>
-                <li>• {t.account?.deleteAccountWarning3 || 'Logge deg ut permanent'}</li>
-              </ul>
-            </div>
-            <div>
-              <label className="block text-sm mb-2" style={{ color: 'var(--foreground)' }}>
-                {t.account?.deleteAccountConfirm || `Skriv "${language === 'nb' ? 'SLETT' : language === 'sv' ? 'RADERA' : 'DELETE'}" for å bekrefte:`}
-              </label>
-              <input
-                type="text"
-                value={deleteAccountConfirmText}
-                onChange={(e) => setDeleteAccountConfirmText(e.target.value)}
-                className="input"
-                placeholder={language === 'nb' ? 'SLETT' : language === 'sv' ? 'RADERA' : 'DELETE'}
-              />
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setShowDeleteAccountConfirm(false)
-                  setDeleteAccountConfirmText('')
-                }}
-                className="btn btn-secondary"
-              >
-                {t.common.cancel}
-              </button>
-              <button
-                onClick={deleteMyAccount}
-                disabled={deletingAccount || deleteAccountConfirmText !== (language === 'nb' ? 'SLETT' : language === 'sv' ? 'RADERA' : 'DELETE')}
-                className="btn text-white disabled:opacity-50"
-                style={{ background: 'var(--color-coral)' }}
-              >
-                {deletingAccount ? t.common.loading : (t.account?.deleteAccountButton || 'Slett konto')}
-              </button>
-            </div>
-          </div>
-        )}
-      </CollapsibleSection>
+        </CollapsibleSection>
+      )}
 
-      {/* ========== AI PREFERENCES ========== */}
+      {/* ============================================================ */}
+      {/* GROUP 4: ADVANCED SETTINGS                                   */}
+      {/* ============================================================ */}
+      <SectionGroupLabel label={t.settings?.advancedTitle || 'Avansert'} />
+
+      {/* AI Preferences */}
       <CollapsibleSection
         icon={
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1591,6 +1532,86 @@ export default function SettingsPage() {
           />
         </CollapsibleSection>
       )}
+
+      {/* ============================================================ */}
+      {/* GROUP 5: ACCOUNT (Dangerous actions at bottom)               */}
+      {/* ============================================================ */}
+      <SectionGroupLabel label={t.settings?.accountTitle || 'Konto'} />
+
+      {/* Delete Account */}
+      <CollapsibleSection
+        icon={
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+            <circle cx="12" cy="7" r="4"/>
+          </svg>
+        }
+        title={t.account?.title || 'Slett konto'}
+        description={t.account?.deleteAccountDesc || 'Fjern deg fra husstanden'}
+        color="var(--color-coral)"
+      >
+        {!showDeleteAccountConfirm ? (
+          <div>
+            <p className="text-sm mb-4" style={{ color: 'var(--muted)' }}>
+              {t.account?.deleteAccountDesc || 'Fjerner deg fra husstanden og sletter dine data'}
+            </p>
+            <button
+              onClick={() => setShowDeleteAccountConfirm(true)}
+              className="text-sm font-medium transition-opacity hover:opacity-70"
+              style={{ color: 'var(--color-coral)' }}
+            >
+              {t.account?.deleteAccount || 'Slett min konto'}
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div
+              className="p-4 rounded-xl"
+              style={{ background: 'rgba(232, 120, 109, 0.1)' }}
+            >
+              <p className="text-sm font-medium mb-3" style={{ color: 'var(--color-coral)' }}>
+                {t.account?.deleteAccount || 'Slett min konto'}
+              </p>
+              <ul className="text-sm space-y-1" style={{ color: 'var(--muted)' }}>
+                <li>• {t.account?.deleteAccountWarning1 || 'Fjerne deg fra husstanden'}</li>
+                <li>• {t.account?.deleteAccountWarning2 || 'Slette alle dine personlige data'}</li>
+                <li>• {t.account?.deleteAccountWarning3 || 'Logge deg ut permanent'}</li>
+              </ul>
+            </div>
+            <div>
+              <label className="block text-sm mb-2" style={{ color: 'var(--foreground)' }}>
+                {t.account?.deleteAccountConfirm || `Skriv "${language === 'nb' ? 'SLETT' : language === 'sv' ? 'RADERA' : 'DELETE'}" for å bekrefte:`}
+              </label>
+              <input
+                type="text"
+                value={deleteAccountConfirmText}
+                onChange={(e) => setDeleteAccountConfirmText(e.target.value)}
+                className="input"
+                placeholder={language === 'nb' ? 'SLETT' : language === 'sv' ? 'RADERA' : 'DELETE'}
+              />
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowDeleteAccountConfirm(false)
+                  setDeleteAccountConfirmText('')
+                }}
+                className="btn btn-secondary"
+              >
+                {t.common.cancel}
+              </button>
+              <button
+                onClick={deleteMyAccount}
+                disabled={deletingAccount || deleteAccountConfirmText !== (language === 'nb' ? 'SLETT' : language === 'sv' ? 'RADERA' : 'DELETE')}
+                className="btn text-white disabled:opacity-50"
+                style={{ background: 'var(--color-coral)' }}
+              >
+                {deletingAccount ? t.common.loading : (t.account?.deleteAccountButton || 'Slett konto')}
+              </button>
+            </div>
+          </div>
+        )}
+      </CollapsibleSection>
     </div>
   )
 }

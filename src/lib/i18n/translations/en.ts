@@ -244,14 +244,18 @@ export const en: TranslationStrings = {
     // Section headers
     familyTitle: 'Family',
     familyDesc: 'Manage children and household members',
+    childrenTitle: 'Children',
+    membersTitle: 'Household members',
     mySettingsTitle: 'My settings',
     mySettingsDesc: 'Personal preferences and profile',
     integrationsTitle: 'Integrations',
     integrationsDesc: 'Connect to external services',
+    advancedTitle: 'Advanced',
     aiPreferencesTitle: 'AI preferences',
     aiPreferencesDesc: 'Customize the AI assistant for your family',
     administrationTitle: 'Administration',
     administrationDesc: 'Household settings and access',
+    accountTitle: 'Account',
     // Legacy
     household: 'Household',
     householdName: 'Household name',
