@@ -36,20 +36,30 @@ import {
 } from './types'
 import { TOSHIBA_API, TOSHIBA_ENDPOINTS } from './constants'
 
-// Hex state byte positions (based on Toshiba AC Control reference)
-const STATE_OFFSETS = {
+// Hex state byte positions for READING ACStateData from API
+// Note: Command format (for sending) may use different positions
+const STATE_OFFSETS_READ = {
   POWER: 0,
   MODE: 1,
   TEMP: 2,
-  FAN: 3,      // Corrected: Fan is at position 3 (not 4)
-  SWING: 4,    // Corrected: Swing is at position 4 (not 5)
+  FAN: 4,
+  SWING: 5,
+  PURE: 6,
+  INDOOR_TEMP: 11,
+  OUTDOOR_TEMP: 12,
+} as const
+
+// Hex state byte positions for WRITING commands via AMQP
+const STATE_OFFSETS_WRITE = {
+  POWER: 0,
+  MODE: 1,
+  TEMP: 2,
+  FAN: 3,
+  SWING: 4,
   POWER_SEL: 5,
   MERIT_A: 6,
   MERIT_B: 7,
   PURE: 8,
-  INDOOR_TEMP: 9,
-  OUTDOOR_TEMP: 10,
-  SELF_CLEANING: 15,
 } as const
 
 // Mode code mappings
@@ -517,39 +527,39 @@ export class ToshibaClient {
     const getByte = (offset: number): string => hexState.slice(offset * 2, offset * 2 + 2).toLowerCase()
 
     // Power state: 30 = ON, 31 = OFF
-    const powerByte = getByte(STATE_OFFSETS.POWER)
+    const powerByte = getByte(STATE_OFFSETS_READ.POWER)
     const powerState: ToshibaPowerState | null = powerByte === '30' ? 'ON' : powerByte === '31' ? 'OFF' : null
 
     // Operation mode: 41=AUTO, 42=COOL, 43=HEAT, 44=DRY, 45=FAN
-    const modeByte = getByte(STATE_OFFSETS.MODE)
+    const modeByte = getByte(STATE_OFFSETS_READ.MODE)
     const operationMode = MODE_MAP[modeByte] ?? null
 
     // Target temperature: hex value is the temperature
-    const tempByte = getByte(STATE_OFFSETS.TEMP)
+    const tempByte = getByte(STATE_OFFSETS_READ.TEMP)
     const targetTemperature = tempByte ? parseInt(tempByte, 16) : null
 
     // Fan speed
-    const fanByte = getByte(STATE_OFFSETS.FAN)
+    const fanByte = getByte(STATE_OFFSETS_READ.FAN)
     const fanSpeed = FAN_MAP[fanByte] ?? null
 
     // Swing mode
-    const swingByte = getByte(STATE_OFFSETS.SWING)
+    const swingByte = getByte(STATE_OFFSETS_READ.SWING)
     const swingMode = SWING_MAP[swingByte] ?? null
 
     // Pure/ionizer state
-    const pureByte = getByte(STATE_OFFSETS.PURE)
+    const pureByte = getByte(STATE_OFFSETS_READ.PURE)
     const pureState: 'ON' | 'OFF' | null = pureByte === '18' ? 'ON' : pureByte === '10' ? 'OFF' : null
 
     // Indoor temperature
-    const indoorByte = getByte(STATE_OFFSETS.INDOOR_TEMP)
+    const indoorByte = getByte(STATE_OFFSETS_READ.INDOOR_TEMP)
     const indoorTemperature = indoorByte && indoorByte !== 'fe' && indoorByte !== 'ff'
       ? parseInt(indoorByte, 16)
       : null
 
     // Outdoor temperature
-    const outdoorByte = getByte(STATE_OFFSETS.OUTDOOR_TEMP)
+    const outdoorByte = getByte(STATE_OFFSETS_READ.OUTDOOR_TEMP)
     const outdoorTemperature = outdoorByte && outdoorByte !== 'fe' && outdoorByte !== 'ff'
-      ? parseInt(outdoorByte, 16) - 128 // Often offset by 128
+      ? parseInt(outdoorByte, 16) - 128 // Stored with +128 offset for signed values
       : null
 
     return {
@@ -719,22 +729,22 @@ export class ToshibaClient {
     const state: string[] = new Array(19).fill('ff')
 
     if (options.power !== undefined) {
-      state[STATE_OFFSETS.POWER] = POWER_ENCODE[options.power]
+      state[STATE_OFFSETS_WRITE.POWER] = POWER_ENCODE[options.power]
     }
     if (options.mode !== undefined) {
-      state[STATE_OFFSETS.MODE] = MODE_ENCODE[options.mode]
+      state[STATE_OFFSETS_WRITE.MODE] = MODE_ENCODE[options.mode]
     }
     if (options.temperature !== undefined) {
-      state[STATE_OFFSETS.TEMP] = options.temperature.toString(16).padStart(2, '0')
+      state[STATE_OFFSETS_WRITE.TEMP] = options.temperature.toString(16).padStart(2, '0')
     }
     if (options.fanSpeed !== undefined) {
-      state[STATE_OFFSETS.FAN] = FAN_ENCODE[options.fanSpeed]
+      state[STATE_OFFSETS_WRITE.FAN] = FAN_ENCODE[options.fanSpeed]
     }
     if (options.swingMode !== undefined) {
-      state[STATE_OFFSETS.SWING] = SWING_ENCODE[options.swingMode]
+      state[STATE_OFFSETS_WRITE.SWING] = SWING_ENCODE[options.swingMode]
     }
     if (options.pure !== undefined) {
-      state[STATE_OFFSETS.PURE] = PURE_ENCODE[options.pure]
+      state[STATE_OFFSETS_WRITE.PURE] = PURE_ENCODE[options.pure]
     }
 
     return state.join('')
