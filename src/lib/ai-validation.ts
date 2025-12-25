@@ -16,7 +16,7 @@ export interface MealValidationResult {
 export interface MealIssue {
   mealName: string
   day: string
-  type: 'allergen' | 'quality' | 'variety'
+  type: 'allergen' | 'safety' | 'quality' | 'variety'
   reason: string
   ingredient?: string
 }
@@ -33,7 +33,7 @@ interface ValidationResponse {
   issues: Array<{
     day: string
     meal_name: string
-    type: 'allergen' | 'quality' | 'variety'
+    type: 'allergen' | 'safety' | 'quality' | 'variety'
     reason: string
     ingredient?: string
   }>
@@ -42,6 +42,7 @@ interface ValidationResponse {
 
 /**
  * Validates meal suggestions using AI to check for:
+ * - Food safety (real, edible food - not fictional or non-food items)
  * - Allergen safety (semantic understanding, not keyword matching)
  * - Menu variety (not too repetitive)
  * - Family appropriateness (kid-friendly, balanced for family size)
@@ -88,18 +89,26 @@ ${mealsDesc}
 
 VALIDER MENYEN:
 
-1. ALLERGENER (KRITISK - null toleranse):
+1. SIKKERHET (KRITISK - null toleranse):
+   - Er dette EKTE, SPISELIG mat? Avvis ALLE retter som:
+     - Inneholder ikke-mat (elektronikk, plast, metall, kjemikalier, etc.)
+     - Er fiktive/fantasiretter (fra filmer, spill, bøker)
+     - Har tullenavn eller ingredienser som ikke finnes
+     - Inneholder farlige eller uspiselige ting
+   - EKSEMPLER som må avvises: "Ork-suppe", "harddisk", "minnepinne", "Mordor-kjøtt"
+
+2. ALLERGENER (KRITISK - null toleranse):
    - Sjekk ALLE ingredienser for allergener
    - "Kokosmelk" er TRYGT for melkeallergi (ikke meieri)
    - "Muskatnøtt" er TRYGT for nøtteallergi (ikke en trenøtt)
    - "Laktosefri melk" er IKKE trygt for melkeallergi (fortsatt meieri)
    - Sjekk også skjulte allergener (majones = egg, parmesan = melk, etc.)
 
-2. VARIASJON:
+3. VARIASJON:
    - Er det god variasjon i proteiner (kylling, fisk, kjøtt, vegetar)?
    - Ikke for mange like retter samme uke
 
-3. FAMILIEVENNLIGHET:
+4. FAMILIEVENNLIGHET:
    - Passer rettene for barn i de angitte aldrene?
    - Er porsjonene/oppskriftene passende for familiestørrelsen?
 
@@ -110,7 +119,7 @@ Svar BARE med gyldig JSON (ingen markdown):
     {
       "day": "YYYY-MM-DD",
       "meal_name": "navn",
-      "type": "allergen|quality|variety",
+      "type": "allergen|safety|quality|variety",
       "reason": "kort forklaring",
       "ingredient": "problematisk ingrediens eller null"
     }
@@ -171,17 +180,17 @@ Svar BARE med gyldig JSON (ingen markdown):
     }))
 
     // Separate valid and invalid meals
-    // Only allergen issues cause rejection; quality/variety are warnings
-    const allergenDays = new Set(
-      issues.filter(i => i.type === 'allergen').map(i => i.day)
+    // Only allergen and safety issues cause rejection; quality/variety are warnings
+    const criticalDays = new Set(
+      issues.filter(i => i.type === 'allergen' || i.type === 'safety').map(i => i.day)
     )
 
-    const validMeals = meals.filter(m => !allergenDays.has(m.day))
+    const validMeals = meals.filter(m => !criticalDays.has(m.day))
     const invalidMeals = meals
-      .filter(m => allergenDays.has(m.day))
+      .filter(m => criticalDays.has(m.day))
       .map(m => ({
         meal: m,
-        reason: issues.find(i => i.day === m.day && i.type === 'allergen')?.reason || 'Allergen detected',
+        reason: issues.find(i => i.day === m.day && (i.type === 'allergen' || i.type === 'safety'))?.reason || 'Safety or allergen issue',
       }))
 
     if (parsed.overall_feedback) {
@@ -189,7 +198,7 @@ Svar BARE med gyldig JSON (ingen markdown):
     }
 
     if (invalidMeals.length > 0) {
-      console.warn('[AI Validation] Removed meals with allergens:',
+      console.warn('[AI Validation] Removed unsafe/allergenic meals:',
         invalidMeals.map(m => `${m.meal.name} (${m.reason})`).join(', ')
       )
     }
