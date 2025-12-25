@@ -185,49 +185,71 @@ export async function POST(request: Request) {
       return NextResponse.json({ suggestions: [] })
     }
 
-    // Build the prompt
-    const season = getNorwegianSeason()
-    const prompt = buildPrompt({
-      daysNeedingSuggestions,
-      childrenAges,
-      recipes,
-      favoriteRecipes,
-      quickRecipes,
-      recentMealNames,
-      holidays,
-      defaultContext: household.ai_meal_context,
-      weekContext,
-      season,
-      allAllergies,
-      shareNamesWithAi: household.share_names_with_ai ?? true,
-    })
-
-    // Call OpenRouter API
+    // Check API key early
     const apiKey = process.env.OPENROUTER_API_KEY
     if (!apiKey) {
       return NextResponse.json({ error: 'OpenRouter API-nøkkel ikke konfigurert' }, { status: 500 })
     }
 
-    // Add timeout to prevent hanging requests (15 seconds)
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 15000)
+    // Prepare context for generation
+    const season = getNorwegianSeason()
+    const parentCount = membersResult.data?.length || 2
+    const familyContext = {
+      allergies: allAllergies,
+      childrenAges: childrenAges.map(c => ({ name: c.name, age: c.age })),
+      parentCount,
+      shareNamesWithAi: household.share_names_with_ai ?? true,
+    }
 
-    let response: Response
-    try {
-      response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-          'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-          'X-Title': 'Familjen',
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            {
-              role: 'system',
-              content: `Du er en hjelpsom assistent for norsk familieplanlegging. Du foreslår middager som er:
+    // Generate-validate-retry loop
+    const MAX_RETRIES = 3
+    let validatedMeals: MealSuggestion[] = []
+    let pendingDays = [...daysNeedingSuggestions]
+    let failedMeals: { day: string; reason: string }[] = []
+
+    for (let attempt = 0; attempt < MAX_RETRIES && pendingDays.length > 0; attempt++) {
+      if (attempt > 0) {
+        console.log(`[Suggest] Retry ${attempt}/${MAX_RETRIES} for ${pendingDays.length} days`)
+      }
+
+      // Build prompt (include failure reasons on retry)
+      const prompt = buildPrompt({
+        daysNeedingSuggestions: pendingDays,
+        childrenAges,
+        parentCount,
+        recipes,
+        favoriteRecipes,
+        quickRecipes,
+        recentMealNames,
+        holidays,
+        defaultContext: household.ai_meal_context,
+        weekContext,
+        season,
+        allAllergies,
+        shareNamesWithAi: household.share_names_with_ai ?? true,
+        failedMeals: attempt > 0 ? failedMeals : undefined,
+      })
+
+      // Call OpenRouter API
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 15000)
+
+      let response: Response
+      try {
+        response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+            'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+            'X-Title': 'Familjen',
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              {
+                role: 'system',
+                content: `Du er en hjelpsom assistent for norsk familieplanlegging. Du foreslår middager som er:
 - Enkle å lage (få ingredienser, kort tilberedningstid)
 - Barnevennlige (passer for barn i alle aldre)
 - Proteinrike og næringsrike
@@ -251,69 +273,87 @@ Svar ALLTID i gyldig JSON-format med denne strukturen:
 }
 
 Ikke inkluder noe annet enn JSON i svaret.`,
-            },
-            {
-              role: 'user',
-              content: prompt,
-            },
-          ],
-          temperature: 0.4, // Lower temperature for more consistent allergy compliance
-          max_tokens: 2000,
-        }),
-        signal: controller.signal,
-      })
-    } catch (fetchError) {
-      clearTimeout(timeoutId)
-      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-        console.error('OpenRouter request timed out')
-        return NextResponse.json({ error: 'AI-forespørselen tok for lang tid' }, { status: 504 })
+              },
+              {
+                role: 'user',
+                content: prompt,
+              },
+            ],
+            temperature: 0.4,
+            max_tokens: 2000,
+          }),
+          signal: controller.signal,
+        })
+      } catch (fetchError) {
+        clearTimeout(timeoutId)
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+          console.error('OpenRouter request timed out')
+          return NextResponse.json({ error: 'AI-forespørselen tok for lang tid' }, { status: 504 })
+        }
+        throw fetchError
+      } finally {
+        clearTimeout(timeoutId)
       }
-      throw fetchError
-    } finally {
-      clearTimeout(timeoutId)
+
+      if (!response.ok) {
+        console.error('OpenRouter error:', { status: response.status, statusText: response.statusText })
+        return NextResponse.json({ error: 'Kunne ikke få AI-forslag' }, { status: 500 })
+      }
+
+      const data = await response.json()
+      const content = data.choices?.[0]?.message?.content
+
+      if (!content) {
+        console.warn('[Suggest] Empty response on attempt', attempt + 1)
+        continue // Try again
+      }
+
+      // Parse the JSON response
+      const parsed = extractJSON<{ suggestions?: MealSuggestion[] }>(content)
+      if (!parsed || !parsed.suggestions) {
+        console.warn('[Suggest] Could not parse response on attempt', attempt + 1)
+        continue // Try again
+      }
+
+      const newSuggestions = parsed.suggestions
+
+      // Validate the new suggestions
+      const validation = await validateMealSuggestions(newSuggestions, familyContext, model)
+
+      // Add valid meals to our collection
+      validatedMeals = [...validatedMeals, ...validation.validMeals]
+
+      // Log quality issues as warnings
+      const qualityIssues = validation.issues.filter(i => i.type !== 'allergen')
+      if (qualityIssues.length > 0) {
+        console.log('[Menu Quality]', qualityIssues.map(i => `${i.mealName}: ${i.reason}`).join(', '))
+      }
+
+      // Check if any meals failed validation
+      if (validation.invalidMeals.length > 0) {
+        // Prepare for retry: only regenerate failed days
+        failedMeals = validation.invalidMeals.map(m => ({
+          day: m.meal.day,
+          reason: m.reason,
+        }))
+        const failedDays = new Set(failedMeals.map(m => m.day))
+        pendingDays = pendingDays.filter(d => failedDays.has(d.date))
+
+        console.warn(`[Suggest] ${validation.invalidMeals.length} meals rejected:`,
+          validation.invalidMeals.map(m => `${m.meal.name} (${m.reason})`).join(', ')
+        )
+      } else {
+        // All meals passed validation - we're done!
+        pendingDays = []
+      }
     }
 
-    if (!response.ok) {
-      console.error('OpenRouter error:', { status: response.status, statusText: response.statusText })
-      return NextResponse.json({ error: 'Kunne ikke få AI-forslag' }, { status: 500 })
+    // Log if we gave up on some days
+    if (pendingDays.length > 0) {
+      console.error(`[Suggest] Failed to generate valid meals for ${pendingDays.length} days after ${MAX_RETRIES} attempts`)
     }
 
-    const data = await response.json()
-    const content = data.choices?.[0]?.message?.content
-
-    if (!content) {
-      return NextResponse.json({ error: 'Tomt svar fra AI' }, { status: 500 })
-    }
-
-    // Parse the JSON response using robust extraction
-    const parsed = extractJSON<{ suggestions?: MealSuggestion[] }>(content)
-    if (!parsed) {
-      console.error('Failed to extract JSON from AI response:', { contentLength: content?.length })
-      return NextResponse.json({ error: 'Kunne ikke tolke AI-svar' }, { status: 500 })
-    }
-
-    const suggestions: MealSuggestion[] = parsed.suggestions || []
-
-    // AI-based validation: check allergens, variety, and family appropriateness
-    const parentCount = membersResult.data?.length || 2
-    const mealValidation = await validateMealSuggestions(
-      suggestions,
-      {
-        allergies: allAllergies,
-        childrenAges: childrenAges.map(c => ({ name: c.name, age: c.age })),
-        parentCount,
-        shareNamesWithAi: household.share_names_with_ai ?? true,
-      },
-      model
-    )
-
-    // Log any quality/variety issues as warnings (not blocking)
-    const qualityIssues = mealValidation.issues.filter(i => i.type !== 'allergen')
-    if (qualityIssues.length > 0) {
-      console.log('[Menu Quality]', qualityIssues.map(i => `${i.mealName}: ${i.reason}`).join(', '))
-    }
-
-    return NextResponse.json({ suggestions: mealValidation.validMeals })
+    return NextResponse.json({ suggestions: validatedMeals })
   } catch (error) {
     console.error('Suggest meals error:', error)
     return NextResponse.json({ error: 'En feil oppstod' }, { status: 500 })
@@ -323,6 +363,7 @@ Ikke inkluder noe annet enn JSON i svaret.`,
 interface PromptContext {
   daysNeedingSuggestions: { date: string; partial?: string }[]
   childrenAges: { name: string; age: number; allergies: string[] }[]
+  parentCount: number  // Number of adults in household
   recipes: { id: string; name: string; is_favorite: boolean; is_quick: boolean; is_kid_friendly: boolean }[]
   favoriteRecipes: { name: string }[]
   quickRecipes: { name: string }[]
@@ -333,12 +374,14 @@ interface PromptContext {
   season: string
   allAllergies: string[]  // Combined list of all allergies
   shareNamesWithAi: boolean  // When false, anonymize children names
+  failedMeals?: { day: string; reason: string }[]  // For retry: why previous suggestions failed
 }
 
 function buildPrompt(context: PromptContext): string {
   const {
     daysNeedingSuggestions,
     childrenAges,
+    parentCount,
     recipes,
     favoriteRecipes,
     recentMealNames,
@@ -348,9 +391,20 @@ function buildPrompt(context: PromptContext): string {
     season,
     allAllergies,
     shareNamesWithAi,
+    failedMeals,
   } = context
 
   let prompt = `Foreslå middager for følgende dager:\n\n`
+
+  // If this is a retry, explain why previous suggestions failed
+  if (failedMeals && failedMeals.length > 0) {
+    prompt = `VIKTIG: Forrige forslag ble avvist. Prøv på nytt med andre retter.\n\n`
+    prompt += `Avviste retter:\n`
+    for (const failed of failedMeals) {
+      prompt += `- ${failed.day}: ${failed.reason}\n`
+    }
+    prompt += `\nForeslå NYE middager for følgende dager:\n\n`
+  }
 
   // Days needing suggestions
   for (const day of daysNeedingSuggestions) {
@@ -365,6 +419,10 @@ function buildPrompt(context: PromptContext): string {
   }
 
   prompt += `\n**Sesong:** ${season}\n`
+
+  // Family size - important for portion sizes
+  const totalPeople = parentCount + childrenAges.length
+  prompt += `\n**Familiestørrelse:** ${parentCount} voksne + ${childrenAges.length} barn = ${totalPeople} personer\n`
 
   // Allergies - IMPORTANT, put early in prompt
   if (allAllergies.length > 0) {
