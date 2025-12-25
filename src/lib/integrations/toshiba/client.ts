@@ -37,17 +37,17 @@ import {
 import { TOSHIBA_API, TOSHIBA_ENDPOINTS } from './constants'
 
 // Hex state byte positions for READING ACStateData from API
-// Based on: https://github.com/KaSroka/Toshiba-AC-control/blob/main/toshiba_ac/device.py
-// Note: Command format (for sending) uses different positions
+// Verified from actual device data: 30431531316400101600fe0b000010ff000000
+// [8]=16(22°C indoor), [9]=00(0°C outdoor)
 const STATE_OFFSETS_READ = {
   POWER: 0,
   MODE: 1,
   TEMP: 2,
-  FAN: 4,
+  FAN: 3,        // Position 3, not 4
   SWING: 5,
   PURE: 6,
-  INDOOR_TEMP: 10,   // Position 10 per Python library
-  OUTDOOR_TEMP: 11,  // Position 11 per Python library
+  INDOOR_TEMP: 8,   // Verified: position 8 has indoor temp
+  OUTDOOR_TEMP: 9,  // Verified: position 9 has outdoor temp (no +128 offset)
 } as const
 
 // Hex state byte positions for WRITING commands via AMQP
@@ -527,14 +527,6 @@ export class ToshibaClient {
     // Extract byte pairs (each byte = 2 hex chars)
     const getByte = (offset: number): string => hexState.slice(offset * 2, offset * 2 + 2).toLowerCase()
 
-    // Always log temperature bytes to help debug (temporary)
-    console.log('[ToshibaClient] ACStateData:', hexState, 'length:', hexState.length)
-    console.log('[ToshibaClient] All bytes:', Array.from({ length: Math.min(25, hexState.length / 2) }, (_, i) => {
-      const byte = getByte(i)
-      const val = parseInt(byte, 16)
-      const tempVal = val - 128 // For outdoor temp interpretation
-      return `[${i}]=${byte}(${val}${val >= 15 && val <= 35 ? '°?' : ''}${tempVal >= -20 && tempVal <= 45 ? ` out:${tempVal}°?` : ''})`
-    }).join(' '))
 
     // Power state: 30 = ON, 31 = OFF
     const powerByte = getByte(STATE_OFFSETS_READ.POWER)
@@ -566,24 +558,14 @@ export class ToshibaClient {
       ? parseInt(indoorByte, 16)
       : null
 
-    // Outdoor temperature (position 11 per Python library, stored with +128 offset)
+    // Outdoor temperature (position 9, stored as signed byte: negative temps use two's complement)
     const outdoorByte = getByte(STATE_OFFSETS_READ.OUTDOOR_TEMP)
-    const outdoorRaw = outdoorByte ? parseInt(outdoorByte, 16) : null
-    const outdoorTemperature = outdoorByte && outdoorByte !== 'fe' && outdoorByte !== 'ff' && outdoorRaw !== null
-      ? outdoorRaw - 128 // Stored with +128 offset for signed values
-      : null
-
-    // Log extracted temperatures for debugging
-    console.log('[ToshibaClient] Temp extraction:', {
-      indoorPos: STATE_OFFSETS_READ.INDOOR_TEMP,
-      indoorByte,
-      indoorTemperature,
-      outdoorPos: STATE_OFFSETS_READ.OUTDOOR_TEMP,
-      outdoorByte,
-      outdoorRaw,
-      outdoorTemperature,
-      outdoorFiltered: outdoorTemperature !== null && outdoorTemperature > -50 && outdoorTemperature < 60 ? outdoorTemperature : null,
-    })
+    let outdoorTemperature: number | null = null
+    if (outdoorByte && outdoorByte !== 'fe' && outdoorByte !== 'ff') {
+      const raw = parseInt(outdoorByte, 16)
+      // Handle signed byte: values > 127 are negative (two's complement)
+      outdoorTemperature = raw > 127 ? raw - 256 : raw
+    }
 
     return {
       powerState,
@@ -593,7 +575,7 @@ export class ToshibaClient {
       swingMode,
       pureState,
       indoorTemperature,
-      outdoorTemperature: outdoorTemperature !== null && outdoorTemperature > -50 && outdoorTemperature < 60 ? outdoorTemperature : null,
+      outdoorTemperature,
     }
   }
 
