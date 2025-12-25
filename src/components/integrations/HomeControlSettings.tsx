@@ -7,7 +7,7 @@ import type { OverkizServer } from '@/lib/integrations/somfy'
 import { SOMFY_UI } from '@/lib/integrations/somfy/constants'
 import { getAccountDisplayName } from '@/lib/integrations/somfy/utils'
 
-type ServiceType = 'somfy' | 'toshiba'
+type ServiceType = 'somfy' | 'toshiba' | 'melcloud'
 
 interface HomeControlAccount {
   id: string
@@ -43,9 +43,17 @@ interface HomeControlGroup {
   sort_order: number
   device_ids: string[]
   toshiba_device_ids: string[]
+  melcloud_device_ids: string[]
 }
 
 interface ToshibaDevice {
+  id: string
+  account_id: string
+  name: string
+  custom_name: string | null
+}
+
+interface MelCloudDevice {
   id: string
   account_id: string
   name: string
@@ -97,6 +105,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
   const [accounts, setAccounts] = useState<HomeControlAccount[]>([])
   const [devices, setDevices] = useState<HomeControlDevice[]>([])
   const [toshibaDevices, setToshibaDevices] = useState<ToshibaDevice[]>([])
+  const [melcloudDevices, setMelcloudDevices] = useState<MelCloudDevice[]>([])
   const [groups, setGroups] = useState<HomeControlGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
@@ -120,6 +129,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
   const [groupName, setGroupName] = useState('')
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([])
   const [selectedToshibaDeviceIds, setSelectedToshibaDeviceIds] = useState<string[]>([])
+  const [selectedMelCloudDeviceIds, setSelectedMelCloudDeviceIds] = useState<string[]>([])
   const [savingGroup, setSavingGroup] = useState(false)
 
   // Edit device state
@@ -167,6 +177,18 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
             .order('name')
           setToshibaDevices(toshibaData || [])
         }
+
+        // Load MelCloud devices
+        const melcloudAccounts = data.filter((a: HomeControlAccount) => a.service === 'melcloud')
+        if (melcloudAccounts.length > 0) {
+          const { data: melcloudData } = await supabase
+            .from('melcloud_devices')
+            .select('id, account_id, name, custom_name')
+            .in('account_id', melcloudAccounts.map((a: HomeControlAccount) => a.id))
+            .eq('is_hidden', false)
+            .order('name')
+          setMelcloudDevices(melcloudData || [])
+        }
       }
 
       const { data: groupData } = await supabase
@@ -174,7 +196,8 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
         .select(`
           id, household_id, name, icon, sort_order,
           home_control_group_devices (device_id),
-          home_control_group_toshiba_devices (toshiba_device_id)
+          home_control_group_toshiba_devices (toshiba_device_id),
+          home_control_group_melcloud_devices (melcloud_device_id)
         `)
         .order('sort_order')
         .order('name')
@@ -184,6 +207,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
           ...g,
           device_ids: g.home_control_group_devices?.map((d: { device_id: string }) => d.device_id) || [],
           toshiba_device_ids: g.home_control_group_toshiba_devices?.map((d: { toshiba_device_id: string }) => d.toshiba_device_id) || [],
+          melcloud_device_ids: g.home_control_group_melcloud_devices?.map((d: { melcloud_device_id: string }) => d.melcloud_device_id) || [],
         })))
       }
     } catch (err) {
@@ -205,10 +229,14 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
     try {
       const endpoint = serviceType === 'toshiba'
         ? '/api/home-control/toshiba/test-connection'
+        : serviceType === 'melcloud'
+        ? '/api/home-control/melcloud/test-connection'
         : '/api/home-control/somfy/test-connection'
 
       const body = serviceType === 'toshiba'
         ? { username: email, password }
+        : serviceType === 'melcloud'
+        ? { email, password }
         : { email, password, server }
 
       const response = await fetch(endpoint, {
@@ -252,6 +280,8 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
 
       const syncEndpoint = serviceType === 'toshiba'
         ? `/api/home-control/toshiba/devices?accountId=${data}`
+        : serviceType === 'melcloud'
+        ? `/api/home-control/melcloud/devices?accountId=${data}`
         : `/api/home-control/somfy/devices?accountId=${data}`
 
       await fetch(syncEndpoint, { method: 'POST' })
@@ -317,6 +347,8 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
     try {
       const endpoint = service === 'toshiba'
         ? `/api/home-control/toshiba/devices?accountId=${accountId}`
+        : service === 'melcloud'
+        ? `/api/home-control/melcloud/devices?accountId=${accountId}`
         : `/api/home-control/somfy/devices?accountId=${accountId}`
 
       const response = await fetch(endpoint, { method: 'POST' })
@@ -396,8 +428,8 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
   }
 
   const saveGroup = async () => {
-    // Need at least a name and at least one device (Somfy or Toshiba)
-    if (!groupName.trim() || (selectedDeviceIds.length === 0 && selectedToshibaDeviceIds.length === 0)) return
+    // Need at least a name and at least one device (Somfy, Toshiba, or MelCloud)
+    if (!groupName.trim() || (selectedDeviceIds.length === 0 && selectedToshibaDeviceIds.length === 0 && selectedMelCloudDeviceIds.length === 0)) return
     setSavingGroup(true)
 
     try {
@@ -417,6 +449,14 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
         if (selectedToshibaDeviceIds.length > 0) {
           await supabase.from('home_control_group_toshiba_devices').insert(
             selectedToshibaDeviceIds.map(deviceId => ({ group_id: editingGroup.id, toshiba_device_id: deviceId }))
+          )
+        }
+
+        // Update MelCloud device assignments
+        await supabase.from('home_control_group_melcloud_devices').delete().eq('group_id', editingGroup.id)
+        if (selectedMelCloudDeviceIds.length > 0) {
+          await supabase.from('home_control_group_melcloud_devices').insert(
+            selectedMelCloudDeviceIds.map(deviceId => ({ group_id: editingGroup.id, melcloud_device_id: deviceId }))
           )
         }
         onMessage('success', t.homeControl.groupUpdated)
@@ -441,6 +481,13 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
             selectedToshibaDeviceIds.map(deviceId => ({ group_id: newGroup.id, toshiba_device_id: deviceId }))
           )
         }
+
+        // Add MelCloud devices to group
+        if (selectedMelCloudDeviceIds.length > 0) {
+          await supabase.from('home_control_group_melcloud_devices').insert(
+            selectedMelCloudDeviceIds.map(deviceId => ({ group_id: newGroup.id, melcloud_device_id: deviceId }))
+          )
+        }
         onMessage('success', t.homeControl.groupCreated)
       }
 
@@ -449,6 +496,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
       setGroupName('')
       setSelectedDeviceIds([])
       setSelectedToshibaDeviceIds([])
+      setSelectedMelCloudDeviceIds([])
       await loadAccounts()
     } catch (err) {
       console.error('Failed to save group:', err)
@@ -475,6 +523,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
     setGroupName(group.name)
     setSelectedDeviceIds(group.device_ids)
     setSelectedToshibaDeviceIds(group.toshiba_device_ids || [])
+    setSelectedMelCloudDeviceIds(group.melcloud_device_ids || [])
     setShowGroupForm(true)
   }
 
@@ -575,7 +624,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                 <div className="flex items-center gap-3 min-w-0">
                   <div
                     className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                    style={{ background: account.service === 'toshiba' ? 'rgba(232, 120, 109, 0.2)' : 'rgba(126, 182, 196, 0.2)' }}
+                    style={{ background: account.service === 'toshiba' ? 'rgba(232, 120, 109, 0.2)' : account.service === 'melcloud' ? 'rgba(158, 185, 154, 0.2)' : 'rgba(126, 182, 196, 0.2)' }}
                   >
                     {account.service === 'toshiba' ? (
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-coral)" strokeWidth="2">
@@ -583,6 +632,13 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                         <path d="M12 6v6l4 2"/>
                         <path d="M8 14h8"/>
                         <path d="M8 18h8"/>
+                      </svg>
+                    ) : account.service === 'melcloud' ? (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-sage)" strokeWidth="2">
+                        <rect x="2" y="4" width="20" height="16" rx="2"/>
+                        <path d="M6 8h4"/>
+                        <path d="M6 12h2"/>
+                        <circle cx="17" cy="12" r="3"/>
                       </svg>
                     ) : (
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-sky)" strokeWidth="2">
@@ -594,10 +650,10 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-xs px-1.5 py-0.5 rounded" style={{
-                        background: account.service === 'toshiba' ? 'rgba(232, 120, 109, 0.15)' : 'rgba(126, 182, 196, 0.15)',
-                        color: account.service === 'toshiba' ? 'var(--color-coral)' : 'var(--color-sky)',
+                        background: account.service === 'toshiba' ? 'rgba(232, 120, 109, 0.15)' : account.service === 'melcloud' ? 'rgba(158, 185, 154, 0.15)' : 'rgba(126, 182, 196, 0.15)',
+                        color: account.service === 'toshiba' ? 'var(--color-coral)' : account.service === 'melcloud' ? 'var(--color-sage)' : 'var(--color-sky)',
                       }}>
-                        {account.service === 'toshiba' ? 'Toshiba AC' : 'Somfy'}
+                        {account.service === 'toshiba' ? 'Toshiba AC' : account.service === 'melcloud' ? 'Mitsubishi AC' : 'Somfy'}
                       </span>
                       <p className="font-medium truncate" style={{ color: 'var(--foreground)' }}>
                         {account.display_name !== account.account_email ? account.display_name : account.account_email}
@@ -670,11 +726,11 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                 <label className="block text-xs mb-2" style={{ color: 'var(--muted)' }}>
                   {t.homeControl.serviceType || 'Service Type'}
                 </label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
                     onClick={() => { setServiceType('somfy'); setTestResult(null) }}
-                    className="p-3 rounded-lg flex items-center gap-2 transition-all"
+                    className="p-3 rounded-lg flex flex-col items-center gap-1 transition-all"
                     style={{
                       background: serviceType === 'somfy' ? 'rgba(126, 182, 196, 0.15)' : 'var(--background)',
                       border: serviceType === 'somfy' ? '2px solid var(--color-sky)' : '1px solid var(--border)',
@@ -684,14 +740,14 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                       <rect x="3" y="3" width="18" height="18" rx="2"/>
                       <line x1="9" y1="3" x2="9" y2="21"/>
                     </svg>
-                    <span className="text-sm font-medium" style={{ color: serviceType === 'somfy' ? 'var(--color-sky)' : 'var(--muted)' }}>
+                    <span className="text-xs font-medium" style={{ color: serviceType === 'somfy' ? 'var(--color-sky)' : 'var(--muted)' }}>
                       Somfy
                     </span>
                   </button>
                   <button
                     type="button"
                     onClick={() => { setServiceType('toshiba'); setTestResult(null) }}
-                    className="p-3 rounded-lg flex items-center gap-2 transition-all"
+                    className="p-3 rounded-lg flex flex-col items-center gap-1 transition-all"
                     style={{
                       background: serviceType === 'toshiba' ? 'rgba(232, 120, 109, 0.15)' : 'var(--background)',
                       border: serviceType === 'toshiba' ? '2px solid var(--color-coral)' : '1px solid var(--border)',
@@ -703,8 +759,27 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                       <path d="M8 14h8"/>
                       <path d="M8 18h8"/>
                     </svg>
-                    <span className="text-sm font-medium" style={{ color: serviceType === 'toshiba' ? 'var(--color-coral)' : 'var(--muted)' }}>
+                    <span className="text-xs font-medium" style={{ color: serviceType === 'toshiba' ? 'var(--color-coral)' : 'var(--muted)' }}>
                       Toshiba AC
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setServiceType('melcloud'); setTestResult(null) }}
+                    className="p-3 rounded-lg flex flex-col items-center gap-1 transition-all"
+                    style={{
+                      background: serviceType === 'melcloud' ? 'rgba(158, 185, 154, 0.15)' : 'var(--background)',
+                      border: serviceType === 'melcloud' ? '2px solid var(--color-sage)' : '1px solid var(--border)',
+                    }}
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={serviceType === 'melcloud' ? 'var(--color-sage)' : 'var(--muted)'} strokeWidth="2">
+                      <rect x="2" y="4" width="20" height="16" rx="2"/>
+                      <path d="M6 8h4"/>
+                      <path d="M6 12h2"/>
+                      <circle cx="17" cy="12" r="3"/>
+                    </svg>
+                    <span className="text-xs font-medium" style={{ color: serviceType === 'melcloud' ? 'var(--color-sage)' : 'var(--muted)' }}>
+                      Mitsubishi
                     </span>
                   </button>
                 </div>
@@ -719,7 +794,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   className="input"
-                  placeholder={serviceType === 'toshiba' ? (t.homeControl.usernamePlaceholder || 'Your Toshiba username') : t.homeControl.emailPlaceholder}
+                  placeholder={serviceType === 'toshiba' ? (t.homeControl.usernamePlaceholder || 'Your Toshiba username') : serviceType === 'melcloud' ? 'MELCloud email' : t.homeControl.emailPlaceholder}
                 />
               </div>
               <div>
@@ -939,7 +1014,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
       )}
 
       {/* Device Groups */}
-      {devices.length > 0 && (
+      {(devices.length > 0 || toshibaDevices.length > 0 || melcloudDevices.length > 0) && (
         <div>
           <div className="flex items-center justify-between mb-3">
             <h4 className="font-medium text-sm" style={{ color: 'var(--foreground)' }}>
@@ -985,7 +1060,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                       {group.name}
                     </p>
                     <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                      {t.homeControl.deviceCount.replace('{count}', String(group.device_ids.length))}
+                      {t.homeControl.deviceCount.replace('{count}', String(group.device_ids.length + (group.toshiba_device_ids?.length || 0) + (group.melcloud_device_ids?.length || 0)))}
                     </p>
                   </div>
                 </div>
@@ -1130,13 +1205,56 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                         </div>
                       </div>
                     )}
+
+                    {/* MelCloud AC devices */}
+                    {melcloudDevices.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium mb-2 px-2" style={{ color: 'var(--color-sage)' }}>
+                          Mitsubishi AC
+                        </p>
+                        <div className="space-y-1">
+                          {melcloudDevices.map(device => (
+                            <label
+                              key={device.id}
+                              className="flex items-center gap-3 p-2 rounded-lg cursor-pointer"
+                              style={{
+                                background: selectedMelCloudDeviceIds.includes(device.id)
+                                  ? 'rgba(158, 185, 154, 0.1)'
+                                  : 'transparent'
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedMelCloudDeviceIds.includes(device.id)}
+                                onChange={e => {
+                                  if (e.target.checked) {
+                                    setSelectedMelCloudDeviceIds([...selectedMelCloudDeviceIds, device.id])
+                                  } else {
+                                    setSelectedMelCloudDeviceIds(selectedMelCloudDeviceIds.filter(id => id !== device.id))
+                                  }
+                                }}
+                                className="rounded w-5 h-5"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <span className="text-sm block truncate" style={{ color: 'var(--foreground)' }}>
+                                  {device.custom_name || device.name}
+                                </span>
+                                <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                                  {t.homeControl?.acUnit || 'AC Unit'}
+                                </span>
+                              </div>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={saveGroup}
-                    disabled={savingGroup || !groupName.trim() || (selectedDeviceIds.length === 0 && selectedToshibaDeviceIds.length === 0)}
+                    disabled={savingGroup || !groupName.trim() || (selectedDeviceIds.length === 0 && selectedToshibaDeviceIds.length === 0 && selectedMelCloudDeviceIds.length === 0)}
                     className="btn btn-primary"
                   >
                     {savingGroup ? t.homeControl.saving : editingGroup ? t.homeControl.update : t.homeControl.create}
@@ -1148,6 +1266,7 @@ export function HomeControlSettings({ householdId, onMessage }: HomeControlSetti
                       setGroupName('')
                       setSelectedDeviceIds([])
                       setSelectedToshibaDeviceIds([])
+                      setSelectedMelCloudDeviceIds([])
                     }}
                     className="btn btn-secondary"
                   >

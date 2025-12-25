@@ -12,6 +12,13 @@ import {
   type ToshibaOperationMode,
   type ToshibaPowerState,
 } from '@/lib/integrations/toshiba/types'
+import {
+  TEMPERATURE as MELCLOUD_TEMPERATURE,
+} from '@/lib/integrations/melcloud/constants'
+import {
+  type MelCloudOperationMode,
+  type MelCloudPowerState,
+} from '@/lib/integrations/melcloud/types'
 
 interface HomeControlDevice {
   id: string
@@ -36,6 +43,7 @@ interface HomeControlGroup {
   sort_order: number
   device_ids: string[]
   toshiba_device_ids: string[]
+  melcloud_device_ids: string[]
 }
 
 interface ToshibaDeviceInGroup {
@@ -46,6 +54,20 @@ interface ToshibaDeviceInGroup {
   custom_name: string | null
   power_state: ToshibaPowerState | null
   operation_mode: ToshibaOperationMode | null
+  target_temperature: number | null
+  current_temperature: number | null
+  outdoor_temperature: number | null
+}
+
+interface MelCloudDeviceInGroup {
+  id: string
+  account_id: string
+  device_id: number
+  building_id: number
+  name: string
+  custom_name: string | null
+  power_state: MelCloudPowerState | null
+  operation_mode: MelCloudOperationMode | null
   target_temperature: number | null
   current_temperature: number | null
   outdoor_temperature: number | null
@@ -109,6 +131,7 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
   const [groups, setGroups] = useState<HomeControlGroup[]>([])
   const [accounts, setAccounts] = useState<HomeControlAccount[]>([])
   const [toshibaDevicesInGroups, setToshibaDevicesInGroups] = useState<ToshibaDeviceInGroup[]>([])
+  const [melcloudDevicesInGroups, setMelcloudDevicesInGroups] = useState<MelCloudDeviceInGroup[]>([])
   const [loading, setLoading] = useState(true)
 
   // Control state
@@ -117,6 +140,8 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
   const [controllingAccount, setControllingAccount] = useState<string | null>(null)
   const [controllingToshibaDevice, setControllingToshibaDevice] = useState<string | null>(null)
   const [confirmedToshibaDevice, setConfirmedToshibaDevice] = useState<string | null>(null)
+  const [controllingMelCloudDevice, setControllingMelCloudDevice] = useState<string | null>(null)
+  const [confirmedMelCloudDevice, setConfirmedMelCloudDevice] = useState<string | null>(null)
   const [activeSlider, setActiveSlider] = useState<string | null>(null)
   const [sliderValue, setSliderValue] = useState(0)
   const [confirmedDevice, setConfirmedDevice] = useState<string | null>(null)
@@ -160,6 +185,12 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
     confirmTimeoutRef.current = setTimeout(() => setConfirmedToshibaDevice(null), 2000)
   }, [])
 
+  const showMelCloudConfirmation = useCallback((deviceId: string) => {
+    if (confirmTimeoutRef.current) clearTimeout(confirmTimeoutRef.current)
+    setConfirmedMelCloudDevice(deviceId)
+    confirmTimeoutRef.current = setTimeout(() => setConfirmedMelCloudDevice(null), 2000)
+  }, [])
+
   const loadData = useCallback(async () => {
     try {
       const { data: accountData } = await supabase.rpc('get_household_home_control_accounts')
@@ -188,7 +219,8 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
         .select(`
           id, household_id, name, icon, sort_order,
           home_control_group_devices (device_id),
-          home_control_group_toshiba_devices (toshiba_device_id)
+          home_control_group_toshiba_devices (toshiba_device_id),
+          home_control_group_melcloud_devices (melcloud_device_id)
         `)
         .order('sort_order')
         .order('name')
@@ -198,6 +230,7 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
           ...g,
           device_ids: g.home_control_group_devices?.map((d: { device_id: string }) => d.device_id) || [],
           toshiba_device_ids: g.home_control_group_toshiba_devices?.map((d: { toshiba_device_id: string }) => d.toshiba_device_id) || [],
+          melcloud_device_ids: g.home_control_group_melcloud_devices?.map((d: { melcloud_device_id: string }) => d.melcloud_device_id) || [],
         }))
         setGroups(mappedGroups)
 
@@ -211,6 +244,18 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
             .eq('is_hidden', false)
 
           setToshibaDevicesInGroups(toshibaData || [])
+        }
+
+        // Fetch MelCloud devices that are in any group
+        const allMelCloudDeviceIds = mappedGroups.flatMap(g => g.melcloud_device_ids)
+        if (allMelCloudDeviceIds.length > 0) {
+          const { data: melcloudData } = await supabase
+            .from('melcloud_devices')
+            .select('id, account_id, device_id, building_id, name, custom_name, power_state, operation_mode, target_temperature, current_temperature, outdoor_temperature')
+            .in('id', allMelCloudDeviceIds)
+            .eq('is_hidden', false)
+
+          setMelcloudDevicesInGroups(melcloudData || [])
         }
       }
     } catch (err) {
@@ -427,6 +472,58 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
     }
   }
 
+  // Control MelCloud AC device in group
+  const controlMelCloudDevice = async (
+    device: MelCloudDeviceInGroup,
+    command: string,
+    value?: string | number
+  ) => {
+    setControllingMelCloudDevice(device.id)
+    try {
+      const response = await fetch('/api/home-control/melcloud/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountId: device.account_id,
+          deviceId: device.device_id,
+          buildingId: device.building_id,
+          command,
+          value,
+        }),
+      })
+      const data = await response.json()
+
+      if (data.success) {
+        // Update local state
+        setMelcloudDevicesInGroups(prev =>
+          prev.map(d => {
+            if (d.id !== device.id) return d
+            switch (command) {
+              case 'power':
+                return { ...d, power_state: value as MelCloudPowerState }
+              case 'temperature':
+                return { ...d, target_temperature: value as number }
+              case 'turnOn':
+                return { ...d, power_state: 'ON' as MelCloudPowerState }
+              case 'turnOff':
+                return { ...d, power_state: 'OFF' as MelCloudPowerState }
+              default:
+                return d
+            }
+          })
+        )
+        showMelCloudConfirmation(device.id)
+      } else {
+        showError(data.error || t.homeControl.commandFailed)
+      }
+    } catch (err) {
+      console.error('MelCloud control failed:', err)
+      showError(t.homeControl.commandFailed)
+    } finally {
+      setControllingMelCloudDevice(null)
+    }
+  }
+
   // Group devices by account
   const devicesByAccount = useMemo(() => {
     const grouped: Record<string, HomeControlDevice[]> = {}
@@ -593,9 +690,11 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
           {groups.map(group => {
             const isControlling = controllingGroup === group.id
             const groupToshibaDevices = toshibaDevicesInGroups.filter(d => group.toshiba_device_ids.includes(d.id))
-            const totalDevices = group.device_ids.length + groupToshibaDevices.length
-            // Get outdoor temperature from any Toshiba device in this group
+            const groupMelCloudDevices = melcloudDevicesInGroups.filter(d => group.melcloud_device_ids.includes(d.id))
+            const totalDevices = group.device_ids.length + groupToshibaDevices.length + groupMelCloudDevices.length
+            // Get outdoor temperature from any AC device in this group (Toshiba or MelCloud)
             const outdoorTemp = groupToshibaDevices.find(d => d.outdoor_temperature !== null)?.outdoor_temperature
+              ?? groupMelCloudDevices.find(d => d.outdoor_temperature !== null)?.outdoor_temperature
             return (
               <div
                 key={group.id}
@@ -716,9 +815,13 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
                                 background: isOffline ? 'rgba(128, 128, 128, 0.2)' : isOn ? 'rgba(232, 120, 109, 0.2)' : 'rgba(128, 128, 128, 0.2)',
                               }}
                             >
+                              {/* AC unit icon */}
                               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={isOffline ? 'var(--muted)' : isOn ? 'var(--color-coral)' : 'var(--muted)'} strokeWidth="2">
-                                <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2z"/>
-                                <path d="M12 6v6l4 2"/>
+                                <rect x="2" y="4" width="20" height="12" rx="2"/>
+                                <path d="M6 20v-4"/>
+                                <path d="M18 20v-4"/>
+                                <path d="M6 10h12"/>
+                                <path d="M6 13h12"/>
                               </svg>
                             </div>
                             <div className="min-w-0 flex-1">
@@ -778,6 +881,123 @@ export function HomeControlPanel({ compact = false }: HomeControlPanelProps) {
                                   className="w-12 h-7 rounded-full transition-all relative"
                                   style={{
                                     background: isOn ? 'var(--color-coral)' : 'var(--border)',
+                                  }}
+                                  aria-label={isOn ? (t.homeControl?.powerOff || 'Turn off') : (t.homeControl?.powerOn || 'Turn on')}
+                                >
+                                  <div
+                                    className="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"
+                                    style={{
+                                      left: isOn ? 'calc(100% - 1.625rem)' : '0.125rem',
+                                    }}
+                                  />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* MelCloud AC devices in this group */}
+                {groupMelCloudDevices.length > 0 && (
+                  <div className={(group.device_ids.length > 0 || groupToshibaDevices.length > 0) ? 'mt-3 pt-3 border-t' : ''} style={{ borderColor: 'var(--border)' }}>
+                    {groupMelCloudDevices.map(device => {
+                      const isOn = device.power_state === 'ON'
+                      const isOffline = device.power_state === null
+                      const isControlling = controllingMelCloudDevice === device.id
+                      const isConfirmed = confirmedMelCloudDevice === device.id
+                      const modeKey = device.operation_mode as keyof typeof t.homeControl.acModes
+                      return (
+                        <div
+                          key={device.id}
+                          className="rounded-lg p-3 mb-2 last:mb-0 transition-all relative"
+                          style={{
+                            background: 'color-mix(in srgb, var(--foreground) 3%, transparent)',
+                            boxShadow: isConfirmed ? '0 0 0 2px var(--color-sage)' : 'none',
+                            opacity: isOffline ? 0.7 : 1,
+                          }}
+                        >
+                          {/* Loading overlay */}
+                          {isControlling && (
+                            <div className="absolute inset-0 flex items-center justify-center rounded-lg z-10" style={{ background: 'rgba(var(--card-rgb, 255, 255, 255), 0.7)' }}>
+                              <span className="loading-spinner" style={{ width: 20, height: 20, borderWidth: 2, color: 'var(--color-sage)' }} />
+                            </div>
+                          )}
+                          <div className="flex items-center gap-3">
+                            <div
+                              className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+                              style={{
+                                background: isOffline ? 'rgba(128, 128, 128, 0.2)' : isOn ? 'rgba(142, 184, 156, 0.2)' : 'rgba(128, 128, 128, 0.2)',
+                              }}
+                            >
+                              {/* AC unit icon */}
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={isOffline ? 'var(--muted)' : isOn ? 'var(--color-sage)' : 'var(--muted)'} strokeWidth="2">
+                                <rect x="2" y="4" width="20" height="12" rx="2"/>
+                                <path d="M6 20v-4"/>
+                                <path d="M18 20v-4"/>
+                                <path d="M6 10h12"/>
+                                <path d="M6 13h12"/>
+                              </svg>
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium truncate" style={{ color: 'var(--foreground)' }}>
+                                {device.custom_name || device.name}
+                              </p>
+                              <p className="text-xs" style={{ color: isConfirmed ? 'var(--color-sage)' : 'var(--muted)' }}>
+                                {isConfirmed && '✓ '}
+                                {isOffline ? (t.homeControl?.offline || 'Offline') : isOn ? (
+                                  <>
+                                    {t.homeControl?.acModes?.[modeKey] || device.operation_mode}
+                                    {device.target_temperature && ` • ${device.target_temperature}°`}
+                                  </>
+                                ) : (t.homeControl?.powerOff || 'Off')}
+                              </p>
+                            </div>
+
+                            {/* Quick Controls */}
+                            {!isOffline && (
+                              <div className="flex items-center gap-2 shrink-0">
+                                {/* Temperature controls (only when on) */}
+                                {isOn && device.target_temperature !== null && (
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      onClick={() => controlMelCloudDevice(device, 'temperature', Math.max(MELCLOUD_TEMPERATURE.MIN, device.target_temperature! - 1))}
+                                      disabled={isControlling || device.target_temperature <= MELCLOUD_TEMPERATURE.MIN}
+                                      className="w-9 h-9 rounded-lg flex items-center justify-center disabled:opacity-40 transition-colors"
+                                      style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
+                                      aria-label={t.homeControl?.decreaseTemp || 'Decrease temperature'}
+                                    >
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="5" y1="12" x2="19" y2="12"/>
+                                      </svg>
+                                    </button>
+                                    <span className="text-sm font-medium w-10 text-center" style={{ color: 'var(--foreground)' }}>
+                                      {device.target_temperature}°
+                                    </span>
+                                    <button
+                                      onClick={() => controlMelCloudDevice(device, 'temperature', Math.min(MELCLOUD_TEMPERATURE.MAX, device.target_temperature! + 1))}
+                                      disabled={isControlling || device.target_temperature >= MELCLOUD_TEMPERATURE.MAX}
+                                      className="w-9 h-9 rounded-lg flex items-center justify-center disabled:opacity-40 transition-colors"
+                                      style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
+                                      aria-label={t.homeControl?.increaseTemp || 'Increase temperature'}
+                                    >
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="12" y1="5" x2="12" y2="19"/>
+                                        <line x1="5" y1="12" x2="19" y2="12"/>
+                                      </svg>
+                                    </button>
+                                  </div>
+                                )}
+
+                                {/* Power toggle */}
+                                <button
+                                  onClick={() => controlMelCloudDevice(device, isOn ? 'turnOff' : 'turnOn')}
+                                  disabled={isControlling}
+                                  className="w-12 h-7 rounded-full transition-all relative"
+                                  style={{
+                                    background: isOn ? 'var(--color-sage)' : 'var(--border)',
                                   }}
                                   aria-label={isOn ? (t.homeControl?.powerOff || 'Turn off') : (t.homeControl?.powerOn || 'Turn on')}
                                 >
