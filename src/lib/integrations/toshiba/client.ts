@@ -135,11 +135,9 @@ export class ToshibaClient {
   private debug: boolean
   private timeout: number
 
-  // AMQP connection
+  // AMQP credentials
   private sasToken: string | null = null
   private deviceId: string | null = null
-  private amqpClient: IoTHubClient | null = null
-  private amqpConnected: boolean = false
 
   // Device cache for storing DeviceUniqueId mapping
   private deviceCache: DeviceCache = {}
@@ -291,25 +289,25 @@ export class ToshibaClient {
   }
 
   /**
-   * Connect to Azure IoT Hub via AMQP.
+   * Send a command message via AMQP.
+   * Creates a new connection for each command to avoid stale connections in serverless environment.
    */
-  private async connectAmqp(): Promise<void> {
-    if (this.amqpConnected && this.amqpClient) {
-      return
-    }
-
+  private async sendAmqpMessage(message: object): Promise<void> {
     if (!this.sasToken) {
       throw new ToshibaError('No SAS token available. Call login() first.')
     }
 
-    this.log('Connecting to Azure IoT Hub via AMQP...')
+    const messageStr = JSON.stringify(message)
+    this.log('Sending AMQP message:', messageStr)
+
+    // Create a fresh client for each command (serverless-friendly)
+    const client = IoTHubClient.fromSharedAccessSignature(this.sasToken, Amqp)
 
     try {
-      // Create client from SAS token using AMQP transport
-      this.amqpClient = IoTHubClient.fromSharedAccessSignature(this.sasToken, Amqp)
-
+      // Connect
+      this.log('Connecting to Azure IoT Hub via AMQP...')
       await new Promise<void>((resolve, reject) => {
-        this.amqpClient!.open((err) => {
+        client.open((err) => {
           if (err) {
             reject(new ToshibaError(`AMQP connection failed: ${err.message}`))
           } else {
@@ -317,46 +315,34 @@ export class ToshibaClient {
           }
         })
       })
-
-      this.amqpConnected = true
       this.log('AMQP connected successfully')
-    } catch (error) {
-      this.amqpClient = null
-      this.amqpConnected = false
-      throw error
-    }
-  }
 
-  /**
-   * Send a command message via AMQP.
-   */
-  private async sendAmqpMessage(message: object): Promise<void> {
-    await this.connectAmqp()
+      // Send message
+      const msg = new Message(messageStr)
+      msg.contentType = 'application/json'
+      msg.contentEncoding = 'utf-8'
+      // Set custom property to identify as mobile app message
+      msg.properties.add('type', 'mob')
 
-    if (!this.amqpClient) {
-      throw new ToshibaError('AMQP client not available')
-    }
-
-    const messageStr = JSON.stringify(message)
-    this.log('Sending AMQP message:', messageStr)
-
-    const msg = new Message(messageStr)
-    msg.contentType = 'application/json'
-    msg.contentEncoding = 'utf-8'
-    // Set custom property to identify as mobile app message
-    msg.properties.add('type', 'mob')
-
-    await new Promise<void>((resolve, reject) => {
-      this.amqpClient!.sendEvent(msg, (err) => {
-        if (err) {
-          reject(new ToshibaError(`Failed to send AMQP message: ${err.message}`))
-        } else {
-          resolve()
-        }
+      await new Promise<void>((resolve, reject) => {
+        client.sendEvent(msg, (err) => {
+          if (err) {
+            reject(new ToshibaError(`Failed to send AMQP message: ${err.message}`))
+          } else {
+            resolve()
+          }
+        })
       })
-    })
 
-    this.log('AMQP message sent successfully')
+      this.log('AMQP message sent successfully')
+    } finally {
+      // Always close connection
+      await new Promise<void>((resolve) => {
+        client.close(() => resolve())
+      }).catch(() => {
+        // Ignore close errors
+      })
+    }
   }
 
   /**
@@ -402,22 +388,13 @@ export class ToshibaClient {
   /**
    * Clear authentication state.
    */
-  async logout(): Promise<void> {
-    // Disconnect AMQP if connected
-    if (this.amqpClient && this.amqpConnected) {
-      await new Promise<void>((resolve) => {
-        this.amqpClient!.close(() => resolve())
-      })
-    }
-
+  logout(): void {
     this.accessToken = null
     this.consumerId = null
     this.username = null
     this.tokenExpiry = 0
     this.sasToken = null
     this.deviceId = null
-    this.amqpClient = null
-    this.amqpConnected = false
     this.deviceCache = {}
   }
 
@@ -529,7 +506,7 @@ export class ToshibaClient {
     indoorTemperature: number | null
     outdoorTemperature: number | null
   } {
-    if (!hexState || hexState.length < 20) {
+    if (!hexState || hexState.length < 22) {  // At least 11 bytes for basic state
       return {
         powerState: null,
         operationMode: null,
