@@ -273,19 +273,13 @@ export class ToshibaClient {
 
   /**
    * Generate a unique device ID based on username.
-   * This matches the Python library's approach.
+   * Format must match Python library: {username}_{suffix}
+   * See: https://github.com/KaSroka/Toshiba-AC-control
    */
   private generateDeviceId(username: string): string {
-    // Use a hash of username + fixed salt to generate consistent device ID
-    const salt = 'familjen-toshiba-ac'
-    const combined = username + salt
-    let hash = 0
-    for (let i = 0; i < combined.length; i++) {
-      const char = combined.charCodeAt(i)
-      hash = ((hash << 5) - hash) + char
-      hash = hash & hash // Convert to 32-bit integer
-    }
-    return `familjen-${Math.abs(hash).toString(16).padStart(8, '0')}`
+    // Use the same default suffix as the Python library
+    const defaultSuffix = '3e6e4eb5f0e5aa46'
+    return `${username}_${defaultSuffix}`
   }
 
   /**
