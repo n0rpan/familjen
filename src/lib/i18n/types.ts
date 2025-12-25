@@ -875,6 +875,7 @@ export interface TranslationStrings {
     region: string
     // Empty state
     connectSomfy: string
+    connectSomfyToshiba: string
     // Misc
     lastSynced: string
     save: string
@@ -925,6 +926,11 @@ export interface TranslationStrings {
       MEDIUM: string
       MEDIUM_HIGH: string
       HIGH: string
+      SPEED_1: string
+      SPEED_2: string
+      SPEED_3: string
+      SPEED_4: string
+      SPEED_5: string
     }
     swingModes: {
       OFF: string

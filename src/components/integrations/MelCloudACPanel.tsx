@@ -5,46 +5,47 @@ import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import { TransitionLink } from '@/components/TransitionLink'
 import { getAccountDisplayName } from '@/lib/integrations/somfy/utils'
-import { TEMPERATURE } from '@/lib/integrations/toshiba/constants'
+import { TEMPERATURE } from '@/lib/integrations/melcloud/constants'
 import {
   FAN_SPEEDS,
   OPERATION_MODES,
-  type ToshibaOperationMode,
-  type ToshibaFanSpeed,
-  type ToshibaPowerState,
-} from '@/lib/integrations/toshiba/types'
+  type MelCloudOperationMode,
+  type MelCloudFanSpeed,
+  type MelCloudPowerState,
+} from '@/lib/integrations/melcloud/types'
 
-interface ToshibaACDevice {
+interface MelCloudACDevice {
   id: string
   account_id: string
-  ac_id: string
+  device_id: number
+  building_id: number
   name: string
   model: string | null
-  power_state: ToshibaPowerState | null
-  operation_mode: ToshibaOperationMode | null
+  power_state: MelCloudPowerState | null
+  operation_mode: MelCloudOperationMode | null
   target_temperature: number | null
   current_temperature: number | null
   outdoor_temperature: number | null
-  fan_speed: ToshibaFanSpeed | null
-  swing_mode: string | null
-  pure_state: string | null
+  fan_speed: MelCloudFanSpeed | null
+  vane_vertical: string | null
+  vane_horizontal: string | null
   custom_name: string | null
   favorite: boolean
   is_hidden: boolean
 }
 
-interface ToshibaAccount {
+interface MelCloudAccount {
   id: string
   display_name: string
   account_email: string | null
 }
 
-interface ToshibaACPanelProps {
+interface MelCloudACPanelProps {
   compact?: boolean
   showSettingsLink?: boolean
 }
 
-const MODE_ICONS: Record<ToshibaOperationMode, React.ReactNode> = {
+const MODE_ICONS: Record<MelCloudOperationMode, React.ReactNode> = {
   AUTO: (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <circle cx="12" cy="12" r="5"/>
@@ -77,7 +78,7 @@ const MODE_ICONS: Record<ToshibaOperationMode, React.ReactNode> = {
   ),
 }
 
-const MODE_COLORS: Record<ToshibaOperationMode, string> = {
+const MODE_COLORS: Record<MelCloudOperationMode, string> = {
   AUTO: 'var(--color-sage)',
   COOL: 'var(--color-sky)',
   HEAT: 'var(--color-coral)',
@@ -85,10 +86,10 @@ const MODE_COLORS: Record<ToshibaOperationMode, string> = {
   FAN: 'var(--color-lavender)',
 }
 
-export function ToshibaACPanel({ compact = false, showSettingsLink = true }: ToshibaACPanelProps) {
+export function MelCloudACPanel({ compact = false, showSettingsLink = true }: MelCloudACPanelProps) {
   const { t } = useLanguage()
-  const [devices, setDevices] = useState<ToshibaACDevice[]>([])
-  const [accounts, setAccounts] = useState<ToshibaAccount[]>([])
+  const [devices, setDevices] = useState<MelCloudACDevice[]>([])
+  const [accounts, setAccounts] = useState<MelCloudAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [controllingDevice, setControllingDevice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -121,18 +122,18 @@ export function ToshibaACPanel({ compact = false, showSettingsLink = true }: Tos
 
   const loadData = useCallback(async () => {
     try {
-      // Get Toshiba accounts
+      // Get MelCloud accounts
       const { data: accountData } = await supabase
         .from('home_control_accounts')
         .select('id, display_name, account_email')
-        .eq('service', 'toshiba')
+        .eq('service', 'melcloud')
 
       if (accountData && accountData.length > 0) {
         setAccounts(accountData)
 
-        // Get all Toshiba AC devices (show all, including grouped ones)
+        // Get all MelCloud AC devices
         const { data: deviceData } = await supabase
-          .from('toshiba_ac_devices')
+          .from('melcloud_devices')
           .select('*')
           .in('account_id', accountData.map(a => a.id))
           .eq('is_hidden', false)
@@ -142,7 +143,7 @@ export function ToshibaACPanel({ compact = false, showSettingsLink = true }: Tos
         setDevices(deviceData || [])
       }
     } catch (err) {
-      console.error('Failed to load Toshiba AC data:', err)
+      console.error('Failed to load MelCloud AC data:', err)
       showError(t.homeControl?.syncFailed || 'Failed to load devices')
     } finally {
       setLoading(false)
@@ -162,18 +163,19 @@ export function ToshibaACPanel({ compact = false, showSettingsLink = true }: Tos
 
   const controlDevice = async (
     accountId: string,
-    acId: string,
-    deviceId: string,
+    deviceId: number,
+    buildingId: number,
+    dbId: string,
     command: string,
     value?: string | number
   ) => {
     triggerHaptic()
-    setControllingDevice(deviceId)
+    setControllingDevice(dbId)
     try {
-      const response = await fetch('/api/home-control/toshiba/control', {
+      const response = await fetch('/api/home-control/melcloud/control', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accountId, acId, command, value }),
+        body: JSON.stringify({ accountId, deviceId, buildingId, command, value }),
       })
       const data = await response.json()
 
@@ -181,16 +183,16 @@ export function ToshibaACPanel({ compact = false, showSettingsLink = true }: Tos
         // Update local state
         setDevices(prev =>
           prev.map(d => {
-            if (d.id !== deviceId) return d
+            if (d.id !== dbId) return d
             switch (command) {
               case 'power':
-                return { ...d, power_state: value as ToshibaPowerState }
+                return { ...d, power_state: value as MelCloudPowerState }
               case 'temperature':
                 return { ...d, target_temperature: value as number }
               case 'mode':
-                return { ...d, operation_mode: value as ToshibaOperationMode }
+                return { ...d, operation_mode: value as MelCloudOperationMode }
               case 'fanSpeed':
-                return { ...d, fan_speed: value as ToshibaFanSpeed }
+                return { ...d, fan_speed: value as MelCloudFanSpeed }
               case 'turnOn':
                 return { ...d, power_state: 'ON' }
               case 'turnOff':
@@ -200,12 +202,12 @@ export function ToshibaACPanel({ compact = false, showSettingsLink = true }: Tos
             }
           })
         )
-        showConfirmation(deviceId)
+        showConfirmation(dbId)
       } else {
         showError(data.error || t.homeControl?.commandFailed || 'Command failed')
       }
     } catch (err) {
-      console.error('Toshiba control failed:', err)
+      console.error('MelCloud control failed:', err)
       showError(t.homeControl?.commandFailed || 'Command failed')
     } finally {
       setControllingDevice(null)
@@ -230,7 +232,7 @@ export function ToshibaACPanel({ compact = false, showSettingsLink = true }: Tos
   }
 
   const devicesByAccount = useMemo(() => {
-    const grouped: Record<string, ToshibaACDevice[]> = {}
+    const grouped: Record<string, MelCloudACDevice[]> = {}
     devices.forEach(device => {
       if (!grouped[device.account_id]) {
         grouped[device.account_id] = []
@@ -247,7 +249,7 @@ export function ToshibaACPanel({ compact = false, showSettingsLink = true }: Tos
         <div className="rounded-2xl p-4" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
           {/* Account header skeleton */}
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-xl" style={{ background: 'rgba(232, 120, 109, 0.2)' }} />
+            <div className="w-10 h-10 rounded-xl" style={{ background: 'rgba(142, 184, 156, 0.2)' }} />
             <div className="flex-1">
               <div className="h-4 w-32 rounded mb-1" style={{ background: 'var(--border)' }} />
               <div className="h-3 w-16 rounded" style={{ background: 'var(--border)' }} />
@@ -296,36 +298,7 @@ export function ToshibaACPanel({ compact = false, showSettingsLink = true }: Tos
   }
 
   if (devices.length === 0) {
-    return (
-      <div
-        className="rounded-2xl p-6 text-center"
-        style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-      >
-        <div
-          className="w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-4"
-          style={{ background: 'rgba(232, 120, 109, 0.2)' }}
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--color-coral)" strokeWidth="2">
-            <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2z"/>
-            <path d="M12 6v6l4 2"/>
-            <path d="M8 14h8"/>
-            <path d="M8 18h8"/>
-          </svg>
-        </div>
-        <h3 className="font-medium mb-1" style={{ color: 'var(--foreground)' }}>
-          {t.homeControl.noACUnits}
-        </h3>
-        <p className="text-sm mb-4" style={{ color: 'var(--muted)' }}>
-          {t.homeControl.noACUnitsDesc}
-        </p>
-        <TransitionLink
-          href="/innstillinger"
-          className="btn btn-primary text-sm"
-        >
-          {t.homeControl.goToSettings}
-        </TransitionLink>
-      </div>
-    )
+    return null // Don't show empty state - just hide when no devices
   }
 
   return (
@@ -374,11 +347,15 @@ export function ToshibaACPanel({ compact = false, showSettingsLink = true }: Tos
             >
               <div
                 className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                style={{ background: 'rgba(232, 120, 109, 0.2)' }}
+                style={{ background: 'rgba(142, 184, 156, 0.2)' }}
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-coral)" strokeWidth="2">
-                  <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2z"/>
-                  <path d="M12 6v6l4 2"/>
+                {/* AC unit icon */}
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-sage)" strokeWidth="2">
+                  <rect x="2" y="4" width="20" height="12" rx="2"/>
+                  <path d="M6 20v-4"/>
+                  <path d="M18 20v-4"/>
+                  <path d="M6 10h12"/>
+                  <path d="M6 13h12"/>
                 </svg>
               </div>
               <div className="min-w-0 flex-1">
@@ -432,7 +409,7 @@ export function ToshibaACPanel({ compact = false, showSettingsLink = true }: Tos
                       {/* Loading overlay */}
                       {isControlling && (
                         <div className="absolute inset-0 flex items-center justify-center rounded-xl z-10" style={{ background: 'rgba(var(--card-rgb, 255, 255, 255), 0.7)' }}>
-                          <span className="loading-spinner" style={{ width: 24, height: 24, borderWidth: 3, color: 'var(--color-coral)' }} />
+                          <span className="loading-spinner" style={{ width: 24, height: 24, borderWidth: 3, color: 'var(--color-sage)' }} />
                         </div>
                       )}
 
@@ -488,7 +465,7 @@ export function ToshibaACPanel({ compact = false, showSettingsLink = true }: Tos
                           {/* Power Toggle - disabled when offline */}
                           {!isOffline && (
                             <button
-                              onClick={() => controlDevice(device.account_id, device.ac_id, device.id, isPoweredOn ? 'turnOff' : 'turnOn')}
+                              onClick={() => controlDevice(device.account_id, device.device_id, device.building_id, device.id, isPoweredOn ? 'turnOff' : 'turnOn')}
                               disabled={isControlling}
                               className="w-12 h-7 rounded-full transition-all relative"
                               style={{
@@ -522,7 +499,7 @@ export function ToshibaACPanel({ compact = false, showSettingsLink = true }: Tos
                             </div>
                             <div className="flex items-center gap-2">
                               <button
-                                onClick={() => controlDevice(device.account_id, device.ac_id, device.id, 'temperature', Math.max(TEMPERATURE.MIN, (device.target_temperature ?? 22) - 1))}
+                                onClick={() => controlDevice(device.account_id, device.device_id, device.building_id, device.id, 'temperature', Math.max(TEMPERATURE.MIN, (device.target_temperature ?? 22) - 1))}
                                 disabled={isControlling || device.target_temperature === null || device.target_temperature <= TEMPERATURE.MIN}
                                 className="w-11 h-11 rounded-lg flex items-center justify-center disabled:opacity-40"
                                 style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
@@ -544,7 +521,7 @@ export function ToshibaACPanel({ compact = false, showSettingsLink = true }: Tos
                                 />
                               </div>
                               <button
-                                onClick={() => controlDevice(device.account_id, device.ac_id, device.id, 'temperature', Math.min(TEMPERATURE.MAX, (device.target_temperature ?? 22) + 1))}
+                                onClick={() => controlDevice(device.account_id, device.device_id, device.building_id, device.id, 'temperature', Math.min(TEMPERATURE.MAX, (device.target_temperature ?? 22) + 1))}
                                 disabled={isControlling || device.target_temperature === null || device.target_temperature >= TEMPERATURE.MAX}
                                 className="w-11 h-11 rounded-lg flex items-center justify-center disabled:opacity-40"
                                 style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
@@ -567,7 +544,7 @@ export function ToshibaACPanel({ compact = false, showSettingsLink = true }: Tos
                               {OPERATION_MODES.map(mode => (
                                 <button
                                   key={mode}
-                                  onClick={() => controlDevice(device.account_id, device.ac_id, device.id, 'mode', mode)}
+                                  onClick={() => controlDevice(device.account_id, device.device_id, device.building_id, device.id, 'mode', mode)}
                                   disabled={isControlling}
                                   className="p-2 rounded-lg flex flex-col items-center gap-1 transition-all"
                                   style={{
@@ -598,7 +575,7 @@ export function ToshibaACPanel({ compact = false, showSettingsLink = true }: Tos
                               {FAN_SPEEDS.map(speed => (
                                 <button
                                   key={speed}
-                                  onClick={() => controlDevice(device.account_id, device.ac_id, device.id, 'fanSpeed', speed)}
+                                  onClick={() => controlDevice(device.account_id, device.device_id, device.building_id, device.id, 'fanSpeed', speed)}
                                   disabled={isControlling}
                                   className="px-2.5 py-2 rounded text-[11px] transition-all text-center min-h-[44px] flex-1 min-w-[calc(25%-3px)]"
                                   style={{
