@@ -5,6 +5,8 @@ import { validateOrigin } from '@/lib/config'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 import { extractJSON } from '@/lib/json-extract'
 import { formatDateISO } from '@/lib/utils'
+import { sanitizePromptInput, sanitizePromptArray } from '@/lib/sanitize'
+import { ACTION_PARSE_SCHEMA, SEARCH_SUMMARY_SCHEMA, QUICK_MEAL_SUGGEST_SCHEMA } from '@/lib/ai-schemas'
 import { z } from 'zod'
 import type { MealSuggestion } from '@/lib/types'
 
@@ -240,6 +242,7 @@ export async function POST(request: Request) {
         messages,
         temperature: 0.2,
         max_tokens: 2000,
+        response_format: ACTION_PARSE_SCHEMA,
       }),
     })
 
@@ -552,13 +555,19 @@ function buildUserPrompt(
   context: z.infer<typeof parseActionSchema>['context'],
   currentUserName?: string
 ): string {
+  // Sanitize user input to prevent prompt injection
+  const safeInput = sanitizePromptInput(input, 500)
+  const safeName = currentUserName ? sanitizePromptInput(currentUserName, 50) : 'ukjent'
+
   return `Tolk følgende og returner handlinger:
 
-"${input}"
+<user_input>
+${safeInput}
+</user_input>
 
 Kontekst:
 - I dag: ${context.today} (${getDayName(context.today)})
-- Nåværende bruker: ${currentUserName || 'ukjent'}
+- Nåværende bruker: ${safeName}
 - Barn: ${context.children.map(c => c.name).join(', ') || 'ingen'}
 - Voksne: ${context.members.map(m => m.name).join(', ') || 'ingen'}`
 }
@@ -569,10 +578,14 @@ function buildVisionUserPrompt(
   context: z.infer<typeof parseActionSchema>['context'],
   currentUserName?: string
 ): string {
+  // Sanitize user input to prevent prompt injection
+  const safeInput = sanitizePromptInput(input, 500)
+  const safeName = currentUserName ? sanitizePromptInput(currentUserName, 50) : 'ukjent'
+
   const baseContext = `
 Kontekst:
 - I dag: ${context.today} (${getDayName(context.today)})
-- Nåværende bruker: ${currentUserName || 'ukjent'}
+- Nåværende bruker: ${safeName}
 - Barn: ${context.children.map(c => c.name).join(', ') || 'ingen'}
 - Voksne: ${context.members.map(m => m.name).join(', ') || 'ingen'}`
 
@@ -580,9 +593,11 @@ Kontekst:
   const allPersonOptions = [...context.children.map(c => `{ "label": "${c.name}", "value": "${c.id}" }`), ...context.members.map(m => `{ "label": "${m.name}", "value": "${m.id}" }`)].join(', ')
 
   // If user provided additional text context, include it as a strong directive
-  const userNote = input.trim()
-    ? `\n\nBRUKERENS INSTRUKSJON (VIKTIG - følg denne!): "${input}"
-Brukeren har gitt denne instruksjonen for hvordan bildet skal tolkes. Prioriter brukerens instruksjon over automatisk tolkning.`
+  const userNote = safeInput
+    ? `\n\n<user_instruction>
+${safeInput}
+</user_instruction>
+Brukeren har gitt denne instruksjonen for hvordan bildet skal tolkes.`
     : ''
 
   return `Analyser dette bildet og bestem hva det viser.
@@ -653,8 +668,11 @@ async function handleSearchMode(
     }
   }
 
+  // Sanitize search query to prevent prompt injection
+  const safeSearchQuery = sanitizePromptInput(searchQuery, 200)
+
   // Extract keywords for database search
-  const keywords = searchQuery.toLowerCase().split(/\s+/).filter(k => k.length > 2)
+  const keywords = safeSearchQuery.toLowerCase().split(/\s+/).filter(k => k.length > 2)
 
   // Query all searchable data in parallel
   const today = new Date()
@@ -812,18 +830,21 @@ async function handleSearchMode(
     if (!apiKey) {
       return NextResponse.json({
         mode: 'search',
-        answer: `Fant ${sources.length} resultater for "${searchQuery}"`,
+        answer: `Fant ${sources.length} resultater for "${safeSearchQuery}"`,
         sources,
       } as SearchResponse)
     }
 
     // Call AI to summarize
-    const summaryPrompt = `Brukeren søker etter: "${searchQuery}"
+    const summaryPrompt = `Brukeren søker etter:
+<search_query>
+${safeSearchQuery}
+</search_query>
 
 Følgende data ble funnet:
 ${sources.map(s => `- ${s.type}: ${s.title} (${s.excerpt})`).join('\n')}
 
-Gi et kort, hjelpsomt svar på norsk basert på resultatene. Hvis noe spesifikt ble spurt om (som en dato eller en person), svar direkte på det. Hold svaret under 100 ord.`
+Gi et kort, hjelpsomt svar på norsk basert på resultatene. Hvis noe spesifikt ble spurt om (som en dato eller en person), svar direkte på det. Hold svaret under 100 ord. Returner som JSON med "summary" felt.`
 
     try {
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -842,12 +863,15 @@ Gi et kort, hjelpsomt svar på norsk basert på resultatene. Hvis noe spesifikt 
           ],
           temperature: 0.3,
           max_tokens: 300,
+          response_format: SEARCH_SUMMARY_SCHEMA,
         }),
       })
 
       if (response.ok) {
         const data = await response.json()
-        const answer = data.choices?.[0]?.message?.content || `Fant ${sources.length} resultater`
+        const content = data.choices?.[0]?.message?.content
+        const parsed = content ? extractJSON<{ summary: string }>(content) : null
+        const answer = parsed?.summary || `Fant ${sources.length} resultater`
 
         return NextResponse.json({
           mode: 'search',
@@ -862,7 +886,7 @@ Gi et kort, hjelpsomt svar på norsk basert på resultatene. Hvis noe spesifikt 
     // Fallback without AI summary
     return NextResponse.json({
       mode: 'search',
-      answer: `Fant ${sources.length} resultater for "${searchQuery}"`,
+      answer: `Fant ${sources.length} resultater for "${safeSearchQuery}"`,
       sources,
     } as SearchResponse)
   }
@@ -870,7 +894,7 @@ Gi et kort, hjelpsomt svar på norsk basert på resultatene. Hvis noe spesifikt 
   // No results found
   return NextResponse.json({
     mode: 'search',
-    answer: `Fant ingen resultater for "${searchQuery}". Prøv å søke med andre ord.`,
+    answer: `Fant ingen resultater for "${safeSearchQuery}". Prøv å søke med andre ord.`,
     sources: [],
   } as SearchResponse)
 }
@@ -914,18 +938,19 @@ async function handleSuggestMode(
     supabase.from('meals').select('date, custom_meal, recipe:recipes(name)').eq('household_id', household.id).gte('date', weekStart).lte('date', weekEndStr),
   ])
 
-  // Collect allergies
-  const allAllergies = new Set<string>()
+  // Collect and sanitize allergies (to prevent prompt injection)
+  const allAllergiesRaw: string[] = []
   if (childrenResult.data) {
     childrenResult.data.forEach(c => {
-      ((c.allergies as string[]) || []).forEach(a => allAllergies.add(a.toLowerCase()))
+      ((c.allergies as string[]) || []).forEach(a => allAllergiesRaw.push(a.toLowerCase()))
     })
   }
   if (membersResult.data) {
     membersResult.data.forEach(m => {
-      ((m.allergies as string[]) || []).forEach(a => allAllergies.add(a.toLowerCase()))
+      ((m.allergies as string[]) || []).forEach(a => allAllergiesRaw.push(a.toLowerCase()))
     })
   }
+  const allAllergies = sanitizePromptArray([...new Set(allAllergiesRaw)])
 
   // Determine which days need suggestions (weekdays without meals)
   const existingMealsMap = new Map<string, string>()
@@ -984,19 +1009,24 @@ async function handleSuggestMode(
     return NextResponse.json({ error: 'OpenRouter API-nøkkel ikke konfigurert' }, { status: 500 })
   }
 
+  // Sanitize user inputs
+  const safeContext = household.ai_meal_context ? sanitizePromptInput(household.ai_meal_context, 500) : ''
+  const userRequest = input.replace(MEAL_SUGGEST_KEYWORDS, '').trim()
+  const safeUserRequest = userRequest ? sanitizePromptInput(userRequest, 200) : ''
+
   // Build the prompt
   const prompt = `Foreslå middager for følgende dager:
 ${daysNeedingSuggestions.map(d => `- ${d.dayName} (${d.date})`).join('\n')}
 
-${Array.from(allAllergies).length > 0 ? `**VIKTIG - Allergier (UNNGÅ disse):** ${Array.from(allAllergies).join(', ')}` : ''}
+${allAllergies.length > 0 ? `**VIKTIG - Allergier (UNNGÅ disse):** ${allAllergies.join(', ')}` : ''}
 
 ${favoriteRecipes.length > 0 ? `**Familiens favoritter:** ${favoriteRecipes.slice(0, 5).join(', ')}` : ''}
 
 ${recentMealNames.length > 0 ? `**Nylige middager (unngå gjentakelse):** ${recentMealNames.slice(0, 7).join(', ')}` : ''}
 
-${household.ai_meal_context ? `**Familiens preferanser:** ${household.ai_meal_context}` : ''}
+${safeContext ? `**Familiens preferanser:** ${safeContext}` : ''}
 
-${input.replace(MEAL_SUGGEST_KEYWORDS, '').trim() ? `**Brukerens ønske:** ${input.replace(MEAL_SUGGEST_KEYWORDS, '').trim()}` : ''}
+${safeUserRequest ? `**Brukerens ønske:** ${safeUserRequest}` : ''}
 
 Regler:
 - Enkle retter med få ingredienser
@@ -1016,11 +1046,12 @@ Regler:
       body: JSON.stringify({
         model,
         messages: [
-          { role: 'system', content: 'Du er en hjelpsom assistent for norsk familieplanlegging. Du foreslår enkle, barnevennlige middager. Svar ALLTID med gyldig JSON.' },
+          { role: 'system', content: 'Du er en hjelpsom assistent for norsk familieplanlegging. Du foreslår enkle, barnevennlige middager.' },
           { role: 'user', content: prompt },
         ],
         temperature: 0.4,
         max_tokens: 1500,
+        response_format: QUICK_MEAL_SUGGEST_SCHEMA,
       }),
     })
 
@@ -1045,7 +1076,7 @@ Regler:
     let suggestions = Array.isArray(parsed.suggestions) ? parsed.suggestions : []
 
     // Filter out allergens
-    if (allAllergies.size > 0) {
+    if (allAllergies.length > 0) {
       suggestions = suggestions.filter(meal => {
         const mealText = [
           meal.name.toLowerCase(),
@@ -1053,7 +1084,7 @@ Regler:
           ...meal.ingredients.map(i => i.item.toLowerCase()),
         ].join(' ')
 
-        for (const allergy of Array.from(allAllergies)) {
+        for (const allergy of allAllergies) {
           if (mealText.includes(allergy)) {
             // Check for false positives
             const falsePositives = [
