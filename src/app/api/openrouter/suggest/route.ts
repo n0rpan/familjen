@@ -8,6 +8,8 @@ import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limi
 import { extractJSON } from '@/lib/json-extract'
 import { formatDateISO } from '@/lib/utils'
 import { validateMealSuggestions } from '@/lib/ai-validation'
+import { sanitizePromptInput, sanitizePromptArray } from '@/lib/sanitize'
+import { MEAL_SUGGESTION_SCHEMA } from '@/lib/ai-schemas'
 
 // Helper to calculate age from birth date
 function calculateAge(birthDate: string): number {
@@ -105,12 +107,13 @@ export async function POST(request: Request) {
       supabase.from('week_contexts').select('context').eq('household_id', household.id).eq('week_start', weekStart).maybeSingle(),
     ])
 
-    // Process children's ages and allergies
+    // Process children's ages and allergies (sanitized to prevent prompt injection)
     const childrenAges: { name: string; age: number; allergies: string[] }[] = []
     const allAllergiesSet = new Set<string>()
     if (childrenResult.data) {
       for (const child of childrenResult.data) {
-        const allergies = (child.allergies as string[]) || []
+        const rawAllergies = (child.allergies as string[]) || []
+        const allergies = sanitizePromptArray(rawAllergies)
         // Add to combined set
         allergies.forEach(a => allAllergiesSet.add(a.toLowerCase()))
         if (child.birth_date) {
@@ -126,7 +129,8 @@ export async function POST(request: Request) {
     // Also add allergies from household members (parents)
     if (membersResult.data) {
       for (const member of membersResult.data) {
-        const allergies = (member.allergies as string[]) || []
+        const rawAllergies = (member.allergies as string[]) || []
+        const allergies = sanitizePromptArray(rawAllergies)
         allergies.forEach(a => allAllergiesSet.add(a.toLowerCase()))
       }
     }
@@ -136,7 +140,6 @@ export async function POST(request: Request) {
     // Get recipes
     const recipes = recipesResult.data || []
     const favoriteRecipes = recipes.filter(r => r.is_favorite)
-    const quickRecipes = recipes.filter(r => r.is_quick)
 
     // Get recent meals for context
     const recentMealNames = (recentMealsResult.data || [])
@@ -152,8 +155,10 @@ export async function POST(request: Request) {
     // Get holidays for the week
     const holidays = (holidaysResult.data || []).map(h => ({ date: h.date, name: h.name }))
 
-    // Get week-specific context
-    const weekContext = weekContextResult.data?.context || null
+    // Get week-specific context (sanitized to prevent prompt injection)
+    const weekContext = weekContextResult.data?.context
+      ? sanitizePromptInput(weekContextResult.data.context, 500)
+      : null
 
     // Determine which days need suggestions
     const daysNeedingSuggestions: { date: string; partial?: string }[] = []
@@ -219,10 +224,9 @@ export async function POST(request: Request) {
         parentCount,
         recipes,
         favoriteRecipes,
-        quickRecipes,
         recentMealNames,
         holidays,
-        defaultContext: household.ai_meal_context,
+        defaultContext: household.ai_meal_context ? sanitizePromptInput(household.ai_meal_context, 500) : null,
         weekContext,
         season,
         allAllergies,
@@ -281,6 +285,7 @@ Ikke inkluder noe annet enn JSON i svaret.`,
             ],
             temperature: 0.4,
             max_tokens: 2000,
+            response_format: MEAL_SUGGESTION_SCHEMA,
           }),
           signal: controller.signal,
         })
@@ -324,7 +329,7 @@ Ikke inkluder noe annet enn JSON i svaret.`,
       validatedMeals = [...validatedMeals, ...validation.validMeals]
 
       // Log quality issues as warnings
-      const qualityIssues = validation.issues.filter(i => i.type !== 'allergen')
+      const qualityIssues = validation.issues.filter(i => i.type !== 'allergen' && i.type !== 'safety')
       if (qualityIssues.length > 0) {
         console.log('[Menu Quality]', qualityIssues.map(i => `${i.mealName}: ${i.reason}`).join(', '))
       }
@@ -366,7 +371,6 @@ interface PromptContext {
   parentCount: number  // Number of adults in household
   recipes: { id: string; name: string; is_favorite: boolean; is_quick: boolean; is_kid_friendly: boolean }[]
   favoriteRecipes: { name: string }[]
-  quickRecipes: { name: string }[]
   recentMealNames: string[]
   holidays: { date: string; name: string }[]
   defaultContext: string | null
