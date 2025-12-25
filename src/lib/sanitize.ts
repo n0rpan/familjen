@@ -131,7 +131,7 @@ export function sanitizeExternalMessage(input: ExternalMessageInput): SanitizedE
  * Sanitize user input to prevent prompt injection attacks in AI prompts.
  * - Removes newlines, tabs, and control characters
  * - Collapses multiple spaces
- * - Removes brackets that could be injection markers
+ * - Removes brackets and backticks that could be injection markers
  * - Limits length
  */
 export function sanitizePromptInput(input: string, maxLength = 100): string {
@@ -139,7 +139,7 @@ export function sanitizePromptInput(input: string, maxLength = 100): string {
   return input
     .replace(/[\r\n\t]/g, ' ')           // Remove newlines/tabs
     .replace(/\s+/g, ' ')                 // Collapse whitespace
-    .replace(/[<>{}[\]]/g, '')            // Remove brackets that could be injection markers
+    .replace(/[<>{}[\]`]/g, '')           // Remove brackets and backticks that could be injection markers
     .slice(0, maxLength)                  // Limit length
     .trim()
 }

@@ -230,22 +230,38 @@ export async function POST(request: Request) {
           { role: 'user', content: userPrompt },
         ]
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-        'X-Title': 'Familjen',
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: 0.2,
-        max_tokens: 2000,
-        response_format: ACTION_PARSE_SCHEMA,
-      }),
-    })
+    // Set timeout for API call (15 seconds)
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 15000)
+
+    let response: Response
+    try {
+      response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+          'X-Title': 'Familjen',
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: 0.2,
+          max_tokens: 2000,
+          response_format: ACTION_PARSE_SCHEMA,
+        }),
+        signal: controller.signal,
+      })
+    } catch (fetchError) {
+      clearTimeout(timeoutId)
+      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+        return NextResponse.json({ error: 'Forespørselen tok for lang tid' }, { status: 504 })
+      }
+      throw fetchError
+    } finally {
+      clearTimeout(timeoutId)
+    }
 
     if (!response.ok) {
       console.error('OpenRouter error:', { status: response.status })
@@ -720,11 +736,11 @@ async function handleSearchMode(
       .order('date', { ascending: false })
       .limit(30),
 
-    // External messages (from integrations)
+    // External messages (from integrations) - join through integration to filter by household
     supabase
       .from('external_messages')
-      .select('id, title, body, message_date, integration:external_integrations(service)')
-      .eq('household_id', householdId)
+      .select('id, title, body, message_date, integration:external_integrations!inner(service, household_id)')
+      .eq('external_integrations.household_id', householdId)
       .order('message_date', { ascending: false })
       .limit(50),
   ])
@@ -847,6 +863,10 @@ ${sources.map(s => `- ${s.type}: ${s.title} (${s.excerpt})`).join('\n')}
 
 Gi et kort, hjelpsomt svar på norsk basert på resultatene. Hvis noe spesifikt ble spurt om (som en dato eller en person), svar direkte på det. Hold svaret under 100 ord. Returner som JSON med "summary" felt.`
 
+    // Set timeout for search summary (10 seconds - faster for simpler task)
+    const searchController = new AbortController()
+    const searchTimeoutId = setTimeout(() => searchController.abort(), 10000)
+
     try {
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -866,7 +886,10 @@ Gi et kort, hjelpsomt svar på norsk basert på resultatene. Hvis noe spesifikt 
           max_tokens: 300,
           response_format: SEARCH_SUMMARY_SCHEMA,
         }),
+        signal: searchController.signal,
       })
+
+      clearTimeout(searchTimeoutId)
 
       if (response.ok) {
         const data = await response.json()
@@ -881,6 +904,7 @@ Gi et kort, hjelpsomt svar på norsk basert på resultatene. Hvis noe spesifikt 
         } as SearchResponse)
       }
     } catch (error) {
+      clearTimeout(searchTimeoutId)
       console.error('Search AI summary error:', error)
     }
 
@@ -1033,7 +1057,11 @@ Regler:
 - Enkle retter med få ingredienser
 - Barnevennlige og næringsrike
 - Varier mellom kylling, fisk, kjøtt, vegetar
-- Returner JSON: { "suggestions": [{ "day": "YYYY-MM-DD", "name": "...", "description": "...", "ingredients": [{"item": "...", "amount": "..."}] }] }`
+- Returner JSON: { "suggestions": [{ "day": "YYYY-MM-DD", "name": "...", "description": "kort beskrivelse", "ingredients": [{"item": "...", "amount": "..."}], "is_quick": true/false, "is_kid_friendly": true/false }] }`
+
+  // Set timeout for meal suggestions (15 seconds)
+  const suggestController = new AbortController()
+  const suggestTimeoutId = setTimeout(() => suggestController.abort(), 15000)
 
   try {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -1054,7 +1082,10 @@ Regler:
         max_tokens: 1500,
         response_format: MEAL_SUGGESTION_SCHEMA,
       }),
+      signal: suggestController.signal,
     })
+
+    clearTimeout(suggestTimeoutId)
 
     if (!response.ok) {
       console.error('Suggest AI error:', response.status)
@@ -1110,6 +1141,10 @@ Regler:
       suggestions: validation.validMeals,
     } as SuggestResponse)
   } catch (error) {
+    clearTimeout(suggestTimeoutId)
+    if (error instanceof Error && error.name === 'AbortError') {
+      return NextResponse.json({ error: 'Forespørselen tok for lang tid' }, { status: 504 })
+    }
     console.error('Suggest error:', error)
     return NextResponse.json({ error: 'En feil oppstod ved middagsforslag' }, { status: 500 })
   }
