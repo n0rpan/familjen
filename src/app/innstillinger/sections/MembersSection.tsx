@@ -1,7 +1,7 @@
 'use client'
 
 import { memo } from 'react'
-import type { HouseholdMember } from '@/lib/types'
+import type { HouseholdMember, AllowedEmail } from '@/lib/types'
 import type { TranslationStrings } from '@/lib/i18n/types'
 
 interface MembersSectionProps {
@@ -19,6 +19,14 @@ interface MembersSectionProps {
   onNewMemberChange: (member: MembersSectionProps['newMember']) => void
   onAddMember: (e: React.FormEvent) => void
   onDeleteMember: (id: string) => void
+  // Invite functionality (admin only)
+  isHouseholdAdmin?: boolean
+  inviteEmail?: string
+  invitedEmails?: AllowedEmail[]
+  savingInvite?: boolean
+  onInviteEmailChange?: (email: string) => void
+  onInviteUser?: (e: React.FormEvent) => void
+  onRemoveInvite?: (emailId: string) => void
 }
 
 export const MembersSection = memo(function MembersSection({
@@ -29,6 +37,13 @@ export const MembersSection = memo(function MembersSection({
   onNewMemberChange,
   onAddMember,
   onDeleteMember,
+  isHouseholdAdmin,
+  inviteEmail,
+  invitedEmails,
+  savingInvite,
+  onInviteEmailChange,
+  onInviteUser,
+  onRemoveInvite,
 }: MembersSectionProps) {
   return (
     <section
@@ -115,6 +130,70 @@ export const MembersSection = memo(function MembersSection({
           ))
         )}
       </div>
+
+      {/* Invite users section (admin only) */}
+      {isHouseholdAdmin && onInviteUser && onInviteEmailChange && (
+        <div className="mb-6 pt-6" style={{ borderTop: '1px solid var(--border)' }}>
+          <p className="text-sm font-medium mb-3" style={{ color: 'var(--foreground)' }}>
+            {t.admin.addUser}
+          </p>
+          <form onSubmit={onInviteUser} className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="email"
+              value={inviteEmail || ''}
+              onChange={(e) => onInviteEmailChange(e.target.value)}
+              placeholder={t.admin.emailPlaceholder}
+              className="input flex-1"
+              required
+            />
+            <button
+              type="submit"
+              disabled={savingInvite || !inviteEmail?.trim()}
+              className="btn btn-primary"
+            >
+              {savingInvite ? t.common.saving : t.common.add}
+            </button>
+          </form>
+          <p className="text-xs mt-2" style={{ color: 'var(--muted)' }}>
+            {t.admin.usersAddedViaSettings}
+          </p>
+
+          {/* Invited emails list */}
+          {invitedEmails && invitedEmails.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-medium mb-2" style={{ color: 'var(--muted)' }}>
+                Inviterte brukere
+              </p>
+              <div className="space-y-2">
+                {invitedEmails.map((email) => (
+                  <div
+                    key={email.id}
+                    className="flex items-center justify-between p-3 rounded-xl"
+                    style={{ background: 'var(--background)' }}
+                  >
+                    <span className="text-sm" style={{ color: 'var(--foreground)' }}>
+                      {email.email}
+                    </span>
+                    {onRemoveInvite && (
+                      <button
+                        onClick={() => onRemoveInvite(email.id)}
+                        className="p-1 rounded hover:bg-red-50 transition-colors"
+                        style={{ color: 'var(--muted)' }}
+                        title="Fjern invitasjon"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <line x1="18" y1="6" x2="6" y2="18"/>
+                          <line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Add new member form */}
       <form onSubmit={onAddMember} className="pt-6" style={{ borderTop: '1px solid var(--border)' }}>

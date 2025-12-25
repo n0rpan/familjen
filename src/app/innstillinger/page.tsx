@@ -23,7 +23,7 @@ import {
   ChildrenSection,
   MembersSection,
   AIPreferencesSection,
-  HouseholdAdminSection,
+  FamilyCalendarSection,
 } from './sections'
 import { CollapsibleSection, SectionGroupLabel } from './components'
 
@@ -1305,161 +1305,161 @@ export default function SettingsPage() {
           onNewMemberChange={setNewMember}
           onAddMember={addMember}
           onDeleteMember={deleteMember}
+          isHouseholdAdmin={myProfile?.is_household_admin}
+          inviteEmail={inviteEmail}
+          invitedEmails={invitedEmails}
+          savingInvite={savingInvite}
+          onInviteEmailChange={setInviteEmail}
+          onInviteUser={inviteUser}
+          onRemoveInvite={removeInvite}
         />
       </CollapsibleSection>
 
       {/* ============================================================ */}
-      {/* GROUP 3: INTEGRATIONS (if enabled or calendar connected)    */}
+      {/* GROUP 3: INTEGRATIONS (all in one collapsible)              */}
       {/* ============================================================ */}
-      {(household?.external_integrations_enabled || connectedCalendarEmail) && (
-        <SectionGroupLabel label={t.settings?.integrationsTitle || 'Integrasjoner'} />
-      )}
-
-      {household?.external_integrations_enabled && (
+      {(household?.external_integrations_enabled || connectedCalendarEmail || household?.ics_calendar_url) && (
         <>
+          <SectionGroupLabel label={t.settings?.integrationsTitle || 'Integrasjoner'} />
 
-          {/* Spond Integration */}
           <CollapsibleSection
             icon={
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10"/>
-                <path d="M12 6v6l4 2"/>
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                <polyline points="15 3 21 3 21 9"/>
+                <line x1="10" y1="14" x2="21" y2="3"/>
               </svg>
             }
-            title="Spond"
-            description="Synkroniser hendelser og meldinger fra Spond"
-            color="var(--color-sky)"
-          >
-            <SpondIntegration
-              householdId={household.id}
-              children={children}
-              members={members}
-              onMessage={showMessage}
-            />
-          </CollapsibleSection>
-
-          {/* Kidplan Integration */}
-          <CollapsibleSection
-            icon={
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-                <polyline points="9 22 9 12 15 12 15 22"/>
-              </svg>
-            }
-            title="Kidplan"
-            description="Synkroniser meldinger og bilder fra barnehagen"
+            title={t.settings?.integrationsTitle || 'Integrasjoner'}
+            description={t.settings?.integrationsDesc || 'Kalendere og eksterne tjenester'}
             color="var(--color-sage)"
           >
-            <KidplanIntegration
-              householdId={household.id}
-              children={children}
-              onMessage={showMessage}
-            />
-          </CollapsibleSection>
+            <div className="space-y-6">
+              {/* Family Calendar */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-lg">🏠</span>
+                  <div>
+                    <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                      {t.settings.familyCalendar || 'Familiekalender'}
+                    </p>
+                    <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                      {t.settings.familyCalendarHint || 'Koble til en delt familiekalender'}
+                    </p>
+                  </div>
+                </div>
+                <FamilyCalendarSection
+                  familyCalendarUrl={familyCalendarUrl}
+                  savingFamilyCalendar={savingFamilyCalendar}
+                  syncingFamilyCalendar={syncingFamilyCalendar}
+                  familyCalendarLastSync={familyCalendarLastSync}
+                  familyCalendarError={familyCalendarError}
+                  familyCalendarEventCount={familyCalendarEventCount}
+                  language={language}
+                  t={t}
+                  onFamilyCalendarUrlChange={setFamilyCalendarUrl}
+                  onSaveFamilyCalendar={saveFamilyCalendar}
+                  onSyncFamilyCalendar={syncFamilyCalendar}
+                />
+              </div>
 
-          {/* iSkole Integration */}
-          <CollapsibleSection
-            icon={
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M22 10v6M2 10l10-5 10 5-10 5z"/>
-                <path d="M6 12v5c3 3 9 3 12 0v-5"/>
-              </svg>
-            }
-            title="iSkole"
-            description="Synkroniser meldinger og timeplan fra skolen"
-            color="var(--color-sky)"
-          >
-            <ISkoleIntegration
-              householdId={household.id}
-              children={children}
-              onMessage={showMessage}
-            />
-          </CollapsibleSection>
+              {/* Calendar Sync Hint */}
+              {connectedCalendarEmail && (
+                <div className="pt-4" style={{ borderTop: '1px solid var(--border)' }}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2">
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                      <line x1="16" y1="2" x2="16" y2="6"/>
+                      <line x1="8" y1="2" x2="8" y2="6"/>
+                      <line x1="3" y1="10" x2="21" y2="10"/>
+                    </svg>
+                    <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                      {t.settings?.calendarSyncHint || 'Automatisk kalendersynk'}
+                    </p>
+                  </div>
+                  <p className="text-sm mb-2" style={{ color: 'var(--muted)' }}>
+                    {t.settings?.calendarSyncDesc || 'Send kalenderinvitasjoner til denne adressen:'}
+                  </p>
+                  <div className="px-3 py-2 rounded-lg text-sm font-mono inline-block" style={{ background: 'var(--background)' }}>
+                    {connectedCalendarEmail}
+                  </div>
+                </div>
+              )}
 
-          {/* MyKid Integration */}
-          <CollapsibleSection
-            icon={
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="8" r="4" />
-                <path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
-              </svg>
-            }
-            title="MyKid"
-            description="Synkroniser kalender, nyhetsbrev og bilder fra barnehagen"
-            color="var(--color-sage)"
-          >
-            <MyKidIntegration
-              householdId={household.id}
-              children={children}
-              onMessage={showMessage}
-            />
-          </CollapsibleSection>
+              {/* External Integrations */}
+              {household?.external_integrations_enabled && (
+                <>
+                  <div className="pt-4" style={{ borderTop: '1px solid var(--border)' }}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-sky)" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 6v6l4 2"/>
+                      </svg>
+                      <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Spond</p>
+                    </div>
+                    <SpondIntegration householdId={household.id} children={children} members={members} onMessage={showMessage} />
+                  </div>
 
-          {/* Manual Source URLs */}
-          <CollapsibleSection
-            icon={
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10"/>
-                <line x1="2" y1="12" x2="22" y2="12"/>
-                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-              </svg>
-            }
-            title="Kalenderkilder"
-            description="Legg til eksterne kalendere og skoleruter"
-            color="var(--color-lavender)"
-          >
-            <ManualSourceUrls
-              householdId={household.id}
-              children={children}
-              onMessage={showMessage}
-            />
-          </CollapsibleSection>
+                  <div className="pt-4" style={{ borderTop: '1px solid var(--border)' }}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-sage)" strokeWidth="2">
+                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                        <polyline points="9 22 9 12 15 12 15 22"/>
+                      </svg>
+                      <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Kidplan</p>
+                    </div>
+                    <KidplanIntegration householdId={household.id} children={children} onMessage={showMessage} />
+                  </div>
 
-          {/* Home Control (Somfy) */}
-          <CollapsibleSection
-            icon={
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2"/>
-                <line x1="9" y1="3" x2="9" y2="21"/>
-              </svg>
-            }
-            title="Smarthus"
-            description="Styr screens og persienner via Somfy TaHoma"
-            color="var(--color-honey)"
-          >
-            <HomeControlSettings
-              householdId={household.id}
-              onMessage={showMessage}
-            />
+                  <div className="pt-4" style={{ borderTop: '1px solid var(--border)' }}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-lavender)" strokeWidth="2">
+                        <path d="M22 10v6M2 10l10-5 10 5-10 5z"/>
+                        <path d="M6 12v5c3 3 9 3 12 0v-5"/>
+                      </svg>
+                      <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>iSkole</p>
+                    </div>
+                    <ISkoleIntegration householdId={household.id} children={children} onMessage={showMessage} />
+                  </div>
+
+                  <div className="pt-4" style={{ borderTop: '1px solid var(--border)' }}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-coral)" strokeWidth="2">
+                        <circle cx="12" cy="8" r="4" />
+                        <path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
+                      </svg>
+                      <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>MyKid</p>
+                    </div>
+                    <MyKidIntegration householdId={household.id} children={children} onMessage={showMessage} />
+                  </div>
+
+                  <div className="pt-4" style={{ borderTop: '1px solid var(--border)' }}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-mint)" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="2" y1="12" x2="22" y2="12"/>
+                        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                      </svg>
+                      <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Kalenderkilder</p>
+                    </div>
+                    <ManualSourceUrls householdId={household.id} children={children} onMessage={showMessage} />
+                  </div>
+
+                  <div className="pt-4" style={{ borderTop: '1px solid var(--border)' }}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2"/>
+                        <line x1="9" y1="3" x2="9" y2="21"/>
+                      </svg>
+                      <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Smarthus</p>
+                    </div>
+                    <HomeControlSettings householdId={household.id} onMessage={showMessage} />
+                  </div>
+                </>
+              )}
+            </div>
           </CollapsibleSection>
         </>
-      )}
-
-      {/* Calendar Sync Hint - Shows if Google Calendar is connected */}
-      {connectedCalendarEmail && (
-        <CollapsibleSection
-          icon={
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-              <line x1="16" y1="2" x2="16" y2="6"/>
-              <line x1="8" y1="2" x2="8" y2="6"/>
-              <line x1="3" y1="10" x2="21" y2="10"/>
-            </svg>
-          }
-          title={t.settings?.calendarSyncHint || 'Automatisk kalendersynk'}
-          description={connectedCalendarEmail}
-          color="var(--color-honey)"
-        >
-          <p className="text-sm" style={{ color: 'var(--muted)' }}>
-            {t.settings?.calendarSyncDesc || 'Send kalenderinvitasjoner til denne adressen for å automatisk legge dem til i familieplanen:'}
-          </p>
-          <div
-            className="mt-3 px-3 py-2 rounded-lg text-sm font-mono inline-block"
-            style={{ background: 'var(--background)', color: 'var(--foreground)' }}
-          >
-            {connectedCalendarEmail}
-          </div>
-        </CollapsibleSection>
       )}
 
       {/* ============================================================ */}
@@ -1492,51 +1492,80 @@ export default function SettingsPage() {
         />
       </CollapsibleSection>
 
-      {/* ========== ADMINISTRATION (Admin only) ========== */}
-      {myProfile?.is_household_admin && (
-        <CollapsibleSection
-          icon={
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="3"/>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-            </svg>
-          }
-          title={t.settings.administrationTitle || 'Administrasjon'}
-          description={t.settings.administrationDesc || 'Husstandsinnstillinger og tilgang'}
-          color="var(--color-coral)"
-        >
-          <HouseholdAdminSection
-            household={household}
-            inviteEmail={inviteEmail}
-            invitedEmails={invitedEmails}
-            savingInvite={savingInvite}
-            familyCalendarUrl={familyCalendarUrl}
-            savingFamilyCalendar={savingFamilyCalendar}
-            syncingFamilyCalendar={syncingFamilyCalendar}
-            familyCalendarLastSync={familyCalendarLastSync}
-            familyCalendarError={familyCalendarError}
-            familyCalendarEventCount={familyCalendarEventCount}
-            showDeleteConfirm={showDeleteConfirm}
-            deleteConfirmText={deleteConfirmText}
-            language={language}
-            t={t}
-            onInviteEmailChange={setInviteEmail}
-            onInviteUser={inviteUser}
-            onRemoveInvite={removeInvite}
-            onFamilyCalendarUrlChange={setFamilyCalendarUrl}
-            onSaveFamilyCalendar={saveFamilyCalendar}
-            onSyncFamilyCalendar={syncFamilyCalendar}
-            onShowDeleteConfirmChange={setShowDeleteConfirm}
-            onDeleteConfirmTextChange={setDeleteConfirmText}
-            onDeleteHousehold={deleteHousehold}
-          />
-        </CollapsibleSection>
-      )}
-
       {/* ============================================================ */}
       {/* GROUP 5: ACCOUNT (Dangerous actions at bottom)               */}
       {/* ============================================================ */}
       <SectionGroupLabel label={t.settings?.accountTitle || 'Konto'} />
+
+      {/* Delete Household (admin only) */}
+      {myProfile?.is_household_admin && (
+        <CollapsibleSection
+          icon={
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+          }
+          title={t.settings.dangerZone || 'Slett husstand'}
+          description={household?.name || ''}
+          color="var(--color-coral)"
+        >
+          {!showDeleteConfirm ? (
+            <div>
+              <p className="text-sm mb-4" style={{ color: 'var(--muted)' }}>
+                Sletter husstanden og alle tilknyttede data permanent.
+              </p>
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="text-sm font-medium transition-opacity hover:opacity-70"
+                style={{ color: 'var(--color-coral)' }}
+              >
+                {t.common.delete} {t.settings.household.toLowerCase()}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div
+                className="p-4 rounded-xl"
+                style={{ background: 'rgba(232, 120, 109, 0.1)' }}
+              >
+                <p className="text-sm font-medium mb-2" style={{ color: 'var(--color-coral)' }}>
+                  {t.common.confirmDelete}
+                </p>
+                <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                  Skriv &quot;<strong>{household?.name}</strong>&quot; for å bekrefte
+                </p>
+              </div>
+              <input
+                type="text"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder={household?.name || ''}
+                className="input"
+              />
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowDeleteConfirm(false)
+                    setDeleteConfirmText('')
+                  }}
+                  className="btn btn-secondary"
+                >
+                  {t.common.cancel}
+                </button>
+                <button
+                  onClick={deleteHousehold}
+                  disabled={deleteConfirmText !== household?.name}
+                  className="btn text-white disabled:opacity-50"
+                  style={{ background: 'var(--color-coral)' }}
+                >
+                  {t.common.delete}
+                </button>
+              </div>
+            </div>
+          )}
+        </CollapsibleSection>
+      )}
 
       {/* Delete Account */}
       <CollapsibleSection
