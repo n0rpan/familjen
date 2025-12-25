@@ -39,6 +39,13 @@ const MEAL_SUGGEST_KEYWORDS = /\b(forslag|foreslå|middagsforslag|hva skal vi (h
 
 type RequestMode = 'action' | 'search' | 'suggest'
 
+// Helper to get Norwegian day name from date string
+function getDayName(dateStr: string): string {
+  const days = ['søndag', 'mandag', 'tirsdag', 'onsdag', 'torsdag', 'fredag', 'lørdag']
+  const date = new Date(dateStr + 'T12:00:00') // Use noon to avoid timezone issues
+  return days[date.getDay()]
+}
+
 function detectMode(input: string, hasImage: boolean): RequestMode {
   // Image analysis defaults to action mode
   if (hasImage) return 'action'
@@ -427,9 +434,9 @@ VIKTIG FOR EDIT:
 
 REGLER:
 
-1. I dag er ${context.today}
+1. I dag er ${context.today} (${getDayName(context.today)})
 2. "i morgen" = dagen etter i dag
-3. "på mandag/tirsdag/..." = neste forekomst av den ukedagen
+3. "på mandag/tirsdag/..." = neste forekomst av den ukedagen (fra og med i dag)
 4. Hvis "jeg" brukes, referer til nåværende bruker
 5. Hvis barn/person ikke kan identifiseres sikkert, sett needs_clarification
 
@@ -550,7 +557,7 @@ function buildUserPrompt(
 "${input}"
 
 Kontekst:
-- I dag: ${context.today}
+- I dag: ${context.today} (${getDayName(context.today)})
 - Nåværende bruker: ${currentUserName || 'ukjent'}
 - Barn: ${context.children.map(c => c.name).join(', ') || 'ingen'}
 - Voksne: ${context.members.map(m => m.name).join(', ') || 'ingen'}`
@@ -564,7 +571,7 @@ function buildVisionUserPrompt(
 ): string {
   const baseContext = `
 Kontekst:
-- I dag: ${context.today}
+- I dag: ${context.today} (${getDayName(context.today)})
 - Nåværende bruker: ${currentUserName || 'ukjent'}
 - Barn: ${context.children.map(c => c.name).join(', ') || 'ingen'}
 - Voksne: ${context.members.map(m => m.name).join(', ') || 'ingen'}`
