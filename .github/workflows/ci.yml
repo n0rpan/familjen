@@ -294,136 +294,31 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install chromium
 
-      - name: Wait for Vercel Preview
+      - name: Wait for Vercel to start
+        run: sleep 30
+
+      - name: Get Vercel Preview URL
         id: vercel
-        uses: actions/github-script@v7
+        uses: zentered/vercel-preview-url@v1.1.9
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         with:
-          script: |
-            const maxAttempts = 30;
-            const delaySeconds = 10;
+          vercel_project_id: ${{ secrets.VERCEL_PROJECT_ID }}
 
-            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-              console.log(`\n=== Attempt ${attempt}/${maxAttempts} ===`);
-
-              // Method 1: Commit Statuses API (most common for Vercel)
-              try {
-                const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  ref: context.sha,
-                });
-
-                console.log(`Found ${statuses.length} commit statuses`);
-                for (const status of statuses) {
-                  console.log(`  - ${status.context}: ${status.state} (${status.target_url || 'no url'})`);
-                }
-
-                const vercelStatus = statuses.find(s =>
-                  s.context?.toLowerCase().includes('vercel') ||
-                  s.target_url?.includes('vercel.app')
-                );
-
-                if (vercelStatus) {
-                  if (vercelStatus.state === 'success' && vercelStatus.target_url) {
-                    console.log(`✓ Found via Statuses API: ${vercelStatus.target_url}`);
-                    core.setOutput('url', vercelStatus.target_url);
-                    return;
-                  } else if (vercelStatus.state === 'failure' || vercelStatus.state === 'error') {
-                    core.setFailed(`Vercel deployment failed: ${vercelStatus.description}`);
-                    return;
-                  }
-                  console.log(`Vercel status: ${vercelStatus.state}`);
-                }
-              } catch (e) {
-                console.log(`Statuses API error: ${e.message}`);
-              }
-
-              // Method 2: Check Runs API
-              try {
-                const { data: checkRuns } = await github.rest.checks.listForRef({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  ref: context.sha,
-                });
-
-                console.log(`Found ${checkRuns.check_runs.length} check runs`);
-                for (const run of checkRuns.check_runs) {
-                  console.log(`  - ${run.name} (${run.app?.slug || 'no app'}): ${run.status}/${run.conclusion || 'pending'}`);
-                }
-
-                const vercelCheck = checkRuns.check_runs.find(run =>
-                  run.app?.slug?.includes('vercel') ||
-                  run.name?.toLowerCase().includes('vercel') ||
-                  run.details_url?.includes('vercel.app')
-                );
-
-                if (vercelCheck) {
-                  if (vercelCheck.status === 'completed' && vercelCheck.conclusion === 'success') {
-                    const url = vercelCheck.details_url;
-                    if (url) {
-                      console.log(`✓ Found via Checks API: ${url}`);
-                      core.setOutput('url', url);
-                      return;
-                    }
-                  } else if (vercelCheck.conclusion === 'failure') {
-                    core.setFailed('Vercel deployment failed');
-                    return;
-                  }
-                }
-              } catch (e) {
-                console.log(`Checks API error: ${e.message}`);
-              }
-
-              // Method 3: Deployments API
-              try {
-                const { data: deployments } = await github.rest.repos.listDeployments({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  sha: context.sha,
-                  per_page: 10
-                });
-
-                console.log(`Found ${deployments.length} deployments`);
-                for (const d of deployments) {
-                  console.log(`  - ${d.environment} by ${d.creator?.login} (id: ${d.id})`);
-                }
-
-                for (const deployment of deployments) {
-                  const { data: statuses } = await github.rest.repos.listDeploymentStatuses({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    deployment_id: deployment.id,
-                    per_page: 1
-                  });
-
-                  if (statuses[0]?.state === 'success' && statuses[0]?.environment_url) {
-                    console.log(`✓ Found via Deployments API: ${statuses[0].environment_url}`);
-                    core.setOutput('url', statuses[0].environment_url);
-                    return;
-                  }
-                }
-              } catch (e) {
-                console.log(`Deployments API error: ${e.message}`);
-              }
-
-              if (attempt < maxAttempts) {
-                console.log(`Waiting ${delaySeconds}s...`);
-                await new Promise(r => setTimeout(r, delaySeconds * 1000));
-              }
-            }
-
-            core.setFailed('Timed out waiting for Vercel preview (5 min). Check Vercel GitHub integration settings.');
+      - name: Log Preview URL
+        run: |
+          echo "Preview URL: https://${{ steps.vercel.outputs.preview_url }}"
 
       - name: Capture screenshots with mock data
-        if: steps.vercel.outputs.url
+        if: steps.vercel.outputs.preview_url
         run: npx playwright test tests/e2e/capture-screenshots.spec.ts --project=chromium
         env:
-          PLAYWRIGHT_BASE_URL: ${{ steps.vercel.outputs.url }}
+          PLAYWRIGHT_BASE_URL: https://${{ steps.vercel.outputs.preview_url }}
           NEXT_PUBLIC_SUPABASE_URL: 'https://placeholder.supabase.co'
           NEXT_PUBLIC_SUPABASE_ANON_KEY: 'placeholder'
 
       - name: Run AI visual validation
-        if: steps.vercel.outputs.url
+        if: steps.vercel.outputs.preview_url
         run: npx tsx scripts/ai-visual-validation.ts
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -441,7 +336,7 @@ jobs:
           retention-days: 7
 
       - name: Post visual validation comment
-        if: always() && steps.vercel.outputs.url
+        if: always() && steps.vercel.outputs.preview_url
         uses: actions/github-script@v7
         with:
           script: |
@@ -504,137 +399,32 @@ jobs:
       - name: Install Playwright
         run: npx playwright install chromium
 
-      - name: Wait for Vercel Preview
+      - name: Wait for Vercel to start
+        run: sleep 30
+
+      - name: Get Vercel Preview URL
         id: vercel
-        uses: actions/github-script@v7
+        uses: zentered/vercel-preview-url@v1.1.9
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         with:
-          script: |
-            const maxAttempts = 30;
-            const delaySeconds = 10;
+          vercel_project_id: ${{ secrets.VERCEL_PROJECT_ID }}
 
-            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-              console.log(`\n=== Attempt ${attempt}/${maxAttempts} ===`);
-
-              // Method 1: Commit Statuses API (most common for Vercel)
-              try {
-                const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  ref: context.sha,
-                });
-
-                console.log(`Found ${statuses.length} commit statuses`);
-                for (const status of statuses) {
-                  console.log(`  - ${status.context}: ${status.state} (${status.target_url || 'no url'})`);
-                }
-
-                const vercelStatus = statuses.find(s =>
-                  s.context?.toLowerCase().includes('vercel') ||
-                  s.target_url?.includes('vercel.app')
-                );
-
-                if (vercelStatus) {
-                  if (vercelStatus.state === 'success' && vercelStatus.target_url) {
-                    console.log(`✓ Found via Statuses API: ${vercelStatus.target_url}`);
-                    core.setOutput('url', vercelStatus.target_url);
-                    return;
-                  } else if (vercelStatus.state === 'failure' || vercelStatus.state === 'error') {
-                    core.setFailed(`Vercel deployment failed: ${vercelStatus.description}`);
-                    return;
-                  }
-                  console.log(`Vercel status: ${vercelStatus.state}`);
-                }
-              } catch (e) {
-                console.log(`Statuses API error: ${e.message}`);
-              }
-
-              // Method 2: Check Runs API
-              try {
-                const { data: checkRuns } = await github.rest.checks.listForRef({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  ref: context.sha,
-                });
-
-                console.log(`Found ${checkRuns.check_runs.length} check runs`);
-                for (const run of checkRuns.check_runs) {
-                  console.log(`  - ${run.name} (${run.app?.slug || 'no app'}): ${run.status}/${run.conclusion || 'pending'}`);
-                }
-
-                const vercelCheck = checkRuns.check_runs.find(run =>
-                  run.app?.slug?.includes('vercel') ||
-                  run.name?.toLowerCase().includes('vercel') ||
-                  run.details_url?.includes('vercel.app')
-                );
-
-                if (vercelCheck) {
-                  if (vercelCheck.status === 'completed' && vercelCheck.conclusion === 'success') {
-                    const url = vercelCheck.details_url;
-                    if (url) {
-                      console.log(`✓ Found via Checks API: ${url}`);
-                      core.setOutput('url', url);
-                      return;
-                    }
-                  } else if (vercelCheck.conclusion === 'failure') {
-                    core.setFailed('Vercel deployment failed');
-                    return;
-                  }
-                }
-              } catch (e) {
-                console.log(`Checks API error: ${e.message}`);
-              }
-
-              // Method 3: Deployments API
-              try {
-                const { data: deployments } = await github.rest.repos.listDeployments({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  sha: context.sha,
-                  per_page: 10
-                });
-
-                console.log(`Found ${deployments.length} deployments`);
-                for (const d of deployments) {
-                  console.log(`  - ${d.environment} by ${d.creator?.login} (id: ${d.id})`);
-                }
-
-                for (const deployment of deployments) {
-                  const { data: statuses } = await github.rest.repos.listDeploymentStatuses({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    deployment_id: deployment.id,
-                    per_page: 1
-                  });
-
-                  if (statuses[0]?.state === 'success' && statuses[0]?.environment_url) {
-                    console.log(`✓ Found via Deployments API: ${statuses[0].environment_url}`);
-                    core.setOutput('url', statuses[0].environment_url);
-                    return;
-                  }
-                }
-              } catch (e) {
-                console.log(`Deployments API error: ${e.message}`);
-              }
-
-              if (attempt < maxAttempts) {
-                console.log(`Waiting ${delaySeconds}s...`);
-                await new Promise(r => setTimeout(r, delaySeconds * 1000));
-              }
-            }
-
-            core.setFailed('Timed out waiting for Vercel preview (5 min). Check Vercel GitHub integration settings.');
+      - name: Log Preview URL
+        run: |
+          echo "Preview URL: https://${{ steps.vercel.outputs.preview_url }}"
 
       - name: Run E2E tests against preview
-        if: steps.vercel.outputs.url
+        if: steps.vercel.outputs.preview_url
         run: npx playwright test tests/e2e/design-system.spec.ts --project=chromium
         env:
-          PLAYWRIGHT_BASE_URL: ${{ steps.vercel.outputs.url }}
+          PLAYWRIGHT_BASE_URL: https://${{ steps.vercel.outputs.preview_url }}
 
       - name: Capture screenshots from preview
-        if: steps.vercel.outputs.url
+        if: steps.vercel.outputs.preview_url
         run: npx playwright test tests/e2e/capture-screenshots.spec.ts --project=chromium || true
         env:
-          PLAYWRIGHT_BASE_URL: ${{ steps.vercel.outputs.url }}
+          PLAYWRIGHT_BASE_URL: https://${{ steps.vercel.outputs.preview_url }}
 
       - name: Upload E2E results
         if: always()
@@ -647,11 +437,11 @@ jobs:
           retention-days: 7
 
       - name: Post preview URL comment
-        if: steps.vercel.outputs.url
+        if: steps.vercel.outputs.preview_url
         uses: actions/github-script@v7
         with:
           script: |
-            const url = '${{ steps.vercel.outputs.url }}';
+            const url = 'https://${{ steps.vercel.outputs.preview_url }}';
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
