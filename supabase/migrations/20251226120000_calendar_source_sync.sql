@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS event_change_notifications (
 
   -- What was deleted (if a task was linked)
   deleted_task_id UUID,
-  deleted_task_type TEXT CHECK (deleted_task_type IN ('child_task', 'event', 'reminder')),
+  deleted_task_type TEXT CHECK (deleted_task_type IN ('bring', 'appointment', 'reminder', 'other')),
   deleted_task_title TEXT,
 
   -- Status

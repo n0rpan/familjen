@@ -9,6 +9,7 @@ import { SupabaseClient } from '@supabase/supabase-js'
 import { createHash } from 'crypto'
 import { extractEventsFromHtml } from './document-extraction'
 import type { ExtractedEvent } from './document-extraction'
+import { isUrlAllowed, truncate, sanitizeString, sanitizeTime } from '@/lib/sanitize'
 
 export interface CalendarSource {
   id: string
@@ -60,14 +61,14 @@ export function generateEventHash(
   date: string,
   title: string
 ): string {
-  // Normalize title: lowercase, remove extra spaces, common variations
+  // Normalize title: lowercase, remove extra spaces, normalize common terms
   const normalizedTitle = title
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim()
-    // Remove common Norwegian word variations
-    .replace(/ferie$/i, 'ferie')
-    .replace(/fri$/i, 'fri')
+    // Normalize common Norwegian word variations (e.g., "Vinterferie" → "ferie")
+    .replace(/\w*ferie\b/gi, 'ferie')
+    .replace(/\w*fri\b/gi, 'fri')
 
   const input = `${sourceUrlId}:${date}:${normalizedTitle}`
   return createHash('sha256').update(input).digest('hex').slice(0, 16)
@@ -99,6 +100,11 @@ export async function syncCalendarSource(
     if (options.fetchContent) {
       content = await options.fetchContent()
     } else {
+      // SSRF protection: validate URL before fetching
+      if (!isUrlAllowed(source.url)) {
+        throw new Error('URL not allowed: blocked domain or protocol')
+      }
+
       const response = await fetch(source.url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (compatible; FamiljenBot/1.0)',
@@ -157,16 +163,17 @@ export async function syncCalendarSource(
 
       const existing = existingByHash.get(hash)
 
+      // Sanitize event data before inserting
       const eventData = {
         source_url_id: source.id,
         source_event_hash: hash,
         external_id: `source_${source.id}_${hash}`,
-        title: event.title,
+        title: truncate(sanitizeString(event.title), 200),
         event_date: event.date,
         end_date: event.endDate || null,
-        event_time: event.time || null,
+        event_time: sanitizeTime(event.time),
         event_type: event.eventType,
-        description: event.description || null,
+        description: truncate(sanitizeString(event.description), 2000),
         child_id: source.child_id,
         raw_data: { confidence: event.confidence, extracted_at: new Date().toISOString() },
       }

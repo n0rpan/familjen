@@ -3,48 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { syncCalendarSource, type CalendarSource } from '@/lib/integrations/calendar-source-sync'
 import { validateOrigin } from '@/lib/config'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
-
-/**
- * Validate URL to prevent SSRF attacks
- * Blocks internal IPs, localhost, and cloud metadata endpoints
- */
-function isUrlAllowed(urlString: string): boolean {
-  try {
-    const url = new URL(urlString)
-
-    // Only allow http/https
-    if (!['http:', 'https:'].includes(url.protocol)) {
-      return false
-    }
-
-    const hostname = url.hostname.toLowerCase()
-
-    // Block localhost variations
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
-      return false
-    }
-
-    // Block private IP ranges and cloud metadata
-    const blockedPatterns = [
-      /^127\./, // Loopback
-      /^10\./, // Private Class A
-      /^172\.(1[6-9]|2\d|3[01])\./, // Private Class B
-      /^192\.168\./, // Private Class C
-      /^169\.254\./, // Link-local / Cloud metadata
-      /^0\./, // Invalid
-      /^fc00:/, // IPv6 private
-      /^fe80:/, // IPv6 link-local
-    ]
-
-    if (blockedPatterns.some(p => p.test(hostname))) {
-      return false
-    }
-
-    return true
-  } catch {
-    return false
-  }
-}
+import { isUrlAllowed } from '@/lib/sanitize'
 
 /**
  * POST /api/integrations/fetch-url
