@@ -573,14 +573,12 @@ scripts/
 **Required (GitHub Secrets):**
 ```bash
 OPENROUTER_API_KEY=sk-or-v1-...
+OPENROUTER_FAST_MODEL=google/gemini-2.0-flash-001       # Migration review
+OPENROUTER_CAPABLE_MODEL=anthropic/claude-sonnet-4.5   # Code review
+OPENROUTER_VISION_MODEL=google/gemini-2.0-flash-001    # Visual review
 ```
 
-**Optional (override defaults):**
-```bash
-OPENROUTER_FAST_MODEL=google/gemini-3-flash-preview      # Migration review
-OPENROUTER_CAPABLE_MODEL=anthropic/claude-sonnet-4-5-20250514  # Code review
-OPENROUTER_VISION_MODEL=google/gemini-3-flash-preview   # Visual review
-```
+**Note:** All model env vars are required - no hardcoded defaults. This ensures you're always using your intended models and prevents silent fallbacks to stale model IDs when you update your secrets.
 
 ### Running Locally
 
