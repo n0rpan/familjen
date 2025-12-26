@@ -63,7 +63,11 @@ export function useRealtimeSubscription<T extends object>({
 
   // Store callbacks in refs to avoid re-subscribing when they change
   const callbacksRef = useRef({ onInsert, onUpdate, onDelete, onAny })
-  callbacksRef.current = { onInsert, onUpdate, onDelete, onAny }
+
+  // Keep callbacks ref in sync via effect to avoid updating ref during render
+  useEffect(() => {
+    callbacksRef.current = { onInsert, onUpdate, onDelete, onAny }
+  }, [onInsert, onUpdate, onDelete, onAny])
 
   const handleChange = useCallback((
     payload: RealtimePostgresChangesPayload<T>
