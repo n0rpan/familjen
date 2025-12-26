@@ -126,6 +126,8 @@ Open [http://localhost:3000](http://localhost:3000)
 | `OPENROUTER_FAST_MODEL` | Yes | Fast model for migrations (e.g., `google/gemini-2.0-flash-001`) |
 | `OPENROUTER_CAPABLE_MODEL` | Yes | Capable model for code review (e.g., `anthropic/claude-sonnet-4.5`) |
 | `OPENROUTER_VISION_MODEL` | Yes | Vision model for screenshots (e.g., `google/gemini-2.0-flash-001`) |
+| `OPENROUTER_TEST_MODEL` | Yes | Model for API tests (e.g., `google/gemini-2.0-flash-001`) |
+| `OPENROUTER_IMAGE_MODEL` | No | Model for image generation tests (optional) |
 
 ### Database Settings
 

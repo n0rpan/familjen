@@ -576,6 +576,12 @@ OPENROUTER_API_KEY=sk-or-v1-...
 OPENROUTER_FAST_MODEL=google/gemini-2.0-flash-001       # Migration review
 OPENROUTER_CAPABLE_MODEL=anthropic/claude-sonnet-4.5   # Code review
 OPENROUTER_VISION_MODEL=google/gemini-2.0-flash-001    # Visual review
+OPENROUTER_TEST_MODEL=google/gemini-2.0-flash-001      # API tests (main branch only)
+```
+
+**Optional:**
+```bash
+OPENROUTER_IMAGE_MODEL=stabilityai/stable-diffusion-xl  # Image generation tests
 ```
 
 **Note:** All model env vars are required - no hardcoded defaults. This ensures you're always using your intended models and prevents silent fallbacks to stale model IDs when you update your secrets.
