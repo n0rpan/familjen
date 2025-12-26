@@ -289,7 +289,12 @@ jobs:
     timeout-minutes: 15
     needs: [build]
     if: github.event_name == 'pull_request'
-    continue-on-error: true  # Don't fail PR if visual validation fails
+    # Visual validation is advisory, not blocking. Reasons:
+    # 1. New features may intentionally change UI (not a regression)
+    # 2. AI vision models can have false positives
+    # 3. Design decisions should be made by humans, AI just flags concerns
+    # The PR comment will show issues for human review
+    continue-on-error: true
 
     steps:
       - uses: actions/checkout@v4
@@ -428,7 +433,11 @@ jobs:
 
       - name: Run E2E tests against preview
         if: steps.vercel.outputs.preview_url
-        run: npx playwright test tests/e2e/design-system.spec.ts --project=chromium
+        run: |
+          # Run design system tests
+          npx playwright test tests/e2e/design-system.spec.ts --project=chromium
+          # Run language detection tests (Norwegian, English, Swedish)
+          npx playwright test tests/e2e/language-detection.spec.ts --project=chromium
         env:
           PLAYWRIGHT_BASE_URL: https://${{ steps.vercel.outputs.preview_url }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
