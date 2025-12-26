@@ -192,6 +192,20 @@ export function getOpenRouterKey(): string {
   return key
 }
 
+// Default timeout for AI API calls (2 minutes)
+const DEFAULT_TIMEOUT_MS = 120_000
+
+/**
+ * Wrap a promise with a timeout
+ * Prevents hung API calls from blocking CI indefinitely
+ */
+export async function withTimeout<T>(promise: Promise<T>, ms: number, operation: string): Promise<T> {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(`${operation} timed out after ${ms / 1000}s`)), ms)
+  )
+  return Promise.race([promise, timeout])
+}
+
 type Message = {
   role: string
   content: string | Array<{ type: string; text?: string; image_url?: { url: string } }>
@@ -202,6 +216,7 @@ interface CallOptions {
   maxTokens?: number
   schema?: (typeof SCHEMAS)[keyof typeof SCHEMAS]
   schemaName?: string
+  timeoutMs?: number
 }
 
 /**
@@ -209,6 +224,8 @@ interface CallOptions {
  *
  * When schema is provided, uses OpenRouter's structured outputs feature
  * to guarantee the response matches the JSON schema.
+ *
+ * Includes timeout protection to prevent hung CI jobs.
  */
 export async function callOpenRouter(model: string, messages: Message[], options: CallOptions = {}): Promise<string> {
   const body: Record<string, unknown> = {
@@ -230,7 +247,10 @@ export async function callOpenRouter(model: string, messages: Message[], options
     }
   }
 
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const operationName = options.schemaName ? `AI ${options.schemaName}` : 'AI API call'
+
+  const fetchPromise = fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${getOpenRouterKey()}`,
@@ -240,6 +260,8 @@ export async function callOpenRouter(model: string, messages: Message[], options
     },
     body: JSON.stringify(body),
   })
+
+  const response = await withTimeout(fetchPromise, timeoutMs, operationName)
 
   if (!response.ok) {
     const error = await response.text()
@@ -301,5 +323,72 @@ export function parseJsonFromResponse(content: string): Record<string, unknown> 
     return JSON.parse(jsonMatch[1] || jsonMatch[0])
   } catch {
     return null
+  }
+}
+
+/**
+ * Fetch with structured output for vision models
+ *
+ * Similar to callOpenRouterStructured but designed for vision models
+ * that take image content in messages.
+ *
+ * Includes timeout protection (default 3 minutes for vision models
+ * since image processing can be slower).
+ */
+export async function fetchWithStructuredOutput<T>(
+  messages: Message[],
+  schema: Record<string, unknown>,
+  model: string,
+  timeoutMs: number = 180_000 // 3 minutes default for vision
+): Promise<T> {
+  const body = {
+    model,
+    messages,
+    temperature: 0,
+    max_tokens: 4000,
+    response_format: {
+      type: 'json_schema',
+      json_schema: {
+        name: 'visual_validation',
+        strict: true,
+        schema,
+      },
+    },
+  }
+
+  const fetchPromise = fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${getOpenRouterKey()}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://github.com/n0rpan/familjen',
+      'X-Title': 'Familjen CI/CD - Visual Validation',
+    },
+    body: JSON.stringify(body),
+  })
+
+  const response = await withTimeout(fetchPromise, timeoutMs, 'AI visual validation')
+
+  if (!response.ok) {
+    const error = await response.text()
+    throw new Error(`OpenRouter API error: ${response.status} - ${error}`)
+  }
+
+  const data = await response.json()
+  const content = data.choices?.[0]?.message?.content
+
+  if (!content) {
+    throw new Error('No content in API response')
+  }
+
+  try {
+    return JSON.parse(content) as T
+  } catch (error) {
+    // Fallback extraction
+    const parsed = parseJsonFromResponse(content)
+    if (parsed) {
+      return parsed as T
+    }
+    throw new Error(`Failed to parse response: ${error instanceof Error ? error.message : 'Unknown'}`)
   }
 }
