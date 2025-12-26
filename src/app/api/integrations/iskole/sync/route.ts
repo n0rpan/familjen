@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { isUserAdmin } from '@/lib/config'
 import { ISkoleClient, ISkoleAuthError, ISkoleError } from '@/lib/integrations/iskole'
 import { addDays } from '@/lib/utils'
-import { handleSyncSetup, getSyncStartDate, HISTORICAL_SYNC_DAYS } from '@/lib/integrations/shared'
+import { handleSyncSetup, getSyncStartDate, HISTORICAL_SYNC_DAYS, FUTURE_SYNC_DAYS } from '@/lib/integrations/shared'
 
 interface SyncResult {
   integrationId: string
@@ -236,12 +236,20 @@ async function syncIntegration(
     // Track all calendar event IDs we're upserting (for cleanup of stale events)
     const validCalendarEventIds = new Set<string>()
 
-    // Get current and next month
+    // Generate months to fetch for the next year (12 months ahead for long-term planning)
     const currentDate = new Date()
-    const currentMonth = currentDate.getMonth() + 1 // 1-12
-    const nextMonth = currentMonth === 12 ? 1 : currentMonth + 1
-    const currentYear = currentDate.getFullYear()
-    const nextMonthYear = currentMonth === 12 ? currentYear + 1 : currentYear
+    const monthsToFetch: Array<{ month: number; year: number }> = []
+    const monthsAhead = Math.ceil(FUTURE_SYNC_DAYS / 30) // ~12 months for 365 days
+
+    for (let i = 0; i < monthsAhead; i++) {
+      const date = new Date(currentDate.getFullYear(), currentDate.getMonth() + i, 1)
+      monthsToFetch.push({
+        month: date.getMonth() + 1, // 1-12
+        year: date.getFullYear(),
+      })
+    }
+
+    console.log(`[iSkole] Fetching calendar for ${monthsToFetch.length} months ahead`)
 
     // Weekday names for extracting specific days (the API returns day-of-month in these fields)
     const weekdays = ['Mandag', 'Tirsdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lordag', 'Sondag'] as const
@@ -250,12 +258,6 @@ async function syncIntegration(
     for (const child of children) {
       const childIdStr = String(child.Elevnr)
       const mappedChildId = childIdMap.get(childIdStr) || null
-
-      // Fetch calendar for both months
-      const monthsToFetch = [
-        { month: currentMonth, year: currentYear },
-        { month: nextMonth, year: nextMonthYear },
-      ]
 
       for (const { month, year } of monthsToFetch) {
         try {
@@ -379,9 +381,10 @@ async function syncIntegration(
       raw_data: unknown
     }> = []
 
-    const twoWeeksFromNow = addDays(currentDate, 14)
+    // Timetable: fetch 90 days ahead (schools don't typically publish further)
+    const timetableEndDate = addDays(currentDate, 90)
     const fromDateStr = currentDate.toISOString().split('T')[0].replace(/-/g, '')
-    const toDateStr = twoWeeksFromNow.toISOString().split('T')[0].replace(/-/g, '')
+    const toDateStr = timetableEndDate.toISOString().split('T')[0].replace(/-/g, '')
 
     for (const child of children) {
       const childIdStr = String(child.Elevnr)

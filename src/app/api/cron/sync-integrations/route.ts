@@ -7,6 +7,7 @@ import { MyKidClient, MyKidAuthError, MyKidError } from '@/lib/integrations/myki
 import { extractEventsFromHtml, extractEventsFromPdf, extractEventsFromImage, type ExtractedEvent } from '@/lib/integrations/document-extraction'
 import { syncCalendarSource, type CalendarSource } from '@/lib/integrations/calendar-source-sync'
 import { formatDateISO, addDays } from '@/lib/utils'
+import { FUTURE_SYNC_DAYS } from '@/lib/integrations/shared'
 import { fetchAndParseICS, type ICSEvent } from '@/lib/ics-parser'
 import { syncHouseholdICS as syncHouseholdICSShared } from '@/lib/household-ics-sync'
 import { verifyCronRequest } from '@/lib/cron-auth'
@@ -623,9 +624,9 @@ async function syncSpondIntegration(
       throw error
     }
 
-    // Calculate date ranges (90 days ahead for calendar, 30 days back for messages)
+    // Calculate date ranges (full year ahead for calendar, 30 days back for messages)
     const now = new Date()
-    const futureDate = addDays(now, 90)
+    const futureDate = addDays(now, FUTURE_SYNC_DAYS)
     const lastSync = integration.last_sync_at
       ? new Date(integration.last_sync_at)
       : addDays(now, -30)
@@ -1174,7 +1175,7 @@ async function syncMyKidIntegration(
     }
 
     const now = new Date()
-    const futureDate = addDays(now, 90)
+    const futureDate = addDays(now, FUTURE_SYNC_DAYS)
     const lastSync = integration.last_sync_at
       ? new Date(integration.last_sync_at)
       : addDays(now, -30)
@@ -1289,8 +1290,8 @@ async function syncMyKidIntegration(
   }
 }
 
-// Sync window for ICS calendars: 90 days ahead
-const ICS_SYNC_DAYS_AHEAD = 90
+// Sync window for ICS calendars: full year ahead for long-term planning
+const ICS_SYNC_DAYS_AHEAD = FUTURE_SYNC_DAYS
 
 /**
  * Sync all ICS calendars for members with ICS URLs.

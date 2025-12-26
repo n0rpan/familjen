@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { isUserAdmin } from '@/lib/config'
 import { MyKidClient, MyKidAuthError, MyKidError } from '@/lib/integrations/mykid'
 import { addDays } from '@/lib/utils'
-import { handleSyncSetup, getSyncStartDate, HISTORICAL_SYNC_DAYS } from '@/lib/integrations/shared'
+import { handleSyncSetup, getSyncStartDate, HISTORICAL_SYNC_DAYS, FUTURE_SYNC_DAYS } from '@/lib/integrations/shared'
 import sharp from 'sharp'
 
 interface SyncResult {
@@ -139,7 +139,7 @@ async function syncIntegration(
 
     // Calculate date ranges
     const now = new Date()
-    const futureDate = addDays(now, 90) // 90 days ahead for calendar
+    const futureDate = addDays(now, FUTURE_SYNC_DAYS) // Full year ahead for long-term planning
     const isHistoricalSync = fullSync || !integration.last_sync_at
 
     if (isHistoricalSync) {

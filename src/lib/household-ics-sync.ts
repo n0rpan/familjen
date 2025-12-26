@@ -4,9 +4,10 @@
  */
 import { fetchAndParseICS } from '@/lib/ics-parser'
 import { formatDateISO, addDays } from '@/lib/utils'
+import { FUTURE_SYNC_DAYS } from '@/lib/integrations/shared'
 
-// Default sync window: 90 days ahead
-const DEFAULT_SYNC_DAYS = 90
+// Default sync window: full year ahead for long-term planning
+const DEFAULT_SYNC_DAYS = FUTURE_SYNC_DAYS
 
 export interface HouseholdICSInput {
   id: string

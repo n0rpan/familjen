@@ -9,6 +9,7 @@ import {
   getMappingsForIntegrations,
   getSyncStartDate,
   HISTORICAL_SYNC_DAYS,
+  FUTURE_SYNC_DAYS,
   type IntegrationMapping,
 } from '@/lib/integrations/shared'
 
@@ -182,7 +183,7 @@ async function syncIntegration(
     const pastDate = isHistoricalSync
       ? addDays(now, -HISTORICAL_SYNC_DAYS)
       : addDays(now, -7) // Regular sync: include events from last 7 days
-    const futureDate = addDays(now, 30) // Events for next 30 days
+    const futureDate = addDays(now, FUTURE_SYNC_DAYS) // Full year ahead for long-term planning
     const lastSync = getSyncStartDate(integration.last_sync_at, fullSync)
 
     if (isHistoricalSync) {

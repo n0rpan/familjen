@@ -14,6 +14,12 @@ type ServiceName = 'spond' | 'mykid' | 'kidplan' | 'iskole'
 export const HISTORICAL_SYNC_DAYS = 365
 
 /**
+ * Number of days into the future to sync events.
+ * A full year allows seeing school year calendars, holidays, etc.
+ */
+export const FUTURE_SYNC_DAYS = 365
+
+/**
  * Calculate the message sync start date based on sync context.
  * - First sync (last_sync_at is null): go back HISTORICAL_SYNC_DAYS
  * - Full sync requested: go back HISTORICAL_SYNC_DAYS
