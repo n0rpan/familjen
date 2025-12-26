@@ -323,9 +323,11 @@ async function syncIntegration(
     }
 
     // Delete stale calendar events that are no longer in the API response
-    // Only delete events in the current sync window (current and next month)
-    const syncWindowStart = new Date(currentYear, currentMonth - 1, 1)
-    const syncWindowEnd = new Date(nextMonthYear, nextMonth, 0) // Last day of next month
+    // Only delete events in the current sync window (first and last month of monthsToFetch)
+    const firstMonth = monthsToFetch[0]
+    const lastMonth = monthsToFetch[monthsToFetch.length - 1]
+    const syncWindowStart = new Date(firstMonth.year, firstMonth.month - 1, 1)
+    const syncWindowEnd = new Date(lastMonth.year, lastMonth.month, 0) // Last day of last month
     const syncWindowStartStr = syncWindowStart.toISOString().split('T')[0]
     const syncWindowEndStr = syncWindowEnd.toISOString().split('T')[0]
 
