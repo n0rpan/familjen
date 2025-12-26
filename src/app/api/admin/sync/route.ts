@@ -8,6 +8,18 @@ import { MyKidClient, MyKidAuthError } from '@/lib/integrations/mykid'
 import { addDays } from '@/lib/utils'
 import { FUTURE_SYNC_DAYS } from '@/lib/integrations/shared'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
+import {
+  decryptCredentials,
+  isSpondCredentials,
+  isKidplanCredentials,
+  isISkoleCredentials,
+  isMyKidCredentials,
+  type SpondCredentials,
+  type KidplanCredentials,
+  type ISkoleCredentials,
+  type MyKidCredentials,
+} from '@/lib/credentials'
 import sharp from 'sharp'
 
 /**
@@ -23,7 +35,7 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Check admin status
@@ -34,17 +46,14 @@ export async function POST(request: Request) {
       .single()
 
     if (!allowedEmail?.is_admin) {
-      return NextResponse.json({ error: 'Forbidden: Admin only' }, { status: 403 })
+      return ApiErrors.adminRequired()
     }
 
     // Rate limit admin sync (uses same limits as calendar sync since it's similar work)
     const rateLimitKey = createRateLimitKey(user.id, 'calendarSync')
     const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.calendarSync)
     if (rateLimit.limited) {
-      return NextResponse.json(
-        { error: `For mange forespørsler. Prøv igjen om ${rateLimit.retryAfter} sekunder.` },
-        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
-      )
+      return ApiErrors.rateLimit(rateLimit.retryAfter!)
     }
 
     // Parse request body
@@ -56,10 +65,7 @@ export async function POST(request: Request) {
     }
 
     if (!integrationId || !service || !householdId) {
-      return NextResponse.json(
-        { error: 'Missing required fields: integrationId, service, householdId' },
-        { status: 400 }
-      )
+      return ApiErrors.validation('Mangler påkrevde felt: integrationId, service, householdId')
     }
 
 
@@ -77,25 +83,32 @@ export async function POST(request: Request) {
       .single()
 
     if (intError || !integration) {
-      return NextResponse.json({ error: `Integration not found: ${intError?.message}` }, { status: 404 })
+      return ApiErrors.notFound('Integrasjonen', {
+        internalMessage: `Integration not found: ${intError?.message}`,
+      })
     }
 
     // SECURITY: Verify integration belongs to the claimed household
     if (integration.household_id !== householdId) {
       console.error(`[Admin Sync] Household mismatch: integration ${integrationId} belongs to ${integration.household_id}, not ${householdId}`)
-      return NextResponse.json({ error: 'Integration does not belong to specified household' }, { status: 403 })
+      return ApiErrors.forbidden({
+        internalMessage: 'Integration does not belong to specified household',
+      })
     }
 
-    // Decrypt credentials
-    const { data: credentials, error: decryptError } = await serviceSupabase.rpc('decrypt_token', {
-      ciphertext: integration.credentials_encrypted,
-    })
+    // Decrypt credentials using type-safe helper
+    const decryptResult = await decryptCredentials<SpondCredentials | KidplanCredentials | ISkoleCredentials | MyKidCredentials>(
+      serviceSupabase,
+      integration.credentials_encrypted
+    )
 
-    if (decryptError || !credentials) {
-      return NextResponse.json({ error: `Failed to decrypt credentials: ${decryptError?.message}` }, { status: 500 })
+    if (!decryptResult.success) {
+      return ApiErrors.internal({
+        internalMessage: `[Admin Sync] ${decryptResult.error}`,
+      })
     }
 
-    const creds = JSON.parse(credentials)
+    const creds = decryptResult.credentials
     const result: {
       success: boolean
       eventsCount: number
@@ -112,19 +125,31 @@ export async function POST(request: Request) {
     try {
       switch (service) {
         case 'spond':
+          if (!isSpondCredentials(creds)) {
+            return ApiErrors.internal({ internalMessage: 'Invalid Spond credentials format' })
+          }
           await syncSpond(serviceSupabase, integration, creds, result)
           break
         case 'kidplan':
+          if (!isKidplanCredentials(creds)) {
+            return ApiErrors.internal({ internalMessage: 'Invalid Kidplan credentials format' })
+          }
           await syncKidplan(serviceSupabase, integration, creds, result)
           break
         case 'iskole':
+          if (!isISkoleCredentials(creds)) {
+            return ApiErrors.internal({ internalMessage: 'Invalid iSkole credentials format' })
+          }
           await syncISkole(serviceSupabase, integration, creds, result)
           break
         case 'mykid':
+          if (!isMyKidCredentials(creds)) {
+            return ApiErrors.internal({ internalMessage: 'Invalid MyKid credentials format' })
+          }
           await syncMyKid(serviceSupabase, integration, creds, householdId, result)
           break
         default:
-          return NextResponse.json({ error: `Unknown service: ${service}` }, { status: 400 })
+          return ApiErrors.validation(`Ukjent tjeneste: ${service}`)
       }
 
       // Update sync status
@@ -162,8 +187,7 @@ export async function POST(request: Request) {
     return NextResponse.json(result)
 
   } catch (error) {
-    console.error('[Admin Sync] Unexpected error:', error)
-    return NextResponse.json({ error: String(error) }, { status: 500 })
+    return handleApiError(error, 'admin sync')
   }
 }
 
@@ -171,7 +195,7 @@ type AnySupabase = any
 type AnyIntegration = any
 type AnyResult = { eventsCount: number; messagesCount: number; photosCount: number; error?: string }
 
-async function syncSpond(supabase: AnySupabase, integration: AnyIntegration, creds: { email: string; password: string }, result: AnyResult) {
+async function syncSpond(supabase: AnySupabase, integration: AnyIntegration, creds: SpondCredentials, result: AnyResult) {
   const client = new SpondClient()
   await client.login(creds.email, creds.password)
 
@@ -249,7 +273,7 @@ async function syncSpond(supabase: AnySupabase, integration: AnyIntegration, cre
   }
 }
 
-async function syncKidplan(supabase: AnySupabase, integration: AnyIntegration, creds: { email: string; password: string }, result: AnyResult) {
+async function syncKidplan(supabase: AnySupabase, integration: AnyIntegration, creds: KidplanCredentials, result: AnyResult) {
   const client = new KidplanClient()
   await client.login(creds.email, creds.password)
 
@@ -350,9 +374,9 @@ async function syncKidplan(supabase: AnySupabase, integration: AnyIntegration, c
   }
 }
 
-async function syncISkole(supabase: AnySupabase, integration: AnyIntegration, creds: { personalNumber: string; password: string }, result: AnyResult) {
+async function syncISkole(supabase: AnySupabase, integration: AnyIntegration, creds: ISkoleCredentials, result: AnyResult) {
   const client = new ISkoleClient()
-  await client.login(creds.personalNumber, creds.password)
+  await client.login(creds.username, creds.password)
 
   const now = new Date()
   const lastSync = integration.last_sync_at ? new Date(integration.last_sync_at) : addDays(now, -30)
@@ -443,7 +467,7 @@ async function syncISkole(supabase: AnySupabase, integration: AnyIntegration, cr
   }
 }
 
-async function syncMyKid(supabase: AnySupabase, integration: AnyIntegration, creds: { phone: string; password: string }, householdId: string, result: AnyResult) {
+async function syncMyKid(supabase: AnySupabase, integration: AnyIntegration, creds: MyKidCredentials, householdId: string, result: AnyResult) {
   const client = new MyKidClient()
   await client.login(creds.phone, creds.password)
 

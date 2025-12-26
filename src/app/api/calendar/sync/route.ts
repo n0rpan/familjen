@@ -9,6 +9,7 @@ import {
 import { formatDateISO, addDays } from '@/lib/utils'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 import { maskEmail } from '@/lib/email-mask'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 import type { UnmatchedCalendarInvite } from '@/lib/types'
 
 // POST /api/calendar/sync - Sync events from Gmail calendar invites
@@ -16,7 +17,7 @@ export async function POST(request: Request) {
   try {
     // CSRF protection
     if (!validateOrigin(request)) {
-      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+      return ApiErrors.invalidOrigin()
     }
 
     const supabase = await createClient()
@@ -24,20 +25,14 @@ export async function POST(request: Request) {
     // Check if user is admin via JWT claims
     const { data: { user } } = await supabase.auth.getUser()
     if (!user || !isUserAdmin(user)) {
-      return NextResponse.json(
-        { error: 'Unauthorized - Admin access required' },
-        { status: 403 }
-      )
+      return ApiErrors.adminRequired()
     }
 
     // Check rate limit
     const rateLimitKey = createRateLimitKey(user.id, 'calendarSync')
     const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.calendarSync)
     if (rateLimit.limited) {
-      return NextResponse.json(
-        { error: `For mange forespørsler. Prøv igjen om ${rateLimit.retryAfter} sekunder.` },
-        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
-      )
+      return ApiErrors.rateLimit(rateLimit.retryAfter!)
     }
 
     // Get stored tokens
@@ -48,10 +43,7 @@ export async function POST(request: Request) {
       .single()
 
     if (tokenError || !tokenData) {
-      return NextResponse.json(
-        { error: 'Google Calendar not connected. Please connect first.' },
-        { status: 400 }
-      )
+      return ApiErrors.validation('Google Kalender er ikke koblet til. Koble til først i Innstillinger.')
     }
 
     const tokens = {
@@ -74,11 +66,9 @@ export async function POST(request: Request) {
       .select('id, household_id, email, work_email')
 
     if (membersError) {
-      console.error('Error fetching members:', membersError)
-      return NextResponse.json(
-        { error: 'Failed to fetch household members' },
-        { status: 500 }
-      )
+      return ApiErrors.internal({
+        internalMessage: `Error fetching members: ${membersError.message}`,
+      })
     }
 
     // Build email to member lookup
@@ -178,11 +168,7 @@ export async function POST(request: Request) {
       totalInvitesFound: gmailInvites.length,
     })
   } catch (error) {
-    console.error('Calendar sync error:', error)
-    return NextResponse.json(
-      { error: 'Failed to sync calendar' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'calendar sync')
   }
 }
 
@@ -194,10 +180,7 @@ export async function GET() {
     // Check if user is admin via JWT claims
     const { data: { user } } = await supabase.auth.getUser()
     if (!user || !isUserAdmin(user)) {
-      return NextResponse.json(
-        { error: 'Unauthorized - Admin access required' },
-        { status: 403 }
-      )
+      return ApiErrors.adminRequired()
     }
 
     // Get stored tokens
@@ -221,10 +204,6 @@ export async function GET() {
       syncedEvents: syncedCount || 0,
     })
   } catch (error) {
-    console.error('Calendar status error:', error)
-    return NextResponse.json(
-      { error: 'Failed to get calendar status' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'calendar status')
   }
 }
