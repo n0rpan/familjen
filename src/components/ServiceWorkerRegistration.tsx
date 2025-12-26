@@ -12,12 +12,21 @@ function clearNavCache(): void {
 }
 
 export function ServiceWorkerRegistration() {
-  const lastVisibleRef = useRef<number>(Date.now())
+  const lastVisibleRef = useRef<number>(0)
   const router = useRouter()
   const pathname = usePathname()
   const pathnameRef = useRef(pathname)
-  pathnameRef.current = pathname
   const cleanupRef = useRef<(() => void) | null>(null)
+
+  // Keep pathnameRef in sync - done in effect to avoid ref update during render
+  useEffect(() => {
+    pathnameRef.current = pathname
+  }, [pathname])
+
+  // Initialize timestamp on mount
+  useEffect(() => {
+    lastVisibleRef.current = Date.now()
+  }, [])
 
   // Handle NAV_UPDATED messages from service worker
   const handleSWMessage = useCallback((event: MessageEvent) => {

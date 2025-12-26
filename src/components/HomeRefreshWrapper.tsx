@@ -19,7 +19,12 @@ interface HomeRefreshWrapperProps {
  */
 export function HomeRefreshWrapper({ children }: HomeRefreshWrapperProps) {
   const router = useRouter()
-  const lastVisibleRef = useRef<number>(Date.now())
+  const lastVisibleRef = useRef<number>(0)
+
+  // Initialize timestamp on mount to avoid impure function call during render
+  useEffect(() => {
+    lastVisibleRef.current = Date.now()
+  }, [])
 
   useEffect(() => {
     const handleVisibilityChange = () => {

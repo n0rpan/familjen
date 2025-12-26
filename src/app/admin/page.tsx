@@ -82,6 +82,21 @@ function ModelSelector({
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const fetchModels = async () => {
+      try {
+        const url = visionOnly
+          ? "/api/openrouter/models?vision=true"
+          : "/api/openrouter/models";
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.models) {
+          setModels(data.models);
+        }
+      } catch (error) {
+        console.error("Failed to fetch models:", error);
+      }
+      setLoading(false);
+    };
     fetchModels();
   }, [visionOnly]);
 
@@ -97,22 +112,6 @@ function ModelSelector({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  const fetchModels = async () => {
-    try {
-      const url = visionOnly
-        ? "/api/openrouter/models?vision=true"
-        : "/api/openrouter/models";
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.models) {
-        setModels(data.models);
-      }
-    } catch (error) {
-      console.error("Failed to fetch models:", error);
-    }
-    setLoading(false);
-  };
 
   const selectedModel = models.find((m) => m.id === value);
   const filteredModels = models.filter(

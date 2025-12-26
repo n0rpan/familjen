@@ -20,15 +20,16 @@ export interface IntegrationChild {
 
 interface Props {
   householdId: string
+  initialFilter?: FeedFilter
 }
 
-export function FeedPage({ householdId }: Props) {
+export function FeedPage({ householdId, initialFilter = 'all' }: Props) {
   const supabase = useMemo(() => createClient(), [])
   const { t } = useLanguage()
 
   // State
   const [loading, setLoading] = useState(true)
-  const [activeFilter, setActiveFilter] = useState<FeedFilter>('all')
+  const [activeFilter, setActiveFilter] = useState<FeedFilter>(initialFilter)
   const [messages, setMessages] = useState<FeedMessage[]>([])
   const [photos, setPhotos] = useState<FeedPhoto[]>([])
   const [reminders, setReminders] = useState<FeedReminder[]>([])

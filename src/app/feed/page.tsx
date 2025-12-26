@@ -3,8 +3,14 @@ import { redirect } from 'next/navigation'
 import { getLanguageFromCookieOrBrowser } from '@/lib/i18n/cookie.server'
 import { getTranslations } from '@/lib/i18n/translations'
 import { FeedPage } from '@/components/feed/FeedPage'
+import type { FeedFilter } from '@/components/feed/FeedFilters'
 
-export default async function Feed() {
+interface Props {
+  searchParams: Promise<{ service?: string; type?: string }>
+}
+
+export default async function Feed({ searchParams }: Props) {
+  const params = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const language = await getLanguageFromCookieOrBrowser()
@@ -34,6 +40,25 @@ export default async function Feed() {
     .eq('id', myMembership.household_id)
     .single()
 
+  // Determine initial filter from URL params
+  const getInitialFilter = (): FeedFilter => {
+    const service = params.service?.toLowerCase()
+    const type = params.type?.toLowerCase()
+
+    // Handle type parameter (photos, etc.)
+    if (type === 'photos') return 'photos'
+    if (type === 'reminders') return 'reminders'
+
+    // Handle service parameter
+    if (service === 'spond') return 'spond'
+    if (service === 'iskole') return 'school'
+    if (service === 'kidplan' || service === 'mykid') return 'kindergarten'
+
+    return 'all'
+  }
+
+  const initialFilter = getInitialFilter()
+
   return (
     <div className="page-container animate-fade-in">
       <div className="page-header mb-6">
@@ -44,7 +69,7 @@ export default async function Feed() {
       </div>
 
       {household?.external_integrations_enabled ? (
-        <FeedPage householdId={myMembership.household_id} />
+        <FeedPage householdId={myMembership.household_id} initialFilter={initialFilter} />
       ) : (
         <div
           className="card p-8 text-center"

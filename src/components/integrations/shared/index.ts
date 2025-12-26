@@ -15,3 +15,4 @@ export { useIntegrationState } from './useIntegrationState'
 // Components
 export { IntegrationCard, SyncStatusBadge } from './IntegrationCard'
 export { ConnectionForm, LoadingSkeleton, EmptyState } from './ConnectionForm'
+export { IntegrationStats } from './IntegrationStats'

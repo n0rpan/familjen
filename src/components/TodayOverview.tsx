@@ -1,8 +1,8 @@
 'use client'
 
 import { memo } from 'react'
-import { formatDateLocalized, formatDateISO, isWeekend, getHoliday, getHolidayEmoji, type Holiday } from '@/lib/utils'
-import type { DaySummary, ChildTaskType } from '@/lib/types'
+import { formatDateLocalized, isWeekend, getHoliday, getHolidayEmoji, type Holiday } from '@/lib/utils'
+import type { DaySummary, ChildTaskType, HouseholdEvent, MemberEvent, ExternalEvent, ChildTask } from '@/lib/types'
 import { getChildColor, getTaskConfig } from '@/lib/colors'
 import { useLanguage } from '@/lib/i18n/context'
 
@@ -10,9 +10,51 @@ interface TodayOverviewProps {
   summary: DaySummary | null
   loading?: boolean
   holidays?: Holiday[]
+  onHouseholdEventClick?: (event: HouseholdEvent) => void
+  onMemberEventClick?: (event: MemberEvent) => void
+  onExternalEventClick?: (event: ExternalEvent) => void
+  onTaskClick?: (task: ChildTask) => void
 }
 
-export const TodayOverview = memo(function TodayOverview({ summary, loading, holidays = [] }: TodayOverviewProps) {
+// Helper to get service badge color and label
+function getServiceInfo(service: string) {
+  switch (service?.toLowerCase()) {
+    case 'spond':
+      return { badge: 'S', color: '#ff6b35', bg: 'rgba(255, 107, 53, 0.15)', label: 'Spond' }
+    case 'kidplan':
+      return { badge: 'K', color: '#4caf50', bg: 'rgba(76, 175, 80, 0.15)', label: 'Kidplan' }
+    case 'iskole':
+      return { badge: 'I', color: '#2196f3', bg: 'rgba(33, 150, 243, 0.15)', label: 'iSkole' }
+    case 'mykid':
+      return { badge: 'M', color: '#9c27b0', bg: 'rgba(156, 39, 176, 0.15)', label: 'MyKid' }
+    default:
+      return { badge: 'E', color: 'var(--accent)', bg: 'var(--background)', label: 'Ekstern' }
+  }
+}
+
+// Helper to get member event icon
+function getMemberEventIcon(eventType: string) {
+  switch (eventType) {
+    case 'work':
+      return '💼'
+    case 'travel':
+      return '✈️'
+    case 'family':
+      return '👨‍👩‍👧'
+    default:
+      return '📅'
+  }
+}
+
+export const TodayOverview = memo(function TodayOverview({
+  summary,
+  loading,
+  holidays = [],
+  onHouseholdEventClick,
+  onMemberEventClick,
+  onExternalEventClick,
+  onTaskClick,
+}: TodayOverviewProps) {
   const today = new Date()
   const { language, t } = useLanguage()
 
@@ -46,6 +88,16 @@ export const TodayOverview = memo(function TodayOverview({ summary, loading, hol
     }
     return holiday.name
   }
+
+  // Check if there's any content to show
+  const hasContent = summary && (
+    summary.pickups.length > 0 ||
+    summary.meal ||
+    summary.tasks.length > 0 ||
+    (summary.householdEvents && summary.householdEvents.length > 0) ||
+    (summary.memberEvents && summary.memberEvents.length > 0) ||
+    (summary.externalEvents && summary.externalEvents.length > 0)
+  )
 
   return (
     <div
@@ -109,7 +161,7 @@ export const TodayOverview = memo(function TodayOverview({ summary, loading, hol
         </div>
       </div>
 
-      {!summary || (summary.pickups.length === 0 && !summary.meal && summary.tasks.length === 0 && (!summary.householdEvents || summary.householdEvents.length === 0)) ? (
+      {!hasContent ? (
         <div
           className="text-center py-8 rounded-xl"
           style={{ background: 'var(--background)' }}
@@ -188,13 +240,51 @@ export const TodayOverview = memo(function TodayOverview({ summary, loading, hol
             </div>
           )}
 
+          {/* Member events */}
+          {summary.memberEvents && summary.memberEvents.length > 0 && (
+            <div className="mt-4">
+              {summary.memberEvents.map((event) => (
+                <button
+                  key={event.id}
+                  onClick={() => onMemberEventClick?.(event)}
+                  className="w-full flex items-center gap-4 p-4 rounded-xl mb-2 text-left transition-colors hover:opacity-80"
+                  style={{ background: 'rgba(139, 168, 136, 0.1)' }}
+                >
+                  <div
+                    className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-lg"
+                    style={{ background: 'rgba(139, 168, 136, 0.3)', color: 'var(--color-sage)' }}
+                  >
+                    {getMemberEventIcon(event.event_type)}
+                  </div>
+                  <div className="flex-1">
+                    <span className="text-sm" style={{ color: 'var(--color-sage)' }}>
+                      {event.event_type === 'work' ? 'Jobb' : event.event_type === 'travel' ? 'Reise' : 'Hendelse'}
+                    </span>
+                    <span className="font-medium block" style={{ color: 'var(--foreground)' }}>
+                      {event.title}
+                    </span>
+                    {event.source !== 'manual' && (
+                      <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                        {event.source === 'google_calendar' ? 'Google Kalender' : event.source === 'ics_calendar' ? 'ICS Kalender' : ''}
+                      </span>
+                    )}
+                  </div>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="9 18 15 12 9 6"/>
+                  </svg>
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Household/Family events */}
           {summary.householdEvents && summary.householdEvents.length > 0 && (
             <div className="mt-4">
               {summary.householdEvents.map((event) => (
-                <div
+                <button
                   key={event.id}
-                  className="flex items-center gap-4 p-4 rounded-xl mb-2"
+                  onClick={() => onHouseholdEventClick?.(event)}
+                  className="w-full flex items-center gap-4 p-4 rounded-xl mb-2 text-left transition-colors hover:opacity-80"
                   style={{
                     background: 'rgba(167, 139, 250, 0.1)',
                     opacity: event.is_redistributed ? 0.6 : 1,
@@ -217,18 +307,72 @@ export const TodayOverview = memo(function TodayOverview({ summary, loading, hol
                       {event.title}
                     </span>
                     {event.location && (
-                      <span className="text-sm" style={{ color: 'var(--muted)' }}>
+                      <span className="text-sm block" style={{ color: 'var(--muted)' }}>
                         📍 {event.location}
                       </span>
                     )}
                   </div>
-                  {event.is_redistributed && (
+                  {event.is_redistributed ? (
                     <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(167, 139, 250, 0.2)', color: '#a78bfa' }}>
                       ↗
                     </span>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="9 18 15 12 9 6"/>
+                    </svg>
                   )}
-                </div>
+                </button>
               ))}
+            </div>
+          )}
+
+          {/* External events */}
+          {summary.externalEvents && summary.externalEvents.length > 0 && (
+            <div className="mt-4">
+              {summary.externalEvents.map((event) => {
+                const serviceInfo = getServiceInfo(event.integration?.service || '')
+                const isSchoolClosure = event.event_type === 'school_closure'
+                return (
+                  <button
+                    key={event.id}
+                    onClick={() => onExternalEventClick?.(event)}
+                    className="w-full flex items-center gap-4 p-4 rounded-xl mb-2 text-left transition-colors hover:opacity-80"
+                    style={{ background: isSchoolClosure ? 'rgba(178, 154, 198, 0.15)' : serviceInfo.bg }}
+                  >
+                    <div
+                      className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold"
+                      style={{
+                        background: isSchoolClosure ? '#b29ac6' : serviceInfo.color,
+                        color: 'white'
+                      }}
+                    >
+                      {isSchoolClosure ? '🏫' : serviceInfo.badge}
+                    </div>
+                    <div className="flex-1">
+                      <span className="text-sm" style={{ color: isSchoolClosure ? '#b29ac6' : serviceInfo.color }}>
+                        {isSchoolClosure ? 'Skolefri' : serviceInfo.label}
+                        {event.integration?.display_name && ` • ${event.integration.display_name}`}
+                      </span>
+                      <span className="font-medium block" style={{ color: 'var(--foreground)' }}>
+                        {event.event_time && (
+                          <span className="text-sm" style={{ color: 'var(--muted)' }}>
+                            {event.event_time.substring(0, 5)}{' '}
+                          </span>
+                        )}
+                        {event.local_overrides?.title || event.title}
+                      </span>
+                      {event.location && (
+                        <span className="text-sm block" style={{ color: 'var(--muted)' }}>
+                          📍 {event.local_overrides?.location || event.location}
+                        </span>
+                      )}
+                    </div>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="9 18 15 12 9 6"/>
+                    </svg>
+                  </button>
+                )
+              })}
             </div>
           )}
 
@@ -252,9 +396,10 @@ export const TodayOverview = memo(function TodayOverview({ summary, loading, hol
                   const isDone = task.status === 'done'
                   const childName = task.child?.name || 'Ukjent'
                   return (
-                    <div
+                    <button
                       key={task.id}
-                      className="flex items-center gap-3 p-3 rounded-xl transition-colors"
+                      onClick={() => onTaskClick?.(task as ChildTask)}
+                      className="w-full flex items-center gap-3 p-3 rounded-xl transition-colors text-left hover:opacity-80"
                       style={{
                         background: isDone ? 'transparent' : 'rgba(229, 185, 94, 0.08)',
                         opacity: isDone ? 0.6 : 1,
@@ -276,12 +421,16 @@ export const TodayOverview = memo(function TodayOverview({ summary, loading, hol
                           {task.time && ` • ${task.time.substring(0, 5)}`}
                         </span>
                       </div>
-                      {isDone && (
+                      {isDone ? (
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-sage)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                           <polyline points="20 6 9 17 4 12"/>
                         </svg>
+                      ) : (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="9 18 15 12 9 6"/>
+                        </svg>
                       )}
-                    </div>
+                    </button>
                   )
                 })}
               </div>

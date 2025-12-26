@@ -8,6 +8,7 @@ import type {
   MemberEvent,
   HouseholdEvent,
   ChildTaskWithChild,
+  ExternalEvent,
   AIHeadsUp,
 } from '@/lib/types'
 
@@ -29,6 +30,7 @@ export interface HomePageData {
   memberEvents: MemberEvent[]
   householdEvents: HouseholdEvent[]
   childTasks: ChildTaskWithChild[]
+  externalEvents: ExternalEvent[]
   holidays: Holiday[]
   recentPhotos: HomePagePhoto[]
   aiHeadsUps: AIHeadsUp[]
@@ -69,6 +71,7 @@ export async function getHomePageData(
     eventsResult,
     householdEventsResult,
     tasksResult,
+    externalEventsResult,
     holidaysResult,
     photosResult,
   ] = await Promise.all([
@@ -118,6 +121,16 @@ export async function getHomePageData(
       .lte('date', weekEndStr)
       .order('date')
       .order('time'),
+    // Fetch external events (from Spond, etc.) with integration info
+    supabase
+      .from('external_events')
+      .select('*, integration:external_integrations!inner(service, display_name, household_id)')
+      .eq('external_integrations.household_id', householdId)
+      .eq('is_hidden', false)
+      .gte('event_date', weekStartStr)
+      .lte('event_date', weekEndStr)
+      .order('event_date')
+      .order('event_time'),
     // Fetch holidays (system-wide and household-specific)
     supabase
       .from('calendar_events')
@@ -142,6 +155,9 @@ export async function getHomePageData(
   }
   if (householdEventsResult.error) {
     console.warn('Non-critical: Could not load household events', householdEventsResult.error)
+  }
+  if (externalEventsResult.error) {
+    console.warn('Non-critical: Could not load external events', externalEventsResult.error)
   }
 
   const queryError =
@@ -247,6 +263,7 @@ export async function getHomePageData(
       memberEvents: (eventsResult.data || []) as MemberEvent[],
       householdEvents: (householdEventsResult.data || []) as HouseholdEvent[],
       childTasks: (tasksResult.data || []) as ChildTaskWithChild[],
+      externalEvents: (externalEventsResult.data || []) as ExternalEvent[],
       holidays,
       recentPhotos,
       aiHeadsUps,
@@ -273,6 +290,14 @@ export function getTodaySummary(data: HomePageData) {
     const endDate = e.end_date || e.event_date
     return data.todayStr >= startDate && data.todayStr <= endDate
   })
+  // Member events: include if today falls within date to end_date range
+  const todayMemberEvents = data.memberEvents.filter(e => {
+    const startDate = e.date
+    const endDate = e.end_date || e.date
+    return data.todayStr >= startDate && data.todayStr <= endDate
+  })
+  // External events: filter by event_date
+  const todayExternalEvents = data.externalEvents.filter(e => e.event_date === data.todayStr)
 
   return {
     date: data.todayStr,
@@ -280,6 +305,8 @@ export function getTodaySummary(data: HomePageData) {
     meal: todayMeal,
     tasks: todayTasks,
     householdEvents: todayHouseholdEvents,
+    memberEvents: todayMemberEvents,
+    externalEvents: todayExternalEvents,
   }
 }
 

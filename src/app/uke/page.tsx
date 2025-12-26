@@ -17,7 +17,8 @@ import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealt
 import { useRealtimeOptional } from '@/lib/realtime/context'
 import { getCachedWeekData, getWeekCacheKey, prefetchWeekData } from '@/lib/prefetch/fetchers'
 import { setCache } from '@/lib/cache'
-import { MemberEventModal, HouseholdEventModal, ChildTaskModal } from './components'
+import { MemberEventModal, HouseholdEventModal, ChildTaskModal, ExternalEventModal } from './components'
+import type { ExternalEventLocalOverrides } from '@/lib/types'
 
 // Dynamic imports for code splitting
 const DayPicker = dynamic(
@@ -86,6 +87,8 @@ export default function WeekEditPage() {
 
   // External events state (from Spond, etc.)
   const [externalEvents, setExternalEvents] = useState<ExternalEvent[]>([])
+  const [showExternalEventModal, setShowExternalEventModal] = useState(false)
+  const [editingExternalEvent, setEditingExternalEvent] = useState<ExternalEvent | null>(null)
 
   // Holidays state (system + birthdays)
   const [holidays, setHolidays] = useState<Holiday[]>([])
@@ -1262,6 +1265,49 @@ export default function WeekEditPage() {
     openTaskModal(childId, date)
   }
 
+  // External event handlers
+  const openExternalEventModal = (event: ExternalEvent) => {
+    setEditingExternalEvent(event)
+    setShowExternalEventModal(true)
+  }
+
+  const closeExternalEventModal = () => {
+    setShowExternalEventModal(false)
+    setEditingExternalEvent(null)
+  }
+
+  const saveExternalEvent = async (updates: {
+    local_overrides: ExternalEventLocalOverrides | null
+    user_notes: string | null
+    is_hidden: boolean
+  }) => {
+    if (!editingExternalEvent) return
+
+    setSaving(true)
+
+    try {
+      const { error } = await supabase
+        .from('external_events')
+        .update({
+          local_overrides: updates.local_overrides,
+          user_notes: updates.user_notes,
+          is_hidden: updates.is_hidden,
+        })
+        .eq('id', editingExternalEvent.id)
+
+      if (error) throw error
+
+      closeExternalEventModal()
+      triggerReload()
+      showMessage('success', t.success.saved)
+    } catch (err) {
+      console.error('Error saving external event:', err)
+      showMessage('error', t.errors.saveFailed)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleMealChange = async (date: string, mealName: string | null, recipeId?: string) => {
     if (!household) return
 
@@ -1852,6 +1898,7 @@ export default function WeekEditPage() {
         onTaskClick={handleTaskClick}
         onAddTask={handleAddTask}
         onHouseholdEventClick={openHouseholdEventModal}
+        onExternalEventClick={openExternalEventModal}
       />
 
       {/* Tips */}
@@ -1983,6 +2030,16 @@ export default function WeekEditPage() {
         onSave={saveTask}
         onDelete={deleteTask}
         onClose={closeTaskModal}
+      />
+
+      {/* External Event Modal */}
+      <ExternalEventModal
+        isOpen={showExternalEventModal}
+        event={editingExternalEvent}
+        saving={saving}
+        t={t}
+        onSave={saveExternalEvent}
+        onClose={closeExternalEventModal}
       />
     </div>
   )

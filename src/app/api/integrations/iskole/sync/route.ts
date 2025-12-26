@@ -4,6 +4,7 @@ import { isUserAdmin } from '@/lib/config'
 import { ISkoleClient, ISkoleAuthError, ISkoleError } from '@/lib/integrations/iskole'
 import { addDays } from '@/lib/utils'
 import { handleSyncSetup, getSyncStartDate, HISTORICAL_SYNC_DAYS, FUTURE_SYNC_DAYS } from '@/lib/integrations/shared'
+import { sendNewEventNotification } from '@/lib/integrations/shared/deletion-handler'
 
 interface SyncResult {
   integrationId: string
@@ -12,6 +13,8 @@ interface SyncResult {
   error?: string
   messagesCount: number
   eventsCount: number
+  deletedEventsCount?: number
+  newEventsCount?: number
 }
 
 /**
@@ -339,16 +342,46 @@ async function syncIntegration(
       .gte('event_date', syncWindowStartStr)
       .lte('event_date', syncWindowEndStr)
 
+    // Track existing event IDs for new event detection
+    const existingEventIdSet = new Set(existingCalEvents?.map(e => e.external_id) || [])
+
     if (existingCalEvents) {
       const eventsToDelete = existingCalEvents.filter(
         (e) => e.external_id?.startsWith('iskole_cal_') && !validCalendarEventIds.has(e.external_id)
       )
       if (eventsToDelete.length > 0) {
         console.log(`[iSkole] Deleting ${eventsToDelete.length} stale calendar events`)
+
+        // Create notifications for deleted future events
+        const today = new Date().toISOString().split('T')[0]
+        for (const event of eventsToDelete) {
+          // Get full event data for notification
+          const { data: fullEvent } = await supabase
+            .from('external_events')
+            .select('*')
+            .eq('id', event.id)
+            .single()
+
+          if (fullEvent && fullEvent.event_date >= today) {
+            await supabase.from('event_change_notifications').insert({
+              household_id: householdId,
+              change_type: 'removed',
+              source_name: 'iSkole',
+              original_title: fullEvent.title,
+              original_date: fullEvent.event_date,
+              child_id: fullEvent.child_id,
+              status: 'unread',
+              raw_event_data: { ...fullEvent, _source: 'external_integration', _integration_id: integration.id },
+            })
+          }
+        }
+
         await supabase
           .from('external_events')
           .delete()
           .in('id', eventsToDelete.map((e) => e.id))
+
+        result.deletedEventsCount = eventsToDelete.length
       }
     }
 
@@ -365,6 +398,17 @@ async function syncIntegration(
         console.error('Error upserting calendar events:', eventsError)
       } else {
         result.eventsCount += eventsToUpsert.length
+
+        // Send notifications for new events
+        const newEvents = eventsToUpsert.filter(e => !existingEventIdSet.has(e.external_id))
+        result.newEventsCount = newEvents.length
+
+        // Limit notifications to avoid spam
+        const today = new Date().toISOString().split('T')[0]
+        const futureNewEvents = newEvents.filter(e => e.event_date >= today).slice(0, 3)
+        for (const event of futureNewEvents) {
+          await sendNewEventNotification(supabase, householdId, 'iSkole', event.title, event.event_date)
+        }
       }
     }
 
