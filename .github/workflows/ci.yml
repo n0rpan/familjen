@@ -7,13 +7,10 @@ on:
     # Run on all PRs to catch issues early
     types: [opened, synchronize, reopened]
 
-# Required for posting PR comments and reading deployments/checks
+# Required for posting PR comments
 permissions:
   contents: read
   pull-requests: write
-  issues: write
-  deployments: read
-  checks: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

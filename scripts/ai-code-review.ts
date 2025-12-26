@@ -23,7 +23,7 @@
  */
 
 import { execSync } from 'child_process'
-import { writeFileSync, readFileSync, existsSync } from 'fs'
+import { writeFileSync } from 'fs'
 import { AI_MODELS, callOpenRouterStructured, SCHEMAS, type CodeReviewResult } from './ai-config'
 
 // Dual-model review result
@@ -115,50 +115,38 @@ function getChangedFiles(baseBranch: string): string[] {
 }
 
 function loadRelevantContext(): string {
-  const contexts: string[] = []
+  // SECURITY: Strict allowlist approach - only include minimal safe context
+  // Never load database schemas, credentials, SQL examples, or security implementation details
+  // This context is sent to an external AI API
 
-  // Load CLAUDE.md for project context
-  // SECURITY: Only extract safe sections - no database schemas, credentials, or security implementation details
-  if (existsSync('CLAUDE.md')) {
-    const claudeMd = readFileSync('CLAUDE.md', 'utf-8')
+  const safeContext = `## Tech Stack Summary
+- Next.js 16 with App Router
+- Supabase for PostgreSQL + Auth + RLS
+- TypeScript strict mode
+- Tailwind CSS v4
+- Norwegian/Swedish/English i18n
 
-    // Safe sections that provide context without exposing sensitive details
-    const safeSections = [
-      '## Tech Stack',
-      '## Key Patterns',
-      '## File Structure',
-      '## Testing Philosophy',
-      '## Norwegian Terms Reference',
-      '## Internationalization',
-    ]
+## File Structure
+- src/app/ - Next.js pages and API routes
+- src/components/ - React components
+- src/lib/ - Utilities and Supabase clients
+- tests/ - Unit and E2E tests
+- supabase/migrations/ - Database migrations
 
-    // Sections to explicitly exclude (even if they appear in safe sections)
-    const excludePatterns = [
-      /encryption_key/gi,
-      /password/gi,
-      /secret/gi,
-      /api[_-]?key/gi,
-      /credentials/gi,
-      /INSERT INTO.*VALUES/gi,
-      /SUPABASE_SERVICE_ROLE/gi,
-    ]
+## Norwegian Terms
+- Henting = Pickup
+- Middag = Dinner
+- Oppgave = Task
+- Husstand = Household
+- Innstillinger = Settings
 
-    for (const section of safeSections) {
-      const match = claudeMd.match(new RegExp(`${section.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?(?=\\n## |$)`))
-      if (match) {
-        let content = match[0].slice(0, 800) // Limit each section
+## Key Patterns
+- Use createClient from @/lib/supabase/server for server components
+- Use createClient from @/lib/supabase/client for client components
+- Use formatDateISO() for date handling
+- Child colors: sky, coral, sage, honey, lavender, mint`
 
-        // Remove any sensitive patterns that might have slipped in
-        for (const pattern of excludePatterns) {
-          content = content.replace(pattern, '[REDACTED]')
-        }
-
-        contexts.push(content)
-      }
-    }
-  }
-
-  return contexts.join('\n\n---\n\n')
+  return safeContext
 }
 
 function buildReviewPrompt(diff: string, changedFiles: string[], context: string): string {
@@ -307,15 +295,17 @@ function generateDualGitHubComment(result: DualReviewResult): string {
 
   body += `---\n\n`
 
-  // Fast model review
+  // First model review
   if (result.fast) {
-    body += generateSingleReviewSection(result.fast, AI_MODELS.fast.split('/').pop() || AI_MODELS.fast, '🚀 Fast Review')
+    const modelName = AI_MODELS.fast.split('/').pop() || AI_MODELS.fast
+    body += generateSingleReviewSection(result.fast, modelName, `Review A`)
     body += `\n---\n\n`
   }
 
-  // Capable model review
+  // Second model review
   if (result.capable) {
-    body += generateSingleReviewSection(result.capable, AI_MODELS.capable.split('/').pop() || AI_MODELS.capable, '🧠 Thorough Review')
+    const modelName = AI_MODELS.capable.split('/').pop() || AI_MODELS.capable
+    body += generateSingleReviewSection(result.capable, modelName, `Review B`)
   }
 
   body += `\n---\n*Reviewed by: ${AI_MODELS.fast} + ${AI_MODELS.capable}*`
@@ -463,8 +453,8 @@ async function main() {
     console.log('\n🚀 Running dual-model review...')
 
     const [fastReview, capableReview] = await Promise.all([
-      runSingleModelReview(AI_MODELS.fast, prompt, '🚀 Fast'),
-      runSingleModelReview(AI_MODELS.capable, prompt, '🧠 Capable'),
+      runSingleModelReview(AI_MODELS.fast, prompt, `Model A (${AI_MODELS.fast.split('/').pop()})`),
+      runSingleModelReview(AI_MODELS.capable, prompt, `Model B (${AI_MODELS.capable.split('/').pop()})`),
     ])
 
     if (!fastReview && !capableReview) {
@@ -491,12 +481,12 @@ async function main() {
     // Print both reviews to console
     if (fastReview) {
       console.log('\n' + '='.repeat(60))
-      console.log('🚀 FAST MODEL REVIEW')
+      console.log(`MODEL A REVIEW (${AI_MODELS.fast})`)
       formatReviewOutput(fastReview)
     }
     if (capableReview) {
       console.log('\n' + '='.repeat(60))
-      console.log('🧠 CAPABLE MODEL REVIEW')
+      console.log(`MODEL B REVIEW (${AI_MODELS.capable})`)
       formatReviewOutput(capableReview)
     }
 
