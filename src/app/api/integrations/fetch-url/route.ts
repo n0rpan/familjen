@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { extractEventsFromHtml } from '@/lib/integrations/document-extraction'
+import { syncCalendarSource, type CalendarSource } from '@/lib/integrations/calendar-source-sync'
 import { validateOrigin } from '@/lib/config'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 
@@ -134,6 +134,21 @@ export async function POST(request: Request) {
         // ICS calendar - parse and create events directly
         content = await response.text()
         // TODO: Parse ICS and create external_events
+
+        // Update sync status
+        await supabase
+          .from('external_source_urls')
+          .update({
+            last_sync_at: new Date().toISOString(),
+            last_sync_status: 'ok',
+            last_sync_error: null,
+          })
+          .eq('id', sourceUrl.id)
+
+        return NextResponse.json({
+          success: true,
+          message: 'ICS synkronisert',
+        })
       } else if (sourceUrl.url_type === 'pdf' || contentType.includes('application/pdf')) {
         // PDF document - store for AI processing
         const buffer = Buffer.from(await response.arrayBuffer())
@@ -179,123 +194,6 @@ export async function POST(request: Request) {
           throw new Error(`Document record failed: ${docError.message}`)
         }
 
-        content = null // PDF content will be processed by AI later
-      } else {
-        // HTML page - store and process immediately
-        content = await response.text()
-
-        // Create document record for HTML content (truncate to 500KB for DB storage)
-        const truncatedContent = content.slice(0, 500000)
-
-        // Check if document already exists for this source URL
-        const { data: existingDoc } = await supabase
-          .from('external_documents')
-          .select('id')
-          .eq('source_url_id', sourceUrl.id)
-          .single()
-
-        let docRecord: { id: string } | null = null
-        let docError: Error | null = null
-
-        if (existingDoc) {
-          // Update existing document
-          const { data, error } = await supabase
-            .from('external_documents')
-            .update({
-              source_url: sourceUrl.url,
-              title: sourceUrl.display_name,
-              file_size: content.length,
-              extracted_text: truncatedContent,
-              ai_processed: false,
-            })
-            .eq('id', existingDoc.id)
-            .select('id')
-            .single()
-          docRecord = data
-          docError = error as Error | null
-        } else {
-          // Insert new document
-          const { data, error } = await supabase
-            .from('external_documents')
-            .insert({
-              household_id: member.household_id,
-              source_url_id: sourceUrl.id,
-              external_id: `manual_${sourceUrl.id}`,
-              source_type: 'manual_url',
-              source_url: sourceUrl.url,
-              title: sourceUrl.display_name,
-              filename: null,
-              mime_type: 'text/html',
-              storage_path: null,
-              file_size: content.length,
-              extracted_text: truncatedContent,
-              ai_processed: false,
-            })
-            .select('id')
-            .single()
-          docRecord = data
-          docError = error as Error | null
-        }
-
-        if (docError) {
-          console.error('Document insert/update error:', docError)
-        }
-
-        // Process immediately with AI to extract events
-        let eventsFound = 0
-        if (docRecord) {
-          try {
-            // Get vision model setting
-            const { data: modelSetting } = await supabase
-              .from('app_settings')
-              .select('value')
-              .eq('key', 'openrouter_vision_model')
-              .single()
-
-            const model = modelSetting?.value || 'google/gemini-2.0-flash-001'
-
-            // Extract events from HTML
-            const events = await extractEventsFromHtml(truncatedContent, {
-              childName: undefined, // Could look up child name from child_id
-              schoolName: sourceUrl.display_name,
-              model,
-            })
-
-            eventsFound = events.length
-
-            // Create suggestions from extracted events
-            for (const event of events) {
-              await supabase
-                .from('external_suggestions')
-                .insert({
-                  household_id: member.household_id,
-                  suggested_child_id: sourceUrl.child_id,
-                  source_type: 'external_document',
-                  source_document_id: docRecord.id,
-                  suggested_type: event.eventType === 'holiday' || event.eventType === 'closure' ? 'event' : 'task',
-                  suggested_title: event.title,
-                  suggested_date: event.date,
-                  suggested_description: event.description || (event.endDate ? `Til ${event.endDate}` : null),
-                  confidence_score: event.confidence,
-                  status: 'pending',
-                })
-            }
-
-            // Mark document as processed
-            await supabase
-              .from('external_documents')
-              .update({
-                ai_processed: true,
-                ai_processed_at: new Date().toISOString(),
-              })
-              .eq('id', docRecord.id)
-
-          } catch (aiError) {
-            console.error('AI extraction error:', aiError)
-            // Don't fail the request, just log - cron will retry later
-          }
-        }
-
         // Update sync status
         await supabase
           .from('external_source_urls')
@@ -308,28 +206,12 @@ export async function POST(request: Request) {
 
         return NextResponse.json({
           success: true,
-          message: eventsFound > 0 ? `Synkronisert - ${eventsFound} hendelser funnet` : 'Synkronisert',
-          eventsFound,
+          message: 'PDF lastet opp - vil bli behandlet',
         })
       }
-
-      // Update sync status (for PDF/ICS)
-      await supabase
-        .from('external_source_urls')
-        .update({
-          last_sync_at: new Date().toISOString(),
-          last_sync_status: 'ok',
-          last_sync_error: null,
-        })
-        .eq('id', sourceUrl.id)
-
-      return NextResponse.json({
-        success: true,
-        message: 'Synkronisert',
-      })
-
+      // If we reach here, it's HTML - fall through to calendar source sync
     } catch (fetchErr) {
-      // Update sync status with error
+      // For ICS/PDF failures, update status and return error
       await supabase
         .from('external_source_urls')
         .update({
@@ -344,6 +226,58 @@ export async function POST(request: Request) {
         details: fetchErr instanceof Error ? fetchErr.message : 'Unknown error',
       }, { status: 500 })
     }
+
+    // For HTML/calendar_page: Use the new sync function with proper event tracking
+    // Get AI model setting
+    const { data: modelSetting } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'openrouter_vision_model')
+      .single()
+
+    const model = modelSetting?.value || 'google/gemini-2.0-flash-001'
+
+    // Build the CalendarSource object
+    const calendarSource: CalendarSource = {
+      id: sourceUrl.id,
+      household_id: member.household_id,
+      url: sourceUrl.url,
+      display_name: sourceUrl.display_name,
+      url_type: sourceUrl.url_type,
+      child_id: sourceUrl.child_id,
+      auto_sync: sourceUrl.auto_sync,
+      last_sync_at: sourceUrl.last_sync_at,
+    }
+
+    // Run the sync with proper event tracking
+    const syncResult = await syncCalendarSource(supabase, calendarSource, { model })
+
+    if (!syncResult.success) {
+      return NextResponse.json({
+        error: syncResult.error || 'Synkronisering feilet',
+      }, { status: 500 })
+    }
+
+    // Build response message
+    const parts: string[] = []
+    if (syncResult.eventsFound > 0) {
+      parts.push(`${syncResult.eventsFound} hendelser funnet`)
+    }
+    if (syncResult.eventsCreated > 0) {
+      parts.push(`${syncResult.eventsCreated} nye`)
+    }
+    if (syncResult.eventsUpdated > 0) {
+      parts.push(`${syncResult.eventsUpdated} oppdatert`)
+    }
+    if (syncResult.eventsRemoved > 0) {
+      parts.push(`${syncResult.eventsRemoved} fjernet`)
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: parts.length > 0 ? `Synkronisert: ${parts.join(', ')}` : 'Synkronisert - ingen hendelser funnet',
+      ...syncResult,
+    })
 
   } catch (error) {
     console.error('Fetch URL error:', error)

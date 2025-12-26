@@ -5,6 +5,7 @@ import { KidplanClient, KidplanAuthError, KidplanError } from '@/lib/integration
 import { ISkoleClient, ISkoleAuthError, ISkoleError } from '@/lib/integrations/iskole'
 import { MyKidClient, MyKidAuthError, MyKidError } from '@/lib/integrations/mykid'
 import { extractEventsFromHtml, extractEventsFromPdf, extractEventsFromImage, type ExtractedEvent } from '@/lib/integrations/document-extraction'
+import { syncCalendarSource, type CalendarSource } from '@/lib/integrations/calendar-source-sync'
 import { formatDateISO, addDays } from '@/lib/utils'
 import { fetchAndParseICS, type ICSEvent } from '@/lib/ics-parser'
 import { syncHouseholdICS as syncHouseholdICSShared } from '@/lib/household-ics-sync'
@@ -378,13 +379,18 @@ export async function GET(request: Request) {
       }
     }
 
-    // Re-fetch manual source URLs that are due for sync
-    let urlsRefetched = 0
+    // Sync calendar source URLs with proper event tracking
+    let calendarSourcesProcessed = 0
+    let calendarSourcesSuccess = 0
+    let calendarEventsFound = 0
+    let calendarEventsCreated = 0
+    let calendarEventsRemoved = 0
+    let calendarNotificationsCreated = 0
     const now = new Date()
 
     const { data: sourceUrls } = await supabase
       .from('external_source_urls')
-      .select('id, household_id, url, display_name, url_type, sync_frequency_days, last_sync_at, child_id')
+      .select('id, household_id, url, display_name, url_type, sync_frequency_days, last_sync_at, child_id, auto_sync')
       .eq('auto_sync', true)
 
     if (sourceUrls && sourceUrls.length > 0) {
@@ -396,25 +402,52 @@ export async function GET(request: Request) {
 
         if (!syncDue) continue
 
+        calendarSourcesProcessed++
+
         try {
-          console.log(`[Cron] Re-fetching source URL: ${sourceUrl.display_name}`)
+          console.log(`[Cron] Syncing calendar source: ${sourceUrl.display_name}`)
 
-          const response = await fetch(sourceUrl.url, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (compatible; FamiljenBot/1.0)',
-              'Accept': 'text/html,application/pdf,text/calendar,*/*',
-            },
-          })
+          // For HTML/calendar pages, use the new sync function with event tracking
+          if (sourceUrl.url_type === 'calendar_page' || !sourceUrl.url_type) {
+            const calendarSource: CalendarSource = {
+              id: sourceUrl.id,
+              household_id: sourceUrl.household_id,
+              url: sourceUrl.url,
+              display_name: sourceUrl.display_name,
+              url_type: sourceUrl.url_type || 'calendar_page',
+              child_id: sourceUrl.child_id,
+              auto_sync: sourceUrl.auto_sync,
+              last_sync_at: sourceUrl.last_sync_at,
+            }
 
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`)
-          }
+            const syncResult = await syncCalendarSource(supabase, calendarSource, { model: visionModel })
 
-          const contentType = response.headers.get('content-type') || ''
-          const mimeType = contentType.split(';')[0].trim()
+            if (syncResult.success) {
+              calendarSourcesSuccess++
+              calendarEventsFound += syncResult.eventsFound
+              calendarEventsCreated += syncResult.eventsCreated
+              calendarEventsRemoved += syncResult.eventsRemoved
+              calendarNotificationsCreated += syncResult.notificationsCreated
 
-          if (sourceUrl.url_type === 'pdf' || mimeType.includes('application/pdf')) {
-            // PDF document - store for AI processing
+              console.log(
+                `[Cron] ${sourceUrl.display_name}: ${syncResult.eventsFound} found, ` +
+                `${syncResult.eventsCreated} new, ${syncResult.eventsUpdated} updated, ` +
+                `${syncResult.eventsRemoved} removed`
+              )
+            } else {
+              console.error(`[Cron] Calendar source sync failed for ${sourceUrl.display_name}:`, syncResult.error)
+            }
+          } else if (sourceUrl.url_type === 'pdf') {
+            // PDF document - store for AI processing (legacy approach)
+            const response = await fetch(sourceUrl.url, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (compatible; FamiljenBot/1.0)',
+                'Accept': 'application/pdf,*/*',
+              },
+            })
+
+            if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
             const buffer = Buffer.from(await response.arrayBuffer())
             const filename = `source_${sourceUrl.id}_${Date.now()}.pdf`
             const storagePath = `${sourceUrl.household_id}/manual/${filename}`
@@ -444,48 +477,24 @@ export async function GET(request: Request) {
               }, {
                 onConflict: 'source_url_id',
               })
-          } else {
-            // HTML page - store text for AI processing (truncate to 500KB for DB storage)
-            const content = await response.text()
-            const truncatedContent = content.slice(0, 500000)
 
             await supabase
-              .from('external_documents')
-              .upsert({
-                household_id: sourceUrl.household_id,
-                source_url_id: sourceUrl.id,
-                external_id: `manual_${sourceUrl.id}`,
-                source_type: 'manual_url',
-                source_url: sourceUrl.url,
-                title: sourceUrl.display_name,
-                filename: null,
-                mime_type: 'text/html',
-                storage_path: null,
-                file_size: content.length,
-                extracted_text: truncatedContent,
-                ai_processed: false,
-                child_id: sourceUrl.child_id,
-              }, {
-                onConflict: 'source_url_id',
+              .from('external_source_urls')
+              .update({
+                last_sync_at: new Date().toISOString(),
+                last_sync_status: 'ok',
+                last_sync_error: null,
               })
+              .eq('id', sourceUrl.id)
+
+            calendarSourcesSuccess++
           }
+          // ICS type is handled separately by household ICS sync
 
-          // Update sync status
-          await supabase
-            .from('external_source_urls')
-            .update({
-              last_sync_at: new Date().toISOString(),
-              last_sync_status: 'ok',
-              last_sync_error: null,
-            })
-            .eq('id', sourceUrl.id)
-
-          urlsRefetched++
-
-          // Small delay between fetches
+          // Small delay between syncs
           await new Promise((resolve) => setTimeout(resolve, 500))
         } catch (error) {
-          console.error(`[Cron] Error re-fetching source URL ${sourceUrl.id}:`, error)
+          console.error(`[Cron] Error syncing source URL ${sourceUrl.id}:`, error)
 
           await supabase
             .from('external_source_urls')
@@ -499,8 +508,18 @@ export async function GET(request: Request) {
       }
     }
 
+    // Run cleanup for stale suggestions and old notifications
+    try {
+      const { data: cleanupResult } = await supabase.rpc('cleanup_stale_calendar_data')
+      if (cleanupResult) {
+        console.log(`[Cron] Cleanup: ${cleanupResult.notifications_deleted} notifications, ${cleanupResult.suggestions_deleted} suggestions`)
+      }
+    } catch (cleanupError) {
+      console.error('[Cron] Cleanup failed:', cleanupError)
+    }
+
     console.log(`[Cron] Documents: ${documentsProcessed} processed, ${documentSuggestionsCreated} suggestions`)
-    console.log(`[Cron] Source URLs: ${urlsRefetched} re-fetched`)
+    console.log(`[Cron] Calendar sources: ${calendarSourcesSuccess}/${calendarSourcesProcessed} synced, ${calendarEventsFound} events found, ${calendarEventsRemoved} removed`)
 
     // Summary
     const successCount = results.filter((r) => r.success).length
@@ -521,7 +540,14 @@ export async function GET(request: Request) {
       messagesTotal: totalMessages,
       suggestionsCreated: suggestionsCreated + documentSuggestionsCreated,
       documentsProcessed,
-      urlsRefetched,
+      calendarSources: {
+        processed: calendarSourcesProcessed,
+        success: calendarSourcesSuccess,
+        eventsFound: calendarEventsFound,
+        eventsCreated: calendarEventsCreated,
+        eventsRemoved: calendarEventsRemoved,
+        notificationsCreated: calendarNotificationsCreated,
+      },
       icsCalendars: {
         membersProcessed: icsResults.membersProcessed,
         membersSuccess: icsResults.membersSuccess,
