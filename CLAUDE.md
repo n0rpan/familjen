@@ -335,36 +335,209 @@ npx supabase db push # Push migrations
 
 ## Testing
 
-Tests use Vitest and are located in `tests/`. Run with `npm run test:run`.
+Tests use Vitest for unit/integration tests and Playwright for E2E tests. Located in `tests/`. Run with `npm run test:run`.
+
+### Testing Philosophy
+
+**Core Principles:**
+
+1. **Wrong data is worse than sync not working** - Users trust that synced data from integrations (Spond, MyKid, etc.) is accurate. If we show wrong pickup times, event dates, or messages, users will miss important things. A failed sync with clear error message is far better than silently showing corrupted data.
+
+2. **Users must know when something fails** - When an integration sync fails, the user should see a clear message in their language. They should understand if they can fix it themselves (wrong password) or need to contact support (server error).
+
+3. **Every merge to main is a release** - There's no staging environment. Real users depend on the app working. Tests must catch regressions before merge.
+
+4. **Test what matters, not what's easy** - Focus on user-facing behavior and data integrity, not implementation details.
 
 ### Test Structure
 
 ```
 tests/
-├── setup.ts              # Test setup with jsdom
+├── setup.ts                          # Test setup with jsdom
 ├── lib/
-│   ├── utils.test.ts     # Date formatting, utilities
-│   └── ics-parser.test.ts # ICS calendar parsing
-└── hooks/
-    └── useUndoStack.test.ts # Undo/redo functionality
+│   ├── utils.test.ts                 # Date formatting, utilities
+│   ├── ics-parser.test.ts            # ICS calendar parsing
+│   ├── credentials.test.ts           # Credential encryption/decryption
+│   ├── sanitize.test.ts              # Date/time validation
+│   └── api-errors.test.ts            # Standardized API error responses
+├── hooks/
+│   ├── useUndoStack.test.ts          # Undo/redo functionality
+│   ├── useBackgroundSync.test.ts     # Offline queue processing
+│   └── useSwipeDelete.test.ts        # Touch gesture handling
+└── integrations/
+    ├── spond-client.test.ts          # Spond auth + data mappers
+    └── mykid-client.test.ts          # MyKid 3-step CSRF auth + mappers
+```
+
+### What to Test
+
+**Always test:**
+- Integration client authentication flows
+- Data mappers (external API → database format) - **critical for data integrity**
+- Error handling and user-facing error messages
+- Date/time parsing and formatting
+- Credential encryption/decryption
+- Hooks with complex state logic
+
+**Test integration mappers thoroughly:**
+```typescript
+// Integration mappers are critical - wrong mapping = wrong data shown to users
+describe('mapEventToDb', () => {
+  it('maps Spond event to database format', () => {
+    const spondEvent = {
+      id: 'event-123',
+      heading: 'Football Training',        // Spond uses 'heading', not 'title'
+      startTimestamp: '2024-12-20T18:00:00.000Z',
+      endTimestamp: '2024-12-20T20:00:00.000Z',
+      type: 'EVENT',                       // Gets lowercased
+    }
+    const mapped = SpondClient.mapEventToDb(spondEvent, 'group-456')
+
+    expect(mapped.title).toBe('Football Training')
+    expect(mapped.eventDate).toBe('2024-12-20')
+    expect(mapped.eventType).toBe('event')  // lowercase
+  })
+})
+```
+
+### Error Handling Helpers
+
+**Use `ApiErrors` for all API routes:**
+```typescript
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
+
+// Returns Norwegian user-facing messages
+return ApiErrors.unauthorized()     // "Du må logge inn på nytt"
+return ApiErrors.forbidden()        // "Du har ikke tilgang til dette"
+return ApiErrors.notFound('Barn')   // "Barn ble ikke funnet"
+return ApiErrors.validation('E-post er påkrevd', { field: 'email' })
+return ApiErrors.rateLimit(30)      // "Vennligst vent 30 sekunder..."
+return ApiErrors.authFailed('Spond') // "Kunne ikke logge inn på Spond"
+
+// Never expose internal errors to users
+return ApiErrors.internal({
+  internalMessage: 'DB connection failed: ECONNREFUSED'  // Logged, not shown
+})
+
+// Catch-all for unexpected errors
+try {
+  // ...
+} catch (error) {
+  return handleApiError(error, 'calendar sync')  // Logs context, returns 500
+}
+```
+
+**Use type-safe credential helpers:**
+```typescript
+import { decryptCredentials, isSpondCredentials } from '@/lib/credentials'
+
+const result = await decryptCredentials<SpondCredentials>(supabase, encrypted)
+if (!result.success) {
+  return ApiErrors.internal({ internalMessage: result.error })
+}
+if (!isSpondCredentials(result.credentials)) {
+  return ApiErrors.internal({ internalMessage: 'Invalid Spond credentials format' })
+}
+const { email, password } = result.credentials
+```
+
+**Use sanitize helpers for AI-generated dates:**
+```typescript
+import { sanitizeDate, sanitizeTime } from '@/lib/sanitize'
+
+// AI might return invalid dates like "2024-02-30" - sanitizeDate catches this
+const validDate = sanitizeDate(aiResponse.date)   // null if invalid
+const validTime = sanitizeTime(aiResponse.time)   // null if invalid or out of range
 ```
 
 ### Writing Tests
 
 ```typescript
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-describe('myFunction', () => {
-  it('should do something', () => {
-    expect(myFunction()).toBe(expected)
+describe('MyFunction', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()  // Always reset mocks
+  })
+
+  it('handles success case', () => {
+    expect(myFunction('valid')).toBe(expected)
+  })
+
+  it('returns null for invalid input', () => {
+    expect(myFunction('invalid')).toBeNull()
+  })
+
+  it('throws on missing required data', () => {
+    expect(() => myFunction(undefined)).toThrow()
   })
 })
 ```
 
+### Mocking Patterns
+
+**Mock fetch for integration clients:**
+```typescript
+const mockFetch = vi.fn()
+global.fetch = mockFetch
+
+mockFetch.mockResolvedValueOnce({
+  ok: true,
+  json: () => Promise.resolve({ loginToken: 'token-123' }),
+})
+```
+
+**Mock Supabase client:**
+```typescript
+vi.mock('@/lib/supabase/client', () => ({
+  createClient: vi.fn(() => ({
+    from: vi.fn(() => ({
+      insert: vi.fn().mockResolvedValue({ error: null }),
+      update: vi.fn(() => ({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      })),
+    })),
+  })),
+}))
+```
+
+### E2E Testing (Playwright)
+
+For critical user journeys, use Playwright to test on both mobile and desktop:
+
+```typescript
+// tests/e2e/pickup-flow.spec.ts
+import { test, expect } from '@playwright/test'
+
+test('user can assign pickup for today', async ({ page }) => {
+  await page.goto('/')
+  await page.click('[data-testid="pickup-selector"]')
+  await page.click('text=Mamma')
+  await expect(page.locator('[data-testid="pickup-assignment"]')).toContainText('Mamma')
+})
+```
+
+**Run E2E tests:** `npx playwright test`
+
 ### Current Coverage
 
-- **35 tests** covering utilities, ICS parsing, and undo stack
-- Focus on critical paths: date handling, calendar sync, user interactions
+- **220+ tests** covering:
+  - Utilities (date formatting, ICS parsing)
+  - Hooks (undo stack, background sync, swipe delete)
+  - Integration clients (Spond, MyKid auth flows and mappers)
+  - API error helpers
+  - Credential handling
+  - Data sanitization
+
+### CI/CD Integration
+
+Tests run on every PR via GitHub Actions:
+- TypeScript compilation check
+- ESLint
+- Vitest unit tests
+- (Future) Playwright E2E tests
+
+**Before merging:** All tests must pass. No exceptions.
 
 ## Internationalization (i18n)
 
