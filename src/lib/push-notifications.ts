@@ -14,6 +14,9 @@ export type NotificationType =
   | 'meal_changed'
   | 'task_added'
   | 'event_affects_me'
+  | 'event_deleted'
+  | 'event_changed'
+  | 'event_added'
 
 export interface PushSubscription {
   endpoint: string
@@ -26,6 +29,12 @@ export interface NotificationPayload {
   body: string
   url?: string
   tag?: string
+  icon?: string
+  badge?: string
+  data?: {
+    type: NotificationType
+    url: string
+  }
   actions?: Array<{
     action: string
     title: string
