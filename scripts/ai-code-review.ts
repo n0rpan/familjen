@@ -203,57 +203,19 @@ function isSecuritySensitive(filename: string): boolean {
 }
 
 function buildReviewPrompt(diff: string, changedFiles: string[], context: string): string {
-  // Modern LLMs can handle large contexts - use generous limit
-  // Claude: 200K tokens, Gemini: 1M tokens, GPT-4: 128K tokens
-  // 250KB of text ≈ 60-80K tokens, well within limits
-  const maxDiffLength = 250000
-  let truncatedDiff = diff
-  let truncationWarning = ''
+  // Send the full diff - modern LLMs have huge context windows:
+  // Claude: 200K tokens (~800KB), Gemini: 1M+ tokens, GPT-4: 128K tokens
+  // Truncating risks missing security issues, which is worse than API costs
 
-  if (diff.length > maxDiffLength) {
-    // If we must truncate, try to prioritize security-sensitive files
-    console.warn(`⚠️ Diff too large (${diff.length} chars), attempting smart truncation...`)
+  // Just log size for awareness
+  const sizeKB = Math.round(diff.length / 1024)
+  console.log(`📦 Diff size: ${sizeKB}KB (${changedFiles.length} files)`)
 
-    // Split diff by files and categorize
-    const fileDiffs = splitDiffByFiles(diff)
-    const securityFiles: string[] = []
-    const otherFiles: string[] = []
-
-    for (const [filename, content] of fileDiffs) {
-      if (isSecuritySensitive(filename)) {
-        securityFiles.push(content)
-      } else {
-        otherFiles.push(content)
-      }
-    }
-
-    // Build diff with security files first
-    let rebuiltDiff = securityFiles.join('\n')
-    let remainingSpace = maxDiffLength - rebuiltDiff.length
-
-    // Add other files if space permits
-    for (const fileDiff of otherFiles) {
-      if (fileDiff.length <= remainingSpace) {
-        rebuiltDiff += '\n' + fileDiff
-        remainingSpace -= fileDiff.length + 1
-      }
-    }
-
-    truncatedDiff = rebuiltDiff.slice(0, maxDiffLength)
-
-    const securityFileNames = changedFiles.filter(f => isSecuritySensitive(f))
-    const includedSecurityCount = securityFileNames.length
-
-    truncationWarning = `
-
-⚠️ WARNING: This diff was truncated from ${diff.length} to ${maxDiffLength} characters.
-Security-sensitive files were prioritized (${includedSecurityCount} files matched security patterns).
-If you cannot see all security-relevant code, flag this as a blocking issue.`
-    console.warn(`⚠️ Diff truncated: ${diff.length} chars → ${truncatedDiff.length} chars`)
-    console.warn(`   Security files prioritized: ${includedSecurityCount}`)
+  if (sizeKB > 500) {
+    console.warn(`⚠️ Large diff (${sizeKB}KB) - consider breaking into smaller PRs`)
   }
 
-  const fileList = changedFiles.slice(0, 50).join('\n')
+  const fileList = changedFiles.slice(0, 100).join('\n')
 
   return `You are a senior developer reviewing a PR for Familjen, a Norwegian family planning app.
 
@@ -273,9 +235,8 @@ ${fileList}
 
 ## PR Diff
 \`\`\`diff
-${truncatedDiff}
+${diff}
 \`\`\`
-${truncationWarning}
 
 ## Review Checklist
 
