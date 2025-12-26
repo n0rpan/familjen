@@ -1,8 +1,15 @@
 #!/usr/bin/env npx tsx
 /**
- * AI-Powered Code Review
+ * AI-Powered Code Review (Dual-Model)
  *
- * Reviews PR changes for:
+ * Reviews PR changes using TWO models for comprehensive coverage:
+ * - FAST model: Quick check, often different vendor perspective
+ * - CAPABLE model: Thorough analysis with deeper reasoning
+ *
+ * Both reviews are posted to give reviewers multiple perspectives.
+ * Request changes if EITHER model finds blocking issues.
+ *
+ * Checks for:
  * - Security issues (auth, RLS, injection)
  * - Data integrity (error handling, rollback)
  * - Norwegian app specifics (i18n, colors)
@@ -12,11 +19,31 @@
  * Usage:
  *   npx tsx scripts/ai-code-review.ts
  *   npx tsx scripts/ai-code-review.ts --base origin/main
+ *   npx tsx scripts/ai-code-review.ts --single capable  # Use only one model
  */
 
 import { execSync } from 'child_process'
 import { writeFileSync, readFileSync, existsSync } from 'fs'
 import { AI_MODELS, callOpenRouterStructured, SCHEMAS, type CodeReviewResult } from './ai-config'
+
+// Dual-model review result
+interface DualReviewResult {
+  fast: CodeReviewResult | null
+  capable: CodeReviewResult | null
+  combinedVerdict: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'
+}
+
+function getSingleModelMode(): 'fast' | 'capable' | null {
+  const args = process.argv.slice(2)
+  const singleIdx = args.indexOf('--single')
+  if (singleIdx !== -1 && args[singleIdx + 1]) {
+    const mode = args[singleIdx + 1].toLowerCase()
+    if (mode === 'fast' || mode === 'capable') {
+      return mode
+    }
+  }
+  return null
+}
 
 function getBaseBranch(): string {
   const args = process.argv.slice(2)
@@ -31,13 +58,40 @@ function getBaseBranch(): string {
   return 'origin/main'
 }
 
-function getDiff(baseBranch: string): string {
+function ensureBaseBranchFetched(baseBranch: string): void {
+  // Fetch the base branch to ensure we have the latest
   try {
-    return execSync(`git diff ${baseBranch}...HEAD`, {
+    const remote = baseBranch.split('/')[0] || 'origin'
+    const branch = baseBranch.replace(`${remote}/`, '')
+    console.log(`Fetching ${remote}/${branch} to ensure we have latest...`)
+    execSync(`git fetch ${remote} ${branch} --depth=1`, {
+      encoding: 'utf-8',
+      stdio: 'pipe',
+    })
+  } catch (error) {
+    console.warn(`Warning: Could not fetch base branch: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}
+
+function getDiff(baseBranch: string): string {
+  // Ensure we have the base branch fetched
+  ensureBaseBranchFetched(baseBranch)
+
+  try {
+    // Use merge-base to get the correct diff point
+    const mergeBase = execSync(`git merge-base ${baseBranch} HEAD`, {
+      encoding: 'utf-8',
+    }).trim()
+
+    console.log(`Merge base: ${mergeBase.slice(0, 8)}`)
+
+    return execSync(`git diff ${mergeBase}...HEAD`, {
       encoding: 'utf-8',
       maxBuffer: 10 * 1024 * 1024,
     })
-  } catch {
+  } catch (error) {
+    console.warn(`Warning: Could not get diff from ${baseBranch}, falling back to HEAD~1`)
+    console.warn(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
     // Fallback to comparing with last commit
     return execSync('git diff HEAD~1', {
       encoding: 'utf-8',
@@ -64,14 +118,42 @@ function loadRelevantContext(): string {
   const contexts: string[] = []
 
   // Load CLAUDE.md for project context
+  // SECURITY: Only extract safe sections - no database schemas, credentials, or security implementation details
   if (existsSync('CLAUDE.md')) {
     const claudeMd = readFileSync('CLAUDE.md', 'utf-8')
-    // Extract key sections
-    const sections = ['## Tech Stack', '## Key Patterns', '## Security', '## Testing Philosophy']
-    for (const section of sections) {
-      const match = claudeMd.match(new RegExp(`${section}[\\s\\S]*?(?=\\n## |$)`))
+
+    // Safe sections that provide context without exposing sensitive details
+    const safeSections = [
+      '## Tech Stack',
+      '## Key Patterns',
+      '## File Structure',
+      '## Testing Philosophy',
+      '## Norwegian Terms Reference',
+      '## Internationalization',
+    ]
+
+    // Sections to explicitly exclude (even if they appear in safe sections)
+    const excludePatterns = [
+      /encryption_key/gi,
+      /password/gi,
+      /secret/gi,
+      /api[_-]?key/gi,
+      /credentials/gi,
+      /INSERT INTO.*VALUES/gi,
+      /SUPABASE_SERVICE_ROLE/gi,
+    ]
+
+    for (const section of safeSections) {
+      const match = claudeMd.match(new RegExp(`${section.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?(?=\\n## |$)`))
       if (match) {
-        contexts.push(match[0].slice(0, 1000))
+        let content = match[0].slice(0, 800) // Limit each section
+
+        // Remove any sensitive patterns that might have slipped in
+        for (const pattern of excludePatterns) {
+          content = content.replace(pattern, '[REDACTED]')
+        }
+
+        contexts.push(content)
       }
     }
   }
@@ -179,7 +261,69 @@ function formatReviewOutput(review: CodeReviewResult): void {
   }
 }
 
-function generateGitHubComment(review: CodeReviewResult): string {
+function generateSingleReviewSection(review: CodeReviewResult, modelName: string, label: string): string {
+  const verdictEmoji = {
+    APPROVE: '✅',
+    REQUEST_CHANGES: '❌',
+    COMMENT: '💬',
+  }
+
+  let body = `### ${label} (${modelName})\n\n`
+  body += `**Verdict:** ${verdictEmoji[review.verdict]} ${review.verdict}\n\n`
+  body += `${review.summary}\n`
+
+  if (review.blocking.length > 0) {
+    body += `\n#### 🚫 Blocking Issues\n`
+    for (const b of review.blocking) {
+      const lineInfo = b.line ? `:${b.line}` : ''
+      body += `- \`${b.file}${lineInfo}\`: ${b.issue}\n`
+    }
+  }
+
+  if (review.suggestions.length > 0) {
+    body += `\n#### 💡 Suggestions\n`
+    for (const s of review.suggestions) {
+      const lineInfo = s.line ? `:${s.line}` : ''
+      body += `- \`${s.file}${lineInfo}\`: ${s.suggestion}\n`
+    }
+  }
+
+  return body
+}
+
+function generateDualGitHubComment(result: DualReviewResult): string {
+  const verdictEmoji = {
+    APPROVE: '✅',
+    REQUEST_CHANGES: '❌',
+    COMMENT: '💬',
+  }
+
+  let body = `## 🤖 AI Code Review (Dual-Model)\n\n`
+  body += `**Combined Verdict:** ${verdictEmoji[result.combinedVerdict]} ${result.combinedVerdict}\n\n`
+
+  if (result.combinedVerdict === 'REQUEST_CHANGES') {
+    body += `> ⚠️ At least one model found blocking issues that should be addressed.\n\n`
+  }
+
+  body += `---\n\n`
+
+  // Fast model review
+  if (result.fast) {
+    body += generateSingleReviewSection(result.fast, AI_MODELS.fast.split('/').pop() || AI_MODELS.fast, '🚀 Fast Review')
+    body += `\n---\n\n`
+  }
+
+  // Capable model review
+  if (result.capable) {
+    body += generateSingleReviewSection(result.capable, AI_MODELS.capable.split('/').pop() || AI_MODELS.capable, '🧠 Thorough Review')
+  }
+
+  body += `\n---\n*Reviewed by: ${AI_MODELS.fast} + ${AI_MODELS.capable}*`
+
+  return body
+}
+
+function generateGitHubComment(review: CodeReviewResult, modelName: string): string {
   let body = `## 🤖 AI Code Review\n\n`
   body += `**Verdict:** ${review.verdict}\n\n`
   body += `${review.summary}\n`
@@ -200,14 +344,62 @@ function generateGitHubComment(review: CodeReviewResult): string {
     }
   }
 
-  body += `\n---\n*Reviewed by AI using ${AI_MODELS.capable}*`
+  body += `\n---\n*Reviewed by AI using ${modelName}*`
 
   return body
 }
 
+async function runSingleModelReview(
+  model: string,
+  prompt: string,
+  label: string
+): Promise<CodeReviewResult | null> {
+  console.log(`\n${label}: Sending to ${model}...`)
+  try {
+    const review = await callOpenRouterStructured<CodeReviewResult>(
+      model,
+      [{ role: 'user', content: prompt }],
+      SCHEMAS.codeReview,
+      'code_review',
+      { temperature: 0, maxTokens: 4000 }
+    )
+    console.log(`${label}: ✓ Received response (${review.verdict})`)
+    return review
+  } catch (error) {
+    console.error(`${label}: ✗ Failed - ${error instanceof Error ? error.message : 'Unknown error'}`)
+    return null
+  }
+}
+
+function combineVerdicts(fast: CodeReviewResult | null, capable: CodeReviewResult | null): 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT' {
+  // If either model requests changes, we request changes (conservative)
+  if (fast?.verdict === 'REQUEST_CHANGES' || capable?.verdict === 'REQUEST_CHANGES') {
+    return 'REQUEST_CHANGES'
+  }
+  // If both approve, we approve
+  if (fast?.verdict === 'APPROVE' && capable?.verdict === 'APPROVE') {
+    return 'APPROVE'
+  }
+  // If one approves and the other is null/comment, go with approve
+  if (fast?.verdict === 'APPROVE' || capable?.verdict === 'APPROVE') {
+    return 'APPROVE'
+  }
+  // Default to comment (e.g., both have comments or both failed)
+  return 'COMMENT'
+}
+
 async function main() {
-  console.log('🔍 AI Code Review')
-  console.log(`Model: ${AI_MODELS.capable}`)
+  const singleMode = getSingleModelMode()
+
+  console.log('🔍 AI Code Review (Dual-Model)')
+  if (singleMode) {
+    console.log(`Mode: Single model (${singleMode})`)
+    console.log(`Model: ${singleMode === 'fast' ? AI_MODELS.fast : AI_MODELS.capable}`)
+  } else {
+    console.log(`Mode: Dual model`)
+    console.log(`Fast model: ${AI_MODELS.fast}`)
+    console.log(`Capable model: ${AI_MODELS.capable}`)
+  }
 
   // Check API key availability
   const hasApiKey = !!process.env.OPENROUTER_API_KEY
@@ -241,48 +433,88 @@ async function main() {
   const context = loadRelevantContext()
   const prompt = buildReviewPrompt(diff, changedFiles, context)
 
-  console.log('\nSending to AI for review...')
+  let comment: string
+  let finalVerdict: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'
 
-  let review: CodeReviewResult
-  try {
-    review = await callOpenRouterStructured<CodeReviewResult>(
-      AI_MODELS.capable,
-      [{ role: 'user', content: prompt }],
-      SCHEMAS.codeReview,
-      'code_review',
-      { temperature: 0, maxTokens: 4000 }
-    )
-  } catch (error) {
-    console.error('Failed to get AI response:', error instanceof Error ? error.message : 'Unknown error')
-    writeFileSync(
-      'ai-review-result.json',
-      JSON.stringify(
-        {
+  if (singleMode) {
+    // Single model mode
+    const model = singleMode === 'fast' ? AI_MODELS.fast : AI_MODELS.capable
+    const review = await runSingleModelReview(model, prompt, '🤖 Review')
+
+    if (!review) {
+      writeFileSync(
+        'ai-review-result.json',
+        JSON.stringify({
           verdict: 'COMMENT',
           blocking: [],
           suggestions: [],
           summary: 'AI review could not be completed. Manual review recommended.',
-        },
-        null,
-        2
+        }, null, 2)
       )
-    )
-    process.exit(0) // Don't fail the build on API errors
+      process.exit(0)
+    }
+
+    formatReviewOutput(review)
+    writeFileSync('ai-review-result.json', JSON.stringify(review, null, 2))
+    comment = generateGitHubComment(review, model)
+    finalVerdict = review.verdict
+  } else {
+    // Dual model mode - run both in parallel
+    console.log('\n🚀 Running dual-model review...')
+
+    const [fastReview, capableReview] = await Promise.all([
+      runSingleModelReview(AI_MODELS.fast, prompt, '🚀 Fast'),
+      runSingleModelReview(AI_MODELS.capable, prompt, '🧠 Capable'),
+    ])
+
+    if (!fastReview && !capableReview) {
+      writeFileSync(
+        'ai-review-result.json',
+        JSON.stringify({
+          verdict: 'COMMENT',
+          blocking: [],
+          suggestions: [],
+          summary: 'Both AI reviews failed. Manual review recommended.',
+        }, null, 2)
+      )
+      process.exit(0)
+    }
+
+    const combinedVerdict = combineVerdicts(fastReview, capableReview)
+
+    const dualResult: DualReviewResult = {
+      fast: fastReview,
+      capable: capableReview,
+      combinedVerdict,
+    }
+
+    // Print both reviews to console
+    if (fastReview) {
+      console.log('\n' + '='.repeat(60))
+      console.log('🚀 FAST MODEL REVIEW')
+      formatReviewOutput(fastReview)
+    }
+    if (capableReview) {
+      console.log('\n' + '='.repeat(60))
+      console.log('🧠 CAPABLE MODEL REVIEW')
+      formatReviewOutput(capableReview)
+    }
+
+    console.log('\n' + '='.repeat(60))
+    console.log(`COMBINED VERDICT: ${combinedVerdict}`)
+    console.log('='.repeat(60))
+
+    writeFileSync('ai-review-result.json', JSON.stringify(dualResult, null, 2))
+    comment = generateDualGitHubComment(dualResult)
+    finalVerdict = combinedVerdict
   }
 
-  formatReviewOutput(review)
-
-  // Write results for GitHub Actions
-  writeFileSync('ai-review-result.json', JSON.stringify(review, null, 2))
-
-  // Write GitHub comment format
-  const comment = generateGitHubComment(review)
   writeFileSync('ai-review-comment.md', comment)
 
   console.log('\n📄 Results written to ai-review-result.json')
   console.log('📄 GitHub comment written to ai-review-comment.md')
 
-  if (review.verdict === 'REQUEST_CHANGES') {
+  if (finalVerdict === 'REQUEST_CHANGES') {
     console.log('\n❌ Review requests changes')
     process.exit(1)
   } else {
