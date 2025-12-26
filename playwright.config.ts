@@ -25,6 +25,9 @@ import { defineConfig, devices } from '@playwright/test'
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000'
 const isExternalUrl = !!process.env.PLAYWRIGHT_BASE_URL
 
+// Vercel protection bypass for CI automation
+const vercelBypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+
 // Check if real auth credentials are provided
 const useRealAuth = !!(process.env.E2E_TEST_EMAIL && process.env.E2E_TEST_PASSWORD)
 const authFile = 'tests/.auth/user.json'
@@ -41,6 +44,12 @@ export default defineConfig({
     baseURL,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
+    // Bypass Vercel deployment protection in CI
+    ...(vercelBypassSecret && {
+      extraHTTPHeaders: {
+        'x-vercel-protection-bypass': vercelBypassSecret,
+      },
+    }),
   },
 
   projects: useRealAuth

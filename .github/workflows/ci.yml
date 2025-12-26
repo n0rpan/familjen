@@ -311,6 +311,7 @@ jobs:
         run: npx playwright test tests/e2e/capture-screenshots.spec.ts --project=chromium
         env:
           PLAYWRIGHT_BASE_URL: https://${{ steps.vercel.outputs.preview_url }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
           NEXT_PUBLIC_SUPABASE_URL: 'https://placeholder.supabase.co'
           NEXT_PUBLIC_SUPABASE_ANON_KEY: 'placeholder'
 
@@ -416,12 +417,14 @@ jobs:
         run: npx playwright test tests/e2e/design-system.spec.ts --project=chromium
         env:
           PLAYWRIGHT_BASE_URL: https://${{ steps.vercel.outputs.preview_url }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
 
       - name: Capture screenshots from preview
         if: steps.vercel.outputs.preview_url
         run: npx playwright test tests/e2e/capture-screenshots.spec.ts --project=chromium || true
         env:
           PLAYWRIGHT_BASE_URL: https://${{ steps.vercel.outputs.preview_url }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
 
       - name: Upload E2E results
         if: always()
