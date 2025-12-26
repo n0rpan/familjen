@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { TodayOverview } from '@/components/TodayOverview'
+import { TodaySection } from '@/components/TodaySection'
 import { AIHeadsUpSection } from '@/components/AIHeadsUpSection'
 import { WeekGrid } from '@/components/WeekGrid'
 import { UniversalAIInput } from '@/components/ai'
@@ -338,7 +338,13 @@ export default async function HomePage() {
       />
 
       {/* Today's Overview */}
-      <TodayOverview summary={todaySummary} holidays={holidays} />
+      <TodaySection
+        summary={todaySummary}
+        holidays={holidays}
+        members={members || []}
+        children={children || []}
+        householdId={myMembership.household_id}
+      />
 
       {/* AI Heads Up - Week lookahead */}
       <AIHeadsUpSection items={homeData.aiHeadsUps} />

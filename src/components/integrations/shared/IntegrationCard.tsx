@@ -2,6 +2,7 @@
 
 import { memo, useState, useRef, useEffect } from 'react'
 import type { Integration, IntegrationMapping, ServiceName } from './types'
+import { IntegrationStats } from './IntegrationStats'
 
 interface IntegrationCardProps {
   integration: Integration
@@ -9,6 +10,7 @@ interface IntegrationCardProps {
   syncing: boolean
   service: ServiceName
   children?: React.ReactNode // For custom content in the card
+  showStats?: boolean // Show integration stats with counts
   onSync: () => void
   onFullSync: () => void
   onEdit: () => void
@@ -62,6 +64,7 @@ export const IntegrationCard = memo(function IntegrationCard({
   syncing,
   service,
   children,
+  showStats = true,
   onSync,
   onFullSync,
   onEdit,
@@ -140,6 +143,11 @@ export const IntegrationCard = memo(function IntegrationCard({
 
       {/* Custom content */}
       {children}
+
+      {/* Stats section */}
+      {showStats && integration.id && (
+        <IntegrationStats integrationId={integration.id} service={service} />
+      )}
 
       {/* Action buttons */}
       <div className="flex gap-2 flex-wrap">

@@ -184,6 +184,8 @@ export interface DaySummary {
   meal: MealWithRecipe | null
   tasks: ChildTaskWithChild[]
   householdEvents?: HouseholdEvent[]
+  memberEvents?: MemberEvent[]
+  externalEvents?: ExternalEvent[]
 }
 
 // Admin types
@@ -325,6 +327,16 @@ export interface HouseholdEvent {
 }
 
 // External events (from Spond, Kidplan, iSkole)
+// Local overrides for external events (user edits stored separately from synced data)
+export interface ExternalEventLocalOverrides {
+  title?: string
+  event_date?: string  // YYYY-MM-DD
+  event_time?: string | null  // HH:MM:SS
+  end_date?: string | null
+  end_time?: string | null
+  location?: string | null
+}
+
 export interface ExternalEvent {
   id: string
   integration_id: string
@@ -341,6 +353,7 @@ export interface ExternalEvent {
   event_type: string | null
   is_hidden: boolean
   user_notes: string | null
+  local_overrides: ExternalEventLocalOverrides | null  // User local edits
   created_at: string
   updated_at: string | null
   // Joined data
