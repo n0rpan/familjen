@@ -7,11 +7,12 @@ on:
     # Run on all PRs to catch issues early
     types: [opened, synchronize, reopened]
 
-# Required for posting PR comments
+# Required for posting PR comments and reading deployments
 permissions:
   contents: read
   pull-requests: write
   issues: write
+  deployments: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -292,12 +293,57 @@ jobs:
         run: npx playwright install chromium
 
       - name: Wait for Vercel Preview
-        uses: patrickedqvist/wait-for-vercel-preview@v1.3.2
         id: vercel
+        uses: actions/github-script@v7
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          max_timeout: 300
-          check_interval: 10
+          script: |
+            const maxAttempts = 30;
+            const delaySeconds = 10;
+
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+              console.log(`Checking for Vercel deployment (attempt ${attempt}/${maxAttempts})...`);
+
+              // Get deployments for this SHA
+              const { data: deployments } = await github.rest.repos.listDeployments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: context.sha,
+                per_page: 10
+              });
+
+              // Find Vercel deployment (environment contains "Preview" or creator is vercel)
+              const vercelDeployment = deployments.find(d =>
+                d.environment?.toLowerCase().includes('preview') ||
+                d.creator?.login?.toLowerCase().includes('vercel')
+              );
+
+              if (vercelDeployment) {
+                // Get deployment status
+                const { data: statuses } = await github.rest.repos.listDeploymentStatuses({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  deployment_id: vercelDeployment.id,
+                  per_page: 1
+                });
+
+                const latestStatus = statuses[0];
+                if (latestStatus?.state === 'success' && latestStatus?.environment_url) {
+                  console.log(`Found Vercel preview: ${latestStatus.environment_url}`);
+                  core.setOutput('url', latestStatus.environment_url);
+                  return;
+                } else if (latestStatus?.state === 'failure' || latestStatus?.state === 'error') {
+                  core.setFailed(`Vercel deployment failed: ${latestStatus.state}`);
+                  return;
+                }
+                console.log(`Deployment status: ${latestStatus?.state || 'pending'}`);
+              }
+
+              if (attempt < maxAttempts) {
+                await new Promise(r => setTimeout(r, delaySeconds * 1000));
+              }
+            }
+
+            core.setFailed('Timed out waiting for Vercel preview (5 min)');
 
       - name: Capture screenshots with mock data
         if: steps.vercel.outputs.url
@@ -390,12 +436,57 @@ jobs:
         run: npx playwright install chromium
 
       - name: Wait for Vercel Preview
-        uses: patrickedqvist/wait-for-vercel-preview@v1.3.2
         id: vercel
+        uses: actions/github-script@v7
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          max_timeout: 300
-          check_interval: 10
+          script: |
+            const maxAttempts = 30;
+            const delaySeconds = 10;
+
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+              console.log(`Checking for Vercel deployment (attempt ${attempt}/${maxAttempts})...`);
+
+              // Get deployments for this SHA
+              const { data: deployments } = await github.rest.repos.listDeployments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: context.sha,
+                per_page: 10
+              });
+
+              // Find Vercel deployment (environment contains "Preview" or creator is vercel)
+              const vercelDeployment = deployments.find(d =>
+                d.environment?.toLowerCase().includes('preview') ||
+                d.creator?.login?.toLowerCase().includes('vercel')
+              );
+
+              if (vercelDeployment) {
+                // Get deployment status
+                const { data: statuses } = await github.rest.repos.listDeploymentStatuses({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  deployment_id: vercelDeployment.id,
+                  per_page: 1
+                });
+
+                const latestStatus = statuses[0];
+                if (latestStatus?.state === 'success' && latestStatus?.environment_url) {
+                  console.log(`Found Vercel preview: ${latestStatus.environment_url}`);
+                  core.setOutput('url', latestStatus.environment_url);
+                  return;
+                } else if (latestStatus?.state === 'failure' || latestStatus?.state === 'error') {
+                  core.setFailed(`Vercel deployment failed: ${latestStatus.state}`);
+                  return;
+                }
+                console.log(`Deployment status: ${latestStatus?.state || 'pending'}`);
+              }
+
+              if (attempt < maxAttempts) {
+                await new Promise(r => setTimeout(r, delaySeconds * 1000));
+              }
+            }
+
+            core.setFailed('Timed out waiting for Vercel preview (5 min)');
 
       - name: Run E2E tests against preview
         if: steps.vercel.outputs.url
