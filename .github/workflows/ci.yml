@@ -435,14 +435,10 @@ jobs:
               c.user.type === 'Bot' && c.body.includes('Preview Deployment')
             );
 
-            const body = `## 🔗 Preview Deployment
-
-**URL:** ${url}
-
-**E2E Tests:** ✅ Design system tests passed
-
----
-*Tested automatically by CI*`;
+            const body = '## 🔗 Preview Deployment\n\n' +
+              '**URL:** ' + url + '\n\n' +
+              '**E2E Tests:** Design system tests passed\n\n' +
+              '---\n*Tested automatically by CI*';
 
             if (botComment) {
               await github.rest.issues.updateComment({
