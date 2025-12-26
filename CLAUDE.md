@@ -325,11 +325,24 @@ ON CONFLICT (email) DO UPDATE SET is_admin = true, can_create_household = true;
 ## Development Commands
 
 ```bash
+# Development
 npm run dev          # Development server
 npm run build        # Production build
 npm run lint         # TypeScript + ESLint
+
+# Testing
 npm run test         # Run tests in watch mode
 npm run test:run     # Run tests once
+npm run test:coverage # Run tests with coverage
+npm run test:e2e     # Run Playwright E2E tests
+npm run test:e2e:ui  # Run E2E tests with UI
+
+# AI Reviews (requires OPENROUTER_API_KEY)
+npm run ai:migration-review  # Review new database migrations
+npm run ai:code-review       # Review code changes vs main
+npm run ai:visual-review     # Compare screenshots (needs baselines)
+
+# Database
 npx supabase db push # Push migrations
 ```
 
@@ -535,9 +548,163 @@ Tests run on every PR via GitHub Actions:
 - TypeScript compilation check
 - ESLint
 - Vitest unit tests
-- (Future) Playwright E2E tests
+- AI Migration Review (for PRs with migrations)
+- AI Code Review (posts comment to PR)
+- AI Visual Review (optional, if baselines exist)
 
 **Before merging:** All tests must pass. No exceptions.
+
+## AI-Powered CI/CD
+
+The CI pipeline uses AI to review code changes, following our philosophy: *"We don't test to make tests pass. We test to be confident busy parents won't have headaches."*
+
+### AI Review Scripts
+
+```
+scripts/
+├── ai-config.ts              # Model config + OpenRouter structured outputs
+├── migration-ai-review.ts    # Reviews database migrations
+├── ai-code-review.ts         # Reviews PR code changes
+└── ai-visual-review.ts       # Compares screenshots for UX regressions
+```
+
+### Environment Variables
+
+**Required (GitHub Secrets):**
+```bash
+OPENROUTER_API_KEY=sk-or-v1-...
+```
+
+**Optional (override defaults):**
+```bash
+OPENROUTER_FAST_MODEL=google/gemini-3-flash-preview      # Migration review
+OPENROUTER_CAPABLE_MODEL=anthropic/claude-sonnet-4-5-20250514  # Code review
+OPENROUTER_VISION_MODEL=google/gemini-3-flash-preview   # Visual review
+```
+
+### Running Locally
+
+```bash
+# Review new migrations
+npm run ai:migration-review
+npm run ai:migration-review -- --all  # Review all migrations
+
+# Review code changes
+npm run ai:code-review
+npm run ai:code-review -- --base origin/main
+
+# Visual review (requires baselines)
+npm run ai:visual-review
+npm run ai:visual-review -- --capture  # Show capture instructions
+npm run ai:visual-review -- --update   # Update baselines from current
+```
+
+### Migration Review
+
+Reviews new database migrations for:
+- **Naming conventions**: snake_case tables/columns, verb-prefix functions
+- **RLS security**: Policies, SECURITY DEFINER, household_id scoping
+- **Data integrity**: Foreign keys, constraints, indexes
+- **Rollback safety**: IF EXISTS, reversible changes
+- **Familjen patterns**: TIMESTAMPTZ, UUIDs, household isolation
+
+```typescript
+// Output format (structured via JSON schema)
+{
+  "verdict": "PASS" | "FAIL" | "WARN",
+  "issues": [{ "severity": "critical|warning|info", "message": "...", "line": 42 }],
+  "suggestions": ["Add index on household_id"],
+  "summary": "Migration adds user preferences table with proper RLS..."
+}
+```
+
+### Code Review
+
+Reviews PR diffs for:
+- **Security**: Auth checks, RLS policies, input sanitization, no secrets
+- **Data integrity**: Error handling, optimistic update rollbacks
+- **Norwegian app specifics**: i18n translations, child colors, date formatting
+- **AI agent detection**: Hallucinated imports, placeholder TODOs, logic vs comments
+- **Code quality**: TypeScript types, patterns, dead code
+
+Posts a comment to the PR with verdict and actionable feedback:
+```markdown
+## 🤖 AI Code Review
+
+**Verdict:** APPROVE
+
+This PR adds sync failure banners with proper error handling...
+
+### 💡 Suggestions
+- `src/components/Banner.tsx:42`: Consider memoizing the filter function
+```
+
+### Visual Review
+
+Compares baseline screenshots with current screenshots to detect:
+- Critical elements present (pickups, meals, tasks visible)
+- Accessibility concerns (contrast, touch targets 44px+)
+- Obvious bugs (overlapping elements, cut-off text)
+- Mobile usability (one-handed use for busy parents)
+
+**Setup baselines:**
+```bash
+# 1. Capture current screenshots
+npx playwright test capture-screenshots --project=chromium
+
+# 2. Review and set as baselines
+npm run ai:visual-review -- --update
+
+# 3. Commit baselines
+git add tests/visual/baselines/
+git commit -m "Add visual regression baselines"
+```
+
+### CI Pipeline Flow
+
+```
+PR Created
+    │
+    ├─► lint ─────────────────────┐
+    ├─► typecheck ────────────────┤
+    │                             │
+    ├─► migration-review ◄────────┘ (if migrations changed)
+    │
+    └─► unit-tests ◄──────────────┘
+            │
+            ├─► build
+            │     │
+            │     ├─► ai-code-review → Posts PR comment
+            │     └─► visual-review (optional)
+            │
+            └─► (main only) api-tests
+```
+
+### Structured Outputs
+
+All AI reviews use OpenRouter's structured outputs feature with JSON schemas to guarantee consistent response formats:
+
+```typescript
+// From scripts/ai-config.ts
+export const SCHEMAS = {
+  migrationReview: {
+    type: 'object',
+    properties: {
+      verdict: { type: 'string', enum: ['PASS', 'FAIL', 'WARN'] },
+      issues: { type: 'array', items: { ... } },
+      // ...
+    },
+    required: ['verdict', 'issues', 'suggestions', 'summary'],
+    additionalProperties: false,
+  },
+  // codeReview, visualReview schemas...
+}
+```
+
+This ensures:
+- No parsing failures from malformed JSON
+- Type-safe results in TypeScript
+- Consistent output across different models
 
 ## Internationalization (i18n)
 
