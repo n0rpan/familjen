@@ -252,7 +252,8 @@ npm run test:e2e   # Run Playwright E2E tests
 # AI Review Scripts (for local testing)
 npm run ai:migration-review   # Review database migrations
 npm run ai:code-review        # Review code changes
-npm run ai:visual-review      # Compare screenshots
+npm run ai:visual-review      # Compare screenshots (baseline-based)
+npm run ai:visual-validate    # AI validates screenshots (no baselines needed)
 ```
 
 ### Testing
@@ -310,8 +311,25 @@ The project uses AI to enhance the CI/CD pipeline beyond traditional static anal
 | **Build** | After tests | Verify production build succeeds |
 | **AI Migration Review** | PRs with migrations | Checks RLS, naming, security, rollback safety |
 | **AI Code Review** | All PRs | Reviews diff for security, i18n, data integrity |
-| **AI Visual Review** | PRs (optional) | Compares screenshots for UI regressions |
+| **AI Visual Validation** | All PRs | AI evaluates screenshots against design system |
 | **E2E Preview Tests** | PRs | Runs design system tests on Vercel preview |
+
+### AI Visual Validation (No Baselines Needed)
+
+The AI visual validation system is unique - it doesn't require baseline screenshots. Instead, AI evaluates each screenshot against the Familjen design system and expected content:
+
+- **Design System Compliance**: Checks colors, typography, spacing, touch targets
+- **Content Visibility**: Verifies expected elements are present (pickups, meals, children)
+- **Mobile Usability**: Evaluates if busy parents can use with one hand
+- **Norwegian Context**: Checks Norwegian characters render correctly
+
+**How it works:**
+1. Playwright captures screenshots using mock auth + AI-generated test data
+2. Works on fresh Vercel previews with no real database needed
+3. AI vision model evaluates each screenshot against expectations
+4. Results posted as PR comment with pass/warn/fail verdict
+
+**No real user required**: Tests use mock fixtures that generate realistic Norwegian family data (children names, pickups, meals) without needing a real database connection.
 
 ### AI Review Features
 
@@ -322,9 +340,14 @@ The project uses AI to enhance the CI/CD pipeline beyond traditional static anal
 
 ### Setup
 
-1. Add `OPENROUTER_API_KEY` to GitHub repository secrets
-2. (Optional) Add baseline screenshots to `tests/visual/baselines/` for visual review
-3. Pipeline runs automatically on PRs
+1. Add these GitHub Secrets (all required for AI features):
+   - `OPENROUTER_API_KEY` - Your OpenRouter API key
+   - `OPENROUTER_FAST_MODEL` - Fast model for migrations (e.g., `google/gemini-2.0-flash-001`)
+   - `OPENROUTER_CAPABLE_MODEL` - Capable model for code review
+   - `OPENROUTER_VISION_MODEL` - Vision model for visual validation
+   - `OPENROUTER_TEST_MODEL` - Model for API integration tests
+
+2. Pipeline runs automatically on PRs
 
 See [CLAUDE.md](./CLAUDE.md) for detailed documentation.
 

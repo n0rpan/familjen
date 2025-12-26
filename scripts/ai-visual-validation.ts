@@ -1,0 +1,540 @@
+#!/usr/bin/env npx tsx
+/**
+ * AI Visual Validation (No Baselines Needed)
+ *
+ * Uses AI vision to evaluate if screenshots "look right" based on:
+ * - Design system compliance
+ * - Expected content visibility
+ * - Mobile usability for busy parents
+ * - Norwegian app context
+ *
+ * Philosophy: "We don't need baseline screenshots. AI can tell us if the UI
+ * looks broken, follows our design system, and shows the right content."
+ *
+ * Usage:
+ *   npm run ai:visual-validate
+ *   npm run ai:visual-validate -- --screenshots tests/visual/current
+ */
+
+import * as fs from 'fs'
+import * as path from 'path'
+import { AI_MODELS, SCHEMAS, fetchWithStructuredOutput } from './ai-config'
+
+// ============================================
+// Types
+// ============================================
+
+interface PageExpectation {
+  name: string
+  description: string
+  mustShow: string[]
+  mustNotShow: string[]
+  mobileConsiderations: string[]
+}
+
+interface ValidationResult {
+  page: string
+  verdict: 'PASS' | 'WARN' | 'FAIL'
+  score: number // 0-100
+  issues: Array<{
+    severity: 'critical' | 'warning' | 'info'
+    description: string
+    suggestion?: string
+  }>
+  designSystemCompliance: {
+    colorPalette: boolean
+    typography: boolean
+    spacing: boolean
+    touchTargets: boolean
+  }
+  contentVisibility: {
+    expected: string[]
+    found: string[]
+    missing: string[]
+  }
+  mobileUsability: {
+    score: number
+    notes: string[]
+  }
+  summary: string
+}
+
+interface OverallReport {
+  timestamp: string
+  totalPages: number
+  passed: number
+  warned: number
+  failed: number
+  averageScore: number
+  results: ValidationResult[]
+  recommendation: string
+}
+
+// ============================================
+// Page Expectations
+// ============================================
+
+const PAGE_EXPECTATIONS: PageExpectation[] = [
+  {
+    name: 'home',
+    description: 'Home page showing today\'s overview for a busy parent',
+    mustShow: [
+      'Today\'s date or "I dag" (Norwegian for "Today")',
+      'Children names or pickup assignments',
+      'Navigation (bottom or sidebar)',
+      'Some form of meal/dinner info if meals are configured',
+    ],
+    mustNotShow: [
+      'Error messages or crash screens',
+      'Infinite loading spinners',
+      'Broken images or missing icons',
+      'Raw JSON or debug output',
+    ],
+    mobileConsiderations: [
+      'Most important info (pickups) should be immediately visible',
+      'No horizontal scrolling',
+      'Touch targets easily tappable with thumb',
+    ],
+  },
+  {
+    name: 'week',
+    description: 'Week planner showing 7-day grid with pickups, meals, and events',
+    mustShow: [
+      'Days of the week (Mon-Sun or Norwegian weekday names)',
+      'Children rows or columns with distinct colors',
+      'Meal section or dinner planning area',
+      'Navigation back to home',
+    ],
+    mustNotShow: [
+      'Overlapping text that\'s unreadable',
+      'Cut-off content requiring horizontal scroll',
+      'Broken layout with elements stacked incorrectly',
+    ],
+    mobileConsiderations: [
+      'Week view may condense on mobile - still should be usable',
+      'Swipe gestures should be hinted if available',
+      'Current day should be visually highlighted',
+    ],
+  },
+  {
+    name: 'feed',
+    description: 'Feed page showing messages and photos from integrations',
+    mustShow: [
+      'Feed title or navigation indicating this is the feed',
+      'Either content items OR empty state message',
+      'Filter tabs or category selectors',
+    ],
+    mustNotShow: [
+      'Login prompts (should be authenticated)',
+      'Error states blocking all content',
+    ],
+    mobileConsiderations: [
+      'Cards should be full-width on mobile',
+      'Pull-to-refresh should be intuitive',
+    ],
+  },
+  {
+    name: 'settings',
+    description: 'Settings page for managing household and preferences',
+    mustShow: [
+      'Settings sections or categories',
+      'User info or household name',
+      'Navigation elements',
+    ],
+    mustNotShow: [
+      'Sensitive data like passwords in plain text',
+      'Error states blocking access',
+    ],
+    mobileConsiderations: [
+      'Settings should be easily navigable with thumb',
+      'Toggle switches should be large enough to tap',
+    ],
+  },
+]
+
+// ============================================
+// Design System Context
+// ============================================
+
+const FAMILJEN_DESIGN_CONTEXT = `
+You are reviewing screenshots of Familjen, a Norwegian family planning app.
+
+## Design System
+
+### Colors
+- Child identification colors (distinct, soft): sky (#7EB6C4), coral (#E8998D), sage (#94B49F), honey (#E5BA73), lavender (#B8A9C9), mint (#98D8AA)
+- Background: warm off-white, not pure white
+- Text: dark but not pure black for readability
+- Avoid harsh contrasts that feel clinical
+
+### Typography
+- Should feel warm and approachable, not corporate
+- Norwegian characters (ø, æ, å) must render correctly
+- Body text at least 14px for readability
+
+### Layout
+- Mobile-first design
+- Cards and sections with generous padding
+- Bottom navigation in thumb zone on mobile
+- No horizontal scroll on any viewport
+
+### Content
+- Norwegian language (or Swedish/English based on settings)
+- Dates in European format
+- Times in 24-hour format
+
+### User Context
+- Primary users are busy parents, often checking app while handling kids
+- One-handed mobile use is common
+- Quick glance should convey the day's essentials
+`
+
+// ============================================
+// Validation Schema
+// ============================================
+
+const VALIDATION_SCHEMA = {
+  type: 'object' as const,
+  properties: {
+    verdict: {
+      type: 'string' as const,
+      enum: ['PASS', 'WARN', 'FAIL'],
+      description: 'Overall verdict for this page',
+    },
+    score: {
+      type: 'number' as const,
+      minimum: 0,
+      maximum: 100,
+      description: 'Quality score 0-100',
+    },
+    issues: {
+      type: 'array' as const,
+      items: {
+        type: 'object' as const,
+        properties: {
+          severity: { type: 'string' as const, enum: ['critical', 'warning', 'info'] },
+          description: { type: 'string' as const },
+          suggestion: { type: 'string' as const },
+        },
+        required: ['severity', 'description'],
+      },
+    },
+    designSystemCompliance: {
+      type: 'object' as const,
+      properties: {
+        colorPalette: { type: 'boolean' as const },
+        typography: { type: 'boolean' as const },
+        spacing: { type: 'boolean' as const },
+        touchTargets: { type: 'boolean' as const },
+      },
+      required: ['colorPalette', 'typography', 'spacing', 'touchTargets'],
+    },
+    contentVisibility: {
+      type: 'object' as const,
+      properties: {
+        expected: { type: 'array' as const, items: { type: 'string' as const } },
+        found: { type: 'array' as const, items: { type: 'string' as const } },
+        missing: { type: 'array' as const, items: { type: 'string' as const } },
+      },
+      required: ['expected', 'found', 'missing'],
+    },
+    mobileUsability: {
+      type: 'object' as const,
+      properties: {
+        score: { type: 'number' as const, minimum: 0, maximum: 100 },
+        notes: { type: 'array' as const, items: { type: 'string' as const } },
+      },
+      required: ['score', 'notes'],
+    },
+    summary: {
+      type: 'string' as const,
+      description: 'One-sentence summary of findings',
+    },
+  },
+  required: ['verdict', 'score', 'issues', 'designSystemCompliance', 'contentVisibility', 'mobileUsability', 'summary'],
+  additionalProperties: false,
+}
+
+// ============================================
+// Main Validation Function
+// ============================================
+
+async function validateScreenshot(
+  screenshotPath: string,
+  expectation: PageExpectation
+): Promise<ValidationResult> {
+  if (!fs.existsSync(screenshotPath)) {
+    return {
+      page: expectation.name,
+      verdict: 'FAIL',
+      score: 0,
+      issues: [{ severity: 'critical', description: `Screenshot not found: ${screenshotPath}` }],
+      designSystemCompliance: { colorPalette: false, typography: false, spacing: false, touchTargets: false },
+      contentVisibility: { expected: expectation.mustShow, found: [], missing: expectation.mustShow },
+      mobileUsability: { score: 0, notes: ['Cannot evaluate - screenshot missing'] },
+      summary: 'Screenshot file not found',
+    }
+  }
+
+  const imageBuffer = fs.readFileSync(screenshotPath)
+  const base64Image = imageBuffer.toString('base64')
+  const mimeType = 'image/png'
+
+  const prompt = `
+${FAMILJEN_DESIGN_CONTEXT}
+
+## Page Being Validated
+**Page:** ${expectation.name}
+**Description:** ${expectation.description}
+
+## Must Show
+${expectation.mustShow.map(s => `- ${s}`).join('\n')}
+
+## Must NOT Show
+${expectation.mustNotShow.map(s => `- ${s}`).join('\n')}
+
+## Mobile Considerations
+${expectation.mobileConsiderations.map(s => `- ${s}`).join('\n')}
+
+## Your Task
+Analyze this screenshot and evaluate:
+
+1. **Design System Compliance**: Does it follow Familjen's design system?
+2. **Content Visibility**: Are the expected elements visible?
+3. **Mobile Usability**: Would a busy parent with one hand free be able to use this?
+4. **Issues**: Any problems that need fixing?
+
+Be specific about what you see. If something looks broken, describe exactly what's wrong.
+If the page looks good, confirm what's working well.
+
+Remember: This is for Norwegian families. Check Norwegian text renders correctly.
+`
+
+  try {
+    const visionModel = AI_MODELS.vision
+
+    const response = await fetchWithStructuredOutput<ValidationResult>(
+      [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${mimeType};base64,${base64Image}`,
+              },
+            },
+          ],
+        },
+      ],
+      VALIDATION_SCHEMA,
+      visionModel
+    )
+
+    return {
+      ...response,
+      page: expectation.name,
+    }
+  } catch (error) {
+    console.error(`Error validating ${expectation.name}:`, error)
+    return {
+      page: expectation.name,
+      verdict: 'FAIL',
+      score: 0,
+      issues: [{ severity: 'critical', description: `AI validation failed: ${error instanceof Error ? error.message : 'Unknown error'}` }],
+      designSystemCompliance: { colorPalette: false, typography: false, spacing: false, touchTargets: false },
+      contentVisibility: { expected: expectation.mustShow, found: [], missing: expectation.mustShow },
+      mobileUsability: { score: 0, notes: ['Validation error'] },
+      summary: 'AI validation encountered an error',
+    }
+  }
+}
+
+async function validateAllScreenshots(screenshotDir: string): Promise<OverallReport> {
+  console.log('🔍 AI Visual Validation (No Baselines)\n')
+  console.log(`📁 Screenshot directory: ${screenshotDir}`)
+
+  const results: ValidationResult[] = []
+
+  for (const expectation of PAGE_EXPECTATIONS) {
+    // Check both desktop and mobile variants
+    const variants = [
+      { suffix: '', isMobile: false },
+      { suffix: '-mobile', isMobile: true },
+    ]
+
+    for (const variant of variants) {
+      const filename = `${expectation.name}${variant.suffix}.png`
+      const filepath = path.join(screenshotDir, filename)
+
+      if (fs.existsSync(filepath)) {
+        console.log(`\n📸 Validating: ${filename}`)
+
+        const result = await validateScreenshot(filepath, {
+          ...expectation,
+          name: `${expectation.name}${variant.suffix}`,
+          mobileConsiderations: variant.isMobile
+            ? expectation.mobileConsiderations
+            : ['Desktop view - check readability and layout'],
+        })
+
+        results.push(result)
+
+        // Print result
+        const icon = result.verdict === 'PASS' ? '✅' : result.verdict === 'WARN' ? '⚠️' : '❌'
+        console.log(`   ${icon} ${result.verdict} (Score: ${result.score}/100)`)
+        console.log(`   ${result.summary}`)
+
+        if (result.issues.length > 0) {
+          result.issues.forEach(issue => {
+            const issueIcon = issue.severity === 'critical' ? '🔴' : issue.severity === 'warning' ? '🟡' : '🔵'
+            console.log(`   ${issueIcon} ${issue.description}`)
+          })
+        }
+      }
+    }
+  }
+
+  const passed = results.filter(r => r.verdict === 'PASS').length
+  const warned = results.filter(r => r.verdict === 'WARN').length
+  const failed = results.filter(r => r.verdict === 'FAIL').length
+  const avgScore = results.length > 0
+    ? Math.round(results.reduce((sum, r) => sum + r.score, 0) / results.length)
+    : 0
+
+  let recommendation: string
+  if (failed > 0) {
+    recommendation = 'FAIL: Critical issues found that need fixing before merge.'
+  } else if (warned > results.length / 2) {
+    recommendation = 'REVIEW: Multiple warnings detected. Consider addressing before merge.'
+  } else if (avgScore >= 80) {
+    recommendation = 'PASS: Visual quality meets standards. Safe to merge.'
+  } else {
+    recommendation = 'REVIEW: Some improvements suggested but no blockers.'
+  }
+
+  const report: OverallReport = {
+    timestamp: new Date().toISOString(),
+    totalPages: results.length,
+    passed,
+    warned,
+    failed,
+    averageScore: avgScore,
+    results,
+    recommendation,
+  }
+
+  return report
+}
+
+// ============================================
+// CLI
+// ============================================
+
+async function main() {
+  const args = process.argv.slice(2)
+  let screenshotDir = 'tests/visual/current'
+
+  // Parse arguments
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--screenshots' && args[i + 1]) {
+      screenshotDir = args[i + 1]
+      i++
+    }
+  }
+
+  // Check if directory exists
+  if (!fs.existsSync(screenshotDir)) {
+    console.error(`\n❌ Screenshot directory not found: ${screenshotDir}`)
+    console.log('\nTo capture screenshots:')
+    console.log('  npx playwright test capture-screenshots --project=chromium')
+    process.exit(1)
+  }
+
+  // Check for screenshots
+  const screenshots = fs.readdirSync(screenshotDir).filter(f => f.endsWith('.png'))
+  if (screenshots.length === 0) {
+    console.error(`\n❌ No screenshots found in: ${screenshotDir}`)
+    console.log('\nTo capture screenshots:')
+    console.log('  npx playwright test capture-screenshots --project=chromium')
+    process.exit(1)
+  }
+
+  console.log(`\n📷 Found ${screenshots.length} screenshots: ${screenshots.join(', ')}`)
+
+  try {
+    const report = await validateAllScreenshots(screenshotDir)
+
+    // Save report
+    const reportPath = 'visual-validation-report.json'
+    fs.writeFileSync(reportPath, JSON.stringify(report, null, 2))
+    console.log(`\n📄 Report saved: ${reportPath}`)
+
+    // Print summary
+    console.log('\n' + '='.repeat(50))
+    console.log('📊 VALIDATION SUMMARY')
+    console.log('='.repeat(50))
+    console.log(`   Total pages: ${report.totalPages}`)
+    console.log(`   ✅ Passed: ${report.passed}`)
+    console.log(`   ⚠️  Warnings: ${report.warned}`)
+    console.log(`   ❌ Failed: ${report.failed}`)
+    console.log(`   📈 Average score: ${report.averageScore}/100`)
+    console.log('')
+    console.log(`   ${report.recommendation}`)
+    console.log('='.repeat(50))
+
+    // Generate markdown comment for PR
+    const commentPath = 'visual-validation-comment.md'
+    const comment = generatePRComment(report)
+    fs.writeFileSync(commentPath, comment)
+    console.log(`\n💬 PR comment saved: ${commentPath}`)
+
+    // Exit with appropriate code
+    if (report.failed > 0) {
+      process.exit(1)
+    }
+  } catch (error) {
+    console.error('\n❌ Validation failed:', error)
+    process.exit(1)
+  }
+}
+
+function generatePRComment(report: OverallReport): string {
+  const icon = report.failed > 0 ? '❌' : report.warned > 0 ? '⚠️' : '✅'
+
+  let comment = `## ${icon} AI Visual Validation
+
+**Score:** ${report.averageScore}/100 | **Passed:** ${report.passed} | **Warnings:** ${report.warned} | **Failed:** ${report.failed}
+
+${report.recommendation}
+
+`
+
+  if (report.failed > 0 || report.warned > 0) {
+    comment += `### Issues Found\n\n`
+
+    for (const result of report.results) {
+      if (result.verdict !== 'PASS') {
+        const pageIcon = result.verdict === 'FAIL' ? '❌' : '⚠️'
+        comment += `#### ${pageIcon} ${result.page}\n`
+        comment += `> ${result.summary}\n\n`
+
+        for (const issue of result.issues) {
+          const issueIcon = issue.severity === 'critical' ? '🔴' : issue.severity === 'warning' ? '🟡' : '🔵'
+          comment += `- ${issueIcon} ${issue.description}\n`
+          if (issue.suggestion) {
+            comment += `  - *Suggestion:* ${issue.suggestion}\n`
+          }
+        }
+        comment += '\n'
+      }
+    }
+  }
+
+  comment += `---\n*Validated by AI visual review at ${report.timestamp}*`
+
+  return comment
+}
+
+main().catch(console.error)

@@ -516,21 +516,58 @@ vi.mock('@/lib/supabase/client', () => ({
 
 ### E2E Testing (Playwright)
 
-For critical user journeys, use Playwright to test on both mobile and desktop:
+E2E tests use Playwright with **mock auth and AI-generated test data**. This allows testing on fresh Vercel previews without needing a real database or test user.
 
+**Test Structure:**
+```
+tests/e2e/
+├── fixtures/
+│   ├── mock-auth.ts           # Mock Supabase auth state
+│   └── test-data-generator.ts  # AI-generated Norwegian family data
+├── critical-journeys.spec.ts   # User journey tests with mock data
+├── design-system.spec.ts       # Deterministic design checks (no AI)
+├── capture-screenshots.spec.ts # Screenshot capture for AI validation
+└── auth.setup.ts               # Real auth (only used if credentials provided)
+```
+
+**Mock Auth Mode (Default):**
 ```typescript
-// tests/e2e/pickup-flow.spec.ts
+// tests/e2e/critical-journeys.spec.ts
 import { test, expect } from '@playwright/test'
+import { setupTestFixture } from './fixtures/mock-auth'
 
-test('user can assign pickup for today', async ({ page }) => {
+test('home page shows children and pickups', async ({ page, context }) => {
+  // Set up mock auth and AI-generated test data
+  const { household } = await setupTestFixture(context, page, {
+    childCount: 2,
+    memberCount: 2,
+    withPickups: true,
+  })
+
   await page.goto('/')
-  await page.click('[data-testid="pickup-selector"]')
-  await page.click('text=Mamma')
-  await expect(page.locator('[data-testid="pickup-assignment"]')).toContainText('Mamma')
+
+  // Test data is automatically injected via route mocks
+  for (const child of household.children) {
+    await expect(page.locator(`text=${child.name}`)).toBeVisible()
+  }
 })
 ```
 
-**Run E2E tests:** `npx playwright test`
+**Run E2E tests:**
+```bash
+npx playwright test                    # Mock auth (default)
+npx playwright test --project=chromium # Desktop only
+PLAYWRIGHT_BASE_URL=https://preview.vercel.app npx playwright test
+
+# With real auth (optional - needs test user in database)
+E2E_TEST_EMAIL=test@example.com E2E_TEST_PASSWORD=secret npx playwright test
+```
+
+**Benefits of Mock Auth:**
+- Works on fresh Vercel previews with no database setup
+- Tests adapts to schema changes (AI generates valid data)
+- No need to maintain test users or seed data
+- Tests run faster (no auth API calls)
 
 ### Current Coverage
 
@@ -565,7 +602,8 @@ scripts/
 ├── ai-config.ts              # Model config + OpenRouter structured outputs
 ├── migration-ai-review.ts    # Reviews database migrations
 ├── ai-code-review.ts         # Reviews PR code changes
-└── ai-visual-review.ts       # Compares screenshots for UX regressions
+├── ai-visual-review.ts       # Compares screenshots (baseline-based)
+└── ai-visual-validation.ts   # Evaluates screenshots (no baselines needed)
 ```
 
 ### Environment Variables
@@ -575,7 +613,7 @@ scripts/
 OPENROUTER_API_KEY=sk-or-v1-...
 OPENROUTER_FAST_MODEL=google/gemini-2.0-flash-001       # Migration review
 OPENROUTER_CAPABLE_MODEL=anthropic/claude-sonnet-4.5   # Code review
-OPENROUTER_VISION_MODEL=google/gemini-2.0-flash-001    # Visual review
+OPENROUTER_VISION_MODEL=google/gemini-2.0-flash-001    # Visual validation
 OPENROUTER_TEST_MODEL=google/gemini-2.0-flash-001      # API tests (main branch only)
 ```
 
@@ -597,10 +635,13 @@ npm run ai:migration-review -- --all  # Review all migrations
 npm run ai:code-review
 npm run ai:code-review -- --base origin/main
 
-# Visual review (requires baselines)
+# Visual review (baseline-based, optional)
 npm run ai:visual-review
 npm run ai:visual-review -- --capture  # Show capture instructions
 npm run ai:visual-review -- --update   # Update baselines from current
+
+# Visual validation (no baselines needed - default in CI)
+npm run ai:visual-validate             # Validates screenshots against design system
 ```
 
 ### Migration Review
@@ -643,7 +684,7 @@ This PR adds sync failure banners with proper error handling...
 - `src/components/Banner.tsx:42`: Consider memoizing the filter function
 ```
 
-### Visual Review
+### Visual Review (Baseline-Based)
 
 Compares baseline screenshots with current screenshots to detect:
 - Critical elements present (pickups, meals, tasks visible)
@@ -664,6 +705,71 @@ git add tests/visual/baselines/
 git commit -m "Add visual regression baselines"
 ```
 
+### Visual Validation (No Baselines Needed)
+
+The preferred approach for CI - AI evaluates screenshots against design system expectations:
+
+**What it checks:**
+- **Design System Compliance**: Colors, typography, spacing, touch targets
+- **Content Visibility**: Expected elements present (children, pickups, meals)
+- **Mobile Usability**: Can busy parents use this with one hand?
+- **Norwegian Context**: ø, æ, å characters render correctly
+
+**How it works:**
+1. Playwright captures screenshots using mock auth + AI-generated test data
+2. Works on fresh Vercel previews with no real database needed
+3. AI vision model evaluates each screenshot against expectations
+4. Results posted as PR comment with PASS/WARN/FAIL verdict
+
+**Page expectations are defined in code:**
+```typescript
+// scripts/ai-visual-validation.ts
+const PAGE_EXPECTATIONS = [
+  {
+    name: 'home',
+    description: 'Home page showing today\'s overview for a busy parent',
+    mustShow: [
+      'Today\'s date or "I dag"',
+      'Children names or pickup assignments',
+      'Navigation (bottom or sidebar)',
+    ],
+    mustNotShow: [
+      'Error messages or crash screens',
+      'Infinite loading spinners',
+    ],
+    mobileConsiderations: [
+      'Most important info (pickups) should be immediately visible',
+      'No horizontal scrolling',
+    ],
+  },
+  // ... more pages
+]
+```
+
+**Output format:**
+```json
+{
+  "verdict": "PASS",
+  "score": 85,
+  "designSystemCompliance": {
+    "colorPalette": true,
+    "typography": true,
+    "spacing": true,
+    "touchTargets": true
+  },
+  "contentVisibility": {
+    "expected": ["pickups", "children", "navigation"],
+    "found": ["pickups", "children", "navigation"],
+    "missing": []
+  },
+  "mobileUsability": {
+    "score": 90,
+    "notes": ["Good thumb zone placement for navigation"]
+  },
+  "summary": "Home page renders correctly with all expected elements visible"
+}
+```
+
 ### CI Pipeline Flow
 
 ```
@@ -676,13 +782,28 @@ PR Created
     │
     └─► unit-tests ◄──────────────┘
             │
-            ├─► build
-            │     │
+            ├─► build ───────────────────────────────┐
+            │     │                                   │
             │     ├─► ai-code-review → Posts PR comment
-            │     └─► visual-review (optional)
+            │     │                                   │
+            │     └─► e2e-preview ────────────────────┤
+            │           │                             │
+            │           ├─► Wait for Vercel preview   │
+            │           ├─► Capture screenshots       │
+            │           │   (mock auth + test data)   │
+            │           │                             │
+            │           └─► visual-validation ────────┘
+            │               → Posts PR comment with
+            │                 design system analysis
             │
             └─► (main only) api-tests
 ```
+
+**Key features:**
+- Screenshots captured on real Vercel preview (not localhost)
+- Mock auth means no database setup needed
+- AI-generated Norwegian family data adapts to schema changes
+- Visual validation runs even if database migrations break things
 
 ### Structured Outputs
 

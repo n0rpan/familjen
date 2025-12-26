@@ -260,15 +260,15 @@ jobs:
             }
 
   # ============================================
-  # AI Visual Review (optional - requires screenshots)
+  # AI Visual Validation (No Baselines Needed)
   # ============================================
-  visual-review:
-    name: AI Visual Review
+  visual-validation:
+    name: AI Visual Validation
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     needs: [build]
     if: github.event_name == 'pull_request'
-    continue-on-error: true  # Don't fail PR if visual review fails
+    continue-on-error: true  # Don't fail PR if visual validation fails
 
     steps:
       - uses: actions/checkout@v4
@@ -278,48 +278,85 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Check for visual baselines
-        id: check-baselines
-        run: |
-          if [ -d "tests/visual/baselines" ] && [ "$(ls -A tests/visual/baselines/*.png 2>/dev/null)" ]; then
-            echo "has_baselines=true" >> $GITHUB_OUTPUT
-            echo "Found baseline screenshots"
-          else
-            echo "has_baselines=false" >> $GITHUB_OUTPUT
-            echo "No baseline screenshots - skipping visual review"
-          fi
-
       - name: Install dependencies
-        if: steps.check-baselines.outputs.has_baselines == 'true'
         run: npm ci
 
       - name: Install Playwright browsers
-        if: steps.check-baselines.outputs.has_baselines == 'true'
         run: npx playwright install chromium
 
-      - name: Capture current screenshots
-        if: steps.check-baselines.outputs.has_baselines == 'true'
-        run: npx playwright test tests/e2e/capture-screenshots.spec.ts --project=chromium || true
+      - name: Wait for Vercel Preview
+        uses: patrickedqvist/wait-for-vercel-preview@v1.3.2
+        id: vercel
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          max_timeout: 300
+          check_interval: 10
+
+      - name: Capture screenshots with mock data
+        if: steps.vercel.outputs.url
+        run: npx playwright test tests/e2e/capture-screenshots.spec.ts --project=chromium
         env:
+          PLAYWRIGHT_BASE_URL: ${{ steps.vercel.outputs.url }}
           NEXT_PUBLIC_SUPABASE_URL: 'https://placeholder.supabase.co'
           NEXT_PUBLIC_SUPABASE_ANON_KEY: 'placeholder'
 
-      - name: Run AI visual review
-        if: steps.check-baselines.outputs.has_baselines == 'true'
-        run: npx tsx scripts/ai-visual-review.ts
+      - name: Run AI visual validation
+        if: steps.vercel.outputs.url
+        run: npx tsx scripts/ai-visual-validation.ts
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_VISION_MODEL: ${{ secrets.OPENROUTER_VISION_MODEL }}
 
-      - name: Upload visual review results
-        if: steps.check-baselines.outputs.has_baselines == 'true'
+      - name: Upload visual validation results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: visual-review
+          name: visual-validation
           path: |
-            visual-review.json
+            visual-validation-report.json
+            visual-validation-comment.md
             tests/visual/current/
           retention-days: 7
+
+      - name: Post visual validation comment
+        if: always() && steps.vercel.outputs.url
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs')
+            if (!fs.existsSync('visual-validation-comment.md')) {
+              console.log('No visual validation comment to post')
+              return
+            }
+
+            const comment = fs.readFileSync('visual-validation-comment.md', 'utf8')
+
+            // Check for existing bot comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            })
+
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('AI Visual Validation')
+            )
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment
+              })
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              })
+            }
 
   # ============================================
   # E2E Tests on Vercel Preview (PRs only)

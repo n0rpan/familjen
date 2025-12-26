@@ -15,7 +15,8 @@
     "test:e2e:ui": "playwright test --ui",
     "ai:migration-review": "tsx scripts/migration-ai-review.ts",
     "ai:code-review": "tsx scripts/ai-code-review.ts",
-    "ai:visual-review": "tsx scripts/ai-visual-review.ts"
+    "ai:visual-review": "tsx scripts/ai-visual-review.ts",
+    "ai:visual-validate": "tsx scripts/ai-visual-validation.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",

@@ -6,16 +6,28 @@ import { defineConfig, devices } from '@playwright/test'
  * Philosophy: Test critical user journeys that busy parents depend on.
  * Focus on data integrity and clear error communication.
  *
- * Run with: npx playwright test
- * UI mode: npx playwright test --ui
+ * Runs in two modes:
+ * 1. Mock Auth Mode (default): Uses mock auth fixtures with AI-generated test data
+ *    - Works on fresh Vercel previews with no real database
+ *    - Tests UI rendering and user flows with mock API responses
  *
- * For Vercel preview testing, set PLAYWRIGHT_BASE_URL:
- *   PLAYWRIGHT_BASE_URL=https://preview-xxx.vercel.app npx playwright test
+ * 2. Real Auth Mode: Uses actual Supabase auth (requires E2E_TEST_EMAIL/PASSWORD)
+ *    - For integration testing against real database
+ *    - Run with: E2E_TEST_EMAIL=... E2E_TEST_PASSWORD=... npx playwright test
+ *
+ * Usage:
+ *   npx playwright test                    # Mock auth (default)
+ *   npx playwright test --project=chromium # Desktop only
+ *   PLAYWRIGHT_BASE_URL=https://preview.vercel.app npx playwright test
  */
 
 // Use PLAYWRIGHT_BASE_URL if set (for Vercel preview testing), otherwise localhost
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000'
 const isExternalUrl = !!process.env.PLAYWRIGHT_BASE_URL
+
+// Check if real auth credentials are provided
+const useRealAuth = !!(process.env.E2E_TEST_EMAIL && process.env.E2E_TEST_PASSWORD)
+const authFile = 'tests/.auth/user.json'
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -31,21 +43,56 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
 
-  projects: [
-    {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
-    },
-    // Mobile is critical for parents on the go
-    {
-      name: 'mobile-chrome',
-      use: { ...devices['Pixel 5'] },
-    },
-    {
-      name: 'mobile-safari',
-      use: { ...devices['iPhone 12'] },
-    },
-  ],
+  projects: useRealAuth
+    ? [
+        // Real auth mode - uses actual Supabase credentials
+        {
+          name: 'setup',
+          testMatch: /auth\.setup\.ts/,
+        },
+        {
+          name: 'chromium',
+          use: {
+            ...devices['Desktop Chrome'],
+            storageState: authFile,
+          },
+          dependencies: ['setup'],
+        },
+        {
+          name: 'mobile-chrome',
+          use: {
+            ...devices['Pixel 5'],
+            storageState: authFile,
+          },
+          dependencies: ['setup'],
+        },
+        {
+          name: 'mobile-safari',
+          use: {
+            ...devices['iPhone 12'],
+            storageState: authFile,
+          },
+          dependencies: ['setup'],
+        },
+      ]
+    : [
+        // Mock auth mode (default) - no setup needed, tests use mock fixtures
+        {
+          name: 'chromium',
+          use: devices['Desktop Chrome'],
+          testIgnore: /auth\.setup\.ts/, // Skip auth setup when using mocks
+        },
+        {
+          name: 'mobile-chrome',
+          use: devices['Pixel 5'],
+          testIgnore: /auth\.setup\.ts/,
+        },
+        {
+          name: 'mobile-safari',
+          use: devices['iPhone 12'],
+          testIgnore: /auth\.setup\.ts/,
+        },
+      ],
 
   // Only start dev server when testing locally (not against Vercel preview)
   webServer: isExternalUrl
