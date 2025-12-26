@@ -422,6 +422,23 @@ export const nb: TranslationStrings = {
     noRelevantInfo: 'Fant ingen relevant informasjon',
     clearAnswer: 'Lukk',
     tryAgain: 'Prøv igjen',
+    // Calendar change notifications
+    calendarChanges: 'Kalenderendringer',
+    eventRemoved: 'Hendelse fjernet fra kalenderkilde',
+    dateChanged: 'Dato endret i kalenderkilde',
+    titleChanged: 'Tittel endret i kalenderkilde',
+    restoreEvent: 'Legg til på nytt',
+    dismissNotification: 'Avvis',
+    restoring: 'Legger til...',
+    taskWasDeleted: 'Oppgaven "{title}" ble fjernet',
+    eventRestoredSuccess: '{title} ble lagt til',
+    viewInWeekPlan: 'Vis i ukeplanen',
+    sourceDeleted: 'Kalenderkilden er slettet',
+    childDeleted: 'Barnet "{name}" er slettet',
+    pastDateWarning: 'Denne datoen har passert. Vil du likevel legge til hendelsen?',
+    restoreAnyway: 'Legg til likevel',
+    showAllNotifications: 'Vis alle {count} varsler',
+    showFewerNotifications: 'Vis færre',
   },
 
   // Admin page

@@ -6,6 +6,7 @@ import { KidplanClient, KidplanAuthError } from '@/lib/integrations/kidplan'
 import { ISkoleClient, ISkoleAuthError } from '@/lib/integrations/iskole'
 import { MyKidClient, MyKidAuthError } from '@/lib/integrations/mykid'
 import { addDays } from '@/lib/utils'
+import { FUTURE_SYNC_DAYS } from '@/lib/integrations/shared'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 import sharp from 'sharp'
 
@@ -178,7 +179,7 @@ async function syncSpond(supabase: AnySupabase, integration: AnyIntegration, cre
   await client.login(creds.email, creds.password)
 
   const now = new Date()
-  const futureDate = addDays(now, 90)
+  const futureDate = addDays(now, FUTURE_SYNC_DAYS)
   const lastSync = integration.last_sync_at ? new Date(integration.last_sync_at) : addDays(now, -30)
 
   // Get child mappings
@@ -450,7 +451,7 @@ async function syncMyKid(supabase: AnySupabase, integration: AnyIntegration, cre
   await client.login(creds.phone, creds.password)
 
   const now = new Date()
-  const futureDate = addDays(now, 90)
+  const futureDate = addDays(now, FUTURE_SYNC_DAYS)
   const lastSync = integration.last_sync_at ? new Date(integration.last_sync_at) : addDays(now, -30)
 
   // Sync calendar events

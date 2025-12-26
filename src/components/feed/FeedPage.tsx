@@ -7,6 +7,7 @@ import { FeedSearch } from './FeedSearch'
 import { MessageCard, type FeedMessage } from './MessageCard'
 import { PhotoGallery, type FeedPhoto } from './PhotoGallery'
 import { ReminderCard, type FeedReminder } from './ReminderCard'
+import { EventChangeNotificationList, type EventNotification } from './EventChangeNotification'
 import { useLanguage } from '@/lib/i18n/context'
 
 // Integration children mapping (which children belong to which integrations)
@@ -31,6 +32,7 @@ export function FeedPage({ householdId }: Props) {
   const [messages, setMessages] = useState<FeedMessage[]>([])
   const [photos, setPhotos] = useState<FeedPhoto[]>([])
   const [reminders, setReminders] = useState<FeedReminder[]>([])
+  const [notifications, setNotifications] = useState<EventNotification[]>([])
   const [integrationChildren, setIntegrationChildren] = useState<IntegrationChild[]>([])
   const [syncing, setSyncing] = useState(false)
 
@@ -197,6 +199,17 @@ export function FeedPage({ householdId }: Props) {
       }))
 
       setReminders(transformedReminders)
+
+      // Load event change notifications (calendar source removals)
+      const { data: notificationsData } = await supabase
+        .from('event_change_notifications')
+        .select('*')
+        .eq('household_id', householdId)
+        .in('status', ['unread', 'read'])
+        .order('created_at', { ascending: false })
+        .limit(20)
+
+      setNotifications((notificationsData || []) as EventNotification[])
     } catch (error) {
       console.error('Error loading feed data:', error)
     } finally {
@@ -378,8 +391,16 @@ export function FeedPage({ householdId }: Props) {
         </button>
       </div>
 
+      {/* Event change notifications (calendar source removals) */}
+      {notifications.length > 0 && activeFilter === 'all' && (
+        <EventChangeNotificationList
+          notifications={notifications}
+          onUpdate={loadData}
+        />
+      )}
+
       {/* Empty state */}
-      {hasNoContent ? (
+      {hasNoContent && notifications.length === 0 ? (
         <div
           className="card p-8 text-center"
           style={{

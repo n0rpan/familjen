@@ -422,6 +422,23 @@ export const en: TranslationStrings = {
     noRelevantInfo: 'No relevant information found',
     clearAnswer: 'Close',
     tryAgain: 'Try again',
+    // Calendar change notifications
+    calendarChanges: 'Calendar Changes',
+    eventRemoved: 'Event removed from calendar source',
+    dateChanged: 'Date changed in calendar source',
+    titleChanged: 'Title changed in calendar source',
+    restoreEvent: 'Add again',
+    dismissNotification: 'Dismiss',
+    restoring: 'Adding...',
+    taskWasDeleted: 'The task "{title}" was removed',
+    eventRestoredSuccess: '{title} has been added',
+    viewInWeekPlan: 'View in week plan',
+    sourceDeleted: 'Calendar source has been deleted',
+    childDeleted: 'The child "{name}" has been deleted',
+    pastDateWarning: 'This date has passed. Do you still want to add the event?',
+    restoreAnyway: 'Add anyway',
+    showAllNotifications: 'Show all {count} notifications',
+    showFewerNotifications: 'Show fewer',
   },
 
   // Admin page

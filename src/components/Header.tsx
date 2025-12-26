@@ -1,13 +1,27 @@
 'use client'
 
 import Image from 'next/image'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { User } from '@supabase/supabase-js'
 import { useTranslation } from '@/lib/i18n/context'
 import { TransitionLink } from './TransitionLink'
 import { usePrefetchRoutes, KEY_ROUTES, SECONDARY_ROUTES } from '@/hooks/usePrefetchRoutes'
+
+// Notification badge component
+function NotificationBadge({ count }: { count: number }) {
+  if (count === 0) return null
+  return (
+    <span
+      className="absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center text-xs font-bold rounded-full px-1"
+      style={{ background: 'var(--color-coral)', color: 'white' }}
+      aria-label={`${count} unread notifications`}
+    >
+      {count > 9 ? '9+' : count}
+    </span>
+  )
+}
 
 function ShieldIcon() {
   return (
@@ -118,6 +132,7 @@ export function Header() {
   const [hasHomeControl, setHasHomeControl] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
+  const [notificationCount, setNotificationCount] = useState(0)
   const supabase = useMemo(() => createClient(), [])
   const t = useTranslation()
 
@@ -146,6 +161,15 @@ export function Header() {
     [secondaryNav, pathname]
   )
 
+  // Fetch unread notification count
+  const fetchNotificationCount = useCallback(async () => {
+    const { count } = await supabase
+      .from('event_change_notifications')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'unread')
+    setNotificationCount(count || 0)
+  }, [supabase])
+
   useEffect(() => {
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -160,6 +184,9 @@ export function Header() {
         const { data: accounts } = await supabase
           .rpc('get_household_home_control_accounts')
         setHasHomeControl(accounts && accounts.length > 0)
+
+        // Fetch notification count
+        fetchNotificationCount()
       }
     }
     getUser()
@@ -168,10 +195,34 @@ export function Header() {
       setUser(session?.user ?? null)
       // Check admin status from JWT app_metadata
       setIsAdmin(session?.user?.app_metadata?.is_admin === true)
+
+      // Refresh notification count on auth change
+      if (session?.user) {
+        fetchNotificationCount()
+      } else {
+        setNotificationCount(0)
+      }
     })
 
-    return () => subscription.unsubscribe()
-  }, [supabase])
+    // Subscribe to notification changes for real-time updates
+    const notificationChannel = supabase
+      .channel('notification-count')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'event_change_notifications',
+        },
+        () => fetchNotificationCount()
+      )
+      .subscribe()
+
+    return () => {
+      subscription.unsubscribe()
+      notificationChannel.unsubscribe()
+    }
+  }, [supabase, fetchNotificationCount])
 
   const handleLogout = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault()
@@ -215,6 +266,7 @@ export function Header() {
             <nav className="flex items-center gap-1" aria-label="Main navigation">
               {primaryNav.map((item) => {
                 const isActive = pathname === item.href
+                const isFeed = item.href === '/feed'
                 return (
                   <TransitionLink
                     key={item.href}
@@ -226,7 +278,10 @@ export function Header() {
                     }}
                     aria-current={isActive ? 'page' : undefined}
                   >
-                    <item.icon />
+                    <span className="relative">
+                      <item.icon />
+                      {isFeed && <NotificationBadge count={notificationCount} />}
+                    </span>
                     <span>{item.name}</span>
                   </TransitionLink>
                 )
@@ -389,6 +444,7 @@ export function Header() {
         <div className="flex justify-around items-center h-16 px-2">
           {primaryNav.map((item) => {
             const isActive = pathname === item.href
+            const isFeed = item.href === '/feed'
             return (
               <TransitionLink
                 key={item.href}
@@ -399,7 +455,10 @@ export function Header() {
                 }}
                 aria-current={isActive ? 'page' : undefined}
               >
-                <item.icon />
+                <span className="relative">
+                  <item.icon />
+                  {isFeed && <NotificationBadge count={notificationCount} />}
+                </span>
                 <span className="text-xs font-medium">{item.name}</span>
               </TransitionLink>
             )

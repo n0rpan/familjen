@@ -430,6 +430,23 @@ export interface TranslationStrings {
     noRelevantInfo: string
     clearAnswer: string
     tryAgain: string
+    // Calendar change notifications
+    calendarChanges: string
+    eventRemoved: string
+    dateChanged: string
+    titleChanged: string
+    restoreEvent: string
+    dismissNotification: string
+    restoring: string
+    taskWasDeleted: string
+    eventRestoredSuccess: string
+    viewInWeekPlan: string
+    sourceDeleted: string
+    childDeleted: string
+    pastDateWarning: string
+    restoreAnyway: string
+    showAllNotifications: string
+    showFewerNotifications: string
   }
 
   // Admin page

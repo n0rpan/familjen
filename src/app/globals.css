@@ -59,13 +59,18 @@
   box-sizing: border-box;
 }
 
-/* Remove ALL focus outlines and highlights */
-*:focus,
-*:focus-visible,
-*:focus-within {
-  outline: none !important;
+/* Focus styles for accessibility */
+*:focus {
+  outline: none;
 }
 
+/* Visible focus ring for keyboard navigation (not mouse clicks) */
+*:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Remove tap highlight on mobile */
 * {
   -webkit-tap-highlight-color: transparent;
 }

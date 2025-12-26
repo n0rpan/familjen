@@ -564,7 +564,19 @@ VIKTIG:
 - Returner BARE gyldig JSON
 - Sett operation="modify" for pickup (endrer alltid eksisterende hentinger)
 - Sett needs_clarification hvis du er usikker på hvem handlingen gjelder
-- confidence bør være høy (0.8+) kun når du er sikker`
+- confidence bør være høy (0.8+) kun når du er sikker
+
+CONFIDENCE-NIVÅER:
+- 0.9-1.0: Helt tydelig hva brukeren vil (f.eks. "taco på fredag")
+- 0.7-0.9: Klar intensjon men noe usikkerhet (f.eks. "middag i morgen" - usikkert hvilken rett)
+- 0.5-0.7: Delvis forståelig, trenger kanskje avklaring
+- 0.3-0.5: Uklar input, gjetter på betydning
+- 0.0-0.3: Meningsløs/uforståelig input (f.eks. "abc123", "asdf", tilfeldig tekst)
+
+FOR UFORSTÅELIG INPUT:
+Hvis input ikke gir mening som en familieplanleggingshandling (f.eks. tilfeldige bokstaver, tall, kode, eller tekst som ikke relaterer til middager, oppgaver, henting, ønskelister, etc.):
+- Returner tom actions-array: { "actions": [] }
+- ELLER returner handling med confidence < 0.3`
 }
 
 function buildUserPrompt(
