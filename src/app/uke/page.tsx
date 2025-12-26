@@ -662,49 +662,58 @@ export default function WeekEditPage() {
 
     setSaving(true)
 
-    // Find existing pickup
-    const existing = pickups.find(p => p.child_id === childId && p.date === date)
+    try {
+      // Find existing pickup
+      const existing = pickups.find(p => p.child_id === childId && p.date === date)
 
-    if (existing) {
+      if (existing) {
+        if (pickerId) {
+          // Update existing
+          const { error } = await supabase
+            .from('pickups')
+            .update({ picker_id: pickerId })
+            .eq('id', existing.id)
+          if (error) throw error
+        } else {
+          // Delete if picker is null
+          const { error } = await supabase
+            .from('pickups')
+            .delete()
+            .eq('id', existing.id)
+          if (error) throw error
+        }
+      } else if (pickerId) {
+        // Insert new
+        const { error } = await supabase
+          .from('pickups')
+          .insert({
+            household_id: household.id,
+            child_id: childId,
+            date,
+            picker_id: pickerId,
+          })
+        if (error) throw error
+      }
+
+      // Send notification if pickup was assigned to someone
       if (pickerId) {
-        // Update existing
-        await supabase
-          .from('pickups')
-          .update({ picker_id: pickerId })
-          .eq('id', existing.id)
-      } else {
-        // Delete if picker is null
-        await supabase
-          .from('pickups')
-          .delete()
-          .eq('id', existing.id)
+        const child = children.find(c => c.id === childId)
+        const picker = members.find(m => m.id === pickerId)
+        if (child && picker) {
+          const dateObj = new Date(date)
+          const dayName = t.date.weekdays[dateObj.getDay()]
+          notifyPickupAssigned(child.name, dayName, pickerId)
+        }
       }
-    } else if (pickerId) {
-      // Insert new
-      await supabase
-        .from('pickups')
-        .insert({
-          household_id: household.id,
-          child_id: childId,
-          date,
-          picker_id: pickerId,
-        })
-    }
 
-    // Send notification if pickup was assigned to someone
-    if (pickerId) {
-      const child = children.find(c => c.id === childId)
-      const picker = members.find(m => m.id === pickerId)
-      if (child && picker) {
-        const dateObj = new Date(date)
-        const dayName = t.date.weekdays[dateObj.getDay()]
-        notifyPickupAssigned(child.name, dayName, pickerId)
-      }
+      // Reload data
+      triggerReload()
+    } catch (error) {
+      console.error('Error saving pickup:', error)
+      showMessage('error', t.errors.saveFailed)
+    } finally {
+      setSaving(false)
     }
-
-    // Reload data
-    triggerReload()
-    setSaving(false)
   }
 
   const handleWorkCalendarSync = async (pickupId: string, sync: boolean) => {
@@ -1313,52 +1322,60 @@ export default function WeekEditPage() {
 
     setSaving(true)
 
-    // Find existing meal
-    const existing = meals.find(m => m.date === date)
+    try {
+      // Find existing meal
+      const existing = meals.find(m => m.date === date)
 
-    if (existing) {
-      if (mealName) {
-        // Update existing - use recipe_id if provided, otherwise custom_meal
-        await supabase
+      if (existing) {
+        if (mealName) {
+          // Update existing - use recipe_id if provided, otherwise custom_meal
+          const { error } = await supabase
+            .from('meals')
+            .update({
+              recipe_id: recipeId || null,
+              custom_meal: recipeId ? null : mealName,
+            })
+            .eq('id', existing.id)
+          if (error) throw error
+        } else {
+          // Delete if meal is null
+          const { error } = await supabase
+            .from('meals')
+            .delete()
+            .eq('id', existing.id)
+          if (error) throw error
+        }
+      } else if (mealName) {
+        // Insert new - use recipe_id if provided, otherwise custom_meal
+        const { error } = await supabase
           .from('meals')
-          .update({
+          .insert({
+            household_id: household.id,
+            date,
             recipe_id: recipeId || null,
             custom_meal: recipeId ? null : mealName,
           })
-          .eq('id', existing.id)
-      } else {
-        // Delete if meal is null
-        await supabase
-          .from('meals')
-          .delete()
-          .eq('id', existing.id)
+        if (error) throw error
       }
-    } else if (mealName) {
-      // Insert new - use recipe_id if provided, otherwise custom_meal
-      await supabase
-        .from('meals')
-        .insert({
-          household_id: household.id,
-          date,
-          recipe_id: recipeId || null,
-          custom_meal: recipeId ? null : mealName,
-        })
-    }
 
-    // Send notification for meal changes (today or tomorrow only)
-    if (mealName) {
-      const today = formatDateISO(new Date())
-      const tomorrow = formatDateISO(addDays(new Date(), 1))
-      if (date === today || date === tomorrow) {
-        const dateObj = new Date(date)
-        const dayName = date === today ? t.common.today : t.common.tomorrow
-        notifyMealChanged(mealName, dayName)
+      // Send notification for meal changes (today or tomorrow only)
+      if (mealName) {
+        const today = formatDateISO(new Date())
+        const tomorrow = formatDateISO(addDays(new Date(), 1))
+        if (date === today || date === tomorrow) {
+          const dayName = date === today ? t.common.today : t.common.tomorrow
+          notifyMealChanged(mealName, dayName)
+        }
       }
-    }
 
-    // Reload data
-    triggerReload()
-    setSaving(false)
+      // Reload data
+      triggerReload()
+    } catch (error) {
+      console.error('Error saving meal:', error)
+      showMessage('error', t.errors.saveFailed)
+    } finally {
+      setSaving(false)
+    }
   }
 
   // AI Suggestion functions
