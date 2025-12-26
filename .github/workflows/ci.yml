@@ -7,6 +7,12 @@ on:
     # Run on all PRs to catch issues early
     types: [opened, synchronize, reopened]
 
+# Required for posting PR comments
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
