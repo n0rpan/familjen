@@ -93,6 +93,10 @@ export async function setupMockAuth(
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co'
   const projectRef = new URL(supabaseUrl).hostname.split('.')[0]
 
+  // Determine cookie domain based on base URL (localhost vs Vercel preview)
+  const baseUrl = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000'
+  const cookieDomain = new URL(baseUrl).hostname
+
   await context.addCookies([
     {
       name: `sb-${projectRef}-auth-token`,
@@ -102,7 +106,7 @@ export async function setupMockAuth(
         expires_at: session.expires_at,
         user: session.user,
       }),
-      domain: 'localhost',
+      domain: cookieDomain,
       path: '/',
     },
   ])

@@ -9,12 +9,15 @@
  * - Maintain visual identity
  * - Mobile-first, accessible design
  *
+ * Uses mock auth to test authenticated pages on Vercel previews.
+ *
  * Usage:
  *   npx playwright test design-system
  *   npx playwright test design-system --project=chromium
  */
 
 import { test, expect } from '@playwright/test'
+import { setupTestFixture } from './fixtures/mock-auth'
 
 // Familjen child colors - must be distinguishable
 const CHILD_COLORS = {
@@ -29,7 +32,7 @@ const CHILD_COLORS = {
 // Minimum touch target size (WCAG 2.5.5)
 const MIN_TOUCH_TARGET = 44
 
-// Routes to test
+// Routes to test (all require authentication)
 const ROUTES = [
   { path: '/', name: 'Home' },
   { path: '/uke', name: 'Week' },
@@ -39,7 +42,14 @@ const ROUTES = [
 
 test.describe('Design System - Touch Targets', () => {
   for (const route of ROUTES) {
-    test(`${route.name}: buttons meet minimum touch target size`, async ({ page }) => {
+    test(`${route.name}: buttons meet minimum touch target size`, async ({ page, context }) => {
+      // Set up mock auth so we can access protected pages
+      await setupTestFixture(context, page, {
+        childCount: 2,
+        memberCount: 2,
+        withPickups: true,
+      })
+
       await page.goto(route.path)
       await page.waitForLoadState('networkidle')
 
@@ -86,7 +96,8 @@ test.describe('Design System - No Horizontal Scroll', () => {
   test.use({ viewport: { width: 390, height: 844 } }) // iPhone 14 Pro
 
   for (const route of ROUTES) {
-    test(`${route.name}: no horizontal overflow on mobile`, async ({ page }) => {
+    test(`${route.name}: no horizontal overflow on mobile`, async ({ page, context }) => {
+      await setupTestFixture(context, page, { childCount: 2, memberCount: 2, withPickups: true })
       await page.goto(route.path)
       await page.waitForLoadState('networkidle')
 
@@ -102,7 +113,8 @@ test.describe('Design System - No Horizontal Scroll', () => {
 
 test.describe('Design System - Typography', () => {
   for (const route of ROUTES) {
-    test(`${route.name}: body text is readable size`, async ({ page }) => {
+    test(`${route.name}: body text is readable size`, async ({ page, context }) => {
+      await setupTestFixture(context, page, { childCount: 2, memberCount: 2, withPickups: true })
       await page.goto(route.path)
       await page.waitForLoadState('networkidle')
 
@@ -131,7 +143,8 @@ test.describe('Design System - Typography', () => {
       }
     })
 
-    test(`${route.name}: Norwegian characters render correctly`, async ({ page }) => {
+    test(`${route.name}: Norwegian characters render correctly`, async ({ page, context }) => {
+      await setupTestFixture(context, page, { childCount: 2, memberCount: 2, withPickups: true })
       await page.goto(route.path)
       await page.waitForLoadState('networkidle')
 
@@ -160,7 +173,8 @@ test.describe('Design System - Typography', () => {
 
 test.describe('Design System - Visual Hierarchy', () => {
   for (const route of ROUTES) {
-    test(`${route.name}: has clear heading hierarchy`, async ({ page }) => {
+    test(`${route.name}: has clear heading hierarchy`, async ({ page, context }) => {
+      await setupTestFixture(context, page, { childCount: 2, memberCount: 2, withPickups: true })
       await page.goto(route.path)
       await page.waitForLoadState('networkidle')
 
@@ -196,7 +210,8 @@ test.describe('Design System - Visual Hierarchy', () => {
 
 test.describe('Design System - Accessibility', () => {
   for (const route of ROUTES) {
-    test(`${route.name}: interactive elements are focusable`, async ({ page }) => {
+    test(`${route.name}: interactive elements are focusable`, async ({ page, context }) => {
+      await setupTestFixture(context, page, { childCount: 2, memberCount: 2, withPickups: true })
       await page.goto(route.path)
       await page.waitForLoadState('networkidle')
 
@@ -212,7 +227,8 @@ test.describe('Design System - Accessibility', () => {
       expect(focusableCount, 'Page should have focusable elements').toBeGreaterThan(0)
     })
 
-    test(`${route.name}: images have alt text`, async ({ page }) => {
+    test(`${route.name}: images have alt text`, async ({ page, context }) => {
+      await setupTestFixture(context, page, { childCount: 2, memberCount: 2, withPickups: true })
       await page.goto(route.path)
       await page.waitForLoadState('networkidle')
 
@@ -234,7 +250,8 @@ test.describe('Design System - Accessibility', () => {
 })
 
 test.describe('Design System - Child Colors', () => {
-  test('Week page: child colors are visually distinct', async ({ page }) => {
+  test('Week page: child colors are visually distinct', async ({ page, context }) => {
+    await setupTestFixture(context, page, { childCount: 3, memberCount: 2, withPickups: true })
     await page.goto('/uke')
     await page.waitForLoadState('networkidle')
 
@@ -266,7 +283,8 @@ test.describe('Design System - Child Colors', () => {
 test.describe('Design System - Mobile Navigation', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
-  test('Bottom navigation is in thumb zone', async ({ page }) => {
+  test('Bottom navigation is in thumb zone', async ({ page, context }) => {
+    await setupTestFixture(context, page, { childCount: 2, memberCount: 2, withPickups: true })
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
