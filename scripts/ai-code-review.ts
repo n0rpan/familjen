@@ -209,6 +209,14 @@ async function main() {
   console.log('🔍 AI Code Review')
   console.log(`Model: ${AI_MODELS.capable}`)
 
+  // Check API key availability
+  const hasApiKey = !!process.env.OPENROUTER_API_KEY
+  console.log(`API Key: ${hasApiKey ? '✓ Available' : '✗ Missing'}`)
+  if (!hasApiKey) {
+    console.error('❌ OPENROUTER_API_KEY is not set. Skipping AI review.')
+    process.exit(0)
+  }
+
   const baseBranch = getBaseBranch()
   console.log(`Comparing against: ${baseBranch}`)
 

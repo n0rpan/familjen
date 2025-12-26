@@ -21,12 +21,48 @@ const VISUAL_DIR = 'tests/visual'
 const BASELINES_DIR = join(VISUAL_DIR, 'baselines')
 const CURRENT_DIR = join(VISUAL_DIR, 'current')
 
+interface DesignPatterns {
+  colorPalette: string[]
+  typography: string[]
+  spacing: string[]
+  mobileFirst: string[]
+}
+
 interface VisualSpec {
   name: string
   route: string
   slug: string
   goal: string
   criticalElements: string[]
+  designPatterns?: DesignPatterns
+}
+
+// Familjen Design System - based on frontend-design plugin philosophy
+const FAMILJEN_DESIGN_SYSTEM: DesignPatterns = {
+  colorPalette: [
+    'Child colors: sky (#7EB6C4), coral (#E8998D), sage (#94B49F), honey (#E5BA73), lavender (#B8A9C9), mint (#98D8AA)',
+    'Background: warm off-white, not pure white',
+    'Text: dark gray for readability, not pure black',
+    'Accent colors should complement, not clash with child colors',
+  ],
+  typography: [
+    'System fonts or Norwegian-friendly fonts (not generic Inter/Roboto/Arial)',
+    'Clear hierarchy: headings > subheadings > body',
+    'Readable on mobile without zooming (min 16px body)',
+    'Norwegian characters (æ, ø, å) must render correctly',
+  ],
+  spacing: [
+    'Consistent padding (8px grid system)',
+    'Touch targets minimum 44x44px',
+    'Breathing room between interactive elements',
+    'Cards have visible boundaries or shadows',
+  ],
+  mobileFirst: [
+    'Bottom navigation reachable with thumb',
+    'No horizontal scrolling on mobile',
+    'Important actions above the fold',
+    'One-handed use while holding a child',
+  ],
 }
 
 // Define specs for critical user journeys
@@ -43,6 +79,7 @@ const VISUAL_SPECS: VisualSpec[] = [
       'Child tasks/reminders if any',
       'Navigation to week view',
     ],
+    designPatterns: FAMILJEN_DESIGN_SYSTEM,
   },
   {
     name: 'Week Planner',
@@ -56,6 +93,7 @@ const VISUAL_SPECS: VisualSpec[] = [
       'Add/edit controls are accessible',
       'Mobile: swipeable or scrollable days',
     ],
+    designPatterns: FAMILJEN_DESIGN_SYSTEM,
   },
   {
     name: 'Feed Page',
@@ -69,6 +107,7 @@ const VISUAL_SPECS: VisualSpec[] = [
       'Sync button visible',
       'Sync failure banner if errors exist',
     ],
+    designPatterns: FAMILJEN_DESIGN_SYSTEM,
   },
   {
     name: 'Settings - Household',
@@ -81,6 +120,7 @@ const VISUAL_SPECS: VisualSpec[] = [
       'Add member/child buttons',
       'Integration settings section',
     ],
+    designPatterns: FAMILJEN_DESIGN_SYSTEM,
   },
 ]
 
@@ -110,7 +150,26 @@ async function reviewScreenshot(spec: VisualSpec): Promise<VisualReviewResult | 
   const baseline = readFileSync(baselinePath).toString('base64')
   const current = readFileSync(currentPath).toString('base64')
 
-  const prompt = `You are a QA expert reviewing UI changes for Familjen, a Norwegian family planning app used by busy parents.
+  // Build design system section if available
+  const designSection = spec.designPatterns
+    ? `
+## Familjen Design System (check for consistency)
+
+### Color Palette:
+${spec.designPatterns.colorPalette.map((c) => `- ${c}`).join('\n')}
+
+### Typography:
+${spec.designPatterns.typography.map((t) => `- ${t}`).join('\n')}
+
+### Spacing & Touch:
+${spec.designPatterns.spacing.map((s) => `- ${s}`).join('\n')}
+
+### Mobile-First:
+${spec.designPatterns.mobileFirst.map((m) => `- ${m}`).join('\n')}
+`
+    : ''
+
+  const prompt = `You are a UI/UX expert reviewing design changes for Familjen, a Norwegian family planning app used by busy parents (often one-handed while holding a child).
 
 ## Screen: ${spec.name}
 ## Route: ${spec.route}
@@ -118,23 +177,35 @@ async function reviewScreenshot(spec: VisualSpec): Promise<VisualReviewResult | 
 
 ## Critical Elements That Must Be Present:
 ${spec.criticalElements.map((e, i) => `${i + 1}. ${e}`).join('\n')}
-
+${designSection}
 ## Your Task
 Compare the BASELINE (first image) with CURRENT (second image).
 
-Evaluate:
+### Functional Check:
 1. Does CURRENT still achieve the GOAL for a busy parent?
 2. Are all CRITICAL ELEMENTS present and functional-looking?
-3. Any accessibility concerns? (contrast, touch target size, text readability)
-4. Any obvious bugs? (overlapping elements, cut-off text, broken layouts)
-5. Is it usable one-handed on mobile? (important for busy parents)
-6. Are child colors still distinguishable?
+3. Any obvious bugs? (overlapping elements, cut-off text, broken layouts)
+
+### Design System Check:
+4. Are child colors used consistently (sky, coral, sage, honey, lavender, mint)?
+5. Is visual hierarchy clear? (headings > body text)
+6. Do interactive elements look tappable? (buttons, links clearly styled)
+7. Is the layout coherent with breathing room between elements?
+
+### Accessibility & UX:
+8. Contrast: Is text readable against backgrounds?
+9. Touch targets: Are buttons/links at least 44x44px?
+10. Mobile usability: Can this be used one-handed?
+11. Norwegian text: Do æ, ø, å render correctly?
+
+### Avoid Generic AI Aesthetics:
+12. Does it avoid clichéd design? (no gratuitous purple gradients, generic card layouts)
+13. Does the design feel intentional and distinctive, not cookie-cutter?
 
 Be practical, not pedantic:
-- Minor style tweaks (spacing, font size) are fine
-- Broken functionality or hidden elements are NOT fine
-- Norwegian text should be readable
-- Touch targets should be finger-sized (44px+)
+- Minor style tweaks (small spacing changes) are FINE
+- Broken functionality, hidden elements, or inaccessible UI are NOT fine
+- Design should serve busy parents, not win design awards
 
 Analyze both images and provide your assessment.`
 

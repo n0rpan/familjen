@@ -257,10 +257,18 @@ export async function callOpenRouterStructured<T>(
     return JSON.parse(content) as T
   } catch (error) {
     // Fallback: try to extract JSON from response (for models that don't support structured outputs)
+    console.warn(`⚠️ Structured output parsing failed for ${schemaName}, attempting fallback extraction`)
+    console.warn(`   Model: ${model}`)
+    console.warn(`   Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+
     const parsed = parseJsonFromResponse(content)
     if (parsed) {
+      console.warn(`   ✓ Fallback extraction succeeded`)
       return parsed as T
     }
+
+    console.error(`   ✗ Fallback extraction also failed`)
+    console.error(`   Response preview: ${content.slice(0, 200)}...`)
     throw new Error(`Failed to parse structured response: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
 }
