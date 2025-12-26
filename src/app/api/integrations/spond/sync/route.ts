@@ -12,6 +12,11 @@ import {
   FUTURE_SYNC_DAYS,
   type IntegrationMapping,
 } from '@/lib/integrations/shared'
+import {
+  handleEventDeletionsAndChanges,
+  sendNewEventNotification,
+  type SyncedEvent,
+} from '@/lib/integrations/shared/deletion-handler'
 
 interface SyncResult {
   integrationId: string
@@ -21,6 +26,9 @@ interface SyncResult {
   chatError?: string
   eventsCount: number
   messagesCount: number
+  deletedEventsCount?: number
+  modifiedEventsCount?: number
+  newEventsCount?: number
 }
 
 /**
@@ -276,6 +284,14 @@ async function syncIntegration(
       })
     }
 
+    // Get existing event IDs to detect new events
+    const { data: existingEventIds } = await supabase
+      .from('external_events')
+      .select('external_id')
+      .eq('integration_id', integration.id)
+
+    const existingIdSet = new Set(existingEventIds?.map(e => e.external_id) || [])
+
     // Upsert events
     if (eventsToUpsert.length > 0) {
       const { error: eventsError } = await supabase
@@ -289,8 +305,49 @@ async function syncIntegration(
         console.error('Error upserting events:', eventsError)
       } else {
         result.eventsCount = eventsToUpsert.length
+
+        // Send notifications for new events (not updates)
+        const newEvents = eventsToUpsert.filter(e => !existingIdSet.has(e.external_id))
+        result.newEventsCount = newEvents.length
+
+        // Send push notifications for new future events (limit to avoid spam)
+        const today = new Date().toISOString().split('T')[0]
+        const futureNewEvents = newEvents
+          .filter(e => e.event_date >= today)
+          .slice(0, 3) // Limit to 3 notifications
+
+        for (const event of futureNewEvents) {
+          await sendNewEventNotification(
+            supabase,
+            householdId,
+            'Spond',
+            event.title,
+            event.event_date
+          )
+        }
       }
     }
+
+    // Handle deleted/modified events
+    const syncedEvents: SyncedEvent[] = eventsToUpsert.map(e => ({
+      external_id: e.external_id,
+      title: e.title,
+      event_date: e.event_date,
+      event_time: e.event_time,
+      end_date: e.end_date,
+      location: e.location,
+    }))
+
+    const deletionResult = await handleEventDeletionsAndChanges(
+      supabase,
+      integration.id,
+      householdId,
+      syncedEvents,
+      'Spond'
+    )
+
+    result.deletedEventsCount = deletionResult.deletedCount
+    result.modifiedEventsCount = deletionResult.modifiedCount
 
     // Fetch chats and messages
     try {

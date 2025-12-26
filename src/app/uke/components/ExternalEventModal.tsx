@@ -166,7 +166,7 @@ export const ExternalEventModal = memo(function ExternalEventModal({
           </h2>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg transition-colors"
+            className="p-3 -mr-1 rounded-lg transition-colors touch-feedback"
             style={{ color: 'var(--muted)' }}
             aria-label={t.common.close}
           >
@@ -264,7 +264,7 @@ export const ExternalEventModal = memo(function ExternalEventModal({
           </div>
 
           {/* Date & Time */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-sm font-medium" style={{ color: 'var(--foreground)' }}>
@@ -297,7 +297,7 @@ export const ExternalEventModal = memo(function ExternalEventModal({
           </div>
 
           {/* End Date & Time */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
                 {t.week.endDate} <span style={{ color: 'var(--muted)' }}>({t.common.optional})</span>
