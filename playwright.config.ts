@@ -8,7 +8,15 @@ import { defineConfig, devices } from '@playwright/test'
  *
  * Run with: npx playwright test
  * UI mode: npx playwright test --ui
+ *
+ * For Vercel preview testing, set PLAYWRIGHT_BASE_URL:
+ *   PLAYWRIGHT_BASE_URL=https://preview-xxx.vercel.app npx playwright test
  */
+
+// Use PLAYWRIGHT_BASE_URL if set (for Vercel preview testing), otherwise localhost
+const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000'
+const isExternalUrl = !!process.env.PLAYWRIGHT_BASE_URL
+
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: true,
@@ -18,7 +26,7 @@ export default defineConfig({
   reporter: 'html',
 
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
@@ -39,11 +47,13 @@ export default defineConfig({
     },
   ],
 
-  // Start dev server for local testing
-  webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120 * 1000,
-  },
+  // Only start dev server when testing locally (not against Vercel preview)
+  webServer: isExternalUrl
+    ? undefined
+    : {
+        command: 'npm run dev',
+        url: 'http://localhost:3000',
+        reuseExistingServer: !process.env.CI,
+        timeout: 120 * 1000,
+      },
 })

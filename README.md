@@ -311,6 +311,7 @@ The project uses AI to enhance the CI/CD pipeline beyond traditional static anal
 | **AI Migration Review** | PRs with migrations | Checks RLS, naming, security, rollback safety |
 | **AI Code Review** | All PRs | Reviews diff for security, i18n, data integrity |
 | **AI Visual Review** | PRs (optional) | Compares screenshots for UI regressions |
+| **E2E Preview Tests** | PRs | Runs design system tests on Vercel preview |
 
 ### AI Review Features
 
