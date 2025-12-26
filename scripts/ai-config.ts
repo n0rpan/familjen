@@ -18,13 +18,14 @@ export interface AIModelConfig {
 }
 
 // Default models - override via environment variables
+// Updated Dec 2025: Using latest Gemini 3 Flash and Claude Sonnet 4.5
 export const AI_MODELS: AIModelConfig = {
-  // Gemini 2.0 Flash - fast and cost-effective
-  fast: process.env.OPENROUTER_FAST_MODEL || 'google/gemini-2.0-flash-exp',
-  // Claude Sonnet for deeper code review
-  capable: process.env.OPENROUTER_CAPABLE_MODEL || 'anthropic/claude-sonnet-4-20250514',
-  // Gemini for vision tasks (screenshot comparison)
-  vision: process.env.OPENROUTER_VISION_MODEL || 'google/gemini-2.0-flash-exp',
+  // Gemini 3 Flash Preview - fast and cost-effective
+  fast: process.env.OPENROUTER_FAST_MODEL || 'google/gemini-3-flash-preview',
+  // Claude Sonnet 4.5 for deeper code review
+  capable: process.env.OPENROUTER_CAPABLE_MODEL || 'anthropic/claude-sonnet-4-5-20250514',
+  // Gemini 3 Flash for vision tasks (screenshot comparison)
+  vision: process.env.OPENROUTER_VISION_MODEL || 'google/gemini-3-flash-preview',
 }
 
 // JSON Schemas for structured outputs

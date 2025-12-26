@@ -14,8 +14,10 @@ env:
   # Increase Node memory for TypeScript/Next.js builds
   NODE_OPTIONS: '--max-old-space-size=6144'
   # AI Model configuration (override in secrets for different models)
-  OPENROUTER_FAST_MODEL: 'google/gemini-2.0-flash-exp'
-  OPENROUTER_CAPABLE_MODEL: 'anthropic/claude-sonnet-4-20250514'
+  # Updated Dec 2025: Gemini 3 Flash + Claude Sonnet 4.5
+  OPENROUTER_FAST_MODEL: 'google/gemini-3-flash-preview'
+  OPENROUTER_CAPABLE_MODEL: 'anthropic/claude-sonnet-4-5-20250514'
+  OPENROUTER_VISION_MODEL: 'google/gemini-3-flash-preview'
 
 jobs:
   # ============================================
@@ -261,6 +263,68 @@ jobs:
                 body: comment
               })
             }
+
+  # ============================================
+  # AI Visual Review (optional - requires screenshots)
+  # ============================================
+  visual-review:
+    name: AI Visual Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [build]
+    if: github.event_name == 'pull_request'
+    continue-on-error: true  # Don't fail PR if visual review fails
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Check for visual baselines
+        id: check-baselines
+        run: |
+          if [ -d "tests/visual/baselines" ] && [ "$(ls -A tests/visual/baselines/*.png 2>/dev/null)" ]; then
+            echo "has_baselines=true" >> $GITHUB_OUTPUT
+            echo "Found baseline screenshots"
+          else
+            echo "has_baselines=false" >> $GITHUB_OUTPUT
+            echo "No baseline screenshots - skipping visual review"
+          fi
+
+      - name: Install dependencies
+        if: steps.check-baselines.outputs.has_baselines == 'true'
+        run: npm ci
+
+      - name: Install Playwright browsers
+        if: steps.check-baselines.outputs.has_baselines == 'true'
+        run: npx playwright install chromium
+
+      - name: Capture current screenshots
+        if: steps.check-baselines.outputs.has_baselines == 'true'
+        run: npx playwright test tests/e2e/capture-screenshots.spec.ts --project=chromium || true
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: 'https://placeholder.supabase.co'
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: 'placeholder'
+
+      - name: Run AI visual review
+        if: steps.check-baselines.outputs.has_baselines == 'true'
+        run: npx tsx scripts/ai-visual-review.ts
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_VISION_MODEL: ${{ env.OPENROUTER_VISION_MODEL }}
+
+      - name: Upload visual review results
+        if: steps.check-baselines.outputs.has_baselines == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-review
+          path: |
+            visual-review.json
+            tests/visual/current/
+          retention-days: 7
 
   # ============================================
   # API integration tests (main branch only)
