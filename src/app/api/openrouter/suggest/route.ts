@@ -116,7 +116,8 @@ export async function POST(request: Request) {
         const allergies = sanitizePromptArray(rawAllergies)
         // Add to combined set
         allergies.forEach(a => allAllergiesSet.add(a.toLowerCase()))
-        if (child.birth_date) {
+        // Only include children with both name and birth_date
+        if (child.name && child.birth_date) {
           childrenAges.push({
             name: child.name,
             age: calculateAge(child.birth_date),
