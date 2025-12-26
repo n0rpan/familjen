@@ -11,6 +11,8 @@ env:
   OPENROUTER_TEST_MODEL: ${{ secrets.OPENROUTER_TEST_MODEL }}
   NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
   NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+  # Increase Node memory for TypeScript/Next.js builds (GitHub runners have 7GB RAM)
+  NODE_OPTIONS: '--max-old-space-size=6144'
 
 jobs:
   # Fast checks first - fail fast on lint/type errors
@@ -51,8 +53,6 @@ jobs:
 
       - name: Type check
         run: npx tsc --noEmit
-        env:
-          NODE_OPTIONS: '--max-old-space-size=4096'
 
   # Build check with caching
   build:
@@ -80,7 +80,6 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          NODE_OPTIONS: '--max-old-space-size=4096'
           NEXT_PUBLIC_SUPABASE_URL: 'https://placeholder.supabase.co'
           NEXT_PUBLIC_SUPABASE_ANON_KEY: 'placeholder'
 
