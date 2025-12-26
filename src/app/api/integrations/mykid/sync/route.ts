@@ -4,6 +4,11 @@ import { isUserAdmin } from '@/lib/config'
 import { MyKidClient, MyKidAuthError, MyKidError } from '@/lib/integrations/mykid'
 import { addDays } from '@/lib/utils'
 import { handleSyncSetup, getSyncStartDate, HISTORICAL_SYNC_DAYS, FUTURE_SYNC_DAYS } from '@/lib/integrations/shared'
+import {
+  handleEventDeletionsAndChanges,
+  sendNewEventNotification,
+  type SyncedEvent,
+} from '@/lib/integrations/shared/deletion-handler'
 import sharp from 'sharp'
 
 interface SyncResult {
@@ -15,6 +20,8 @@ interface SyncResult {
   messagesCount: number
   photosCount: number
   documentsCount: number
+  deletedEventsCount?: number
+  newEventsCount?: number
 }
 
 /**
@@ -152,6 +159,14 @@ async function syncIntegration(
     try {
       const events = await client.getCalendarEvents(now, futureDate)
 
+      // Get existing event IDs to detect new events
+      const { data: existingEventIds } = await supabase
+        .from('external_events')
+        .select('external_id')
+        .eq('integration_id', integration.id)
+
+      const existingIdSet = new Set(existingEventIds?.map(e => e.external_id) || [])
+
       const eventsToUpsert = events.map((event) => ({
         integration_id: integration.id,
         child_id: null, // MyKid events are for all children
@@ -179,8 +194,39 @@ async function syncIntegration(
           console.error('Error upserting events:', eventsError)
         } else {
           result.eventsCount = eventsToUpsert.length
+
+          // Send notifications for new events
+          const newEvents = eventsToUpsert.filter(e => !existingIdSet.has(e.external_id))
+          result.newEventsCount = newEvents.length
+
+          // Send push notifications for new future events (limit to avoid spam)
+          const today = new Date().toISOString().split('T')[0]
+          const futureNewEvents = newEvents.filter(e => e.event_date >= today).slice(0, 3)
+          for (const event of futureNewEvents) {
+            await sendNewEventNotification(supabase, householdId, 'MyKid', event.title, event.event_date)
+          }
         }
       }
+
+      // Handle deleted/modified events
+      const syncedEvents: SyncedEvent[] = eventsToUpsert.map(e => ({
+        external_id: e.external_id,
+        title: e.title,
+        event_date: e.event_date,
+        event_time: e.event_time,
+        end_date: e.end_date,
+        location: null,
+      }))
+
+      const deletionResult = await handleEventDeletionsAndChanges(
+        supabase,
+        integration.id,
+        householdId,
+        syncedEvents,
+        'MyKid'
+      )
+
+      result.deletedEventsCount = deletionResult.deletedCount
     } catch (eventsError) {
       console.error('Error syncing calendar events:', eventsError)
     }
