@@ -8,6 +8,7 @@ import { MessageCard, type FeedMessage } from './MessageCard'
 import { PhotoGallery, type FeedPhoto } from './PhotoGallery'
 import { ReminderCard, type FeedReminder } from './ReminderCard'
 import { EventChangeNotificationList, type EventNotification } from './EventChangeNotification'
+import { SyncStatusBanner, type IntegrationStatus } from './SyncStatusBanner'
 import { useLanguage } from '@/lib/i18n/context'
 
 // Integration children mapping (which children belong to which integrations)
@@ -35,6 +36,7 @@ export function FeedPage({ householdId, initialFilter = 'all' }: Props) {
   const [reminders, setReminders] = useState<FeedReminder[]>([])
   const [notifications, setNotifications] = useState<EventNotification[]>([])
   const [integrationChildren, setIntegrationChildren] = useState<IntegrationChild[]>([])
+  const [integrationStatuses, setIntegrationStatuses] = useState<IntegrationStatus[]>([])
   const [syncing, setSyncing] = useState(false)
 
   // Track photo URL generation session to prevent stale updates
@@ -44,6 +46,22 @@ export function FeedPage({ householdId, initialFilter = 'all' }: Props) {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
+      // Load integration statuses (for sync failure banner)
+      const { data: integrationsData } = await supabase
+        .from('external_integrations')
+        .select('id, service, display_name, last_sync_status, last_sync_error, last_sync_at')
+        .eq('household_id', householdId)
+
+      const transformedStatuses: IntegrationStatus[] = (integrationsData || []).map((i) => ({
+        id: i.id,
+        service: i.service as IntegrationStatus['service'],
+        displayName: i.display_name || '',
+        lastSyncStatus: i.last_sync_status,
+        lastSyncError: i.last_sync_error,
+        lastSyncAt: i.last_sync_at,
+      }))
+      setIntegrationStatuses(transformedStatuses)
+
       // Load messages with integration and child info
       const { data: messagesData } = await supabase
         .from('external_messages')
@@ -346,6 +364,9 @@ export function FeedPage({ householdId, initialFilter = 'all' }: Props) {
     <div className="space-y-6">
       {/* Smart search */}
       <FeedSearch />
+
+      {/* Sync failure banner - visible when integrations have errors */}
+      <SyncStatusBanner integrations={integrationStatuses} />
 
       {/* Header with sync button */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
