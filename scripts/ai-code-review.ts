@@ -149,20 +149,108 @@ function loadRelevantContext(): string {
   return safeContext
 }
 
+/**
+ * Split a unified diff into individual file diffs
+ * Returns array of [filename, diffContent] tuples
+ */
+function splitDiffByFiles(diff: string): Array<[string, string]> {
+  const files: Array<[string, string]> = []
+  const lines = diff.split('\n')
+
+  let currentFile = ''
+  let currentContent: string[] = []
+
+  for (const line of lines) {
+    // Match "diff --git a/path/to/file b/path/to/file" or similar patterns
+    const diffMatch = line.match(/^diff --git a\/(.+?) b\//)
+    if (diffMatch) {
+      // Save previous file if exists
+      if (currentFile && currentContent.length > 0) {
+        files.push([currentFile, currentContent.join('\n')])
+      }
+      currentFile = diffMatch[1]
+      currentContent = [line]
+    } else {
+      currentContent.push(line)
+    }
+  }
+
+  // Don't forget the last file
+  if (currentFile && currentContent.length > 0) {
+    files.push([currentFile, currentContent.join('\n')])
+  }
+
+  return files
+}
+
+// Files that should never be truncated for security review
+const SECURITY_SENSITIVE_PATTERNS = [
+  /auth/i,
+  /credential/i,
+  /password/i,
+  /secret/i,
+  /token/i,
+  /session/i,
+  /middleware/i,
+  /api\//i,
+  /supabase/i,
+  /encrypt/i,
+  /decrypt/i,
+]
+
+function isSecuritySensitive(filename: string): boolean {
+  return SECURITY_SENSITIVE_PATTERNS.some(pattern => pattern.test(filename))
+}
+
 function buildReviewPrompt(diff: string, changedFiles: string[], context: string): string {
-  // Truncate diff if too large - use generous limit to avoid missing security issues
-  const maxDiffLength = 100000
+  // Modern LLMs can handle large contexts - use generous limit
+  // Claude: 200K tokens, Gemini: 1M tokens, GPT-4: 128K tokens
+  // 250KB of text ≈ 60-80K tokens, well within limits
+  const maxDiffLength = 250000
   let truncatedDiff = diff
   let truncationWarning = ''
 
   if (diff.length > maxDiffLength) {
-    truncatedDiff = diff.slice(0, maxDiffLength)
+    // If we must truncate, try to prioritize security-sensitive files
+    console.warn(`⚠️ Diff too large (${diff.length} chars), attempting smart truncation...`)
+
+    // Split diff by files and categorize
+    const fileDiffs = splitDiffByFiles(diff)
+    const securityFiles: string[] = []
+    const otherFiles: string[] = []
+
+    for (const [filename, content] of fileDiffs) {
+      if (isSecuritySensitive(filename)) {
+        securityFiles.push(content)
+      } else {
+        otherFiles.push(content)
+      }
+    }
+
+    // Build diff with security files first
+    let rebuiltDiff = securityFiles.join('\n')
+    let remainingSpace = maxDiffLength - rebuiltDiff.length
+
+    // Add other files if space permits
+    for (const fileDiff of otherFiles) {
+      if (fileDiff.length <= remainingSpace) {
+        rebuiltDiff += '\n' + fileDiff
+        remainingSpace -= fileDiff.length + 1
+      }
+    }
+
+    truncatedDiff = rebuiltDiff.slice(0, maxDiffLength)
+
+    const securityFileNames = changedFiles.filter(f => isSecuritySensitive(f))
+    const includedSecurityCount = securityFileNames.length
+
     truncationWarning = `
 
 ⚠️ WARNING: This diff was truncated from ${diff.length} to ${maxDiffLength} characters.
-You MUST flag this as a blocking issue if the truncated portion could contain security-sensitive code.
-Review the file list below and call out any concerning files that may have been cut off.`
-    console.warn(`⚠️ Diff truncated: ${diff.length} chars → ${maxDiffLength} chars`)
+Security-sensitive files were prioritized (${includedSecurityCount} files matched security patterns).
+If you cannot see all security-relevant code, flag this as a blocking issue.`
+    console.warn(`⚠️ Diff truncated: ${diff.length} chars → ${truncatedDiff.length} chars`)
+    console.warn(`   Security files prioritized: ${includedSecurityCount}`)
   }
 
   const fileList = changedFiles.slice(0, 50).join('\n')
