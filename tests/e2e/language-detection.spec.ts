@@ -14,31 +14,34 @@
 import { test, expect } from '@playwright/test'
 import { setupTestFixture } from './fixtures/mock-auth'
 
-// Key UI text that differs between Norwegian and English
+// Key UI text that differs between languages (from src/lib/i18n/translations/)
 const UI_TEXT = {
   nb: {
-    // Navigation
     home: 'Hjem',
     week: 'Uke',
     settings: 'Innstillinger',
-    // Common
     save: 'Lagre',
     cancel: 'Avbryt',
     today: 'I dag',
-    // Date-related
     dayNames: ['Mandag', 'Tirsdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lørdag', 'Søndag'],
   },
   en: {
-    // Navigation
     home: 'Home',
     week: 'Week',
     settings: 'Settings',
-    // Common
     save: 'Save',
     cancel: 'Cancel',
     today: 'Today',
-    // Date-related
     dayNames: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+  },
+  sv: {
+    home: 'Hem',
+    week: 'Vecka',
+    settings: 'Inställningar',
+    save: 'Spara',
+    cancel: 'Avbryt',
+    today: 'Idag',
+    dayNames: ['Måndag', 'Tisdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lördag', 'Söndag'],
   },
 }
 
@@ -188,9 +191,28 @@ test.describe('Language Detection - Swedish (sv-SE)', () => {
 
     const pageText = await page.textContent('body')
 
-    // Swedish should show "Hem" for Home, "Idag" for Today
-    const hasSwedishText = pageText?.includes('Hem') || pageText?.includes('Idag') || pageText?.includes('Vecka')
-    expect(hasSwedishText, 'Home page should show Swedish text').toBeTruthy()
+    // Should have Swedish text
+    expect(
+      pageText?.includes(UI_TEXT.sv.home) || pageText?.includes(UI_TEXT.sv.today),
+      'Home page should show Swedish text (Hem or Idag)'
+    ).toBeTruthy()
+  })
+
+  test('Week page shows Swedish day names', async ({ page, context }) => {
+    await setupTestFixture(context, page, {
+      childCount: 2,
+      memberCount: 2,
+      withPickups: true,
+    })
+
+    await page.goto('/uke')
+    await page.waitForLoadState('networkidle')
+
+    const pageText = await page.textContent('body')
+
+    // Check for at least one Swedish day name
+    const hasSwedishDay = UI_TEXT.sv.dayNames.some((day) => pageText?.includes(day))
+    expect(hasSwedishDay, 'Week page should show Swedish day names').toBeTruthy()
   })
 })
 

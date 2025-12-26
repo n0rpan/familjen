@@ -331,8 +331,8 @@ jobs:
         env:
           PLAYWRIGHT_BASE_URL: https://${{ steps.vercel.outputs.preview_url }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-          NEXT_PUBLIC_SUPABASE_URL: 'https://placeholder.supabase.co'
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: 'placeholder'
+          # Must match real Supabase URL so mock auth cookies have correct name
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
 
       - name: Run AI visual validation
         if: steps.vercel.outputs.preview_url
@@ -441,6 +441,8 @@ jobs:
         env:
           PLAYWRIGHT_BASE_URL: https://${{ steps.vercel.outputs.preview_url }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          # Required for mock auth to create correct cookie name
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
 
       - name: Capture screenshots from preview
         if: steps.vercel.outputs.preview_url
@@ -448,6 +450,7 @@ jobs:
         env:
           PLAYWRIGHT_BASE_URL: https://${{ steps.vercel.outputs.preview_url }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
 
       - name: Upload E2E results
         if: always()
