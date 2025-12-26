@@ -35,9 +35,20 @@ export function sanitizeDate(value: unknown): string | null {
   if (value === null || value === undefined) return null
   const str = String(value).trim()
   if (!/^\d{4}-\d{2}-\d{2}$/.test(str)) return null
-  // Validate it's a real date
-  const date = new Date(str)
-  if (isNaN(date.getTime())) return null
+
+  // Parse and validate it's a real date (not a rollover like Feb 30 -> Mar 1)
+  const [year, month, day] = str.split('-').map(Number)
+  const date = new Date(year, month - 1, day) // month is 0-indexed
+
+  // Check that the date didn't roll over (e.g., Feb 30 -> Mar 1)
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null
+  }
+
   return str
 }
 

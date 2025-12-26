@@ -13,7 +13,6 @@ import { syncHouseholdICS as syncHouseholdICSShared } from '@/lib/household-ics-
 import { verifyCronRequest } from '@/lib/cron-auth'
 import { truncate, sanitizeString, sanitizeTime } from '@/lib/sanitize'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnySupabaseClient = SupabaseClient<any, any, any>
 
 /**

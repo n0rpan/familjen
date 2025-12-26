@@ -10,17 +10,22 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Increase Node memory for TypeScript/Next.js builds
+  NODE_OPTIONS: '--max-old-space-size=6144'
+
 jobs:
-  test:
-    name: Test
+  # ============================================
+  # STAGE 1: Fast checks (run in parallel)
+  # ============================================
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
-
+    timeout-minutes: 5
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
@@ -28,51 +33,79 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run tests
-        run: npm run test:run
+      - name: Run ESLint
+        run: npm run lint
 
-      - name: Upload test results
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run TypeScript compiler
+        run: npx tsc --noEmit
+
+  # ============================================
+  # STAGE 2: Unit tests (after lint/typecheck)
+  # ============================================
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [lint, typecheck]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests with coverage
+        run: npm run test:coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: always()
+        continue-on-error: true
+        with:
+          files: ./coverage/coverage-final.json
+          fail_ci_if_error: false
+
+      - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: test-results
+          name: coverage-report
           path: coverage/
           retention-days: 7
 
-  lint:
-    name: Lint & Type Check
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run linter
-        run: npm run lint
-
-      - name: Type check
-        run: npx tsc --noEmit
-
+  # ============================================
+  # STAGE 3: Build verification (after tests)
+  # ============================================
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [test, lint]
+    timeout-minutes: 15
+    needs: [unit-tests]
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
@@ -80,32 +113,101 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
+      # Cache Next.js build artifacts
+      - name: Cache Next.js build
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.ts', '**/*.tsx') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
+            ${{ runner.os }}-nextjs-
+
+      - name: Build application
         run: npm run build
         env:
-          # Minimal env vars for build
-          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
+          # Placeholder env vars for build (actual values in Vercel)
+          NEXT_PUBLIC_SUPABASE_URL: 'https://placeholder.supabase.co'
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: 'placeholder'
 
-  # Verify database migrations are valid SQL
+  # ============================================
+  # STAGE 4: API integration tests (optional)
+  # Only runs when secrets are available
+  # ============================================
+  api-tests:
+    name: API Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [unit-tests]
+    # Only run on main branch pushes where secrets are available
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check API key availability
+        id: check-secrets
+        run: |
+          if [ -n "${{ secrets.OPENROUTER_API_KEY }}" ]; then
+            echo "has_api_key=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_api_key=false" >> $GITHUB_OUTPUT
+            echo "⚠️ OPENROUTER_API_KEY not set - skipping API tests"
+          fi
+
+      - name: Run API integration tests
+        if: steps.check-secrets.outputs.has_api_key == 'true'
+        run: npm run test:api
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_TEST_MODEL: ${{ secrets.OPENROUTER_TEST_MODEL || 'google/gemini-2.5-flash-lite' }}
+          TEST_API_DELAY_MS: '500'
+
+  # ============================================
+  # SQL Migration Validation
+  # ============================================
   migrations:
     name: Validate Migrations
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Check SQL syntax
+      - name: Check SQL files exist
         run: |
+          if [ -d "supabase/migrations" ] && [ "$(ls -A supabase/migrations/*.sql 2>/dev/null)" ]; then
+            echo "✓ Found $(ls supabase/migrations/*.sql | wc -l) migration files"
+          else
+            echo "✓ No migration files to validate"
+            exit 0
+          fi
+
+      - name: Validate SQL syntax
+        run: |
+          errors=0
           for file in supabase/migrations/*.sql; do
-            echo "Checking $file..."
-            # Basic syntax check - ensure files end with semicolon or are valid
             if [ -f "$file" ]; then
-              # Check for common SQL issues
-              if grep -qE "^\s*(DROP|DELETE|TRUNCATE)\s+.*(?<!IF EXISTS)" "$file" 2>/dev/null; then
-                echo "Warning: $file contains destructive operations without IF EXISTS"
+              echo "Checking $file..."
+
+              # Check for common dangerous patterns without IF EXISTS
+              if grep -qiE "^\s*DROP\s+(TABLE|INDEX|FUNCTION|TRIGGER)\s+(?!IF\s+EXISTS)" "$file" 2>/dev/null; then
+                echo "⚠️  Warning: $file has DROP without IF EXISTS"
+              fi
+
+              # Check for DELETE/TRUNCATE without WHERE (potential data loss)
+              if grep -qiE "^\s*(DELETE\s+FROM|TRUNCATE)\s+\w+\s*;" "$file" 2>/dev/null; then
+                echo "⚠️  Warning: $file has DELETE/TRUNCATE without WHERE clause"
               fi
             fi
           done
-          echo "All migrations checked"
+
+          echo "✓ Migration validation complete"

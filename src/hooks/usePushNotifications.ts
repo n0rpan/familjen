@@ -28,10 +28,21 @@ export function usePushNotifications() {
     }
 
     // Check if already subscribed
-    navigator.serviceWorker.ready.then(async (registration) => {
-      const existingSub = await registration.pushManager.getSubscription()
-      setSubscription(existingSub)
-    })
+    let isMounted = true
+    navigator.serviceWorker.ready
+      .then(async (registration) => {
+        const existingSub = await registration.pushManager.getSubscription()
+        if (isMounted) {
+          setSubscription(existingSub)
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to check push subscription:', err)
+      })
+
+    return () => {
+      isMounted = false
+    }
   }, [])
 
   // Subscribe to push notifications

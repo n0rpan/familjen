@@ -167,11 +167,8 @@ export async function POST(request: Request) {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnySupabase = any
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyIntegration = any
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyResult = { eventsCount: number; messagesCount: number; photosCount: number; error?: string }
 
 async function syncSpond(supabase: AnySupabase, integration: AnyIntegration, creds: { email: string; password: string }, result: AnyResult) {

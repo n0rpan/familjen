@@ -23,7 +23,6 @@ export interface HouseholdICSSyncResult {
   error?: string
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SupabaseClient = any
 
 /**

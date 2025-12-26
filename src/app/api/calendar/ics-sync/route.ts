@@ -180,7 +180,6 @@ async function syncAllMembers(): Promise<NextResponse> {
  * Sync ICS calendar for a single member.
  */
 async function syncMemberICS(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   member: {
     id: string
