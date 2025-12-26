@@ -422,6 +422,23 @@ export const sv: TranslationStrings = {
     noRelevantInfo: 'Hittade ingen relevant information',
     clearAnswer: 'Stäng',
     tryAgain: 'Försök igen',
+    // Calendar change notifications
+    calendarChanges: 'Kalenderändringar',
+    eventRemoved: 'Händelse borttagen från kalenderkälla',
+    dateChanged: 'Datum ändrat i kalenderkälla',
+    titleChanged: 'Titel ändrad i kalenderkälla',
+    restoreEvent: 'Lägg till igen',
+    dismissNotification: 'Avvisa',
+    restoring: 'Lägger till...',
+    taskWasDeleted: 'Uppgiften "{title}" togs bort',
+    eventRestoredSuccess: '{title} har lagts till',
+    viewInWeekPlan: 'Visa i veckoplanen',
+    sourceDeleted: 'Kalenderkällan är raderad',
+    childDeleted: 'Barnet "{name}" är raderat',
+    pastDateWarning: 'Detta datum har passerat. Vill du ändå lägga till händelsen?',
+    restoreAnyway: 'Lägg till ändå',
+    showAllNotifications: 'Visa alla {count} aviseringar',
+    showFewerNotifications: 'Visa färre',
   },
 
   // Admin page
