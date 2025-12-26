@@ -13,11 +13,6 @@ concurrency:
 env:
   # Increase Node memory for TypeScript/Next.js builds
   NODE_OPTIONS: '--max-old-space-size=6144'
-  # AI Model configuration (override in secrets for different models)
-  # Updated Dec 2025: Gemini 3 Flash + Claude Sonnet 4.5
-  OPENROUTER_FAST_MODEL: 'google/gemini-3-flash-preview'
-  OPENROUTER_CAPABLE_MODEL: 'anthropic/claude-sonnet-4-5-20250514'
-  OPENROUTER_VISION_MODEL: 'google/gemini-3-flash-preview'
 
 jobs:
   # ============================================
@@ -171,7 +166,7 @@ jobs:
         run: npx tsx scripts/migration-ai-review.ts
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          OPENROUTER_FAST_MODEL: ${{ env.OPENROUTER_FAST_MODEL }}
+          OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}
 
       - name: Upload review results
         if: steps.check-migrations.outputs.has_migrations == 'true'
@@ -209,7 +204,7 @@ jobs:
         run: npx tsx scripts/ai-code-review.ts --base origin/${{ github.base_ref }}
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          OPENROUTER_CAPABLE_MODEL: ${{ env.OPENROUTER_CAPABLE_MODEL }}
+          OPENROUTER_CAPABLE_MODEL: ${{ secrets.OPENROUTER_CAPABLE_MODEL }}
           GITHUB_BASE_REF: ${{ github.base_ref }}
 
       - name: Upload review results
@@ -314,7 +309,7 @@ jobs:
         run: npx tsx scripts/ai-visual-review.ts
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          OPENROUTER_VISION_MODEL: ${{ env.OPENROUTER_VISION_MODEL }}
+          OPENROUTER_VISION_MODEL: ${{ secrets.OPENROUTER_VISION_MODEL }}
 
       - name: Upload visual review results
         if: steps.check-baselines.outputs.has_baselines == 'true'

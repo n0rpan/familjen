@@ -123,9 +123,9 @@ Open [http://localhost:3000](http://localhost:3000)
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `OPENROUTER_API_KEY` | Yes | For AI code review, migration review, visual review |
-| `OPENROUTER_FAST_MODEL` | No | Override fast model (default: `google/gemini-3-flash-preview`) |
-| `OPENROUTER_CAPABLE_MODEL` | No | Override capable model (default: `anthropic/claude-sonnet-4-5-20250514`) |
-| `OPENROUTER_VISION_MODEL` | No | Override vision model (default: `google/gemini-3-flash-preview`) |
+| `OPENROUTER_FAST_MODEL` | Yes | Fast model for migrations (e.g., `google/gemini-2.0-flash-001`) |
+| `OPENROUTER_CAPABLE_MODEL` | Yes | Capable model for code review (e.g., `anthropic/claude-sonnet-4.5`) |
+| `OPENROUTER_VISION_MODEL` | Yes | Vision model for screenshots (e.g., `google/gemini-2.0-flash-001`) |
 
 ### Database Settings
 
@@ -315,7 +315,7 @@ The project uses AI to enhance the CI/CD pipeline beyond traditional static anal
 - **Structured Outputs**: Uses JSON schemas for guaranteed response format
 - **PR Comments**: Posts review summary directly to GitHub PRs
 - **Familjen-Aware**: AI understands Norwegian context, child safety, RLS patterns
-- **Fast + Capable Models**: Uses Gemini 3 Flash for speed, Claude Sonnet 4.5 for depth
+- **Configurable Models**: Set your preferred OpenRouter models via GitHub Secrets
 
 ### Setup
 

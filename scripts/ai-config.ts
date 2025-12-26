@@ -17,15 +17,30 @@ export interface AIModelConfig {
   vision: string
 }
 
-// Default models - override via environment variables
-// Updated Dec 2025: Using latest Gemini 3 Flash and Claude Sonnet 4.5
+// Model configuration - set via environment variables (GitHub Secrets)
+// No hardcoded defaults - ensures you're always using your intended models
+function getRequiredModel(envVar: string, name: string): string {
+  const model = process.env[envVar]
+  if (!model) {
+    throw new Error(
+      `${envVar} environment variable is required. ` +
+        `Set it in GitHub Secrets or locally to specify the ${name} model.`
+    )
+  }
+  return model
+}
+
+// Lazy-loaded to allow scripts to check for env vars before accessing
 export const AI_MODELS: AIModelConfig = {
-  // Gemini 3 Flash Preview - fast and cost-effective
-  fast: process.env.OPENROUTER_FAST_MODEL || 'google/gemini-3-flash-preview',
-  // Claude Sonnet 4.5 for deeper code review
-  capable: process.env.OPENROUTER_CAPABLE_MODEL || 'anthropic/claude-sonnet-4-5-20250514',
-  // Gemini 3 Flash for vision tasks (screenshot comparison)
-  vision: process.env.OPENROUTER_VISION_MODEL || 'google/gemini-3-flash-preview',
+  get fast() {
+    return getRequiredModel('OPENROUTER_FAST_MODEL', 'fast')
+  },
+  get capable() {
+    return getRequiredModel('OPENROUTER_CAPABLE_MODEL', 'capable')
+  },
+  get vision() {
+    return getRequiredModel('OPENROUTER_VISION_MODEL', 'vision')
+  },
 }
 
 // JSON Schemas for structured outputs
