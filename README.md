@@ -118,6 +118,15 @@ Open [http://localhost:3000](http://localhost:3000)
 | `VAPID_PRIVATE_KEY` | No | For push notifications |
 | `CRON_SECRET` | No | For Vercel Cron (Spond daily sync) |
 
+### CI/CD Environment Variables (GitHub Actions)
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `OPENROUTER_API_KEY` | Yes | For AI code review, migration review, visual review |
+| `OPENROUTER_FAST_MODEL` | No | Override fast model (default: `google/gemini-3-flash-preview`) |
+| `OPENROUTER_CAPABLE_MODEL` | No | Override capable model (default: `anthropic/claude-sonnet-4-5-20250514`) |
+| `OPENROUTER_VISION_MODEL` | No | Override vision model (default: `google/gemini-3-flash-preview`) |
+
 ### Database Settings
 
 Some settings are stored in the `app_settings` table:
@@ -236,6 +245,12 @@ npm run build      # Production build
 npm run lint       # TypeScript + ESLint check
 npm run test       # Run tests in watch mode
 npm run test:run   # Run tests once
+npm run test:e2e   # Run Playwright E2E tests
+
+# AI Review Scripts (for local testing)
+npm run ai:migration-review   # Review database migrations
+npm run ai:code-review        # Review code changes
+npm run ai:visual-review      # Compare screenshots
 ```
 
 ### Testing
@@ -279,6 +294,36 @@ Vercel automatically picks up `vercel.json` for cron job configuration.
 - **Admin controls**: Per-household feature flags
 - **Security Headers**: HSTS (1-year), CSP, X-Powered-By disabled
 - **Middleware Optimization**: Cookie-based auth check before API calls
+
+## AI-Powered CI/CD
+
+The project uses AI to enhance the CI/CD pipeline beyond traditional static analysis.
+
+### Pipeline Stages
+
+| Stage | Trigger | Purpose |
+|-------|---------|---------|
+| **Lint + Typecheck** | All pushes/PRs | Fast syntax and type validation |
+| **Unit Tests** | After lint | 250+ tests for utilities, hooks, integrations |
+| **Build** | After tests | Verify production build succeeds |
+| **AI Migration Review** | PRs with migrations | Checks RLS, naming, security, rollback safety |
+| **AI Code Review** | All PRs | Reviews diff for security, i18n, data integrity |
+| **AI Visual Review** | PRs (optional) | Compares screenshots for UI regressions |
+
+### AI Review Features
+
+- **Structured Outputs**: Uses JSON schemas for guaranteed response format
+- **PR Comments**: Posts review summary directly to GitHub PRs
+- **Familjen-Aware**: AI understands Norwegian context, child safety, RLS patterns
+- **Fast + Capable Models**: Uses Gemini 3 Flash for speed, Claude Sonnet 4.5 for depth
+
+### Setup
+
+1. Add `OPENROUTER_API_KEY` to GitHub repository secrets
+2. (Optional) Add baseline screenshots to `tests/visual/baselines/` for visual review
+3. Pipeline runs automatically on PRs
+
+See [CLAUDE.md](./CLAUDE.md) for detailed documentation.
 
 ## Contributing
 
