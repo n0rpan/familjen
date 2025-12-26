@@ -233,9 +233,8 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({
-      success: true,
-      message: parts.length > 0 ? `Synkronisert: ${parts.join(', ')}` : 'Synkronisert - ingen hendelser funnet',
       ...syncResult,
+      message: parts.length > 0 ? `Synkronisert: ${parts.join(', ')}` : 'Synkronisert - ingen hendelser funnet',
     })
 
   } catch (error) {
