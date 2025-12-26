@@ -207,7 +207,21 @@ jobs:
 
       - name: Run AI code review
         id: ai-review
-        run: npx tsx scripts/ai-code-review.ts --base origin/${{ github.base_ref }}
+        run: |
+          # Validate required environment variables
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo "❌ OPENROUTER_API_KEY is not set"
+            exit 1
+          fi
+          if [ -z "$OPENROUTER_FAST_MODEL" ]; then
+            echo "❌ OPENROUTER_FAST_MODEL is not set"
+            exit 1
+          fi
+          if [ -z "$OPENROUTER_CAPABLE_MODEL" ]; then
+            echo "❌ OPENROUTER_CAPABLE_MODEL is not set"
+            exit 1
+          fi
+          npx tsx scripts/ai-code-review.ts --base origin/${{ github.base_ref }}
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}

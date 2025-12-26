@@ -150,9 +150,20 @@ function loadRelevantContext(): string {
 }
 
 function buildReviewPrompt(diff: string, changedFiles: string[], context: string): string {
-  // Truncate diff if too large
-  const maxDiffLength = 50000
-  const truncatedDiff = diff.length > maxDiffLength ? diff.slice(0, maxDiffLength) + '\n\n[... diff truncated ...]' : diff
+  // Truncate diff if too large - use generous limit to avoid missing security issues
+  const maxDiffLength = 100000
+  let truncatedDiff = diff
+  let truncationWarning = ''
+
+  if (diff.length > maxDiffLength) {
+    truncatedDiff = diff.slice(0, maxDiffLength)
+    truncationWarning = `
+
+⚠️ WARNING: This diff was truncated from ${diff.length} to ${maxDiffLength} characters.
+You MUST flag this as a blocking issue if the truncated portion could contain security-sensitive code.
+Review the file list below and call out any concerning files that may have been cut off.`
+    console.warn(`⚠️ Diff truncated: ${diff.length} chars → ${maxDiffLength} chars`)
+  }
 
   const fileList = changedFiles.slice(0, 50).join('\n')
 
@@ -176,6 +187,7 @@ ${fileList}
 \`\`\`diff
 ${truncatedDiff}
 \`\`\`
+${truncationWarning}
 
 ## Review Checklist
 

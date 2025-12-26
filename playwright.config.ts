@@ -28,6 +28,12 @@ const isExternalUrl = !!process.env.PLAYWRIGHT_BASE_URL
 // Vercel protection bypass for CI automation
 const vercelBypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET
 
+// Warn if testing against Vercel preview without bypass secret
+if (process.env.PLAYWRIGHT_BASE_URL?.includes('vercel.app') && !vercelBypassSecret) {
+  console.warn('⚠️ Testing against Vercel preview without VERCEL_AUTOMATION_BYPASS_SECRET')
+  console.warn('   Tests may fail if Deployment Protection is enabled')
+}
+
 // Check if real auth credentials are provided
 const useRealAuth = !!(process.env.E2E_TEST_EMAIL && process.env.E2E_TEST_PASSWORD)
 const authFile = 'tests/.auth/user.json'
