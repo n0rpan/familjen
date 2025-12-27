@@ -262,6 +262,24 @@ jobs:
           OPENROUTER_CAPABLE_MODEL: ${{ secrets.OPENROUTER_CAPABLE_MODEL }}
           GITHUB_BASE_REF: ${{ github.base_ref }}
 
+      - name: Write fallback status if no code review
+        if: always()
+        run: |
+          if [ ! -f ".ai-reviews/code-review.json" ]; then
+            echo '{"reviewer":"code-review","status":"failed","verdict":"ERROR","confidence":0,"findings":[{"severity":"critical","category":"runtime-error","message":"Code review script did not produce output"}],"summary":"Code review failed to run. Check CI logs.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > .ai-reviews/code-review.json
+          fi
+
+      - name: Debug - Show .ai-reviews contents before upload
+        if: always()
+        run: |
+          echo "📁 Contents of .ai-reviews/ before upload:"
+          ls -la .ai-reviews/ || echo "(directory does not exist)"
+          echo ""
+          if [ -f ".ai-reviews/code-review.json" ]; then
+            echo "📄 code-review.json preview:"
+            head -c 300 .ai-reviews/code-review.json
+          fi
+
       - name: Upload review artifact for final verdict
         if: always()
         uses: actions/upload-artifact@v4
@@ -401,6 +419,13 @@ jobs:
         if: steps.vercel.outputs.preview_url == ''
         run: |
           echo '{"reviewer":"visual-validation","status":"skipped","verdict":"PASS","confidence":100,"findings":[],"summary":"No Vercel preview URL available.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > .ai-reviews/visual-validation.json
+
+      - name: Write fallback status if no visual validation
+        if: always()
+        run: |
+          if [ ! -f ".ai-reviews/visual-validation.json" ]; then
+            echo '{"reviewer":"visual-validation","status":"failed","verdict":"ERROR","confidence":0,"findings":[{"severity":"critical","category":"runtime-error","message":"Visual validation script did not produce output"}],"summary":"Visual validation failed to run. Check CI logs.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > .ai-reviews/visual-validation.json
+          fi
 
       - name: Upload review artifact for final verdict
         if: always()
@@ -755,13 +780,26 @@ jobs:
       - name: Consolidate review artifacts
         run: |
           echo "📦 Consolidating review artifacts..."
+          echo ""
+          echo "🔍 Debug: Contents of .ai-reviews-temp/"
+          ls -laR .ai-reviews-temp/ 2>/dev/null || echo "   (directory does not exist)"
+          echo ""
           if [ -d ".ai-reviews-temp" ]; then
             # Each artifact downloads to its own subdirectory, flatten them
             find .ai-reviews-temp -name "*.json" -exec cp {} .ai-reviews/ \; 2>/dev/null || true
-            echo "📄 Found review files:"
+            echo "📄 Found review files in .ai-reviews/:"
             ls -la .ai-reviews/ || echo "No review files found"
+            echo ""
+            echo "📄 Content preview of each file:"
+            for f in .ai-reviews/*.json; do
+              if [ -f "$f" ]; then
+                echo "--- $f ---"
+                head -c 200 "$f"
+                echo ""
+              fi
+            done
           else
-            echo "⚠️ No review artifacts downloaded"
+            echo "⚠️ No review artifacts downloaded (.ai-reviews-temp does not exist)"
           fi
 
       - name: Get Vercel Preview URL
