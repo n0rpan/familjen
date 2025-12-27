@@ -80,6 +80,8 @@ const CHILD_COLOR_MAP: Record<ChildColor, { bg: string; text: string }> = {
 | Component | Purpose |
 |-----------|---------|
 | `WeekGrid` | Desktop 7-day grid with pickups, events, tasks, meals |
+| `WeekSection` | Client wrapper for WeekGrid with event modals (used on home page) |
+| `TodaySection` | Client wrapper for TodayOverview with event modals |
 | `TodayOverview` | Today's summary card |
 | `DayView` | Single day detail view |
 | `MealSelector` | Recipe/custom meal dropdown |
@@ -569,6 +571,53 @@ E2E_TEST_EMAIL=test@example.com E2E_TEST_PASSWORD=secret npx playwright test
 - No need to maintain test users or seed data
 - Tests run faster (no auth API calls)
 
+### PR-Aware Test Generation
+
+AI analyzes PR diffs to generate **targeted test scenarios** that verify the specific changes. This catches regressions that static e2e tests miss.
+
+**How it works:**
+1. `ai-pr-test-generator.ts` reads the PR diff and changed files
+2. AI generates test scenarios based on what changed (e.g., "click event should open detail modal")
+3. Scenarios are saved to `tests/e2e/generated/pr-scenarios.json`
+4. `pr-scenarios.spec.ts` reads and executes these scenarios via Playwright
+
+**Generated Test Format:**
+```json
+{
+  "scenarios": [
+    {
+      "id": "demo-event-click",
+      "name": "Event detail modal opens on click",
+      "priority": "critical",
+      "page": "/uke?demo=true",
+      "needsAuth": false,
+      "needsDemo": true,
+      "steps": [
+        { "action": "click", "target": "[data-testid='event-item']" }
+      ],
+      "assertions": [
+        { "type": "visible", "target": ".modal" },
+        { "type": "text", "target": ".modal-title", "value": "Detaljer" }
+      ],
+      "prContext": "PR adds event click handlers to DemoWeekPage"
+    }
+  ]
+}
+```
+
+**Run locally:**
+```bash
+# Generate tests from current diff
+npx tsx scripts/ai-pr-test-generator.ts --base origin/main
+
+# Execute generated tests
+npx playwright test tests/e2e/pr-scenarios.spec.ts
+```
+
+**CI Integration:** The `e2e-preview` job automatically generates and runs PR-specific tests when:
+- `OPENROUTER_API_KEY` and `OPENROUTER_FAST_MODEL` are set
+- The Vercel preview is available
+
 ### Current Coverage
 
 - **220+ tests** covering:
@@ -615,6 +664,7 @@ scripts/
 ├── migration-ai-review.ts    # Reviews database migrations (non-blocking)
 ├── ai-code-review.ts         # Reviews PR code changes (non-blocking)
 ├── ai-visual-validation.ts   # Evaluates screenshots (non-blocking)
+├── ai-pr-test-generator.ts   # Generates PR-specific E2E test scenarios
 ├── api-test-reporter.ts      # Converts Vitest results to ReviewerOutput
 ├── e2e-test-reporter.ts      # Converts Playwright results to ReviewerOutput
 └── ai-final-verdict.ts       # The "super AI" decision maker (BLOCKING)

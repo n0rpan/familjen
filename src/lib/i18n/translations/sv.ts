@@ -66,6 +66,10 @@ export const sv: TranslationStrings = {
     confirmDelete: 'Är du säker på att du vill ta bort detta?',
     free: 'Gratis',
     navigatedTo: 'Navigerade till',
+    unknown: 'Okänd',
+    demoMode: 'Demoläge',
+    viewOnly: 'Endast visning',
+    external: 'Extern',
   },
 
   // Date/Time
@@ -208,6 +212,21 @@ export const sv: TranslationStrings = {
     family: 'Familjen',
     familyEvent: 'Familjehändelse',
     icsEventReadOnly: 'Denna händelse är synkroniserad från en extern kalender och kan inte redigeras.',
+    // External event modal
+    hiddenFromCalendar: 'Dold från kalender',
+    visibleInCalendar: 'Synlig i kalender',
+    originalValue: 'Ursprungligt:',
+    endTime: 'Sluttid',
+    location: 'Plats',
+    addLocation: 'Lägg till plats',
+    description: 'Beskrivning',
+    addPersonalNotes: 'Lägg till egna anteckningar...',
+    resetToOriginalValues: 'Återställ till ursprungliga värden',
+    // Event sources
+    googleCalendarSource: 'Google Kalender',
+    icsCalendarSource: 'ICS Kalender',
+    externalSource: 'Extern',
+    schoolClosure: 'Skolfri',
     // AI Modal
     aiModalTitle: 'AI Middagsförslag',
     suggestions: 'förslag',

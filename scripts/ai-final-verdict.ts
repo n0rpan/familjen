@@ -657,35 +657,40 @@ async function main() {
 
 Your job is to review what other AI reviewers found and make the final PASS/BLOCK decision.
 
-## CRITICAL: Focus on THIS PR's Changes
+## CRITICAL: Verify Code Review Blocking Issues
 
-**Your decision should be based ONLY on issues caused by THIS PR's changes.**
+When the **code-review** reviewer has verdict REQUEST_CHANGES with blocking issues, you MUST:
+1. **Use read_file tool** to verify each specific blocking issue mentioned
+2. **Check if the code actually has the problem** - sometimes code review AI hallucinates issues
+3. **Only dismiss an issue if you can prove it's wrong** by reading the actual code
+
+For example, if code review says "Missing prop X in component Y", use read_file on the component file and verify if prop X is actually missing or if it exists.
+
+## Focus on THIS PR's Changes
+
+Your decision should be based on issues in files changed by THIS PR.
 
 When reviewing findings:
 1. Check if the issue is in a file that was CHANGED in this PR
 2. If a test is failing but the test file wasn't modified, it's likely a PRE-EXISTING issue
-3. If findings are about files NOT in the PR's changed files list, note them as "pre-existing" but DON'T block
-
-**Pre-existing issues** (tests failing before this PR, issues in unchanged files):
-- Do NOT block the PR based on these
-- Mention them in a "Pre-existing issues to consider" section
-- Suggest they be filed as GitHub issues for later
+3. If findings are about files NOT in the PR's changed files list, note them as "pre-existing"
 
 ## Decision Criteria
 
-**MUST BLOCK (exit 1) - Only for issues IN this PR's changes:**
-- Security vulnerabilities introduced by THIS PR
-- Data integrity issues introduced by THIS PR
-- Obvious runtime crashes from THIS PR's code
+**MUST BLOCK (exit 1):**
+- Security vulnerabilities introduced by THIS PR (verified by reading code)
+- Data integrity issues introduced by THIS PR (verified by reading code)
+- Obvious runtime crashes from THIS PR's code (verified by reading code)
 - Authentication/authorization broken by THIS PR
 - Critical test failures caused by changes IN this PR
+- **Unverified code review blocking issues** - if you can't verify, err on the side of caution
 
 **SHOULD PASS (exit 0):**
+- Code review blocking issues that you VERIFIED are false positives (explain why)
 - Pre-existing test failures (tests that weren't modified)
 - Issues in files NOT changed by this PR
 - Code style suggestions
 - Minor refactoring opportunities
-- Non-blocking warnings from reviewers
 - Visual score > 60 with no critical UI issues
 
 ## Important Context
@@ -693,24 +698,23 @@ When reviewing findings:
 - Familjen is used by busy Norwegian parents
 - Wrong data is worse than sync not working
 - Every merge to main is a production release
-- Individual reviewers can be overly cautious - use your judgment
 - The "Files Changed" list shows exactly what THIS PR modified
 
 ## Available Tools
 
-You can call tools to get more context if needed. For example:
-- If code review mentions an auth issue, you might read_file to see full context
-- If you're unsure about a pattern, search_code to see how it's done elsewhere
-- Use read_diff to see exactly what changed in this PR
+**ALWAYS use tools to verify code review blocking issues:**
+- read_file: Read the file to verify if the issue exists
+- search_code: Search for patterns to verify claims
+- read_diff: See exactly what changed in this PR
 
-Use tools when the reviewer findings alone aren't enough to make a confident decision.
+Do NOT just pass because you think the issue might be a false positive. VERIFY it.
 
 ## Response Format
 
 Structure your response as:
 1. **PR Summary**: What this PR is trying to accomplish
-2. **Relevant Findings**: Issues that ARE in files changed by this PR
-3. **Pre-existing Issues**: Issues NOT related to this PR (suggest filing as GitHub issues)
+2. **Code Review Verification**: For each blocking issue, did you verify it? What did you find?
+3. **Other Findings**: Issues from other reviewers
 4. **Decision Reasoning**: Why you're passing or blocking
 5. **Final verdict**
 
@@ -947,6 +951,9 @@ function separateFindings(
 
 /**
  * Generate the main PR comment (human-focused, about THIS PR)
+ *
+ * This comment is SELF-CONTAINED - it tells you exactly what to fix in this PR
+ * without needing to read any other comments or artifacts.
  */
 function generateMainComment(
   verdict: FinalVerdictOutput,
@@ -965,103 +972,264 @@ function generateMainComment(
   const badgeColor = verdict.verdict === 'BLOCK' ? 'red' : 'brightgreen'
   const badgeUrl = `https://img.shields.io/badge/AI%20Review-${encodeURIComponent(status)}-${badgeColor}`
 
-  let comment = `![AI Review](${badgeUrl})
-
-## ${emoji} AI Review: ${prTitle}
-
-${verdict.summary}
-
-### 📊 Reviewer Summary
-
-| Reviewer | Verdict | Confidence | Findings |
-|----------|---------|------------|----------|
-`
-
-  for (const summary of verdict.reviewerSummary) {
-    const findings = summary.criticalCount > 0
-      ? `🔴 ${summary.criticalCount} critical`
-      : summary.warningCount > 0
-        ? `🟡 ${summary.warningCount} warnings`
-        : '🟢 Clean'
-    comment += `| ${summary.reviewer} | ${verdictEmoji(summary.verdict)} ${summary.verdict} | ${summary.confidence}% | ${findings} |\n`
-  }
-
   // PR-relevant findings (issues IN this PR)
   const prCritical = prRelevant.filter(f => f.severity === 'critical')
   const prWarnings = prRelevant.filter(f => f.severity === 'warning')
   const prInfo = prRelevant.filter(f => f.severity === 'info')
 
-  if (prCritical.length > 0) {
-    comment += `\n### 🚫 Must Fix (in this PR)\n\n`
-    for (const fix of prCritical.slice(0, 5)) {
-      comment += `1. **\`${fix.file}${fix.line ? `:${fix.line}` : ''}\`** - ${fix.issue}\n`
+  let comment = `![AI Review](${badgeUrl})
+
+## ${emoji} AI Review: ${prTitle}
+
+`
+
+  // BLOCKED - Show exactly what must be fixed
+  if (verdict.verdict === 'BLOCK') {
+    comment += `### ❌ This PR is blocked until the following issues are fixed:
+
+`
+    // Show ALL critical issues with full context
+    for (let i = 0; i < prCritical.length; i++) {
+      const fix = prCritical[i]
+      const location = fix.line ? `${fix.file}:${fix.line}` : fix.file
+      comment += `**${i + 1}. \`${location}\`**
+
+`
+      comment += `${fix.issue}
+
+`
+      if (fix.whyItMatters && !fix.whyItMatters.startsWith('Found by')) {
+        comment += `> **Why it matters:** ${fix.whyItMatters}
+
+`
+      }
       if (fix.fix?.explanation) {
-        comment += `   > ${fix.fix.explanation}\n`
+        comment += `> **How to fix:** ${fix.fix.explanation}
+
+`
       }
     }
-    if (prCritical.length > 5) {
-      comment += `\n_...and ${prCritical.length - 5} more critical issues_\n`
+
+    if (prCritical.length === 0) {
+      // Check if there are critical issues from reviewers we should surface
+      for (const name of Object.keys(reviews)) {
+        const review = reviews[name]
+        const criticalFindings = review.findings.filter(f => f.severity === 'critical')
+        for (const finding of criticalFindings) {
+          const location = finding.line ? `${finding.file || 'unknown'}:${finding.line}` : (finding.file || 'unknown')
+          comment += `**\`${location}\`** (from ${name})
+
+${finding.message}
+
+`
+        }
+      }
     }
+
+    comment += `---
+
+Once you fix these issues, push a new commit and the CI will re-run.
+
+`
+  } else {
+    // PASSED - Show what was reviewed and found
+    const totalReviewers = verdict.reviewerSummary.length
+    const passedReviewers = verdict.reviewerSummary.filter(r => r.verdict === 'PASS').length
+    const warnReviewers = verdict.reviewerSummary.filter(r => r.verdict === 'WARN').length
+
+    comment += `**${passedReviewers}/${totalReviewers} reviewers passed**`
+    if (warnReviewers > 0) {
+      comment += ` (${warnReviewers} with minor warnings)`
+    }
+    comment += `. ${verdict.summary}
+
+`
   }
 
-  if (prWarnings.length > 0) {
-    comment += `\n### ⚠️ Suggestions for this PR\n\n`
+  // Check for PR-specific tests in e2e reviewer
+  const e2eReview = reviews['e2e-tests']
+  const prTestInfo = e2eReview?.raw?.prScenarios as { count: number; criticalCount: number; highCount: number; prTitle: string } | null | undefined
+  if (prTestInfo && prTestInfo.count > 0) {
+    comment += `### 🤖 PR-Specific Tests
+
+AI generated **${prTestInfo.count} test scenarios** for this PR:
+- 🔴 Critical: ${prTestInfo.criticalCount}
+- 🟠 High priority: ${prTestInfo.highCount}
+- 🟡 Medium/Low: ${prTestInfo.count - prTestInfo.criticalCount - prTestInfo.highCount}
+
+These tests verify the specific changes in this PR (e.g., click handlers, modals, demo mode).
+
+`
+  }
+
+  // Reviewer summary table
+  comment += `### 📊 Reviewer Summary
+
+| Reviewer | Verdict | Key Findings |
+|----------|---------|--------------|
+`
+
+  for (const summary of verdict.reviewerSummary) {
+    const review = reviews[summary.reviewer]
+    // Get most important finding
+    const topFinding = review?.findings.filter(f => f.severity === 'critical' || f.severity === 'warning')[0]
+    let findingPreview = topFinding
+      ? `${topFinding.severity === 'critical' ? '🔴' : '🟡'} ${topFinding.message.slice(0, 50)}${topFinding.message.length > 50 ? '...' : ''}`
+      : summary.criticalCount > 0
+        ? `🔴 ${summary.criticalCount} critical issue${summary.criticalCount > 1 ? 's' : ''}`
+        : summary.warningCount > 0
+          ? `🟡 ${summary.warningCount} warning${summary.warningCount > 1 ? 's' : ''}`
+          : '🟢 Clean'
+
+    // Add PR-specific test count for e2e-tests
+    if (summary.reviewer === 'e2e-tests' && prTestInfo && prTestInfo.count > 0) {
+      findingPreview = `🤖 ${prTestInfo.count} PR-specific tests. ` + findingPreview
+    }
+
+    comment += `| ${summary.reviewer} | ${verdictEmoji(summary.verdict)} ${summary.verdict} | ${findingPreview} |\n`
+  }
+
+  // Warnings and suggestions (only if not blocked, or show briefly if blocked)
+  if (verdict.verdict !== 'BLOCK' && prWarnings.length > 0) {
+    comment += `
+### ⚠️ Suggestions (optional but recommended)
+
+`
     for (const warning of prWarnings.slice(0, 5)) {
-      comment += `- **\`${warning.file}\`**: ${warning.issue}\n`
+      const location = warning.line ? `${warning.file}:${warning.line}` : warning.file
+      comment += `- **\`${location}\`**: ${warning.issue}\n`
     }
     if (prWarnings.length > 5) {
-      comment += `\n_...and ${prWarnings.length - 5} more warnings_\n`
+      comment += `\n_...and ${prWarnings.length - 5} more suggestions_\n`
     }
   }
 
-  if (prInfo.length > 0 && prCritical.length === 0) {
-    comment += `\n### 💡 Minor suggestions\n\n`
+  if (verdict.verdict !== 'BLOCK' && prInfo.length > 0) {
+    comment += `
+### 💡 Minor notes
+
+`
     for (const info of prInfo.slice(0, 3)) {
       comment += `- \`${info.file}\`: ${info.issue}\n`
     }
     if (prInfo.length > 3) {
-      comment += `\n_...and ${prInfo.length - 3} more_\n`
+      comment += `\n_...and ${prInfo.length - 3} more minor notes_\n`
     }
   }
 
-  // Note about pre-existing issues (if any)
-  if (preExisting.length > 0) {
-    comment += `\n### 📋 Pre-existing issues (not from this PR)\n\n`
-    comment += `Found **${preExisting.length}** issues in files not changed by this PR. `
-    comment += `These should be addressed separately. See follow-up comment below.\n`
+  // Decision reasoning - generate a clear summary instead of parsing AI output
+  comment += `
+### 🧠 Why this decision?
+
+`
+  if (verdict.verdict === 'PASS') {
+    // Generate clear reasoning for PASS
+    const cleanReviewers = verdict.reviewerSummary.filter(r => r.criticalCount === 0 && r.warningCount === 0)
+    const warnReviewers = verdict.reviewerSummary.filter(r => r.warningCount > 0 && r.criticalCount === 0)
+
+    if (prRelevant.length === 0) {
+      comment += `No issues were found in the files changed by this PR. `
+    } else {
+      comment += `Found ${prRelevant.length} minor suggestion${prRelevant.length > 1 ? 's' : ''} in this PR (none blocking). `
+    }
+
+    if (cleanReviewers.length > 0) {
+      comment += `${cleanReviewers.map(r => r.reviewer).join(', ')} found no issues. `
+    }
+
+    if (warnReviewers.length > 0) {
+      comment += `${warnReviewers.map(r => r.reviewer).join(', ')} had minor warnings that don't require changes.`
+    }
+
+    // Explain any failed verifications that didn't block
+    const failedVerifications = Object.entries(verdict.verifications)
+      .filter(([_, status]) => status === 'fail')
+      .map(([name]) => name)
+
+    if (failedVerifications.length > 0) {
+      comment += `
+
+**Note:** ${failedVerifications.join(', ')} showed issues, but these appear to be pre-existing (not introduced by this PR).`
+    }
+  } else {
+    // For BLOCK, use the AI's reasoning but clean it up
+    const reasoningEnd = verdict.reasoning.indexOf('FINAL VERDICT:')
+    const reasoning = reasoningEnd > 0 ? verdict.reasoning.slice(0, reasoningEnd).trim() : verdict.reasoning
+
+    // Get last paragraph that explains the decision
+    const paragraphs = reasoning.split('\n\n').filter(p => p.trim() && p.length > 30)
+    const lastParagraph = paragraphs[paragraphs.length - 1] || 'Critical issues must be addressed before merge.'
+    comment += lastParagraph.slice(0, 500) + (lastParagraph.length > 500 ? '...' : '')
   }
 
-  // Decision reasoning
-  comment += `\n### 🧠 Decision\n\n`
-  const reasoningEnd = verdict.reasoning.indexOf('FINAL VERDICT:')
-  const reasoning = reasoningEnd > 0 ? verdict.reasoning.slice(0, reasoningEnd).trim() : verdict.reasoning
+  // Note about pre-existing issues (if any) - brief mention, details in separate comment
+  if (preExisting.length > 0) {
+    comment += `
 
-  // Extract just the key decision points (last paragraph or so)
-  const paragraphs = reasoning.split('\n\n').filter(p => p.trim())
-  const keyReasoning = paragraphs.slice(-2).join('\n\n')
-  comment += keyReasoning.slice(0, 800) + (keyReasoning.length > 800 ? '...' : '')
+---
 
-  // Collapsed section for AI agents
-  comment += `\n\n<details>
-<summary>📎 Raw data for AI agents</summary>
+📋 **Note:** Found ${preExisting.length} issue${preExisting.length > 1 ? 's' : ''} in files NOT changed by this PR. These are pre-existing and won't block this PR. See the follow-up comment for details.`
+  }
+
+  // Collapsed section for AI agents - make it self-contained
+  const structuredData = {
+    verdict: verdict.verdict,
+    confidence: verdict.confidence,
+    summary: verdict.verdict === 'PASS'
+      ? `PR passed with ${prRelevant.length} minor findings (${prCritical.length} critical, ${prWarnings.length} warnings)`
+      : `PR blocked with ${prCritical.length} critical issues to fix`,
+    prChanges: {
+      filesChanged: changedFiles.length,
+      findings: prRelevant.length,
+      critical: prCritical.length,
+      warnings: prWarnings.length,
+      info: prInfo.length,
+    },
+    preExisting: {
+      count: preExisting.length,
+      note: preExisting.length > 0 ? 'Issues in unchanged files - not blocking' : null,
+    },
+    reviewers: verdict.reviewerSummary.map(r => ({
+      name: r.reviewer,
+      verdict: r.verdict,
+      critical: r.criticalCount,
+      warnings: r.warningCount,
+    })),
+    verifications: Object.fromEntries(
+      Object.entries(verdict.verifications).map(([k, v]) => [
+        k,
+        v === 'fail' && preExisting.length > 0 ? `${v} (pre-existing)` : v
+      ])
+    ),
+    // Include actual findings for AI agents to act on
+    mustFix: prCritical.map(f => ({
+      file: f.file,
+      line: f.line,
+      issue: f.issue,
+      howToFix: f.fix?.explanation,
+    })),
+    suggestions: prWarnings.slice(0, 5).map(f => ({
+      file: f.file,
+      line: f.line,
+      issue: f.issue,
+    })),
+  }
+
+  comment += `
+
+<details>
+<summary>📎 For AI agents: structured data</summary>
 
 \`\`\`json
-${JSON.stringify({
-  verdict: verdict.verdict,
-  confidence: verdict.confidence,
-  prRelevantFindings: prRelevant.length,
-  preExistingFindings: preExisting.length,
-  reviewers: verdict.reviewerSummary,
-  verifications: verdict.verifications,
-  artifactPath: 'ai-reviews/final-verdict.json',
-}, null, 2)}
+${JSON.stringify(structuredData, null, 2)}
 \`\`\`
-
-**Full artifacts:** Download from GitHub Actions → Artifacts → \`ai-reviews-final-verdict\`
 
 </details>`
 
-  comment += `\n\n---\n*AI Review by \`${VERDICT_MODEL.split('/').pop()}\`*`
+  comment += `
+
+---
+*AI Review by \`${VERDICT_MODEL.split('/').pop()}\` • [View full artifacts](${process.env.GITHUB_SERVER_URL || 'https://github.com'}/${process.env.GITHUB_REPOSITORY || 'repo'}/actions/runs/${process.env.GITHUB_RUN_ID || 'latest'})*`
 
   return comment
 }

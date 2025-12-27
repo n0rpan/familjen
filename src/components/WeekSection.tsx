@@ -1,32 +1,64 @@
 'use client'
 
-import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { TodayOverview } from './TodayOverview'
+import { WeekGrid } from './WeekGrid'
 import { MemberEventModal, HouseholdEventModal, ChildTaskModal, ExternalEventModal } from '@/app/uke/components'
-import type { DaySummary, HouseholdEvent, MemberEvent, ExternalEvent, ChildTask, HouseholdMember, Child, ChildTaskType, MemberEventType, ExternalEventLocalOverrides } from '@/lib/types'
+import type {
+  Child,
+  HouseholdMember,
+  PickupWithDetails,
+  MealWithRecipe,
+  MemberEvent,
+  HouseholdEvent,
+  ExternalEvent,
+  ChildTask,
+  ChildTaskType,
+  MemberEventType,
+  ExternalEventLocalOverrides,
+} from '@/lib/types'
 import type { Holiday } from '@/lib/utils'
 import { useLanguage } from '@/lib/i18n/context'
 
-interface TodaySectionProps {
-  summary: DaySummary | null
-  holidays?: Holiday[]
-  members: HouseholdMember[]
-  children: Child[]
-  householdId: string
+// Helper to safely extract HH:MM from time string
+function formatTimeForForm(time: string | null | undefined): string {
+  if (!time) return ''
+  // Handle both HH:MM and HH:MM:SS formats
+  const match = time.match(/^(\d{2}:\d{2})/)
+  return match ? match[1] : ''
 }
 
-export function TodaySection({ summary, holidays = [], members, children, householdId }: TodaySectionProps) {
+interface WeekSectionProps {
+  children: Child[]
+  members: HouseholdMember[]
+  pickups: PickupWithDetails[]
+  meals: MealWithRecipe[]
+  memberEvents: MemberEvent[]
+  householdEvents: HouseholdEvent[]
+  externalEvents: ExternalEvent[]
+  childTasks: ChildTask[]
+  holidays: Holiday[]
+  weekStart: Date
+}
+
+export function WeekSection({
+  children,
+  members,
+  pickups,
+  meals,
+  memberEvents,
+  householdEvents,
+  externalEvents,
+  childTasks,
+  holidays,
+  weekStart,
+}: WeekSectionProps) {
   const { t } = useLanguage()
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [reloadKey, setReloadKey] = useState(0)
-
-  // Current summary state (allows updates after modal actions)
-  const [currentSummary, setCurrentSummary] = useState(summary)
 
   // Clear error after 5 seconds
   const showError = useCallback((message: string) => {
@@ -72,25 +104,6 @@ export function TodaySection({ summary, holidays = [], members, children, househ
     notes: '',
   })
 
-  // Check if any modal is open (to prevent race conditions during editing)
-  const isAnyModalOpen = showMemberEventModal || showHouseholdEventModal || showExternalEventModal || showTaskModal
-
-  // Sync summary prop to state when it changes (fixes stale state bug)
-  // Only sync when no modal is open to prevent overwriting editor state
-  useEffect(() => {
-    if (!isAnyModalOpen) {
-      setCurrentSummary(summary)
-    }
-  }, [summary, isAnyModalOpen])
-
-  // Reload data after changes
-  const reloadData = useCallback(async () => {
-    // Force a refresh by updating the key
-    setReloadKey(prev => prev + 1)
-    // Note: In a real implementation, you'd want to refetch the summary data
-    // For now, we just close the modals - the parent page handles data refresh on navigation
-  }, [])
-
   // Member event handlers
   const handleMemberEventClick = useCallback((event: MemberEvent) => {
     setEditingMemberEvent(event)
@@ -107,18 +120,10 @@ export function TodaySection({ summary, holidays = [], members, children, househ
   const closeMemberEventModal = useCallback(() => {
     setShowMemberEventModal(false)
     setEditingMemberEvent(null)
-    setMemberEventForm({
-      member_id: '',
-      title: '',
-      event_type: 'other',
-      date: '',
-      end_date: '',
-    })
   }, [])
 
   const saveMemberEvent = useCallback(async () => {
     if (!memberEventForm.member_id || !memberEventForm.title || !memberEventForm.date) return
-
     setSaving(true)
     try {
       if (editingMemberEvent) {
@@ -146,15 +151,10 @@ export function TodaySection({ summary, holidays = [], members, children, househ
 
   const deleteMemberEvent = useCallback(async () => {
     if (!editingMemberEvent) return
-
     setSaving(true)
     try {
-      const { error: dbError } = await supabase
-        .from('member_events')
-        .delete()
-        .eq('id', editingMemberEvent.id)
+      const { error: dbError } = await supabase.from('member_events').delete().eq('id', editingMemberEvent.id)
       if (dbError) throw dbError
-
       closeMemberEventModal()
       router.refresh()
     } catch (err) {
@@ -181,23 +181,11 @@ export function TodaySection({ summary, holidays = [], members, children, househ
   const closeHouseholdEventModal = useCallback(() => {
     setShowHouseholdEventModal(false)
     setEditingHouseholdEvent(null)
-    setHouseholdEventForm({
-      title: '',
-      date: '',
-      end_date: '',
-      time: '',
-      location: '',
-    })
   }, [])
 
   const saveHouseholdEvent = useCallback(async () => {
     if (!householdEventForm.title || !householdEventForm.date) return
-
-    // Don't allow editing ICS-synced events
-    if (editingHouseholdEvent?.source === 'ics_calendar') {
-      return
-    }
-
+    if (editingHouseholdEvent?.source === 'ics_calendar') return // Can't edit ICS events
     setSaving(true)
     try {
       if (editingHouseholdEvent) {
@@ -225,20 +213,11 @@ export function TodaySection({ summary, holidays = [], members, children, househ
 
   const deleteHouseholdEvent = useCallback(async () => {
     if (!editingHouseholdEvent) return
-
-    // Don't allow deleting ICS-synced events
-    if (editingHouseholdEvent.source === 'ics_calendar') {
-      return
-    }
-
+    if (editingHouseholdEvent.source === 'ics_calendar') return // Can't delete ICS events
     setSaving(true)
     try {
-      const { error: dbError } = await supabase
-        .from('household_events')
-        .delete()
-        .eq('id', editingHouseholdEvent.id)
+      const { error: dbError } = await supabase.from('household_events').delete().eq('id', editingHouseholdEvent.id)
       if (dbError) throw dbError
-
       closeHouseholdEventModal()
       router.refresh()
     } catch (err) {
@@ -266,7 +245,6 @@ export function TodaySection({ summary, holidays = [], members, children, househ
     is_hidden: boolean
   }) => {
     if (!editingExternalEvent) return
-
     setSaving(true)
     try {
       const { error: dbError } = await supabase
@@ -278,7 +256,6 @@ export function TodaySection({ summary, holidays = [], members, children, househ
         })
         .eq('id', editingExternalEvent.id)
       if (dbError) throw dbError
-
       closeExternalEventModal()
       router.refresh()
     } catch (err) {
@@ -306,19 +283,10 @@ export function TodaySection({ summary, holidays = [], members, children, househ
   const closeTaskModal = useCallback(() => {
     setShowTaskModal(false)
     setEditingTask(null)
-    setTaskForm({
-      child_id: '',
-      title: '',
-      task_type: 'reminder',
-      date: '',
-      time: '',
-      notes: '',
-    })
   }, [])
 
   const saveTask = useCallback(async () => {
     if (!taskForm.child_id || !taskForm.title || !taskForm.date) return
-
     setSaving(true)
     try {
       if (editingTask) {
@@ -347,15 +315,10 @@ export function TodaySection({ summary, holidays = [], members, children, househ
 
   const deleteTask = useCallback(async () => {
     if (!editingTask) return
-
     setSaving(true)
     try {
-      const { error: dbError } = await supabase
-        .from('child_tasks')
-        .delete()
-        .eq('id', editingTask.id)
+      const { error: dbError } = await supabase.from('child_tasks').delete().eq('id', editingTask.id)
       if (dbError) throw dbError
-
       closeTaskModal()
       router.refresh()
     } catch (err) {
@@ -400,12 +363,19 @@ export function TodaySection({ summary, holidays = [], members, children, househ
         </div>
       )}
 
-      <TodayOverview
-        key={reloadKey}
-        summary={currentSummary}
+      <WeekGrid
+        children={children}
+        members={members}
+        pickups={pickups}
+        meals={meals}
+        memberEvents={memberEvents}
+        householdEvents={householdEvents}
+        externalEvents={externalEvents}
+        childTasks={childTasks}
         holidays={holidays}
+        weekStart={weekStart}
+        onEventClick={handleMemberEventClick}
         onHouseholdEventClick={handleHouseholdEventClick}
-        onMemberEventClick={handleMemberEventClick}
         onExternalEventClick={handleExternalEventClick}
         onTaskClick={handleTaskClick}
       />

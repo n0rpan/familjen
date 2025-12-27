@@ -29,6 +29,28 @@ const NORWEGIAN_MEALS = [
 const KINDERGARTENS = ['Trollskogen barnehage', 'Solstråle barnehage', 'Eventyrskogen']
 const SCHOOLS = ['Bekkelaget skole', 'Nordberg skole', 'Majorstuen skole']
 
+// Event type data
+const MEMBER_EVENT_TYPES = ['work', 'travel', 'family', 'other'] as const
+const MEMBER_EVENT_TITLES = {
+  work: ['Kveldsmøte', 'Jobb til sent', 'Overtid', 'Jobbmiddag'],
+  travel: ['Jobbtur', 'Konferanse', 'Kundeoppdrag'],
+  family: ['Bursdagsselskap', 'Familiebesøk', 'Konfirmasjon'],
+  other: ['Legetime', 'Tannlege', 'Trening']
+}
+
+const HOUSEHOLD_EVENT_TITLES = ['Familieselskap', 'Bryllup', 'Dåp', 'Julefest', 'Bursdagsfeiring']
+
+const EXTERNAL_EVENT_TITLES = ['Trening', 'Kamp', 'Dugnad', 'Foreldremøte', 'Høstfest']
+const EXTERNAL_SERVICES = ['spond', 'kidplan', 'iskole', 'mykid'] as const
+
+const CHILD_TASK_TYPES = ['bring', 'appointment', 'reminder', 'other'] as const
+const CHILD_TASK_TITLES = {
+  bring: ['Ta med gymsko', 'Ta med matboks', 'Ta med regntøy', 'Medbring innesko'],
+  appointment: ['Tannlege', 'Lege', 'Vaksinering', 'Helsesjekk'],
+  reminder: ['Foreldremøte', 'Fotografering', 'Klassetur', 'Skidag'],
+  other: ['Betale kontingent', 'Signere tillatelse', 'Sende melding']
+}
+
 export interface TestChild {
   id: string
   name: string
@@ -60,6 +82,48 @@ export interface TestMeal {
   custom_meal: string
 }
 
+export interface TestMemberEvent {
+  id: string
+  member_id: string
+  date: string
+  end_date: string | null
+  title: string
+  event_type: typeof MEMBER_EVENT_TYPES[number]
+  event_time: string | null
+  source: 'manual'
+}
+
+export interface TestHouseholdEvent {
+  id: string
+  title: string
+  event_date: string
+  end_date: string | null
+  event_time: string | null
+  location: string | null
+  source: 'manual'
+}
+
+export interface TestExternalEvent {
+  id: string
+  child_id: string
+  title: string
+  event_date: string
+  event_time: string | null
+  event_type: string
+  integration: { service: typeof EXTERNAL_SERVICES[number]; display_name: string }
+}
+
+export interface TestChildTask {
+  id: string
+  child_id: string
+  date: string
+  time: string | null
+  title: string
+  task_type: typeof CHILD_TASK_TYPES[number]
+  status: 'open' | 'done'
+  notes: string | null
+}
+
 export interface TestHousehold {
   id: string
   name: string
@@ -67,6 +131,10 @@ export interface TestHousehold {
   children: TestChild[]
   pickups: TestPickup[]
   meals: TestMeal[]
+  memberEvents: TestMemberEvent[]
+  householdEvents: TestHouseholdEvent[]
+  externalEvents: TestExternalEvent[]
+  childTasks: TestChildTask[]
 }
 
 function randomElement<T>(arr: T[]): T {
@@ -101,12 +169,16 @@ export function generateTestHousehold(options: {
   memberCount?: number
   withPickups?: boolean
   withMeals?: boolean
+  withEvents?: boolean
+  withTasks?: boolean
 } = {}): TestHousehold {
   const {
     childCount = 2,
     memberCount = 2,
     withPickups = true,
     withMeals = true,
+    withEvents = true,
+    withTasks = true,
   } = options
 
   const householdId = generateId()
@@ -182,6 +254,89 @@ export function generateTestHousehold(options: {
       }))
     : []
 
+  // Generate member events (1-2 per member per week)
+  const memberEvents: TestMemberEvent[] = withEvents
+    ? members.flatMap(member => {
+        const eventCount = Math.floor(Math.random() * 2) + 1
+        return Array.from({ length: eventCount }, () => {
+          const eventType = randomElement([...MEMBER_EVENT_TYPES])
+          const titles = MEMBER_EVENT_TITLES[eventType]
+          const date = randomElement(weekDates)
+          return {
+            id: generateId(),
+            member_id: member.id,
+            date,
+            end_date: Math.random() > 0.7 ? date : null, // 30% chance of multi-day
+            title: randomElement(titles),
+            event_type: eventType,
+            event_time: Math.random() > 0.5 ? `${Math.floor(Math.random() * 12) + 8}:00` : null,
+            source: 'manual' as const,
+          }
+        })
+      })
+    : []
+
+  // Generate household events (1-2 per week)
+  const householdEvents: TestHouseholdEvent[] = withEvents && Math.random() > 0.3
+    ? Array.from({ length: Math.floor(Math.random() * 2) + 1 }, () => {
+        const date = randomElement(weekDates)
+        return {
+          id: generateId(),
+          title: randomElement(HOUSEHOLD_EVENT_TITLES),
+          event_date: date,
+          end_date: null,
+          event_time: `${Math.floor(Math.random() * 8) + 12}:00`,
+          location: Math.random() > 0.5 ? 'Hjemme' : null,
+          source: 'manual' as const,
+        }
+      })
+    : []
+
+  // Generate external events from integrations (1-3 per child)
+  const externalEvents: TestExternalEvent[] = withEvents
+    ? children.flatMap(child => {
+        const eventCount = Math.floor(Math.random() * 3) + 1
+        return Array.from({ length: eventCount }, () => {
+          const service = randomElement([...EXTERNAL_SERVICES])
+          return {
+            id: generateId(),
+            child_id: child.id,
+            title: randomElement(EXTERNAL_EVENT_TITLES),
+            event_date: randomElement(weekDates),
+            event_time: `${Math.floor(Math.random() * 6) + 15}:00`, // 15:00-21:00
+            event_type: 'event',
+            integration: {
+              service,
+              display_name: service === 'spond' ? 'Fotballgruppa' :
+                           service === 'kidplan' ? child.location :
+                           service === 'iskole' ? 'Bekkelaget skole' : 'MyKid Barnehage'
+            }
+          }
+        })
+      })
+    : []
+
+  // Generate child tasks (1-3 per child for the week)
+  const childTasks: TestChildTask[] = withTasks
+    ? children.flatMap(child => {
+        const taskCount = Math.floor(Math.random() * 3) + 1
+        return Array.from({ length: taskCount }, () => {
+          const taskType = randomElement([...CHILD_TASK_TYPES])
+          const titles = CHILD_TASK_TITLES[taskType]
+          return {
+            id: generateId(),
+            child_id: child.id,
+            date: randomElement(weekDates),
+            time: taskType === 'appointment' ? `${Math.floor(Math.random() * 8) + 9}:00` : null,
+            title: randomElement(titles),
+            task_type: taskType,
+            status: Math.random() > 0.8 ? 'done' : 'open' as const,
+            notes: null,
+          }
+        })
+      })
+    : []
+
   return {
     id: householdId,
     name: `${members[0]?.name || 'Test'} Familie`,
@@ -189,6 +344,10 @@ export function generateTestHousehold(options: {
     children,
     pickups,
     meals,
+    memberEvents,
+    householdEvents,
+    externalEvents,
+    childTasks,
   }
 }
 

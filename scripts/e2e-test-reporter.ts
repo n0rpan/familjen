@@ -103,6 +103,39 @@ interface SimplePlaywrightReport {
 }
 
 // ============================================
+// PR-Specific Test Scenarios
+// ============================================
+
+interface PRTestScenario {
+  id: string
+  name: string
+  description: string
+  priority: 'critical' | 'high' | 'medium' | 'low'
+  page: string
+  prContext: string
+}
+
+interface PRTestScenarios {
+  prTitle: string
+  prDescription: string
+  generatedAt: string
+  scenarios: PRTestScenario[]
+}
+
+function loadPRScenarios(): PRTestScenarios | null {
+  const scenariosPath = 'tests/e2e/generated/pr-scenarios.json'
+  if (!existsSync(scenariosPath)) {
+    return null
+  }
+  try {
+    const content = readFileSync(scenariosPath, 'utf-8')
+    return JSON.parse(content)
+  } catch {
+    return null
+  }
+}
+
+// ============================================
 // Parsing Functions
 // ============================================
 
@@ -239,6 +272,33 @@ async function main() {
 
   console.log('📊 E2E Test Reporter (Non-Blocking)\n')
 
+  // Check for PR-specific test scenarios
+  const prScenarios = loadPRScenarios()
+  if (prScenarios) {
+    console.log('🤖 PR-Specific Tests Generated:')
+    console.log(`   PR: ${prScenarios.prTitle}`)
+    console.log(`   Scenarios: ${prScenarios.scenarios.length}`)
+    const criticalCount = prScenarios.scenarios.filter(s => s.priority === 'critical').length
+    const highCount = prScenarios.scenarios.filter(s => s.priority === 'high').length
+    if (criticalCount > 0) console.log(`   🔴 Critical: ${criticalCount}`)
+    if (highCount > 0) console.log(`   🟠 High: ${highCount}`)
+    console.log('')
+    for (const scenario of prScenarios.scenarios.slice(0, 5)) {
+      const icon = scenario.priority === 'critical' ? '🔴' :
+                   scenario.priority === 'high' ? '🟠' :
+                   scenario.priority === 'medium' ? '🟡' : '🟢'
+      console.log(`   ${icon} ${scenario.name}`)
+      console.log(`      → ${scenario.prContext}`)
+    }
+    if (prScenarios.scenarios.length > 5) {
+      console.log(`   ... and ${prScenarios.scenarios.length - 5} more scenarios`)
+    }
+    console.log('')
+  } else {
+    console.log('ℹ️  No PR-specific test scenarios found')
+    console.log('   Run: npx tsx scripts/ai-pr-test-generator.ts\n')
+  }
+
   // Find or parse results file path
   let resultsFile: string | null = null
   for (let i = 0; i < args.length; i++) {
@@ -260,6 +320,12 @@ async function main() {
     console.log('\nTo generate results:')
     console.log('  npx playwright test --reporter=json --output=e2e-results.json')
 
+    // Build summary including PR-specific info
+    let summary = 'No E2E test results to report.'
+    if (prScenarios) {
+      summary = `🤖 ${prScenarios.scenarios.length} PR-specific tests generated for "${prScenarios.prTitle}", but no Playwright results found.`
+    }
+
     // Save skipped output
     const skippedOutput: ReviewerOutput = {
       reviewer: 'e2e-tests',
@@ -270,7 +336,8 @@ async function main() {
       verdict: 'PASS',
       confidence: 100,
       findings: [],
-      summary: 'No E2E test results to report.',
+      summary,
+      raw: prScenarios ? { prScenarios: prScenarios.scenarios.length } : undefined,
     }
     saveReviewerOutput(skippedOutput)
     process.exit(0)
@@ -322,6 +389,12 @@ async function main() {
     const total = results.passed + results.failed + results.skipped
     const confidence = total > 0 ? Math.round((results.passed / total) * 100) : 0
 
+    // Build summary with PR-specific info
+    let summary = `E2E UAT: ${results.passed}/${total} tests passed (${results.failed} failed, ${results.flaky} flaky, ${results.skipped} skipped).`
+    if (prScenarios) {
+      summary = `🤖 ${prScenarios.scenarios.length} PR-specific tests generated. ${summary}`
+    }
+
     // Save in standardized format
     const output: ReviewerOutput = {
       reviewer: 'e2e-tests',
@@ -332,8 +405,16 @@ async function main() {
       verdict,
       confidence,
       findings,
-      summary: `E2E UAT: ${results.passed}/${total} tests passed (${results.failed} failed, ${results.flaky} flaky, ${results.skipped} skipped).`,
-      raw: results,
+      summary,
+      raw: {
+        ...results,
+        prScenarios: prScenarios ? {
+          count: prScenarios.scenarios.length,
+          criticalCount: prScenarios.scenarios.filter(s => s.priority === 'critical').length,
+          highCount: prScenarios.scenarios.filter(s => s.priority === 'high').length,
+          prTitle: prScenarios.prTitle,
+        } : null,
+      },
     }
     saveReviewerOutput(output)
 

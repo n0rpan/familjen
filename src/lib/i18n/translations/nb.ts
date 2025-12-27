@@ -66,6 +66,10 @@ export const nb: TranslationStrings = {
     confirmDelete: 'Er du sikker på at du vil slette dette?',
     free: 'Gratis',
     navigatedTo: 'Navigert til',
+    unknown: 'Ukjent',
+    demoMode: 'Demomodus',
+    viewOnly: 'Kun visning',
+    external: 'Ekstern',
   },
 
   // Date/Time
@@ -208,6 +212,21 @@ export const nb: TranslationStrings = {
     family: 'Familien',
     familyEvent: 'Familiehendelse',
     icsEventReadOnly: 'Denne hendelsen er synkronisert fra en ekstern kalender og kan ikke redigeres.',
+    // External event modal
+    hiddenFromCalendar: 'Skjult fra kalender',
+    visibleInCalendar: 'Synlig i kalender',
+    originalValue: 'Opprinnelig:',
+    endTime: 'Sluttid',
+    location: 'Sted',
+    addLocation: 'Legg til sted',
+    description: 'Beskrivelse',
+    addPersonalNotes: 'Legg til egne notater...',
+    resetToOriginalValues: 'Tilbakestill til opprinnelige verdier',
+    // Event sources
+    googleCalendarSource: 'Google Kalender',
+    icsCalendarSource: 'ICS Kalender',
+    externalSource: 'Ekstern',
+    schoolClosure: 'Skolefri',
     // AI Modal
     aiModalTitle: 'AI Middagsforslag',
     suggestions: 'forslag',
