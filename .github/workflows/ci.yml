@@ -452,6 +452,7 @@ jobs:
     timeout-minutes: 15
     needs: [build]
     if: github.event_name == 'pull_request'
+    continue-on-error: true  # Non-blocking - final verdict decides
 
     steps:
       - uses: actions/checkout@v4
