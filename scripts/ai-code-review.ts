@@ -136,9 +136,9 @@ function buildReviewPrompt(diff: string, changedFiles: string[], docs: { claudeM
   // Check if documentation was modified in this PR
   const docsModified = changedFiles.some(f => f === 'CLAUDE.md' || f === 'README.md')
 
-  // Truncate documentation to key sections for context (first ~4000 chars each)
-  const claudeMdContext = docs.claudeMd.slice(0, 4000) + (docs.claudeMd.length > 4000 ? '\n... (truncated)' : '')
-  const readmeMdContext = docs.readmeMd.slice(0, 4000) + (docs.readmeMd.length > 4000 ? '\n... (truncated)' : '')
+  // Include full documentation - modern LLMs handle large contexts well
+  const claudeMdContext = docs.claudeMd
+  const readmeMdContext = docs.readmeMd
 
   return `You are a senior developer reviewing a PR for Familjen, a Norwegian family planning app.
 
@@ -195,6 +195,15 @@ ${diff}
 - [ ] Optimistic updates rollback on error
 - [ ] formatDateISO() for dates (not raw toISOString)
 - [ ] Async operations properly awaited
+
+### Error Handling Patterns (Familjen-specific)
+- [ ] API routes use \`handleApiError()\` or \`ApiErrors.*\` from lib/api-errors.ts
+- [ ] API routes return user-friendly Norwegian error messages, not raw errors
+- [ ] Supabase calls check for \`error\` response and handle appropriately
+- [ ] Integration clients (Spond, MyKid) use try/catch with specific error types
+- [ ] Rate limit responses use \`ApiErrors.rateLimit()\` with retry-after
+- [ ] Demo mode requests check \`isDemoRequest()\` early and bypass heavy auth
+- [ ] Credential decryption failures use \`ApiErrors.internal()\` with internal message only
 
 ### Norwegian App Specifics
 - [ ] New strings have translations (nb.ts, sv.ts, en.ts)

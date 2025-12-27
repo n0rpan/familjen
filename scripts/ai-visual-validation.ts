@@ -171,6 +171,69 @@ const PAGE_EXPECTATIONS: PageExpectation[] = [
       'Bottom navigation icons use standard 20px size with generous touch padding',
     ],
   },
+  {
+    name: 'recipes',
+    description: 'Recipe management page (oppskrifter) for storing and viewing recipes',
+    mustShow: [
+      'Recipe list or cards',
+      'Add recipe button or action',
+      'Navigation elements',
+    ],
+    mustNotShow: [
+      'Error states blocking all content',
+      'Broken images for recipe photos',
+    ],
+    mobileConsiderations: [
+      'Recipe cards should be tappable',
+      'Recipe details should be readable without zooming',
+    ],
+    byDesign: [
+      'Empty state with "Legg til oppskrift" prompt is expected for new users',
+      'Recipe images may use placeholder if no image uploaded',
+    ],
+  },
+  {
+    name: 'shopping',
+    description: 'Shopping list page (handleliste) for managing grocery lists',
+    mustShow: [
+      'Shopping list items or empty state',
+      'Add item functionality',
+      'Category organization or simple list',
+    ],
+    mustNotShow: [
+      'Error states blocking functionality',
+      'Unreadable text or broken layout',
+    ],
+    mobileConsiderations: [
+      'Checkbox/checkmark targets should be easily tappable',
+      'Items should be easy to swipe or delete',
+    ],
+    byDesign: [
+      'Items may be grouped by store category (AI-categorized)',
+      'Completed items may be struck through or moved to bottom',
+    ],
+  },
+  {
+    name: 'admin',
+    description: 'Admin panel for app administrators',
+    mustShow: [
+      'Admin sections or navigation',
+      'User management or settings',
+      'Clear indication this is an admin area',
+    ],
+    mustNotShow: [
+      'Regular user content that should be hidden',
+      'Error states or access denied messages (in demo)',
+    ],
+    mobileConsiderations: [
+      'Admin functions should still work on mobile',
+      'Tables or lists should be scrollable if needed',
+    ],
+    byDesign: [
+      'Admin may have denser UI than user-facing pages - this is acceptable for power users',
+      'Technical information display (model names, API status) is expected',
+    ],
+  },
 ]
 
 // ============================================

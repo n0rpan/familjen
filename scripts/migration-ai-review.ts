@@ -86,10 +86,10 @@ function getNewMigrations(migrations: MigrationFile[]): MigrationFile[] {
 }
 
 function buildReviewPrompt(newMigration: MigrationFile, previousMigrations: MigrationFile[]): string {
-  // Include last 5 migrations for context (truncated)
+  // Include last 5 migrations for context - full content, modern LLMs handle it well
   const contextMigrations = previousMigrations.slice(-5)
   const contextSection = contextMigrations
-    .map((m) => `### ${m.name}\n\`\`\`sql\n${m.content.slice(0, 1000)}${m.content.length > 1000 ? '\n-- [truncated]' : ''}\n\`\`\``)
+    .map((m) => `### ${m.name}\n\`\`\`sql\n${m.content}\n\`\`\``)
     .join('\n\n')
 
   return `You are a PostgreSQL and Supabase expert reviewing database migrations for Familjen, a Norwegian family planning app.
@@ -139,7 +139,60 @@ Analyze the migration and provide your assessment.`
 }
 
 /**
- * Generate rollback SQL for a migration
+ * Schema for structured rollback generation
+ */
+const ROLLBACK_SCHEMA = {
+  type: 'object',
+  properties: {
+    rollbackSql: {
+      type: 'string',
+      description: 'The complete SQL rollback script'
+    },
+    isReversible: {
+      type: 'boolean',
+      description: 'Whether the migration can be fully reversed without data loss'
+    },
+    hasDataLoss: {
+      type: 'boolean',
+      description: 'Whether executing the rollback would cause data loss'
+    },
+    warnings: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'List of warnings about the rollback (e.g., data loss, manual steps needed)'
+    },
+    tablesDropped: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Tables that will be dropped by the rollback'
+    },
+    columnsDropped: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Columns that will be dropped (format: table.column)'
+    },
+    manualStepsRequired: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Any manual steps needed after running the rollback SQL'
+    }
+  },
+  required: ['rollbackSql', 'isReversible', 'hasDataLoss', 'warnings'],
+  additionalProperties: false
+}
+
+interface RollbackResult {
+  rollbackSql: string
+  isReversible: boolean
+  hasDataLoss: boolean
+  warnings: string[]
+  tablesDropped?: string[]
+  columnsDropped?: string[]
+  manualStepsRequired?: string[]
+}
+
+/**
+ * Generate rollback SQL for a migration using structured output
  */
 async function generateRollbackSql(migration: MigrationFile): Promise<RollbackMigration> {
   const rollbackPrompt = `You are a PostgreSQL expert. Generate a rollback SQL script that reverses this migration.
@@ -157,9 +210,14 @@ ${migration.content}
 4. Reverse any RLS policy changes
 5. Reverse any function changes
 6. Use IF EXISTS to make rollback idempotent
-7. If data loss would occur, add a comment warning about it
 
-Respond with ONLY the SQL rollback script, no explanations. Start with a comment header.`
+## Important
+- Set isReversible to false if data would be lost
+- Set hasDataLoss to true if DROP TABLE, DROP COLUMN, or TRUNCATE are needed
+- Add warnings for any dangerous operations
+- List manual steps if human intervention is needed
+
+Generate the rollback SQL with a comment header explaining what it does.`
 
   try {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -172,6 +230,14 @@ Respond with ONLY the SQL rollback script, no explanations. Start with a comment
         model: AI_MODELS.fast,
         messages: [{ role: 'user', content: rollbackPrompt }],
         temperature: 0,
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'migration_rollback',
+            strict: true,
+            schema: ROLLBACK_SCHEMA
+          }
+        }
       }),
     })
 
@@ -180,23 +246,34 @@ Respond with ONLY the SQL rollback script, no explanations. Start with a comment
     }
 
     const data = (await response.json()) as { choices: Array<{ message: { content: string } }> }
-    const rollbackSql = data.choices[0]?.message?.content || '-- Rollback generation failed'
+    const content = data.choices[0]?.message?.content
 
-    // Parse warnings from comments in the SQL
-    const warnings: string[] = []
-    const warningMatches = rollbackSql.match(/-- WARNING:.*$/gm) || []
-    for (const match of warningMatches) {
-      warnings.push(match.replace('-- WARNING:', '').trim())
+    if (!content) {
+      throw new Error('Empty response from API')
     }
 
-    // Check if reversible (no data loss warnings)
-    const isReversible = !rollbackSql.toLowerCase().includes('data loss') && !rollbackSql.toLowerCase().includes('cannot be reversed')
+    const result: RollbackResult = JSON.parse(content)
+
+    // Build comprehensive warnings
+    const allWarnings = [...result.warnings]
+    if (result.hasDataLoss) {
+      allWarnings.unshift('⚠️ DATA LOSS: This rollback will permanently delete data')
+    }
+    if (result.tablesDropped && result.tablesDropped.length > 0) {
+      allWarnings.push(`Tables to be dropped: ${result.tablesDropped.join(', ')}`)
+    }
+    if (result.columnsDropped && result.columnsDropped.length > 0) {
+      allWarnings.push(`Columns to be dropped: ${result.columnsDropped.join(', ')}`)
+    }
+    if (result.manualStepsRequired && result.manualStepsRequired.length > 0) {
+      allWarnings.push(`Manual steps required: ${result.manualStepsRequired.join('; ')}`)
+    }
 
     return {
       originalFile: migration.name,
-      rollbackSql,
-      isReversible,
-      warnings,
+      rollbackSql: result.rollbackSql,
+      isReversible: result.isReversible && !result.hasDataLoss,
+      warnings: allWarnings,
       generatedAt: new Date().toISOString(),
       generatedBy: AI_MODELS.fast,
     }

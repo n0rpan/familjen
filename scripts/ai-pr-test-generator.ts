@@ -316,16 +316,13 @@ async function generateTestScenarios(
     throw new Error('OPENROUTER_FAST_MODEL environment variable is required')
   }
 
-  // Prepare context
+  // Prepare context - include all relevant files, modern LLMs handle large contexts
   const relevantFiles = changedFiles.filter(f =>
     f.endsWith('.tsx') || f.endsWith('.ts') || f.endsWith('.css')
-  ).slice(0, 20) // Limit to 20 files
+  )
 
-  // Truncate diff if too large
-  const maxDiffLength = 50000
-  const truncatedDiff = diff.length > maxDiffLength
-    ? diff.slice(0, maxDiffLength) + '\n\n... (diff truncated)'
-    : diff
+  // Include full diff - modern LLMs handle large contexts well
+  const fullDiff = diff
 
   const messages = [
     {
@@ -345,7 +342,7 @@ ${relevantFiles.join('\n')}
 
 ## Diff
 \`\`\`diff
-${truncatedDiff}
+${fullDiff}
 \`\`\`
 
 Generate 2-5 FOCUSED test scenarios for this PR.
@@ -380,6 +377,95 @@ If the PR title mentions a fix (e.g., "Fix demo navigation"), the FIRST test sho
     }
     return { scenarios: [], reasoning: 'Failed to parse AI response' }
   }
+}
+
+// ============================================
+// Selector Validation
+// ============================================
+
+/**
+ * Extract selectors from test scenarios and validate they exist in the codebase
+ */
+function validateSelectors(scenarios: TestScenario[]): {
+  valid: string[]
+  invalid: string[]
+  warnings: string[]
+} {
+  const selectors = new Set<string>()
+
+  // Extract selectors from steps and assertions
+  for (const scenario of scenarios) {
+    for (const step of scenario.steps) {
+      if (step.target && !step.target.startsWith('/') && !step.target.startsWith('http')) {
+        selectors.add(step.target)
+      }
+    }
+    for (const assertion of scenario.assertions) {
+      if (assertion.target && !assertion.target.startsWith('/') && !assertion.target.startsWith('http')) {
+        selectors.add(assertion.target)
+      }
+    }
+  }
+
+  const valid: string[] = []
+  const invalid: string[] = []
+  const warnings: string[] = []
+
+  for (const selector of selectors) {
+    // Skip text selectors - they're dynamic
+    if (selector.startsWith('text=') || selector.includes(':has-text(')) {
+      valid.push(selector) // Assume text selectors are valid
+      continue
+    }
+
+    // Extract data-testid if present
+    const testIdMatch = selector.match(/data-testid=["']([^"']+)["']/)
+    if (testIdMatch) {
+      const testId = testIdMatch[1]
+      try {
+        const result = execSync(`rg -l "data-testid=[\\"']${testId}[\\"']" src/ --type tsx --type ts 2>/dev/null || true`, {
+          encoding: 'utf-8'
+        }).trim()
+
+        if (result) {
+          valid.push(selector)
+        } else {
+          invalid.push(selector)
+          warnings.push(`Selector not found in codebase: ${selector}`)
+        }
+      } catch {
+        warnings.push(`Could not verify selector: ${selector}`)
+      }
+      continue
+    }
+
+    // Extract class names
+    const classMatch = selector.match(/\.([a-zA-Z_-][a-zA-Z0-9_-]*)/)
+    if (classMatch) {
+      const className = classMatch[1]
+      try {
+        const result = execSync(`rg -l "className=.*${className}" src/ --type tsx --type ts 2>/dev/null || rg -l "class=.*${className}" src/ 2>/dev/null || true`, {
+          encoding: 'utf-8'
+        }).trim()
+
+        if (result) {
+          valid.push(selector)
+        } else {
+          // Classes might be from Tailwind, so just warn
+          warnings.push(`Class selector may not exist: ${selector}`)
+          valid.push(selector) // Don't invalidate, might be Tailwind
+        }
+      } catch {
+        valid.push(selector)
+      }
+      continue
+    }
+
+    // For other selectors (roles, elements), assume valid
+    valid.push(selector)
+  }
+
+  return { valid, invalid, warnings }
 }
 
 // ============================================
@@ -492,6 +578,31 @@ async function main() {
       console.log(`   ${emoji} [${scenario.priority}] ${scenario.name}`)
       console.log(`      Page: ${scenario.page}`)
       console.log(`      Steps: ${scenario.steps.length}, Assertions: ${scenario.assertions.length}`)
+    }
+
+    // Validate selectors
+    if (scenarios.length > 0) {
+      console.log('\n🔍 Validating selectors...')
+      const validation = validateSelectors(scenarios)
+
+      if (validation.invalid.length > 0) {
+        console.log(`\n⚠️ Invalid selectors (${validation.invalid.length}):`)
+        for (const sel of validation.invalid) {
+          console.log(`   ❌ ${sel}`)
+        }
+      }
+
+      if (validation.warnings.length > 0) {
+        console.log(`\n💡 Selector warnings (${validation.warnings.length}):`)
+        for (const warn of validation.warnings.slice(0, 5)) {
+          console.log(`   ⚠️ ${warn}`)
+        }
+        if (validation.warnings.length > 5) {
+          console.log(`   ... and ${validation.warnings.length - 5} more`)
+        }
+      }
+
+      console.log(`\n📊 Selector validation: ${validation.valid.length} valid, ${validation.invalid.length} invalid`)
     }
 
     // Save scenarios

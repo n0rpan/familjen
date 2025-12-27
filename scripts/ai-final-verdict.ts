@@ -178,13 +178,49 @@ const TOOLS: Tool[] = [
       required: []
     }
   },
+  {
+    name: 'check_typescript',
+    description: 'Run TypeScript type checking on changed files to verify no type errors',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
 ]
+
+// ============================================
+// Tool Result Cache
+// ============================================
+
+// Cache tool results to avoid redundant operations within a single verdict run
+const toolResultCache = new Map<string, string>()
+
+function getCacheKey(name: string, input: Record<string, unknown>): string {
+  return `${name}:${JSON.stringify(input)}`
+}
 
 // ============================================
 // Tool Implementations
 // ============================================
 
 function executeTool(name: string, input: Record<string, unknown>): string {
+  // Check cache first
+  const cacheKey = getCacheKey(name, input)
+  const cached = toolResultCache.get(cacheKey)
+  if (cached) {
+    console.log(`   → (cached)`)
+    return cached
+  }
+
+  const result = executeToolUncached(name, input)
+
+  // Cache the result
+  toolResultCache.set(cacheKey, result)
+  return result
+}
+
+function executeToolUncached(name: string, input: Record<string, unknown>): string {
   const baseBranch = process.env.GITHUB_BASE_REF || 'main'
   const previewUrl = process.env.VERCEL_PREVIEW_URL
 
@@ -283,29 +319,69 @@ function executeTool(name: string, input: Record<string, unknown>): string {
 
         const newTables: string[] = []
         const tablesWithRLS: string[] = []
+        const tablesWithHouseholdPolicy: string[] = []
+        const policiesFound: string[] = []
 
         for (const file of changedMigrations) {
           if (!existsSync(file)) continue
           const content = readFileSync(file, 'utf-8')
 
+          // Find new tables
           const tableMatches = content.matchAll(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)/gi)
           for (const match of tableMatches) {
             newTables.push(match[1])
           }
 
+          // Find RLS enabled
           const rlsMatches = content.matchAll(/ALTER\s+TABLE\s+(\w+)\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY/gi)
           for (const match of rlsMatches) {
             tablesWithRLS.push(match[1])
           }
+
+          // Find policies and check for household_id or get_user_household_id()
+          const policyMatches = content.matchAll(/CREATE\s+POLICY\s+["']?(\w+)["']?\s+ON\s+(\w+)/gi)
+          for (const match of policyMatches) {
+            const policyName = match[1]
+            const tableName = match[2]
+            policiesFound.push(`${tableName}.${policyName}`)
+
+            // Check if policy references household scoping
+            const policyContent = content.slice(match.index || 0, (match.index || 0) + 500)
+            if (policyContent.includes('get_user_household_id()') || policyContent.includes('household_id')) {
+              if (!tablesWithHouseholdPolicy.includes(tableName)) {
+                tablesWithHouseholdPolicy.push(tableName)
+              }
+            }
+          }
         }
 
+        const issues: string[] = []
+
+        // Check for tables without RLS
         const tablesWithoutRLS = newTables.filter(t => !tablesWithRLS.includes(t))
-
         if (tablesWithoutRLS.length > 0) {
-          return `⚠️ Tables without RLS: ${tablesWithoutRLS.join(', ')}`
+          issues.push(`❌ Tables WITHOUT RLS enabled: ${tablesWithoutRLS.join(', ')}`)
         }
+
+        // Check for tables with RLS but no household scoping
+        const tablesWithRLSNoHousehold = tablesWithRLS.filter(
+          t => newTables.includes(t) && !tablesWithHouseholdPolicy.includes(t)
+        )
+        if (tablesWithRLSNoHousehold.length > 0) {
+          issues.push(`⚠️ Tables with RLS but NO household scoping: ${tablesWithRLSNoHousehold.join(', ')}`)
+          issues.push(`   Expected: Policies should use get_user_household_id() or household_id for multi-tenant isolation`)
+        }
+
+        if (issues.length > 0) {
+          return `🔐 RLS SECURITY ISSUES:\n${issues.join('\n')}\n\n` +
+            `Tables found: ${newTables.join(', ') || 'none'}\n` +
+            `Policies found: ${policiesFound.join(', ') || 'none'}`
+        }
+
         return newTables.length > 0
-          ? `✅ All ${newTables.length} new tables have RLS enabled`
+          ? `✅ All ${newTables.length} new tables have RLS + household scoping:\n` +
+            `   Tables: ${newTables.join(', ')}\n` +
+            `   Policies: ${policiesFound.join(', ')}`
           : '✅ No new tables in migrations'
       } catch (e) {
         return `Error checking RLS: ${e}`
@@ -407,23 +483,50 @@ function executeTool(name: string, input: Record<string, unknown>): string {
           ...packageJson.devDependencies
         }
 
+        // Built-in Node modules and Next.js implicit deps
+        const builtins = new Set([
+          'react', 'react-dom', 'next', 'fs', 'path', 'child_process', 'crypto',
+          'http', 'https', 'os', 'util', 'stream', 'events', 'buffer', 'url',
+          'querystring', 'assert', 'zlib', 'net', 'dns', 'tls', 'readline'
+        ])
+
         const issues: string[] = []
-        for (const file of changedFiles.slice(0, 10)) {
+        const checkedPackages = new Set<string>()
+
+        // Check ALL changed files, not just first 10
+        for (const file of changedFiles) {
           if (!existsSync(file)) continue
           const content = readFileSync(file, 'utf-8')
 
-          const imports = content.matchAll(/from\s+['"]([^.@][^'"]+)['"]/g)
+          // Match both regular and scoped package imports
+          // from 'package' or from '@scope/package'
+          const imports = content.matchAll(/from\s+['"](@?[^./][^'"]*)['"]/g)
           for (const match of imports) {
-            const pkg = match[1].split('/')[0]
-            if (!deps[pkg] && !['react', 'next'].includes(pkg)) {
-              issues.push(`${file}: Unknown import '${pkg}'`)
+            const fullImport = match[1]
+            // Handle scoped packages: @scope/package -> @scope/package
+            // Handle regular packages: package/subpath -> package
+            const pkg = fullImport.startsWith('@')
+              ? fullImport.split('/').slice(0, 2).join('/')
+              : fullImport.split('/')[0]
+
+            // Skip if already checked
+            if (checkedPackages.has(pkg)) continue
+            checkedPackages.add(pkg)
+
+            // Skip builtins and local aliases
+            if (builtins.has(pkg) || pkg.startsWith('@/')) continue
+
+            // Check if package exists in deps
+            if (!deps[pkg]) {
+              issues.push(`${file}: Hallucinated import '${pkg}' - not in package.json`)
             }
           }
         }
 
-        return issues.length > 0
-          ? `⚠️ Import issues:\n${issues.join('\n')}`
-          : '✅ All imports resolve correctly'
+        if (issues.length > 0) {
+          return `❌ HALLUCINATED IMPORTS DETECTED:\n${issues.join('\n')}\n\nThese packages don't exist in package.json. This is likely AI-generated code with fake dependencies.`
+        }
+        return `✅ All ${checkedPackages.size} external imports verified against package.json`
       } catch (e) {
         return `Error checking imports: ${e}`
       }
@@ -455,6 +558,52 @@ function executeTool(name: string, input: Record<string, unknown>): string {
         return `✅ All new env vars documented: ${[...newEnvVars].join(', ')}`
       } catch (e) {
         return `Error checking env usage: ${e}`
+      }
+    }
+
+    case 'check_typescript': {
+      try {
+        // Get changed TypeScript files
+        const changedFiles = execSync(
+          `git diff --name-only origin/${baseBranch}...HEAD | grep -E '\\.(ts|tsx)$' || true`,
+          { encoding: 'utf-8' }
+        ).trim().split('\n').filter(Boolean)
+
+        if (changedFiles.length === 0) {
+          return '✅ No TypeScript files changed'
+        }
+
+        // Run TypeScript check
+        try {
+          const tscOutput = execSync('npx tsc --noEmit 2>&1', {
+            encoding: 'utf-8',
+            timeout: 60000 // 1 minute timeout
+          })
+          return `✅ TypeScript check passed for ${changedFiles.length} changed files`
+        } catch (tscError) {
+          // TypeScript errors - parse and filter to changed files
+          const errorOutput = (tscError as { stdout?: string }).stdout || String(tscError)
+          const lines = errorOutput.split('\n')
+
+          // Filter errors to only those in changed files
+          const relevantErrors: string[] = []
+          for (const line of lines) {
+            if (line.includes('.ts') || line.includes('.tsx')) {
+              const matchesChangedFile = changedFiles.some(f => line.includes(f))
+              if (matchesChangedFile) {
+                relevantErrors.push(line)
+              }
+            }
+          }
+
+          if (relevantErrors.length === 0) {
+            return `⚠️ TypeScript errors exist but not in changed files (${changedFiles.length} files OK)`
+          }
+
+          return `❌ TypeScript errors in changed files:\n${relevantErrors.slice(0, 10).join('\n')}${relevantErrors.length > 10 ? `\n... and ${relevantErrors.length - 10} more errors` : ''}`
+        }
+      } catch (e) {
+        return `Error running TypeScript check: ${e}`
       }
     }
 
@@ -764,7 +913,8 @@ FINAL VERDICT: BLOCK`
   let messages: Message[] = [{ role: 'user', content: userPrompt }]
   let response = ''
   let iterations = 0
-  const maxIterations = 10
+  const maxIterations = 20 // Increased for thorough verification
+  let exhaustedIterations = false
 
   while (iterations < maxIterations) {
     iterations++
@@ -774,6 +924,11 @@ FINAL VERDICT: BLOCK`
       // No more tool calls - we have the final response
       response = result.response
       break
+    }
+
+    // Safety check: if we're about to exhaust iterations, warn
+    if (iterations === maxIterations - 1) {
+      console.warn(`⚠️ Approaching iteration limit (${iterations}/${maxIterations})`)
     }
 
     // Execute tool calls
@@ -807,6 +962,13 @@ FINAL VERDICT: BLOCK`
     })
   }
 
+  // Check if we exhausted iterations without getting a final response
+  if (iterations >= maxIterations && !response) {
+    exhaustedIterations = true
+    console.error(`❌ Exhausted ${maxIterations} iterations without final verdict`)
+    response = 'FINAL VERDICT: BLOCK\n\nReason: Tool loop exhausted without reaching a conclusion. Manual review required.'
+  }
+
   console.log('\n' + '='.repeat(60))
   console.log('FINAL VERDICT ANALYSIS:')
   console.log('='.repeat(60))
@@ -817,12 +979,19 @@ FINAL VERDICT: BLOCK`
   const shouldBlock = response.includes('FINAL VERDICT: BLOCK')
   const shouldPass = response.includes('FINAL VERDICT: PASS')
 
+  let blocked: boolean
   if (!shouldBlock && !shouldPass) {
     console.error('❌ Could not determine verdict from response')
-    console.log('Defaulting to PASS to avoid blocking PRs unnecessarily')
+    // BLOCK when we can't determine - safer than passing unreviewed code
+    console.log('Defaulting to BLOCK for safety - cannot approve without clear verdict')
+    blocked = true
+  } else if (exhaustedIterations) {
+    // Always block if we exhausted iterations
+    console.log('⚠️ Blocking due to exhausted tool loop iterations')
+    blocked = true
+  } else {
+    blocked = shouldBlock && !shouldPass
   }
-
-  const blocked = shouldBlock && !shouldPass
 
   // Build verification results from reviewer outputs
   const verifications: VerificationResults = {
@@ -985,7 +1154,14 @@ function generateMainComment(
 
   // BLOCKED - Show exactly what must be fixed
   if (verdict.verdict === 'BLOCK') {
-    comment += `### ❌ This PR is blocked until the following issues are fixed:
+    // Add TL;DR for blocked PRs
+    comment += `> **TL;DR:** ${prCritical.length} issue${prCritical.length !== 1 ? 's' : ''} must be fixed before merge`
+    if (prCritical.length > 0 && prCritical[0].file) {
+      comment += ` (main issue in \`${prCritical[0].file}\`)`
+    }
+    comment += `
+
+### ❌ Fix These Issues:
 
 `
     // Show ALL critical issues with full context
@@ -1037,13 +1213,32 @@ Once you fix these issues, push a new commit and the CI will re-run.
     const passedReviewers = verdict.reviewerSummary.filter(r => r.verdict === 'PASS').length
     const warnReviewers = verdict.reviewerSummary.filter(r => r.verdict === 'WARN').length
 
-    comment += `**${passedReviewers}/${totalReviewers} reviewers passed**`
+    comment += `> ✅ **Ready to merge** - ${passedReviewers}/${totalReviewers} reviewers passed`
     if (warnReviewers > 0) {
-      comment += ` (${warnReviewers} with minor warnings)`
+      comment += ` (${warnReviewers} with minor suggestions)`
     }
-    comment += `. ${verdict.summary}
+    comment += `
 
 `
+
+    // Add Quick Wins section if there are easy improvements
+    const quickWins = prWarnings.filter(w =>
+      w.issue.toLowerCase().includes('consider') ||
+      w.issue.toLowerCase().includes('could') ||
+      w.issue.toLowerCase().includes('optional') ||
+      w.severity === 'info'
+    ).slice(0, 3)
+
+    if (quickWins.length > 0) {
+      comment += `<details>
+<summary>💡 Quick Wins (optional improvements)</summary>
+
+${quickWins.map(w => `- **\`${w.file}\`**: ${w.issue}`).join('\n')}
+
+</details>
+
+`
+    }
   }
 
   // Check for PR-specific tests in e2e reviewer

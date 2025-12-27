@@ -86,6 +86,67 @@ interface VitestJsonReportV2 {
 }
 
 // ============================================
+// Test Categorization
+// ============================================
+
+type TestSeverity = 'critical' | 'warning' | 'info'
+
+/**
+ * Categorize test severity based on file path and test name
+ * Security and API tests are critical, UI tests are warnings, utilities are info
+ */
+function categorizeTestSeverity(file: string, testName: string): TestSeverity {
+  const lowerFile = file.toLowerCase()
+  const lowerName = testName.toLowerCase()
+
+  // Critical: Security, auth, API, integration tests
+  if (
+    lowerFile.includes('security') ||
+    lowerFile.includes('auth') ||
+    lowerFile.includes('/api/') ||
+    lowerFile.includes('integration') ||
+    lowerFile.includes('rls') ||
+    lowerName.includes('security') ||
+    lowerName.includes('auth') ||
+    lowerName.includes('injection') ||
+    lowerName.includes('xss') ||
+    lowerName.includes('credential')
+  ) {
+    return 'critical'
+  }
+
+  // High priority (mapped to warning): E2E, hooks, components
+  if (
+    lowerFile.includes('/e2e/') ||
+    lowerFile.includes('/hooks/') ||
+    lowerFile.includes('/components/') ||
+    lowerFile.includes('integration')
+  ) {
+    return 'warning'
+  }
+
+  // Info: Utilities, helpers, pure functions
+  return 'info'
+}
+
+/**
+ * Get a category label for the test based on file path
+ */
+function getTestCategory(file: string): string {
+  const lowerFile = file.toLowerCase()
+
+  if (lowerFile.includes('security') || lowerFile.includes('auth')) return 'security'
+  if (lowerFile.includes('/api/')) return 'api'
+  if (lowerFile.includes('integration')) return 'integration'
+  if (lowerFile.includes('/hooks/')) return 'hooks'
+  if (lowerFile.includes('/components/')) return 'components'
+  if (lowerFile.includes('/lib/')) return 'lib'
+  if (lowerFile.includes('/utils/')) return 'utils'
+
+  return 'other'
+}
+
+// ============================================
 // Parsing Functions
 // ============================================
 
@@ -267,16 +328,29 @@ async function main() {
     console.log(`   📊 Total: ${results.total}`)
     console.log(`   ⏱️  Duration: ${Math.round(results.duration / 1000)}s`)
 
-    // Convert failures to findings
-    const findings: Finding[] = results.failures.map(f => ({
-      severity: 'critical' as const,
-      category: 'test-failure' as const,
-      message: `${f.title}: ${f.error.slice(0, 200)}${f.error.length > 200 ? '...' : ''}`,
-      file: f.file,
-      line: f.line,
-      testName: f.title,
-      error: f.error,
-    }))
+    // Convert failures to findings with severity based on test type
+    const findings: Finding[] = results.failures.map(f => {
+      const severity = categorizeTestSeverity(f.file, f.title)
+      const category = getTestCategory(f.file)
+
+      return {
+        severity,
+        category: category === 'security' ? 'security' as const :
+                  category === 'api' ? 'api-contract' as const :
+                  'test-failure' as const,
+        message: `[${category.toUpperCase()}] ${f.title}: ${f.error.slice(0, 200)}${f.error.length > 200 ? '...' : ''}`,
+        file: f.file,
+        line: f.line,
+        testName: f.title,
+        error: f.error,
+      }
+    })
+
+    // Sort by severity (critical first)
+    findings.sort((a, b) => {
+      const severityOrder = { critical: 0, warning: 1, info: 2 }
+      return severityOrder[a.severity] - severityOrder[b.severity]
+    })
 
     // Determine verdict
     let verdict: 'PASS' | 'WARN' | 'FAIL'
@@ -291,6 +365,19 @@ async function main() {
     // Calculate confidence based on pass rate
     const confidence = results.total > 0 ? Math.round((results.passed / results.total) * 100) : 100
 
+    // Build summary with severity breakdown
+    const criticalCount = findings.filter(f => f.severity === 'critical').length
+    const warningCount = findings.filter(f => f.severity === 'warning').length
+    const infoCount = findings.filter(f => f.severity === 'info').length
+
+    let summary = `API Tests: ${results.passed}/${results.total} passed`
+    if (results.failed > 0) {
+      summary += ` (${results.failed} failed: ${criticalCount} critical, ${warningCount} high, ${infoCount} low)`
+    }
+    if (results.skipped > 0) {
+      summary += `, ${results.skipped} skipped`
+    }
+
     // Save in standardized format
     const output: ReviewerOutput = {
       reviewer: 'api-tests',
@@ -301,19 +388,45 @@ async function main() {
       verdict,
       confidence,
       findings,
-      summary: `API Tests: ${results.passed}/${results.total} passed (${results.failed} failed, ${results.skipped} skipped).`,
+      summary,
       raw: results,
     }
     saveReviewerOutput(output)
 
-    // Print failures if any
-    if (results.failures.length > 0) {
-      console.log('\n❌ Failed Tests:')
-      for (const failure of results.failures) {
-        console.log(`   • ${failure.title}`)
-        console.log(`     ${failure.file}${failure.line ? `:${failure.line}` : ''}`)
-        const errorPreview = failure.error.split('\n')[0].slice(0, 80)
-        console.log(`     Error: ${errorPreview}${failure.error.length > 80 ? '...' : ''}`)
+    // Print failures by severity
+    if (findings.length > 0) {
+      console.log('\n❌ Failed Tests (by severity):')
+
+      // Group by severity
+      const bySeverity = { critical: [] as typeof findings, warning: [] as typeof findings, info: [] as typeof findings }
+      for (const f of findings) {
+        bySeverity[f.severity].push(f)
+      }
+
+      if (bySeverity.critical.length > 0) {
+        console.log(`\n   🔴 CRITICAL (${bySeverity.critical.length}):`)
+        for (const f of bySeverity.critical) {
+          console.log(`      • ${f.testName}`)
+          console.log(`        ${f.file}${f.line ? `:${f.line}` : ''}`)
+        }
+      }
+
+      if (bySeverity.warning.length > 0) {
+        console.log(`\n   🟠 HIGH (${bySeverity.warning.length}):`)
+        for (const f of bySeverity.warning) {
+          console.log(`      • ${f.testName}`)
+          console.log(`        ${f.file}${f.line ? `:${f.line}` : ''}`)
+        }
+      }
+
+      if (bySeverity.info.length > 0) {
+        console.log(`\n   🟡 LOW (${bySeverity.info.length}):`)
+        for (const f of bySeverity.info.slice(0, 5)) {
+          console.log(`      • ${f.testName}`)
+        }
+        if (bySeverity.info.length > 5) {
+          console.log(`      ... and ${bySeverity.info.length - 5} more`)
+        }
       }
     }
 
