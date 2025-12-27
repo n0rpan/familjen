@@ -628,7 +628,7 @@ async function main() {
       reviewerSummary: [],
     }
     saveFinalVerdict(defaultVerdict)
-    generateComment(defaultVerdict, reviews)
+    generateComment(defaultVerdict, reviews, [], 'Unknown PR')
 
     // Exit 1 to fail CI - we can't approve without reviewer data
     console.log('\n❌ BLOCKED - No reviewer artifacts found. Fix CI configuration.')
@@ -892,7 +892,7 @@ FINAL VERDICT: BLOCK`
   }
 
   saveFinalVerdict(verdictOutput)
-  generateComment(verdictOutput, reviews)
+  generateComment(verdictOutput, reviews, changedFiles.split('\n').filter(Boolean), prTitle)
 
   console.log(`\n⏱️ Duration: ${Math.round((Date.now() - startTime) / 1000)}s`)
 
@@ -909,23 +909,69 @@ FINAL VERDICT: BLOCK`
 // PR Comment Generation
 // ============================================
 
-function generateComment(verdict: FinalVerdictOutput, reviews: Record<string, ReviewerOutput>): void {
+interface SeparatedFindings {
+  prRelevant: ActionableIssue[]
+  preExisting: ActionableIssue[]
+}
+
+/**
+ * Separate findings into PR-relevant vs pre-existing based on changed files
+ */
+function separateFindings(
+  findings: ActionableIssue[],
+  changedFiles: string[]
+): SeparatedFindings {
+  const changedSet = new Set(changedFiles.map(f => f.trim()).filter(Boolean))
+
+  const prRelevant: ActionableIssue[] = []
+  const preExisting: ActionableIssue[] = []
+
+  for (const finding of findings) {
+    // Check if the file is in the changed files list
+    const isInChangedFiles = finding.file && (
+      changedSet.has(finding.file) ||
+      // Also check partial matches (finding might have full path)
+      [...changedSet].some(cf => finding.file.endsWith(cf) || cf.endsWith(finding.file))
+    )
+
+    // If no file specified or it's a general issue, consider it PR-relevant
+    if (!finding.file || finding.file === 'unknown' || isInChangedFiles) {
+      prRelevant.push(finding)
+    } else {
+      preExisting.push(finding)
+    }
+  }
+
+  return { prRelevant, preExisting }
+}
+
+/**
+ * Generate the main PR comment (human-focused, about THIS PR)
+ */
+function generateMainComment(
+  verdict: FinalVerdictOutput,
+  reviews: Record<string, ReviewerOutput>,
+  changedFiles: string[],
+  prTitle: string
+): string {
   const emoji = verdict.verdict === 'BLOCK' ? '❌' : '✅'
-  const status = verdict.verdict === 'BLOCK' ? 'BLOCKED' : 'APPROVED'
+  const status = verdict.verdict === 'BLOCK' ? 'Changes Requested' : 'Approved'
+
+  // Separate findings
+  const allFindings = [...verdict.requiredFixes, ...verdict.suggestions]
+  const { prRelevant, preExisting } = separateFindings(allFindings, changedFiles)
 
   // Generate status badge
   const badgeColor = verdict.verdict === 'BLOCK' ? 'red' : 'brightgreen'
-  const badgeUrl = `https://img.shields.io/badge/AI%20Verdict-${status}-${badgeColor}`
+  const badgeUrl = `https://img.shields.io/badge/AI%20Review-${encodeURIComponent(status)}-${badgeColor}`
 
-  let comment = `![AI Verdict](${badgeUrl})
+  let comment = `![AI Review](${badgeUrl})
 
-## 🎯 Final AI Verdict: ${emoji} ${status}
-
-**Confidence:** ${verdict.confidence}%
+## ${emoji} AI Review: ${prTitle}
 
 ${verdict.summary}
 
-### Reviewer Summary
+### 📊 Reviewer Summary
 
 | Reviewer | Verdict | Confidence | Findings |
 |----------|---------|------------|----------|
@@ -940,37 +986,193 @@ ${verdict.summary}
     comment += `| ${summary.reviewer} | ${verdictEmoji(summary.verdict)} ${summary.verdict} | ${summary.confidence}% | ${findings} |\n`
   }
 
-  if (verdict.requiredFixes.length > 0) {
-    comment += `\n### 🚫 Required Fixes\n\n`
-    for (const fix of verdict.requiredFixes.slice(0, 5)) {
-      comment += `1. **${fix.file}${fix.line ? `:${fix.line}` : ''}** - ${fix.issue}\n`
+  // PR-relevant findings (issues IN this PR)
+  const prCritical = prRelevant.filter(f => f.severity === 'critical')
+  const prWarnings = prRelevant.filter(f => f.severity === 'warning')
+  const prInfo = prRelevant.filter(f => f.severity === 'info')
+
+  if (prCritical.length > 0) {
+    comment += `\n### 🚫 Must Fix (in this PR)\n\n`
+    for (const fix of prCritical.slice(0, 5)) {
+      comment += `1. **\`${fix.file}${fix.line ? `:${fix.line}` : ''}\`** - ${fix.issue}\n`
+      if (fix.fix?.explanation) {
+        comment += `   > ${fix.fix.explanation}\n`
+      }
     }
-    if (verdict.requiredFixes.length > 5) {
-      comment += `\n_...and ${verdict.requiredFixes.length - 5} more_\n`
+    if (prCritical.length > 5) {
+      comment += `\n_...and ${prCritical.length - 5} more critical issues_\n`
     }
   }
 
-  if (verdict.suggestions.length > 0) {
-    comment += `\n### 💡 Suggestions\n\n`
-    for (const suggestion of verdict.suggestions.slice(0, 5)) {
-      const icon = suggestion.severity === 'warning' ? '⚠️' : 'ℹ️'
-      comment += `- ${icon} \`${suggestion.file}\`: ${suggestion.issue}\n`
+  if (prWarnings.length > 0) {
+    comment += `\n### ⚠️ Suggestions for this PR\n\n`
+    for (const warning of prWarnings.slice(0, 5)) {
+      comment += `- **\`${warning.file}\`**: ${warning.issue}\n`
     }
-    if (verdict.suggestions.length > 5) {
-      comment += `\n_...and ${verdict.suggestions.length - 5} more suggestions_\n`
+    if (prWarnings.length > 5) {
+      comment += `\n_...and ${prWarnings.length - 5} more warnings_\n`
     }
   }
 
-  comment += `\n### Analysis\n\n`
-  // Extract just the reasoning part (before FINAL VERDICT)
+  if (prInfo.length > 0 && prCritical.length === 0) {
+    comment += `\n### 💡 Minor suggestions\n\n`
+    for (const info of prInfo.slice(0, 3)) {
+      comment += `- \`${info.file}\`: ${info.issue}\n`
+    }
+    if (prInfo.length > 3) {
+      comment += `\n_...and ${prInfo.length - 3} more_\n`
+    }
+  }
+
+  // Note about pre-existing issues (if any)
+  if (preExisting.length > 0) {
+    comment += `\n### 📋 Pre-existing issues (not from this PR)\n\n`
+    comment += `Found **${preExisting.length}** issues in files not changed by this PR. `
+    comment += `These should be addressed separately. See follow-up comment below.\n`
+  }
+
+  // Decision reasoning
+  comment += `\n### 🧠 Decision\n\n`
   const reasoningEnd = verdict.reasoning.indexOf('FINAL VERDICT:')
   const reasoning = reasoningEnd > 0 ? verdict.reasoning.slice(0, reasoningEnd).trim() : verdict.reasoning
-  comment += reasoning.slice(0, 1000) + (reasoning.length > 1000 ? '...' : '')
 
-  comment += `\n\n---\n*Final verdict by ${VERDICT_MODEL}*`
+  // Extract just the key decision points (last paragraph or so)
+  const paragraphs = reasoning.split('\n\n').filter(p => p.trim())
+  const keyReasoning = paragraphs.slice(-2).join('\n\n')
+  comment += keyReasoning.slice(0, 800) + (keyReasoning.length > 800 ? '...' : '')
 
-  writeFileSync('final-verdict-comment.md', comment)
-  console.log('\n💬 PR comment saved: final-verdict-comment.md')
+  // Collapsed section for AI agents
+  comment += `\n\n<details>
+<summary>📎 Raw data for AI agents</summary>
+
+\`\`\`json
+${JSON.stringify({
+  verdict: verdict.verdict,
+  confidence: verdict.confidence,
+  prRelevantFindings: prRelevant.length,
+  preExistingFindings: preExisting.length,
+  reviewers: verdict.reviewerSummary,
+  verifications: verdict.verifications,
+  artifactPath: 'ai-reviews/final-verdict.json',
+}, null, 2)}
+\`\`\`
+
+**Full artifacts:** Download from GitHub Actions → Artifacts → \`ai-reviews-final-verdict\`
+
+</details>`
+
+  comment += `\n\n---\n*AI Review by \`${VERDICT_MODEL.split('/').pop()}\`*`
+
+  return comment
+}
+
+/**
+ * Generate follow-up comment for pre-existing issues (not from this PR)
+ */
+function generatePreExistingComment(
+  verdict: FinalVerdictOutput,
+  changedFiles: string[]
+): string | null {
+  const allFindings = [...verdict.requiredFixes, ...verdict.suggestions]
+  const { preExisting } = separateFindings(allFindings, changedFiles)
+
+  if (preExisting.length === 0) {
+    return null
+  }
+
+  let comment = `## 📋 Pre-existing Issues (Not from this PR)
+
+The AI review found issues in files **not modified by this PR**. These likely existed before and should be addressed in separate issues/PRs.
+
+> 💡 **Tip:** Consider filing these as GitHub issues for future work.
+
+### Issues Found
+
+`
+
+  // Group by category
+  const byCategory: Record<string, ActionableIssue[]> = {}
+  for (const issue of preExisting) {
+    const cat = issue.category || 'other'
+    if (!byCategory[cat]) byCategory[cat] = []
+    byCategory[cat].push(issue)
+  }
+
+  for (const [category, issues] of Object.entries(byCategory)) {
+    comment += `#### ${categoryEmoji(category)} ${category}\n\n`
+    for (const issue of issues.slice(0, 5)) {
+      const severityIcon = issue.severity === 'critical' ? '🔴' : issue.severity === 'warning' ? '🟡' : 'ℹ️'
+      comment += `- ${severityIcon} **\`${issue.file}${issue.line ? `:${issue.line}` : ''}\`**\n`
+      comment += `  ${issue.issue}\n`
+    }
+    if (issues.length > 5) {
+      comment += `  _...and ${issues.length - 5} more in this category_\n`
+    }
+    comment += '\n'
+  }
+
+  // Suggested GitHub issue template
+  comment += `### 📝 Suggested GitHub Issue
+
+<details>
+<summary>Click to expand issue template</summary>
+
+**Title:** Fix pre-existing issues found by AI review
+
+**Body:**
+\`\`\`markdown
+## Issues Found
+
+The AI review on PR #${process.env.GITHUB_PR_NUMBER || 'XXX'} found these pre-existing issues:
+
+${preExisting.slice(0, 10).map(i => `- [ ] \`${i.file}\`: ${i.issue}`).join('\n')}
+${preExisting.length > 10 ? `\n_...and ${preExisting.length - 10} more_` : ''}
+
+## Context
+
+These were detected during automated review but exist in files not modified by that PR.
+\`\`\`
+
+</details>
+
+`
+
+  // Full JSON for AI agents
+  comment += `<details>
+<summary>📎 Full findings JSON (for AI agents)</summary>
+
+\`\`\`json
+${JSON.stringify(preExisting, null, 2)}
+\`\`\`
+
+</details>
+
+---
+*Pre-existing issues found by AI review*`
+
+  return comment
+}
+
+/**
+ * Main comment generation - creates both comments
+ */
+function generateComment(
+  verdict: FinalVerdictOutput,
+  reviews: Record<string, ReviewerOutput>,
+  changedFiles: string[],
+  prTitle: string
+): void {
+  // Generate main comment (human-focused)
+  const mainComment = generateMainComment(verdict, reviews, changedFiles, prTitle)
+  writeFileSync('final-verdict-comment.md', mainComment)
+  console.log('\n💬 Main PR comment saved: final-verdict-comment.md')
+
+  // Generate follow-up comment for pre-existing issues (if any)
+  const preExistingComment = generatePreExistingComment(verdict, changedFiles)
+  if (preExistingComment) {
+    writeFileSync('pre-existing-issues-comment.md', preExistingComment)
+    console.log('💬 Pre-existing issues comment saved: pre-existing-issues-comment.md')
+  }
 }
 
 main().catch(error => {
