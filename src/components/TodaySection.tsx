@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { TodayOverview } from './TodayOverview'
 import { MemberEventModal, HouseholdEventModal, ChildTaskModal, ExternalEventModal } from '@/app/uke/components'
@@ -24,6 +24,11 @@ export function TodaySection({ summary, holidays = [], members, children, househ
 
   // Current summary state (allows updates after modal actions)
   const [currentSummary, setCurrentSummary] = useState(summary)
+
+  // Sync summary prop to state when it changes (fixes stale state bug)
+  useEffect(() => {
+    setCurrentSummary(summary)
+  }, [summary])
 
   // Member event modal state
   const [showMemberEventModal, setShowMemberEventModal] = useState(false)
@@ -267,7 +272,7 @@ export function TodaySection({ summary, holidays = [], members, children, househ
       title: task.title,
       task_type: task.task_type as ChildTaskType,
       date: task.date,
-      time: task.time || '',
+      time: task.time?.substring(0, 5) || '',
       notes: task.notes || '',
     })
     setShowTaskModal(true)

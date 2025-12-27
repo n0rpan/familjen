@@ -66,6 +66,7 @@ export const en: TranslationStrings = {
     confirmDelete: 'Are you sure you want to delete this?',
     free: 'Free',
     navigatedTo: 'Navigated to',
+    unknown: 'Unknown',
   },
 
   // Date/Time
@@ -208,6 +209,21 @@ export const en: TranslationStrings = {
     family: 'Family',
     familyEvent: 'Family event',
     icsEventReadOnly: 'This event is synced from an external calendar and cannot be edited.',
+    // External event modal
+    hiddenFromCalendar: 'Hidden from calendar',
+    visibleInCalendar: 'Visible in calendar',
+    originalValue: 'Original:',
+    endTime: 'End time',
+    location: 'Location',
+    addLocation: 'Add location',
+    description: 'Description',
+    addPersonalNotes: 'Add personal notes...',
+    resetToOriginalValues: 'Reset to original values',
+    // Event sources
+    googleCalendarSource: 'Google Calendar',
+    icsCalendarSource: 'ICS Calendar',
+    externalSource: 'External',
+    schoolClosure: 'School closed',
     // AI Modal
     aiModalTitle: 'AI Meal Suggestions',
     suggestions: 'suggestions',

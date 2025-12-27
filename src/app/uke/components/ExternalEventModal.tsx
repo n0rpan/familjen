@@ -220,7 +220,7 @@ export const ExternalEventModal = memo(function ExternalEventModal({
               )}
             </svg>
             <span className="text-sm" style={{ color: 'var(--foreground)' }}>
-              {isHidden ? 'Skjult fra kalender' : 'Synlig i kalender'}
+              {isHidden ? t.week.hiddenFromCalendar : t.week.visibleInCalendar}
             </span>
           </div>
           <button
@@ -250,7 +250,7 @@ export const ExternalEventModal = memo(function ExternalEventModal({
               </label>
               {title !== event.title && (
                 <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                  Opprinnelig: {event.title}
+                  {t.week.originalValue} {event.title}
                 </span>
               )}
             </div>
@@ -279,7 +279,7 @@ export const ExternalEventModal = memo(function ExternalEventModal({
               />
               {eventDate !== event.event_date && (
                 <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                  Opprinnelig: {event.event_date}
+                  {t.week.originalValue} {event.event_date}
                 </span>
               )}
             </div>
@@ -312,7 +312,7 @@ export const ExternalEventModal = memo(function ExternalEventModal({
             </div>
             <div>
               <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                Sluttid <span style={{ color: 'var(--muted)' }}>({t.common.optional})</span>
+                {t.week.endTime} <span style={{ color: 'var(--muted)' }}>({t.common.optional})</span>
               </label>
               <input
                 type="time"
@@ -326,14 +326,14 @@ export const ExternalEventModal = memo(function ExternalEventModal({
           {/* Location */}
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-              Sted <span style={{ color: 'var(--muted)' }}>({t.common.optional})</span>
+              {t.week.location} <span style={{ color: 'var(--muted)' }}>({t.common.optional})</span>
             </label>
             <input
               type="text"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
               className="input"
-              placeholder="Legg til sted"
+              placeholder={t.week.addLocation}
             />
           </div>
 
@@ -341,7 +341,7 @@ export const ExternalEventModal = memo(function ExternalEventModal({
           {event.description && (
             <div>
               <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
-                Beskrivelse
+                {t.week.description}
               </label>
               <div
                 className="p-3 rounded-xl text-sm"
@@ -361,7 +361,7 @@ export const ExternalEventModal = memo(function ExternalEventModal({
               value={userNotes}
               onChange={(e) => setUserNotes(e.target.value)}
               className="input min-h-[80px] resize-none"
-              placeholder="Legg til egne notater..."
+              placeholder={t.week.addPersonalNotes}
             />
           </div>
         </div>
@@ -374,7 +374,7 @@ export const ExternalEventModal = memo(function ExternalEventModal({
             className="w-full p-3 rounded-xl text-sm font-medium transition-colors"
             style={{ background: 'rgba(232, 120, 109, 0.1)', color: 'var(--color-coral)' }}
           >
-            Tilbakestill til opprinnelige verdier
+            {t.week.resetToOriginalValues}
           </button>
         )}
 

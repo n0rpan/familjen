@@ -258,14 +258,14 @@ export const TodayOverview = memo(function TodayOverview({
                   </div>
                   <div className="flex-1">
                     <span className="text-sm" style={{ color: 'var(--color-sage)' }}>
-                      {event.event_type === 'work' ? 'Jobb' : event.event_type === 'travel' ? 'Reise' : 'Hendelse'}
+                      {event.event_type === 'work' ? t.week.eventTypes.work : event.event_type === 'travel' ? t.week.eventTypes.travel : t.week.eventTypes.other}
                     </span>
                     <span className="font-medium block" style={{ color: 'var(--foreground)' }}>
                       {event.title}
                     </span>
                     {event.source !== 'manual' && (
                       <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                        {event.source === 'google_calendar' ? 'Google Kalender' : event.source === 'ics_calendar' ? 'ICS Kalender' : ''}
+                        {event.source === 'google_calendar' ? t.week.googleCalendarSource : event.source === 'ics_calendar' ? t.week.icsCalendarSource : ''}
                       </span>
                     )}
                   </div>
@@ -350,7 +350,7 @@ export const TodayOverview = memo(function TodayOverview({
                     </div>
                     <div className="flex-1">
                       <span className="text-sm" style={{ color: isSchoolClosure ? '#b29ac6' : serviceInfo.color }}>
-                        {isSchoolClosure ? 'Skolefri' : serviceInfo.label}
+                        {isSchoolClosure ? t.week.schoolClosure : (serviceInfo.label === 'Ekstern' ? t.week.externalSource : serviceInfo.label)}
                         {event.integration?.display_name && ` • ${event.integration.display_name}`}
                       </span>
                       <span className="font-medium block" style={{ color: 'var(--foreground)' }}>
@@ -394,7 +394,7 @@ export const TodayOverview = memo(function TodayOverview({
                 {summary.tasks.map((task) => {
                   const config = getTaskConfig(task.task_type as ChildTaskType)
                   const isDone = task.status === 'done'
-                  const childName = task.child?.name || 'Ukjent'
+                  const childName = task.child?.name || t.common.unknown
                   return (
                     <button
                       key={task.id}

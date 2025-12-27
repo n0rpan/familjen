@@ -74,6 +74,7 @@ export interface TranslationStrings {
     confirmDelete: string
     free: string
     navigatedTo: string
+    unknown: string
   }
 
   // Date/Time
@@ -216,6 +217,21 @@ export interface TranslationStrings {
     family: string  // "Familien" - Family row label
     familyEvent: string  // "Familiehendelse" - Family event
     icsEventReadOnly: string  // Warning for ICS synced events
+    // External event modal
+    hiddenFromCalendar: string
+    visibleInCalendar: string
+    originalValue: string
+    endTime: string
+    location: string
+    addLocation: string
+    description: string
+    addPersonalNotes: string
+    resetToOriginalValues: string
+    // Event sources
+    googleCalendarSource: string
+    icsCalendarSource: string
+    externalSource: string
+    schoolClosure: string
     // AI Modal
     aiModalTitle: string
     suggestions: string
