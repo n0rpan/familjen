@@ -43,6 +43,9 @@ import {
 const VERDICT_MODEL = process.env.OPENROUTER_VERDICT_MODEL || 'anthropic/claude-sonnet-4-20250514'
 const API_KEY = process.env.OPENROUTER_API_KEY
 
+// Timeout for API calls (3 minutes - verdict needs more time for tool use loops)
+const API_TIMEOUT_MS = 180_000
+
 // ============================================
 // Tool Definitions (matching Anthropic SDK format)
 // ============================================
@@ -502,11 +505,21 @@ interface APIResponse {
 // API Call Function
 // ============================================
 
+/**
+ * Wrap a promise with a timeout to prevent hung API calls from blocking CI
+ */
+async function withTimeout<T>(promise: Promise<T>, ms: number, operation: string): Promise<T> {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(`${operation} timed out after ${ms / 1000}s`)), ms)
+  )
+  return Promise.race([promise, timeout])
+}
+
 async function callOpenRouter(
   systemPrompt: string,
   messages: Message[],
 ): Promise<{ response: string; toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> }> {
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const fetchPromise = fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${API_KEY}`,
@@ -533,6 +546,8 @@ async function callOpenRouter(
       temperature: 0,
     }),
   })
+
+  const response = await withTimeout(fetchPromise, API_TIMEOUT_MS, 'Final verdict API call')
 
   if (!response.ok) {
     throw new Error(`API error: ${response.status} ${await response.text()}`)
@@ -852,7 +867,13 @@ function generateComment(verdict: FinalVerdictOutput, reviews: Record<string, Re
   const emoji = verdict.verdict === 'BLOCK' ? '❌' : '✅'
   const status = verdict.verdict === 'BLOCK' ? 'BLOCKED' : 'APPROVED'
 
-  let comment = `## 🎯 Final AI Verdict: ${emoji} ${status}
+  // Generate status badge
+  const badgeColor = verdict.verdict === 'BLOCK' ? 'red' : 'brightgreen'
+  const badgeUrl = `https://img.shields.io/badge/AI%20Verdict-${status}-${badgeColor}`
+
+  let comment = `![AI Verdict](${badgeUrl})
+
+## 🎯 Final AI Verdict: ${emoji} ${status}
 
 **Confidence:** ${verdict.confidence}%
 

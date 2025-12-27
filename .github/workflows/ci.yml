@@ -171,7 +171,17 @@ jobs:
 
       - name: Run AI migration review
         if: steps.check-migrations.outputs.has_migrations == 'true'
-        run: npx tsx scripts/migration-ai-review.ts
+        run: |
+          # Validate required environment variables
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo "❌ OPENROUTER_API_KEY is not set"
+            exit 1
+          fi
+          if [ -z "$OPENROUTER_FAST_MODEL" ]; then
+            echo "❌ OPENROUTER_FAST_MODEL is not set"
+            exit 1
+          fi
+          npx tsx scripts/migration-ai-review.ts
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}
@@ -358,7 +368,17 @@ jobs:
 
       - name: Run AI visual validation
         if: steps.vercel.outputs.preview_url
-        run: npx tsx scripts/ai-visual-validation.ts
+        run: |
+          # Validate required environment variables
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo "❌ OPENROUTER_API_KEY is not set"
+            exit 1
+          fi
+          if [ -z "$OPENROUTER_VISION_MODEL" ]; then
+            echo "❌ OPENROUTER_VISION_MODEL is not set"
+            exit 1
+          fi
+          npx tsx scripts/ai-visual-validation.ts
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_VISION_MODEL: ${{ secrets.OPENROUTER_VISION_MODEL }}
@@ -720,7 +740,17 @@ jobs:
           vercel_project_id: ${{ secrets.VERCEL_PROJECT_ID }}
 
       - name: Run final verdict
-        run: npx tsx scripts/ai-final-verdict.ts
+        run: |
+          # Validate required environment variables
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo "❌ OPENROUTER_API_KEY is not set"
+            exit 1
+          fi
+          if [ -z "$OPENROUTER_VERDICT_MODEL" ]; then
+            echo "❌ OPENROUTER_VERDICT_MODEL is not set"
+            exit 1
+          fi
+          npx tsx scripts/ai-final-verdict.ts
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_VERDICT_MODEL: ${{ secrets.OPENROUTER_VERDICT_MODEL }}
