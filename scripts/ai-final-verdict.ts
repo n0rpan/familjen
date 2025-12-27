@@ -804,6 +804,49 @@ async function callOpenRouter(
 }
 
 // ============================================
+// Helper functions for error handling
+// ============================================
+
+/**
+ * Write a "processing" comment to prevent stale comments if script crashes
+ * This is written at the start and replaced by the final comment
+ */
+function writeProcessingComment(): void {
+  const comment = `## ⏳ AI Review in Progress...
+
+The final AI verdict is analyzing all reviewer findings.
+
+This comment will be updated with the final decision shortly.
+
+---
+*Processing started at ${new Date().toISOString()}*`
+
+  writeFileSync('final-verdict-comment.md', comment)
+}
+
+/**
+ * Write an error comment when something goes wrong
+ * This ensures users see an error, not a stale "Approved" comment
+ */
+function writeErrorComment(error: string): void {
+  const comment = `## ❌ AI Review Failed
+
+The final verdict script encountered an error and could not complete.
+
+**Error:** ${error}
+
+**What this means:**
+- The CI will fail (this is intentional - we don't approve without proper review)
+- Please check the CI logs for details
+- Re-run the workflow once the issue is resolved
+
+---
+*Failed at ${new Date().toISOString()}*`
+
+  writeFileSync('final-verdict-comment.md', comment)
+}
+
+// ============================================
 // Main
 // ============================================
 
@@ -811,9 +854,14 @@ async function main() {
   const startTime = Date.now()
   console.log('🎯 Final Verdict - Aggregating all reviews...\n')
 
+  // CRITICAL: Write a processing comment first to prevent stale comments
+  // If the script crashes, this ensures we don't leave an old "Approved" comment
+  writeProcessingComment()
+
   // Check for API key
   if (!API_KEY) {
     console.error('❌ OPENROUTER_API_KEY not set')
+    writeErrorComment('OPENROUTER_API_KEY not set')
     process.exit(1)
   }
 
@@ -907,75 +955,71 @@ async function main() {
   }
 
   // Build the prompt
-  const systemPrompt = `You are the final decision maker for a PR to Familjen, a Norwegian family planning app.
+  const systemPrompt = `You are the FINAL decision maker for a PR to Familjen, a Norwegian family planning app.
 
-Your job is to review what other AI reviewers found and make the final PASS/BLOCK decision.
+YOUR VERDICT DETERMINES THE CI STATUS. If you say BLOCK, the PR cannot be merged. If you say PASS, the PR can merge.
 
-## CRITICAL: Verify Code Review Blocking Issues
+## YOUR ROLE: The "Super AI" Second Opinion
 
-When the **code-review** reviewer has verdict REQUEST_CHANGES with blocking issues, you MUST:
-1. **Use read_file tool** to verify each specific blocking issue mentioned
-2. **Check if the code actually has the problem** - sometimes code review AI hallucinates issues
-3. **Only dismiss an issue if you can prove it's wrong** by reading the actual code
+You see findings from all other reviewers (code review, e2e tests, visual validation, etc.) and make the FINAL call.
+You have tools to investigate deeper when needed. Use them.
 
-For example, if code review says "Missing prop X in component Y", use read_file on the component file and verify if prop X is actually missing or if it exists.
+The PR comment will reflect YOUR decision - so make it count.
 
-## Focus on THIS PR's Changes
+## CRITICAL: You MUST Verify Before Deciding
 
-Your decision should be based on issues in files changed by THIS PR.
+When ANY reviewer reports a blocking issue, you MUST:
+1. **Use read_file tool** to read the actual code
+2. **Verify the issue exists** - AI reviewers sometimes hallucinate
+3. **Check if it's in files changed by THIS PR** - issues in unchanged files are pre-existing
+4. **Document your verification** - explain what you found
 
-When reviewing findings:
-1. Check if the issue is in a file that was CHANGED in this PR
-2. If a test is failing but the test file wasn't modified, it's likely a PRE-EXISTING issue
-3. If findings are about files NOT in the PR's changed files list, note them as "pre-existing"
+DO NOT just say "FINAL VERDICT: PASS" without investigation!
+If you don't verify, default to BLOCK.
 
 ## Decision Criteria
 
-**MUST BLOCK (exit 1):**
-- Security vulnerabilities introduced by THIS PR (verified by reading code)
-- Data integrity issues introduced by THIS PR (verified by reading code)
-- Obvious runtime crashes from THIS PR's code (verified by reading code)
-- Authentication/authorization broken by THIS PR
-- Critical test failures caused by changes IN this PR
-- **Unverified code review blocking issues** - if you can't verify, err on the side of caution
+**BLOCK (CI will fail, PR cannot merge) when:**
+- Security vulnerabilities VERIFIED in THIS PR's changes
+- Data integrity issues VERIFIED in THIS PR's changes
+- Runtime errors VERIFIED in THIS PR's changes
+- Authentication/authorization broken (VERIFIED)
+- Critical test failures caused by THIS PR's changes
+- **ANY unverified blocking issue** - when in doubt, BLOCK
 
-**SHOULD PASS (exit 0):**
-- Code review blocking issues that you VERIFIED are false positives (explain why)
-- Pre-existing test failures (tests that weren't modified)
-- Issues in files NOT changed by this PR
-- Code style suggestions
-- Minor refactoring opportunities
-- Visual score > 60 with no critical UI issues
+**PASS (CI will succeed, PR can merge) when:**
+- All blocking issues were VERIFIED as false positives (document your verification!)
+- All blocking issues are in files NOT changed by this PR (pre-existing)
+- Only minor suggestions/warnings remain
+- You used tools to verify and found no real problems
 
-## Important Context
+## IMPORTANT: Pre-existing vs New Issues
 
-- Familjen is used by busy Norwegian parents
-- Wrong data is worse than sync not working
-- Every merge to main is a production release
-- The "Files Changed" list shows exactly what THIS PR modified
+Look at the "Files Changed" list. If an issue is reported in a file NOT in that list:
+- It's PRE-EXISTING (existed before this PR)
+- It should NOT block this PR
+- Note it as pre-existing in your analysis
 
-## Available Tools
+## Available Tools - USE THEM!
 
-**ALWAYS use tools to verify code review blocking issues:**
-- read_file: Read the file to verify if the issue exists
-- search_code: Search for patterns to verify claims
-- read_diff: See exactly what changed in this PR
-
-Do NOT just pass because you think the issue might be a false positive. VERIFY it.
+- **read_file**: Read code to verify issues exist (ALWAYS use this before dismissing an issue)
+- **search_code**: Find patterns across the codebase
+- **read_diff**: See exactly what changed in this PR
+- **check_typescript**: Verify no type errors in changed files
+- **verify_imports**: Check for hallucinated package imports
 
 ## Response Format
 
-Structure your response as:
-1. **PR Summary**: What this PR is trying to accomplish
-2. **Code Review Verification**: For each blocking issue, did you verify it? What did you find?
-3. **Other Findings**: Issues from other reviewers
-4. **Decision Reasoning**: Why you're passing or blocking
-5. **Final verdict**
+1. **PR Summary**: What does this PR do?
+2. **Verification**: For each blocking issue, what did you find when you investigated?
+3. **Decision**: Clear reasoning for PASS or BLOCK
+4. **Final Line**: Your verdict (exactly as shown below)
 
-After analyzing everything, provide your final decision in this exact format:
+End your response with EXACTLY one of these lines:
 FINAL VERDICT: PASS
-or
-FINAL VERDICT: BLOCK`
+FINAL VERDICT: BLOCK
+
+The CI exit status and PR comment will match your decision exactly.`
 
   const userPrompt = `## PR Information
 Title: ${prTitle}
@@ -1267,6 +1311,9 @@ function separateFindings(
  *
  * This comment is SELF-CONTAINED - it tells you exactly what to fix in this PR
  * without needing to read any other comments or artifacts.
+ *
+ * CRITICAL: The verdict shown here MUST match the CI exit status.
+ * If this says "Approved", CI must pass. If this says "Blocked", CI must fail.
  */
 function generateMainComment(
   verdict: FinalVerdictOutput,
@@ -1274,25 +1321,30 @@ function generateMainComment(
   changedFiles: string[],
   prTitle: string
 ): string {
-  const emoji = verdict.verdict === 'BLOCK' ? '❌' : '✅'
-  const status = verdict.verdict === 'BLOCK' ? 'Changes Requested' : 'Approved'
+  const isBlocked = verdict.verdict === 'BLOCK'
+  const emoji = isBlocked ? '❌' : '✅'
+  const status = isBlocked ? 'BLOCKED' : 'APPROVED'
 
   // Separate findings
   const allFindings = [...verdict.requiredFixes, ...verdict.suggestions]
   const { prRelevant, preExisting } = separateFindings(allFindings, changedFiles)
 
-  // Generate status badge
-  const badgeColor = verdict.verdict === 'BLOCK' ? 'red' : 'brightgreen'
-  const badgeUrl = `https://img.shields.io/badge/AI%20Review-${encodeURIComponent(status)}-${badgeColor}`
+  // Generate status badge - use clear colors and text
+  const badgeColor = isBlocked ? 'red' : 'brightgreen'
+  const badgeText = isBlocked ? 'BLOCKED' : 'APPROVED'
+  const badgeUrl = `https://img.shields.io/badge/CI%20Status-${encodeURIComponent(badgeText)}-${badgeColor}`
 
   // PR-relevant findings (issues IN this PR)
   const prCritical = prRelevant.filter(f => f.severity === 'critical')
   const prWarnings = prRelevant.filter(f => f.severity === 'warning')
   const prInfo = prRelevant.filter(f => f.severity === 'info')
 
-  let comment = `![AI Review](${badgeUrl})
+  // Start with a VERY CLEAR verdict statement
+  let comment = `![CI Status](${badgeUrl})
 
-## ${emoji} AI Review: ${prTitle}
+## ${emoji} Final AI Verdict: ${status}
+
+**PR:** ${prTitle}
 
 `
 
@@ -1303,12 +1355,14 @@ function generateMainComment(
   const totalCount = verdict.reviewerSummary.length
 
   // BLOCKED - Show exactly what must be fixed
-  if (verdict.verdict === 'BLOCK') {
-    // TL;DR clearly shows WHY it's blocked
+  if (isBlocked) {
+    // TL;DR clearly shows WHY it's blocked and what happens next
     const failedNames = verdict.reviewerSummary.filter(r => r.verdict === 'FAIL').map(r => r.reviewer)
-    comment += `> **❌ Blocked** — ${failCount} reviewer${failCount !== 1 ? 's' : ''} failed: **${failedNames.join(', ')}**
+    comment += `> 🚫 **This PR cannot be merged.** CI has failed.
 >
-> Fix the issues below, then push a new commit to re-run CI.
+> **Reason:** ${failCount > 0 ? `${failCount} reviewer${failCount !== 1 ? 's' : ''} found blocking issues: **${failedNames.join(', ')}**` : 'Critical issues found during final review.'}
+>
+> **Next step:** Fix the issues below, then push a new commit to re-run CI.
 
 ### 📊 Reviewer Results: ${passCount} passed, ${warnCount} warnings, ${failCount} failed
 
@@ -1319,7 +1373,7 @@ ${verdict.reviewerSummary.map(r => {
   return `| ${r.reviewer} | ${icon} ${r.verdict} | ${r.summary.slice(0, 60)}${r.summary.length > 60 ? '...' : ''} |`
 }).join('\n')}
 
-### ❌ Fix These Issues:
+### ❌ Issues That Must Be Fixed
 
 `
     // Show ALL critical issues with full context
@@ -1369,27 +1423,37 @@ Once you fix these issues, push a new commit and the CI will re-run.
     // PASSED - Show what was reviewed and found
     // Check if this was an AI override
     if (verdict.aiOverride && failCount > 0) {
-      comment += `> ✅ **Ready to merge** — AI override: ${failCount} reviewer${failCount !== 1 ? 's' : ''} failed but issues are **${verdict.aiOverride.reason}**
+      // Make it VERY clear this is approved despite failures
+      comment += `> ✅ **CI passed. This PR can be merged.**
+>
+> ⚠️ **Note:** ${failCount} reviewer${failCount !== 1 ? 's' : ''} reported issues, but the Final AI Verdict verified they are **${verdict.aiOverride.reason}**.
 
-### 📊 Reviewer Results: ${passCount} passed, ${warnCount} warnings, ${failCount} failed (overridden)
+### 📊 Reviewer Results: ${passCount} passed, ${warnCount} warnings, ${failCount} failed (verified as non-blocking)
 
-| Reviewer | Verdict | Summary |
-|----------|---------|---------|
+| Reviewer | Verdict | Status | Summary |
+|----------|---------|--------|---------|
 ${verdict.reviewerSummary.map(r => {
   const icon = r.verdict === 'PASS' ? '✅' : r.verdict === 'WARN' ? '⚠️' : '❌'
-  const overridden = r.verdict === 'FAIL' ? ' *(overridden)*' : ''
-  return `| ${r.reviewer} | ${icon} ${r.verdict}${overridden} | ${r.summary.slice(0, 50)}${r.summary.length > 50 ? '...' : ''} |`
+  const status = r.verdict === 'FAIL' ? '🔍 Verified non-blocking' : '—'
+  return `| ${r.reviewer} | ${icon} ${r.verdict} | ${status} | ${r.summary.slice(0, 40)}${r.summary.length > 40 ? '...' : ''} |`
 }).join('\n')}
 
-> **Why AI approved:** ${verdict.aiOverride.reason}
->
-> The failing reviewer(s) found issues, but AI determined they are not blocking for this PR.
+### 🔍 Why was this approved despite failing reviewers?
+
+**Reason:** ${verdict.aiOverride.reason}
+
+The Final AI Verdict investigated each blocking issue and determined:
+- Issues were in files NOT changed by this PR (pre-existing), OR
+- Issues were verified as false positives after reading the actual code
+
+This is not a rubber stamp - the AI used tools (read_file, search_code) to verify before approving.
 
 `
     } else {
-      comment += `> ✅ **Ready to merge** — ${passCount}/${totalCount} reviewers passed`
+      // Standard PASS - all reviewers passed or only warnings
+      comment += `> ✅ **CI passed. This PR can be merged.**`
       if (warnCount > 0) {
-        comment += `, ${warnCount} with suggestions`
+        comment += `\n>\n> ${passCount}/${totalCount} reviewers passed, ${warnCount} with suggestions (see below).`
       }
       comment += `
 
@@ -1469,7 +1533,7 @@ These tests verify the specific changes in this PR (e.g., click handlers, modals
   }
 
   // Warnings and suggestions (only if not blocked, or show briefly if blocked)
-  if (verdict.verdict !== 'BLOCK' && prWarnings.length > 0) {
+  if (!isBlocked && prWarnings.length > 0) {
     comment += `
 ### ⚠️ Suggestions (optional but recommended)
 
@@ -1483,7 +1547,7 @@ These tests verify the specific changes in this PR (e.g., click handlers, modals
     }
   }
 
-  if (verdict.verdict !== 'BLOCK' && prInfo.length > 0) {
+  if (!isBlocked && prInfo.length > 0) {
     comment += `
 ### 💡 Minor notes
 
@@ -1501,7 +1565,7 @@ These tests verify the specific changes in this PR (e.g., click handlers, modals
 ### 🧠 Why this decision?
 
 `
-  if (verdict.verdict === 'PASS') {
+  if (!isBlocked) {
     // Generate clear reasoning for PASS
     const cleanReviewers = verdict.reviewerSummary.filter(r => r.criticalCount === 0 && r.warningCount === 0)
     const warnReviewers = verdict.reviewerSummary.filter(r => r.warningCount > 0 && r.criticalCount === 0)
@@ -1553,10 +1617,13 @@ These tests verify the specific changes in this PR (e.g., click handlers, modals
   // Collapsed section for AI agents - make it self-contained
   const structuredData = {
     verdict: verdict.verdict,
+    ciStatus: isBlocked ? 'FAILED' : 'PASSED',
     confidence: verdict.confidence,
-    summary: verdict.verdict === 'PASS'
-      ? `PR passed with ${prRelevant.length} minor findings (${prCritical.length} critical, ${prWarnings.length} warnings)`
-      : `PR blocked with ${prCritical.length} critical issues to fix`,
+    summary: isBlocked
+      ? `PR BLOCKED: ${prCritical.length} critical issues must be fixed`
+      : verdict.aiOverride
+        ? `PR APPROVED: ${failCount} reviewer failures verified as non-blocking (${verdict.aiOverride.reason})`
+        : `PR APPROVED: ${prRelevant.length} minor findings (none blocking)`,
     prChanges: {
       filesChanged: changedFiles.length,
       findings: prRelevant.length,
@@ -1724,5 +1791,7 @@ function generateComment(
 
 main().catch(error => {
   console.error('Final verdict failed:', error)
+  // Write an error comment so users don't see a stale "Approved" comment
+  writeErrorComment(error instanceof Error ? error.message : String(error))
   process.exit(1)
 })
