@@ -1028,8 +1028,16 @@ Once you fix these issues, push a new commit and the CI will re-run.
 
 `
   } else {
-    // PASSED - Show summary
-    comment += `${verdict.summary}
+    // PASSED - Show what was reviewed and found
+    const totalReviewers = verdict.reviewerSummary.length
+    const passedReviewers = verdict.reviewerSummary.filter(r => r.verdict === 'PASS').length
+    const warnReviewers = verdict.reviewerSummary.filter(r => r.verdict === 'WARN').length
+
+    comment += `**${passedReviewers}/${totalReviewers} reviewers passed**`
+    if (warnReviewers > 0) {
+      comment += ` (${warnReviewers} with minor warnings)`
+    }
+    comment += `. ${verdict.summary}
 
 `
   }
@@ -1083,25 +1091,50 @@ Once you fix these issues, push a new commit and the CI will re-run.
     }
   }
 
-  // Decision reasoning (brief, key points only)
+  // Decision reasoning - generate a clear summary instead of parsing AI output
   comment += `
 ### 🧠 Why this decision?
 
 `
-  const reasoningEnd = verdict.reasoning.indexOf('FINAL VERDICT:')
-  const reasoning = reasoningEnd > 0 ? verdict.reasoning.slice(0, reasoningEnd).trim() : verdict.reasoning
+  if (verdict.verdict === 'PASS') {
+    // Generate clear reasoning for PASS
+    const cleanReviewers = verdict.reviewerSummary.filter(r => r.criticalCount === 0 && r.warningCount === 0)
+    const warnReviewers = verdict.reviewerSummary.filter(r => r.warningCount > 0 && r.criticalCount === 0)
 
-  // Find the decision paragraph
-  const decisionMatch = reasoning.match(/(?:Decision|Reasoning|Conclusion|Based on)[:\s](.+?)(?:\n\n|$)/is)
-  if (decisionMatch) {
-    comment += decisionMatch[1].trim().slice(0, 500)
+    if (prRelevant.length === 0) {
+      comment += `No issues were found in the files changed by this PR. `
+    } else {
+      comment += `Found ${prRelevant.length} minor suggestion${prRelevant.length > 1 ? 's' : ''} in this PR (none blocking). `
+    }
+
+    if (cleanReviewers.length > 0) {
+      comment += `${cleanReviewers.map(r => r.reviewer).join(', ')} found no issues. `
+    }
+
+    if (warnReviewers.length > 0) {
+      comment += `${warnReviewers.map(r => r.reviewer).join(', ')} had minor warnings that don't require changes.`
+    }
+
+    // Explain any failed verifications that didn't block
+    const failedVerifications = Object.entries(verdict.verifications)
+      .filter(([_, status]) => status === 'fail')
+      .map(([name]) => name)
+
+    if (failedVerifications.length > 0) {
+      comment += `
+
+**Note:** ${failedVerifications.join(', ')} showed issues, but these appear to be pre-existing (not introduced by this PR).`
+    }
   } else {
-    // Fallback: last substantial paragraph
-    const paragraphs = reasoning.split('\n\n').filter(p => p.trim() && p.length > 50)
-    const keyReasoning = paragraphs.slice(-1).join('\n\n')
-    comment += keyReasoning.slice(0, 500)
+    // For BLOCK, use the AI's reasoning but clean it up
+    const reasoningEnd = verdict.reasoning.indexOf('FINAL VERDICT:')
+    const reasoning = reasoningEnd > 0 ? verdict.reasoning.slice(0, reasoningEnd).trim() : verdict.reasoning
+
+    // Get last paragraph that explains the decision
+    const paragraphs = reasoning.split('\n\n').filter(p => p.trim() && p.length > 30)
+    const lastParagraph = paragraphs[paragraphs.length - 1] || 'Critical issues must be addressed before merge.'
+    comment += lastParagraph.slice(0, 500) + (lastParagraph.length > 500 ? '...' : '')
   }
-  comment += (reasoning.length > 500 ? '...' : '')
 
   // Note about pre-existing issues (if any) - brief mention, details in separate comment
   if (preExisting.length > 0) {
@@ -1112,22 +1145,57 @@ Once you fix these issues, push a new commit and the CI will re-run.
 📋 **Note:** Found ${preExisting.length} issue${preExisting.length > 1 ? 's' : ''} in files NOT changed by this PR. These are pre-existing and won't block this PR. See the follow-up comment for details.`
   }
 
-  // Collapsed section for AI agents
+  // Collapsed section for AI agents - make it self-contained
+  const structuredData = {
+    verdict: verdict.verdict,
+    confidence: verdict.confidence,
+    summary: verdict.verdict === 'PASS'
+      ? `PR passed with ${prRelevant.length} minor findings (${prCritical.length} critical, ${prWarnings.length} warnings)`
+      : `PR blocked with ${prCritical.length} critical issues to fix`,
+    prChanges: {
+      filesChanged: changedFiles.length,
+      findings: prRelevant.length,
+      critical: prCritical.length,
+      warnings: prWarnings.length,
+      info: prInfo.length,
+    },
+    preExisting: {
+      count: preExisting.length,
+      note: preExisting.length > 0 ? 'Issues in unchanged files - not blocking' : null,
+    },
+    reviewers: verdict.reviewerSummary.map(r => ({
+      name: r.reviewer,
+      verdict: r.verdict,
+      critical: r.criticalCount,
+      warnings: r.warningCount,
+    })),
+    verifications: Object.fromEntries(
+      Object.entries(verdict.verifications).map(([k, v]) => [
+        k,
+        v === 'fail' && preExisting.length > 0 ? `${v} (pre-existing)` : v
+      ])
+    ),
+    // Include actual findings for AI agents to act on
+    mustFix: prCritical.map(f => ({
+      file: f.file,
+      line: f.line,
+      issue: f.issue,
+      howToFix: f.fix?.explanation,
+    })),
+    suggestions: prWarnings.slice(0, 5).map(f => ({
+      file: f.file,
+      line: f.line,
+      issue: f.issue,
+    })),
+  }
+
   comment += `
 
 <details>
 <summary>📎 For AI agents: structured data</summary>
 
 \`\`\`json
-${JSON.stringify({
-  verdict: verdict.verdict,
-  confidence: verdict.confidence,
-  prRelevantFindings: prRelevant.length,
-  criticalInPR: prCritical.length,
-  warningsInPR: prWarnings.length,
-  preExistingCount: preExisting.length,
-  verifications: verdict.verifications,
-}, null, 2)}
+${JSON.stringify(structuredData, null, 2)}
 \`\`\`
 
 </details>`
