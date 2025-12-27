@@ -21,6 +21,7 @@ import type { DemoState, DemoDataContextValue } from './types'
 import type { ChildTask, Recipe, ShoppingListItem } from '@/lib/types'
 import { loadDemoState, saveDemoState, clearDemoState } from './storage'
 import { generateDemoState } from './generator'
+import { validateDemoData, getValidationSummary } from './validation'
 
 // Default context value (non-demo mode)
 const defaultContextValue: DemoDataContextValue = {
@@ -85,13 +86,28 @@ export function DemoDataProvider({ children }: DemoDataProviderProps) {
 
     // Try to load existing state, or generate new
     const existing = loadDemoState()
+    let state: DemoState
     if (existing) {
-      setDemoState(existing)
+      state = existing
     } else {
-      const newState = generateDemoState()
-      saveDemoState(newState)
-      setDemoState(newState)
+      state = generateDemoState()
+      saveDemoState(state)
     }
+
+    // Validate demo data in development
+    if (process.env.NODE_ENV === 'development') {
+      const validation = validateDemoData(state)
+      if (!validation.valid) {
+        console.error('❌ Demo data validation failed:')
+        validation.errors.forEach(e => console.error(`  - ${e.field}: ${e.message}`))
+        console.error('\nFix by updating src/lib/demo/generator.ts')
+      } else if (validation.warnings.length > 0) {
+        console.warn('⚠️ Demo data warnings:')
+        validation.warnings.forEach(w => console.warn(`  - ${w.field}: ${w.message}`))
+      }
+    }
+
+    setDemoState(state)
     setIsInitialized(true)
   }, [isDemo])
 

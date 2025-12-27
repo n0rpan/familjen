@@ -34,14 +34,11 @@ const AISuggestionModal = dynamic(
 )
 
 export default function WeekEditPage() {
-  // Check for demo mode
+  // Check for demo mode - must be before any hooks
   const searchParams = useSearchParams()
   const isDemo = searchParams.get('demo') === 'true'
 
-  // Demo mode: render demo week page
-  if (isDemo) {
-    return <DemoWeekPage />
-  }
+  // All hooks must be called unconditionally (React rules of hooks)
   const { language, t } = useLanguage()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -1554,6 +1551,11 @@ export default function WeekEditPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  // Demo mode: render demo week page (after all hooks)
+  if (isDemo) {
+    return <DemoWeekPage />
   }
 
   // Only show skeleton if loading AND no cached data yet

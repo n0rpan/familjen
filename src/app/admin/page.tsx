@@ -429,15 +429,12 @@ function IntegrationDebug({ householdId }: { householdId: string }) {
 }
 
 export default function AdminPage() {
-  const { t } = useLanguage();
+  // Check for demo mode - must be before any hooks
   const searchParams = useSearchParams();
   const isDemo = searchParams.get("demo") === "true";
 
-  // Demo mode: render demo admin page
-  if (isDemo) {
-    return <DemoAdminPage />;
-  }
-
+  // All hooks must be called unconditionally (React rules of hooks)
+  const { t } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -724,6 +721,11 @@ export default function AdminPage() {
     }
     setSaving(false);
   };
+
+  // Demo mode: render demo admin page (after all hooks)
+  if (isDemo) {
+    return <DemoAdminPage />;
+  }
 
   if (!isAdmin) {
     return null;
