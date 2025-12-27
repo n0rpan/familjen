@@ -42,8 +42,16 @@ export async function POST(request: Request) {
     // Check if this is a demo mode request
     const isDemo = isDemoRequest(request)
 
-    // Demo mode: apply stricter global rate limits
+    // Validate request body first (needed for both demo and production)
+    const validation = await validateRequest(request, aiSuggestRequestSchema)
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error }, { status: 400 })
+    }
+    const { weekStart, existingMeals } = validation.data
+
+    // Demo mode: handle entirely without Supabase client
     if (isDemo) {
+      // Check global demo rate limit
       const demoRateLimit = await checkDemoRateLimit('aiSuggest')
       if (demoRateLimit.limited) {
         return NextResponse.json(
@@ -51,43 +59,8 @@ export async function POST(request: Request) {
           { status: 429, headers: { 'Retry-After': String(demoRateLimit.retryAfter) } }
         )
       }
-    }
 
-    const supabase = await createClient()
-
-    // Check authentication (skip for demo mode)
-    let user = null
-    if (!isDemo) {
-      const { data, error: authError } = await supabase.auth.getUser()
-      if (authError || !data.user) {
-        return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
-      }
-      user = data.user
-
-      // Check rate limit for authenticated users
-      const rateLimitKey = createRateLimitKey(user.id, 'aiSuggest')
-      const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.aiSuggest)
-      if (rateLimit.limited) {
-        return NextResponse.json(
-          { error: `For mange forespørsler. Prøv igjen om ${rateLimit.retryAfter} sekunder.` },
-          { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
-        )
-      }
-    }
-
-    // Validate request body
-    const validation = await validateRequest(request, aiSuggestRequestSchema)
-    if (!validation.success) {
-      return NextResponse.json({ error: validation.error }, { status: 400 })
-    }
-    const { weekStart, existingMeals } = validation.data
-
-    // Use cost-effective model for demo mode
-    let model = 'google/gemini-2.5-flash-lite'
-
-    // Demo mode: use hardcoded demo context
-    if (isDemo) {
-      // Skip database calls entirely for demo - use demo family context
+      // Use cost-effective model and hardcoded demo context
       const demoContext = {
         childrenAges: [
           { name: 'Emilie', age: 8, allergies: [] },
@@ -105,10 +78,32 @@ export async function POST(request: Request) {
         weekContext: 'Enkel hverdagsmat som barna liker. Oliver liker ikke sterkt.',
       }
 
-      return handleDemoAIRequest(model, weekStart, existingMeals, demoContext)
+      return handleDemoAIRequest('google/gemini-2.5-flash-lite', weekStart, existingMeals, demoContext)
     }
 
-    // Fetch model from app_settings (production only)
+    // Production mode: create Supabase client and authenticate
+    const supabase = await createClient()
+
+    const { data, error: authError } = await supabase.auth.getUser()
+    if (authError || !data.user) {
+      return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
+    }
+    const user = data.user
+
+    // Check rate limit for authenticated users
+    const rateLimitKey = createRateLimitKey(user.id, 'aiSuggest')
+    const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.aiSuggest)
+    if (rateLimit.limited) {
+      return NextResponse.json(
+        { error: `For mange forespørsler. Prøv igjen om ${rateLimit.retryAfter} sekunder.` },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
+      )
+    }
+
+    // Use cost-effective model as default
+    let model = 'google/gemini-2.5-flash-lite'
+
+    // Fetch model from app_settings
     const { data: modelSetting } = await supabase
       .from('app_settings')
       .select('value')

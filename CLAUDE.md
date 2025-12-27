@@ -1191,3 +1191,108 @@ The app sets security headers via `next.config.ts`:
 - **HSTS**: Strict-Transport-Security with 1-year max-age
 - **CSP**: Content-Security-Policy for XSS protection
 - **X-Powered-By**: Disabled to hide framework info
+
+## Rate Limiting
+
+Rate limiting protects expensive endpoints (AI, external API calls) from abuse.
+
+### Architecture
+
+```
+src/lib/rate-limit.ts
+├── checkRateLimit()        # Main rate limit check
+├── checkDemoRateLimit()    # Demo mode global rate limit
+├── RATE_LIMITS             # Per-endpoint configs
+└── DEMO_RATE_LIMITS        # Demo mode configs
+```
+
+### Production (Upstash Redis)
+
+When `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` are set:
+- Uses Upstash Redis for distributed rate limiting
+- Sliding window algorithm for smooth limit enforcement
+- Analytics enabled for monitoring
+- Prefix: `familjen:ratelimit`
+
+### Development (In-Memory Fallback)
+
+When Redis env vars are not set:
+- Falls back to in-memory Map
+- Same limits enforced locally
+- Periodic cleanup to prevent memory leaks
+
+### Per-User Limits (Production)
+
+| Endpoint | Limit | Window |
+|----------|-------|--------|
+| `aiSuggest` | 10/min | 60s |
+| `aiParseReminders` | 20/min | 60s |
+| `calendarSync` | 30/min | 60s |
+| `spondSync` | 10/min | 60s |
+| `urlFetch` | 10/min | 60s |
+
+### Demo Mode Limits
+
+Demo mode uses **global** rate limits (shared across all demo users):
+
+| Endpoint | Limit | Window | Cost estimate |
+|----------|-------|--------|---------------|
+| `aiSuggest` | 50/hour | 3600s | ~$0.01/hour |
+
+**Key design decisions:**
+- Global key (`demo:global:aiSuggest`) prevents demo users from exhausting limits individually
+- 5-minute cooldown after hitting limit (`DEMO_COOLDOWN_MS`)
+- Uses cheap model (`google/gemini-2.5-flash-lite`) to minimize costs
+- Demo requests bypass Supabase client creation for efficiency
+
+### Usage in API Routes
+
+```typescript
+import { checkRateLimit, createRateLimitKey, RATE_LIMITS, checkDemoRateLimit, isDemoRequest } from '@/lib/rate-limit'
+
+export async function POST(request: Request) {
+  const isDemo = isDemoRequest(request)
+
+  if (isDemo) {
+    // Demo: global rate limit, no Supabase client needed
+    const demoLimit = await checkDemoRateLimit('aiSuggest')
+    if (demoLimit.limited) {
+      return NextResponse.json(
+        { error: `Prøv igjen om ${Math.ceil(demoLimit.retryAfter / 60)} minutter.` },
+        { status: 429, headers: { 'Retry-After': String(demoLimit.retryAfter) } }
+      )
+    }
+    // Handle demo request...
+    return handleDemoRequest()
+  }
+
+  // Production: per-user rate limit
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const rateLimit = await checkRateLimit(
+    createRateLimitKey(user.id, 'aiSuggest'),
+    RATE_LIMITS.aiSuggest
+  )
+  if (rateLimit.limited) {
+    return NextResponse.json(
+      { error: `Prøv igjen om ${rateLimit.retryAfter} sekunder.` },
+      { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
+    )
+  }
+  // Handle production request...
+}
+```
+
+### Demo Mode Detection
+
+Demo requests are identified via header:
+```typescript
+// Client sets header
+headers: { 'x-demo-mode': 'true' }
+
+// Server checks
+function isDemoRequest(request: Request): boolean {
+  return request.headers.get('x-demo-mode') === 'true'
+}
+```
