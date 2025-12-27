@@ -1,0 +1,2 @@
+# This directory stores AI-generated rollback SQL for migrations.
+# Generated during PR review, used for manual rollback if needed.

@@ -1,0 +1,3 @@
+# This directory is used by the AI CI/CD system to store review artifacts.
+# Files in this directory are generated during CI runs and should not be committed.
+# The directory structure itself is kept in git via this .gitkeep file.
