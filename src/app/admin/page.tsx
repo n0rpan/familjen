@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useRef, useMemo } from "react";
-import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import type {
@@ -16,7 +15,6 @@ import { useLanguage } from "@/lib/i18n/context";
 import { UnmatchedCalendarTray } from "@/components/UnmatchedCalendarTray";
 import { AdminPageSkeleton } from "@/components/Skeleton";
 import { SectionHeader } from "@/app/innstillinger/components";
-import { DemoAdminPage } from "@/components/demo/DemoAdminPage";
 
 // Extended types for admin view
 interface HouseholdWithDetails extends Household {
@@ -429,11 +427,8 @@ function IntegrationDebug({ householdId }: { householdId: string }) {
 }
 
 export default function AdminPage() {
-  // Check for demo mode - must be before any hooks
-  const searchParams = useSearchParams();
-  const isDemo = searchParams.get("demo") === "true";
-
-  // All hooks must be called unconditionally (React rules of hooks)
+  // NOTE: Admin page does NOT support demo mode - requires real authentication
+  // This prevents leaking admin interface structure to unauthenticated users
   const { t } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -721,11 +716,6 @@ export default function AdminPage() {
     }
     setSaving(false);
   };
-
-  // Demo mode: render demo admin page (after all hooks)
-  if (isDemo) {
-    return <DemoAdminPage />;
-  }
 
   if (!isAdmin) {
     return null;

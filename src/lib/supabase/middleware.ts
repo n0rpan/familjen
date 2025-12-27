@@ -6,6 +6,9 @@ import { isUserAdmin } from '@/lib/config'
 const PROTECTED_PATHS = ['/uke', '/oppskrifter', '/innstillinger', '/handleliste', '/ny-husstand', '/admin', '/feed']
 const ADMIN_PATHS = ['/admin']
 
+// Paths that allow demo mode bypass (all protected paths except admin-only)
+const DEMO_ALLOWED_PATHS = ['/uke', '/oppskrifter', '/innstillinger', '/handleliste', '/feed', '/']
+
 // Check if request has a Supabase auth cookie (quick check without calling auth API)
 function hasAuthCookie(request: NextRequest): boolean {
   const cookies = request.cookies.getAll()
@@ -13,11 +16,23 @@ function hasAuthCookie(request: NextRequest): boolean {
   return cookies.some(cookie => cookie.name.includes('-auth-token'))
 }
 
+// Check if request is in demo mode
+function isDemoMode(request: NextRequest): boolean {
+  return request.nextUrl.searchParams.get('demo') === 'true'
+}
+
 export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const isProtectedPath = PROTECTED_PATHS.some(path => pathname.startsWith(path))
   const isAdminPath = ADMIN_PATHS.some(path => pathname.startsWith(path))
   const isLoginPage = pathname === '/login'
+  const isDemoAllowed = DEMO_ALLOWED_PATHS.some(path => pathname === path || pathname.startsWith(path + '/'))
+
+  // Demo mode bypass: Allow unauthenticated access to demo-allowed paths
+  // NOTE: Admin paths are NOT in demo-allowed - they require real auth
+  if (isDemoMode(request) && isDemoAllowed && !isAdminPath) {
+    return NextResponse.next({ request })
+  }
 
   // Quick check: if no auth cookie exists, we can skip the expensive getUser() call
   if (!hasAuthCookie(request)) {
