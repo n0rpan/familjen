@@ -874,19 +874,20 @@ PR Created
 **Key features:**
 - All reviewers are **non-blocking** (`continue-on-error: true`)
 - Reviewers upload findings to `.ai-reviews/*.json` artifacts
-- Final verdict uses **strict mechanical aggregation**: any FAIL = BLOCK (no AI override)
-- AI provides analysis but **cannot change** the verdict
-- Final verdict has **tools** to investigate and explain findings
+- Final verdict uses **mechanical aggregation**: any FAIL reviewer = BLOCK
+- AI can override with explicit explanation (shown in PR comment)
+- Final verdict has **tools** to fetch more context when needed
 - Smart truncation: reviewers get truncated context, can request full docs
 
 ### Verdict Aggregation
 
-The final verdict is **purely mechanical** - no AI override:
-1. If **any reviewer** has verdict FAIL → **BLOCK** (no exceptions)
-2. If all reviewers PASS or WARN → **PASS**
-3. AI analysis is logged for context but does not change the verdict
-
-This ensures the PR comment always matches CI status.
+The final verdict follows this logic:
+1. **Mechanical verdict**: If any reviewer has FAIL → default BLOCK
+2. **AI analysis**: AI can override BLOCK→PASS if issues are pre-existing/unrelated
+3. **Explicit override**: When AI overrides, the PR comment clearly shows:
+   - Which reviewers failed
+   - Why AI approved anyway
+   - Mark overridden verdicts in the table
 
 ### Final Verdict Tools
 

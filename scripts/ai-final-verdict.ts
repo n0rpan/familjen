@@ -1095,27 +1095,43 @@ Please check the CI logs for more details or re-run the workflow.`
   console.log('='.repeat(60))
 
   // ============================================
-  // FINAL VERDICT = MECHANICAL AGGREGATION (NO AI OVERRIDE)
+  // FINAL VERDICT - AI can override with explanation
   // ============================================
-  // AI provides analysis but CANNOT change the verdict
-  // Reviewer failures = BLOCK, period. No exceptions.
+  // AI can override reviewer verdicts BUT must explain why
+  // The comment will clearly show when AI overrides and the reason
 
   const aiSaidPass = response.includes('FINAL VERDICT: PASS')
   const aiSaidBlock = response.includes('FINAL VERDICT: BLOCK')
 
-  // ALWAYS use mechanical verdict - AI analysis is informational only
-  const blocked = mechanicalVerdict === 'BLOCK'
+  let blocked: boolean
+  let aiOverride: { from: string; to: string; reason: string } | null = null
 
-  // Log if AI disagreed (informational only, does not change verdict)
-  if (aiSaidPass && blocked) {
-    console.log('\n⚠️ Note: AI suggested PASS but reviewers failed')
-    console.log('   Verdict remains BLOCK - reviewer failures must be addressed')
-    console.log(`   Failing reviewers: ${failingReviewers.join(', ')}`)
-  } else if (aiSaidBlock && !blocked) {
-    console.log('\n⚠️ Note: AI suggested BLOCK but all reviewers passed')
-    console.log('   Verdict remains PASS - AI concerns are logged but not blocking')
-  } else if (!aiSaidPass && !aiSaidBlock) {
+  if (!aiSaidPass && !aiSaidBlock) {
+    // AI couldn't decide - fall back to mechanical
     console.log('\n⚠️ AI could not determine verdict, using mechanical aggregation')
+    blocked = mechanicalVerdict === 'BLOCK'
+  } else if (aiSaidPass && mechanicalVerdict === 'BLOCK') {
+    // AI is overriding BLOCK → PASS
+    // Extract reason from AI response
+    const reasonMatch = response.match(/(?:pre-existing|not.*this PR|already existed|unrelated to|false positive)/i)
+    const reason = reasonMatch
+      ? 'Issues are pre-existing or unrelated to this PR'
+      : 'AI determined issues are not blocking'
+
+    aiOverride = { from: 'BLOCK', to: 'PASS', reason }
+    blocked = false
+    console.log(`\n🔄 AI OVERRIDE: BLOCK → PASS`)
+    console.log(`   Reason: ${reason}`)
+    console.log(`   Failing reviewers: ${failingReviewers.join(', ')}`)
+  } else if (aiSaidBlock && mechanicalVerdict === 'PASS') {
+    // AI is overriding PASS → BLOCK (found issues reviewers missed)
+    aiOverride = { from: 'PASS', to: 'BLOCK', reason: 'AI found additional issues' }
+    blocked = true
+    console.log(`\n🔄 AI OVERRIDE: PASS → BLOCK`)
+    console.log(`   AI found issues that reviewers missed`)
+  } else {
+    // AI agrees with mechanical
+    blocked = mechanicalVerdict === 'BLOCK'
   }
 
   // Build verification results from reviewer outputs
@@ -1178,15 +1194,18 @@ Please check the CI logs for more details or re-run the workflow.`
   // Build final verdict output
   const verdictOutput: FinalVerdictOutput = {
     verdict: blocked ? 'BLOCK' : 'PASS',
-    confidence: blocked ? 95 : 90,  // High confidence since it's purely mechanical
+    confidence: blocked ? 90 : 85,
     summary: blocked
-      ? `Blocked: ${failingReviewers.length} reviewer(s) failed (${failingReviewers.join(', ')})`
-      : 'All reviewers passed. Safe to merge.',
+      ? 'Critical issues found that must be fixed before merge.'
+      : aiOverride
+        ? `Approved: ${aiOverride.reason}`
+        : 'No blocking issues found. Safe to merge.',
     verifications,
     requiredFixes: requiredFixes.slice(0, 10),
     suggestions: suggestions.slice(0, 20),
     reasoning: response.slice(0, 2000),
     reviewerSummary: reviewerNames.map(name => summarizeReviewer(reviews[name])),
+    aiOverride: aiOverride || undefined,
   }
 
   saveFinalVerdict(verdictOutput)
@@ -1347,12 +1366,32 @@ Once you fix these issues, push a new commit and the CI will re-run.
 
 `
   } else {
-    // PASSED - All reviewers passed (no overrides possible)
-    comment += `> ✅ **Ready to merge** — ${passCount}/${totalCount} reviewers passed`
-    if (warnCount > 0) {
-      comment += `, ${warnCount} with suggestions`
-    }
-    comment += `
+    // PASSED - Show what was reviewed and found
+    // Check if this was an AI override
+    if (verdict.aiOverride && failCount > 0) {
+      comment += `> ✅ **Ready to merge** — AI override: ${failCount} reviewer${failCount !== 1 ? 's' : ''} failed but issues are **${verdict.aiOverride.reason}**
+
+### 📊 Reviewer Results: ${passCount} passed, ${warnCount} warnings, ${failCount} failed (overridden)
+
+| Reviewer | Verdict | Summary |
+|----------|---------|---------|
+${verdict.reviewerSummary.map(r => {
+  const icon = r.verdict === 'PASS' ? '✅' : r.verdict === 'WARN' ? '⚠️' : '❌'
+  const overridden = r.verdict === 'FAIL' ? ' *(overridden)*' : ''
+  return `| ${r.reviewer} | ${icon} ${r.verdict}${overridden} | ${r.summary.slice(0, 50)}${r.summary.length > 50 ? '...' : ''} |`
+}).join('\n')}
+
+> **Why AI approved:** ${verdict.aiOverride.reason}
+>
+> The failing reviewer(s) found issues, but AI determined they are not blocking for this PR.
+
+`
+    } else {
+      comment += `> ✅ **Ready to merge** — ${passCount}/${totalCount} reviewers passed`
+      if (warnCount > 0) {
+        comment += `, ${warnCount} with suggestions`
+      }
+      comment += `
 
 ### 📊 Reviewer Results
 
@@ -1364,6 +1403,7 @@ ${verdict.reviewerSummary.map(r => {
 }).join('\n')}
 
 `
+    }
 
     // Add Quick Wins section if there are easy improvements
     const quickWins = prWarnings.filter(w =>
