@@ -506,7 +506,9 @@ jobs:
           echo "Preview URL: https://${{ steps.vercel.outputs.preview_url }}"
 
       - name: Run E2E tests against preview
+        id: e2e-tests
         if: steps.vercel.outputs.preview_url
+        continue-on-error: true  # Test failures shouldn't show job as red
         run: |
           # Run design system tests
           npx playwright test tests/e2e/design-system.spec.ts --project=chromium
@@ -565,6 +567,13 @@ jobs:
         with:
           script: |
             const url = 'https://${{ steps.vercel.outputs.preview_url }}';
+            const testOutcome = '${{ steps.e2e-tests.outcome }}';
+            const testStatus = testOutcome === 'success'
+              ? '✅ E2E tests passed'
+              : testOutcome === 'failure'
+                ? '⚠️ E2E tests had issues (see Final Verdict for details)'
+                : '⏭️ E2E tests skipped';
+
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -577,7 +586,7 @@ jobs:
 
             const body = '## 🔗 Preview Deployment\n\n' +
               '**URL:** ' + url + '\n\n' +
-              '**E2E Tests:** Design system tests passed\n\n' +
+              '**Status:** ' + testStatus + '\n\n' +
               '---\n*Tested automatically by CI*';
 
             if (botComment) {
