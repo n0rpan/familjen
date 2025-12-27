@@ -138,6 +138,7 @@ jobs:
 
   # ============================================
   # AI Migration Review (for PRs with migrations)
+  # NON-BLOCKING: Final verdict decides if this blocks
   # ============================================
   migration-review:
     name: AI Migration Review
@@ -145,6 +146,7 @@ jobs:
     timeout-minutes: 5
     needs: [lint]
     if: github.event_name == 'pull_request'
+    continue-on-error: true  # Non-blocking - final verdict decides
 
     steps:
       - uses: actions/checkout@v4
@@ -174,7 +176,16 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}
 
-      - name: Upload review results
+      - name: Upload review artifact for final verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-reviews-migration
+          path: .ai-reviews/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload legacy results
         if: steps.check-migrations.outputs.has_migrations == 'true'
         uses: actions/upload-artifact@v4
         with:
@@ -183,7 +194,8 @@ jobs:
           retention-days: 7
 
   # ============================================
-  # AI Code Review (final gate for PRs)
+  # AI Code Review
+  # NON-BLOCKING: Final verdict decides if this blocks
   # ============================================
   ai-code-review:
     name: AI Code Review
@@ -191,6 +203,7 @@ jobs:
     timeout-minutes: 10
     needs: [unit-tests, build]
     if: github.event_name == 'pull_request'
+    continue-on-error: true  # Non-blocking - final verdict decides
 
     steps:
       - uses: actions/checkout@v4
@@ -228,7 +241,16 @@ jobs:
           OPENROUTER_CAPABLE_MODEL: ${{ secrets.OPENROUTER_CAPABLE_MODEL }}
           GITHUB_BASE_REF: ${{ github.base_ref }}
 
-      - name: Upload review results
+      - name: Upload review artifact for final verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-reviews-code
+          path: .ai-reviews/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload legacy results
         uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -341,6 +363,15 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_VISION_MODEL: ${{ secrets.OPENROUTER_VISION_MODEL }}
 
+      - name: Upload review artifact for final verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-reviews-visual
+          path: .ai-reviews/
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Upload visual validation results
         if: always()
         uses: actions/upload-artifact@v4
@@ -452,6 +483,22 @@ jobs:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
 
+      - name: Generate E2E test report
+        if: always()
+        run: |
+          # Convert Playwright results to review format
+          npx tsx scripts/e2e-test-reporter.ts || true
+        continue-on-error: true
+
+      - name: Upload review artifact for final verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-reviews-e2e
+          path: .ai-reviews/
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Upload E2E results
         if: always()
         uses: actions/upload-artifact@v4
@@ -500,15 +547,17 @@ jobs:
             }
 
   # ============================================
-  # API integration tests (main branch only)
+  # API integration tests (PRs and main)
+  # NON-BLOCKING: Final verdict decides if this blocks
   # ============================================
   api-tests:
     name: API Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [unit-tests]
-    # Only run on main branch pushes where secrets are available
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Run on both PRs and main branch
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    continue-on-error: true  # Non-blocking - final verdict decides
 
     steps:
       - uses: actions/checkout@v4
@@ -533,11 +582,26 @@ jobs:
 
       - name: Run API integration tests
         if: steps.check-secrets.outputs.has_api_key == 'true'
-        run: npm run test:api
+        run: npm run test:api -- --reporter=json --outputFile=api-test-results.json || true
+        continue-on-error: true
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_TEST_MODEL: ${{ secrets.OPENROUTER_TEST_MODEL }}
           TEST_API_DELAY_MS: '500'
+
+      - name: Generate API test report
+        if: steps.check-secrets.outputs.has_api_key == 'true'
+        run: npx tsx scripts/api-test-reporter.ts || true
+        continue-on-error: true
+
+      - name: Upload review artifact for final verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-reviews-api
+          path: .ai-reviews/
+          retention-days: 7
+          if-no-files-found: ignore
 
   # ============================================
   # SQL Migration Validation
@@ -579,3 +643,139 @@ jobs:
           done
 
           echo "✓ Migration validation complete"
+
+  # ============================================
+  # FINAL VERDICT - The only job that can block PRs
+  # ============================================
+  final-verdict:
+    name: 🎯 Final AI Verdict
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [migration-review, ai-code-review, visual-validation, e2e-preview, api-tests]
+    if: github.event_name == 'pull_request'
+    # This job CAN fail and will block the PR
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create .ai-reviews directory
+        run: mkdir -p .ai-reviews
+
+      # Download all review artifacts
+      - name: Download migration review
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: ai-reviews-migration
+          path: .ai-reviews/
+
+      - name: Download code review
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: ai-reviews-code
+          path: .ai-reviews/
+
+      - name: Download visual validation
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: ai-reviews-visual
+          path: .ai-reviews/
+
+      - name: Download E2E tests
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: ai-reviews-e2e
+          path: .ai-reviews/
+
+      - name: Download API tests
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: ai-reviews-api
+          path: .ai-reviews/
+
+      - name: List collected reviews
+        run: ls -la .ai-reviews/ || echo "No reviews collected"
+
+      - name: Get Vercel Preview URL
+        id: vercel
+        uses: zentered/vercel-preview-url@v1.1.9
+        continue-on-error: true
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        with:
+          vercel_project_id: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Run final verdict
+        run: npx tsx scripts/ai-final-verdict.ts
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_VERDICT_MODEL: ${{ secrets.OPENROUTER_VERDICT_MODEL }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_PR_TITLE: ${{ github.event.pull_request.title }}
+          GITHUB_PR_BODY: ${{ github.event.pull_request.body }}
+          VERCEL_PREVIEW_URL: https://${{ steps.vercel.outputs.preview_url }}
+
+      - name: Upload final verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-verdict
+          path: |
+            .ai-reviews/final-verdict.json
+            final-verdict-comment.md
+          retention-days: 7
+
+      - name: Post final verdict comment
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs')
+            if (!fs.existsSync('final-verdict-comment.md')) {
+              console.log('No final verdict comment to post')
+              return
+            }
+
+            const comment = fs.readFileSync('final-verdict-comment.md', 'utf8')
+
+            // Check for existing bot comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            })
+
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('Final AI Verdict')
+            )
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment
+              })
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              })
+            }
