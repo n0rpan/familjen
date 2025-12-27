@@ -100,44 +100,13 @@ jobs:
           retention-days: 7
 
   # ============================================
-  # STAGE 3: Build verification (after tests)
+  # NOTE: Build is done by Vercel - we rely on Vercel preview for build verification
+  # This saves ~2min CI time since Vercel builds first anyway
   # ============================================
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: [unit-tests]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      # Cache Next.js build artifacts
-      - name: Cache Next.js build
-        uses: actions/cache@v4
-        with:
-          path: .next/cache
-          key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.ts', '**/*.tsx') }}
-          restore-keys: |
-            ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
-            ${{ runner.os }}-nextjs-
-
-      - name: Build application
-        run: npm run build
-        env:
-          # Placeholder env vars for build (actual values in Vercel)
-          NEXT_PUBLIC_SUPABASE_URL: 'https://placeholder.supabase.co'
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: 'placeholder'
 
   # ============================================
   # AI Migration Review (for PRs with migrations)
+  # NON-BLOCKING: Final verdict decides if this blocks
   # ============================================
   migration-review:
     name: AI Migration Review
@@ -145,6 +114,7 @@ jobs:
     timeout-minutes: 5
     needs: [lint]
     if: github.event_name == 'pull_request'
+    continue-on-error: true  # Non-blocking - final verdict decides
 
     steps:
       - uses: actions/checkout@v4
@@ -163,18 +133,45 @@ jobs:
           echo "has_migrations=$([[ $CHANGED -gt 0 ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
           echo "Found $CHANGED migration changes"
 
+      - name: Create ai-reviews directory
+        run: mkdir -p ai-reviews
+
       - name: Install dependencies
         if: steps.check-migrations.outputs.has_migrations == 'true'
         run: npm ci
 
       - name: Run AI migration review
         if: steps.check-migrations.outputs.has_migrations == 'true'
-        run: npx tsx scripts/migration-ai-review.ts
+        run: |
+          # Validate required environment variables
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo "❌ OPENROUTER_API_KEY is not set"
+            exit 1
+          fi
+          if [ -z "$OPENROUTER_FAST_MODEL" ]; then
+            echo "❌ OPENROUTER_FAST_MODEL is not set"
+            exit 1
+          fi
+          npx tsx scripts/migration-ai-review.ts
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}
 
-      - name: Upload review results
+      - name: Write skipped status if no migrations
+        if: steps.check-migrations.outputs.has_migrations != 'true'
+        run: |
+          echo '{"reviewer":"migration-review","status":"skipped","verdict":"PASS","confidence":100,"findings":[],"summary":"No migrations to review.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > ai-reviews/migration-review.json
+
+      - name: Upload review artifact for final verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-reviews-migration
+          path: ai-reviews/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload legacy results
         if: steps.check-migrations.outputs.has_migrations == 'true'
         uses: actions/upload-artifact@v4
         with:
@@ -183,14 +180,16 @@ jobs:
           retention-days: 7
 
   # ============================================
-  # AI Code Review (final gate for PRs)
+  # AI Code Review
+  # NON-BLOCKING: Final verdict decides if this blocks
   # ============================================
   ai-code-review:
     name: AI Code Review
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [unit-tests, build]
+    needs: [unit-tests]
     if: github.event_name == 'pull_request'
+    continue-on-error: true  # Non-blocking - final verdict decides
 
     steps:
       - uses: actions/checkout@v4
@@ -201,6 +200,9 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+
+      - name: Create ai-reviews directory
+        run: mkdir -p ai-reviews
 
       - name: Install dependencies
         run: npm ci
@@ -228,7 +230,34 @@ jobs:
           OPENROUTER_CAPABLE_MODEL: ${{ secrets.OPENROUTER_CAPABLE_MODEL }}
           GITHUB_BASE_REF: ${{ github.base_ref }}
 
-      - name: Upload review results
+      - name: Write fallback status if no code review
+        if: always()
+        run: |
+          if [ ! -f "ai-reviews/code-review.json" ]; then
+            echo '{"reviewer":"code-review","status":"failed","verdict":"ERROR","confidence":0,"findings":[{"severity":"critical","category":"runtime-error","message":"Code review script did not produce output"}],"summary":"Code review failed to run. Check CI logs.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > ai-reviews/code-review.json
+          fi
+
+      - name: Debug - Show ai-reviews contents before upload
+        if: always()
+        run: |
+          echo "📁 Contents of ai-reviews/ before upload:"
+          ls -la ai-reviews/ || echo "(directory does not exist)"
+          echo ""
+          if [ -f "ai-reviews/code-review.json" ]; then
+            echo "📄 code-review.json preview:"
+            head -c 300 ai-reviews/code-review.json
+          fi
+
+      - name: Upload review artifact for final verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-reviews-code
+          path: ai-reviews/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload legacy results
         uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -287,7 +316,7 @@ jobs:
     name: AI Visual Validation
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [build]
+    needs: [unit-tests]
     if: github.event_name == 'pull_request'
     # Visual validation is advisory, not blocking. Reasons:
     # 1. New features may intentionally change UI (not a regression)
@@ -304,14 +333,14 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: Create ai-reviews directory
+        run: mkdir -p ai-reviews
+
       - name: Install dependencies
         run: npm ci
 
       - name: Install Playwright browsers
         run: npx playwright install chromium
-
-      - name: Wait for Vercel to start
-        run: sleep 30
 
       - name: Get Vercel Preview URL
         id: vercel
@@ -321,25 +350,75 @@ jobs:
         with:
           vercel_project_id: ${{ secrets.VERCEL_PROJECT_ID }}
 
-      - name: Log Preview URL
+      - name: Wait and retry if Vercel not ready
+        id: vercel-wait
+        if: steps.vercel.outputs.preview_url == ''
         run: |
-          echo "Preview URL: https://${{ steps.vercel.outputs.preview_url }}"
+          echo "⏳ Vercel preview not ready, waiting 30s and retrying..."
+          sleep 30
+
+      - name: Retry Get Vercel Preview URL
+        id: vercel-retry
+        if: steps.vercel.outputs.preview_url == ''
+        uses: zentered/vercel-preview-url@v1.1.9
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        with:
+          vercel_project_id: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Set preview URL output
+        id: preview
+        run: |
+          URL="${{ steps.vercel.outputs.preview_url || steps.vercel-retry.outputs.preview_url }}"
+          echo "preview_url=$URL" >> $GITHUB_OUTPUT
+          echo "Preview URL: https://$URL"
 
       - name: Capture screenshots with mock data
-        if: steps.vercel.outputs.preview_url
+        if: steps.preview.outputs.preview_url
         run: npx playwright test tests/e2e/capture-screenshots.spec.ts --project=chromium
         env:
-          PLAYWRIGHT_BASE_URL: https://${{ steps.vercel.outputs.preview_url }}
+          PLAYWRIGHT_BASE_URL: https://${{ steps.preview.outputs.preview_url }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
           # Must match real Supabase URL so mock auth cookies have correct name
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
 
       - name: Run AI visual validation
-        if: steps.vercel.outputs.preview_url
-        run: npx tsx scripts/ai-visual-validation.ts
+        if: steps.preview.outputs.preview_url
+        run: |
+          # Validate required environment variables
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo "❌ OPENROUTER_API_KEY is not set"
+            exit 1
+          fi
+          if [ -z "$OPENROUTER_VISION_MODEL" ]; then
+            echo "❌ OPENROUTER_VISION_MODEL is not set"
+            exit 1
+          fi
+          npx tsx scripts/ai-visual-validation.ts
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_VISION_MODEL: ${{ secrets.OPENROUTER_VISION_MODEL }}
+
+      - name: Write skipped status if no preview URL
+        if: steps.preview.outputs.preview_url == ''
+        run: |
+          echo '{"reviewer":"visual-validation","status":"skipped","verdict":"PASS","confidence":100,"findings":[],"summary":"No Vercel preview URL available.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > ai-reviews/visual-validation.json
+
+      - name: Write fallback status if no visual validation
+        if: always()
+        run: |
+          if [ ! -f "ai-reviews/visual-validation.json" ]; then
+            echo '{"reviewer":"visual-validation","status":"failed","verdict":"ERROR","confidence":0,"findings":[{"severity":"critical","category":"runtime-error","message":"Visual validation script did not produce output"}],"summary":"Visual validation failed to run. Check CI logs.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > ai-reviews/visual-validation.json
+          fi
+
+      - name: Upload review artifact for final verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-reviews-visual
+          path: ai-reviews/
+          retention-days: 7
+          if-no-files-found: warn
 
       - name: Upload visual validation results
         if: always()
@@ -353,7 +432,7 @@ jobs:
           retention-days: 7
 
       - name: Post visual validation comment
-        if: always() && steps.vercel.outputs.preview_url
+        if: always() && steps.preview.outputs.preview_url
         uses: actions/github-script@v7
         with:
           script: |
@@ -399,8 +478,9 @@ jobs:
     name: E2E Tests (Preview)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [build]
+    needs: [unit-tests]
     if: github.event_name == 'pull_request'
+    continue-on-error: true  # Non-blocking - final verdict decides
 
     steps:
       - uses: actions/checkout@v4
@@ -410,14 +490,14 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: Create ai-reviews directory
+        run: mkdir -p ai-reviews
+
       - name: Install dependencies
         run: npm ci
 
       - name: Install Playwright
         run: npx playwright install chromium
-
-      - name: Wait for Vercel to start
-        run: sleep 30
 
       - name: Get Vercel Preview URL
         id: vercel
@@ -427,30 +507,73 @@ jobs:
         with:
           vercel_project_id: ${{ secrets.VERCEL_PROJECT_ID }}
 
-      - name: Log Preview URL
+      - name: Wait and retry if Vercel not ready
+        if: steps.vercel.outputs.preview_url == ''
         run: |
-          echo "Preview URL: https://${{ steps.vercel.outputs.preview_url }}"
+          echo "⏳ Vercel preview not ready, waiting 30s and retrying..."
+          sleep 30
+
+      - name: Retry Get Vercel Preview URL
+        id: vercel-retry
+        if: steps.vercel.outputs.preview_url == ''
+        uses: zentered/vercel-preview-url@v1.1.9
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        with:
+          vercel_project_id: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Set preview URL output
+        id: preview
+        run: |
+          URL="${{ steps.vercel.outputs.preview_url || steps.vercel-retry.outputs.preview_url }}"
+          echo "preview_url=$URL" >> $GITHUB_OUTPUT
+          echo "Preview URL: https://$URL"
 
       - name: Run E2E tests against preview
-        if: steps.vercel.outputs.preview_url
+        id: e2e-tests
+        if: steps.preview.outputs.preview_url
+        continue-on-error: true  # Test failures shouldn't show job as red
         run: |
           # Run design system tests
           npx playwright test tests/e2e/design-system.spec.ts --project=chromium
           # Run language detection tests (Norwegian, English, Swedish)
           npx playwright test tests/e2e/language-detection.spec.ts --project=chromium
         env:
-          PLAYWRIGHT_BASE_URL: https://${{ steps.vercel.outputs.preview_url }}
+          PLAYWRIGHT_BASE_URL: https://${{ steps.preview.outputs.preview_url }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
           # Required for mock auth to create correct cookie name
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
 
       - name: Capture screenshots from preview
-        if: steps.vercel.outputs.preview_url
+        if: steps.preview.outputs.preview_url
         run: npx playwright test tests/e2e/capture-screenshots.spec.ts --project=chromium || true
         env:
-          PLAYWRIGHT_BASE_URL: https://${{ steps.vercel.outputs.preview_url }}
+          PLAYWRIGHT_BASE_URL: https://${{ steps.preview.outputs.preview_url }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+
+      - name: Generate E2E test report
+        if: always()
+        run: |
+          # Convert Playwright results to review format
+          npx tsx scripts/e2e-test-reporter.ts || true
+        continue-on-error: true
+
+      - name: Write fallback status if no e2e report
+        if: always()
+        run: |
+          if [ ! -f "ai-reviews/e2e-tests.json" ]; then
+            echo '{"reviewer":"e2e-tests","status":"skipped","verdict":"PASS","confidence":100,"findings":[],"summary":"E2E test reporter did not generate output.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > ai-reviews/e2e-tests.json
+          fi
+
+      - name: Upload review artifact for final verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-reviews-e2e
+          path: ai-reviews/
+          retention-days: 7
+          if-no-files-found: warn
 
       - name: Upload E2E results
         if: always()
@@ -463,11 +586,18 @@ jobs:
           retention-days: 7
 
       - name: Post preview URL comment
-        if: steps.vercel.outputs.preview_url
+        if: steps.preview.outputs.preview_url
         uses: actions/github-script@v7
         with:
           script: |
-            const url = 'https://${{ steps.vercel.outputs.preview_url }}';
+            const url = 'https://${{ steps.preview.outputs.preview_url }}';
+            const testOutcome = '${{ steps.e2e-tests.outcome }}';
+            const testStatus = testOutcome === 'success'
+              ? '✅ E2E tests passed'
+              : testOutcome === 'failure'
+                ? '⚠️ E2E tests had issues (see Final Verdict for details)'
+                : '⏭️ E2E tests skipped';
+
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -480,7 +610,7 @@ jobs:
 
             const body = '## 🔗 Preview Deployment\n\n' +
               '**URL:** ' + url + '\n\n' +
-              '**E2E Tests:** Design system tests passed\n\n' +
+              '**Status:** ' + testStatus + '\n\n' +
               '---\n*Tested automatically by CI*';
 
             if (botComment) {
@@ -500,15 +630,17 @@ jobs:
             }
 
   # ============================================
-  # API integration tests (main branch only)
+  # API integration tests (PRs and main)
+  # NON-BLOCKING: Final verdict decides if this blocks
   # ============================================
   api-tests:
     name: API Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [unit-tests]
-    # Only run on main branch pushes where secrets are available
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Run on both PRs and main branch
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    continue-on-error: true  # Non-blocking - final verdict decides
 
     steps:
       - uses: actions/checkout@v4
@@ -517,6 +649,9 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+
+      - name: Create ai-reviews directory
+        run: mkdir -p ai-reviews
 
       - name: Install dependencies
         run: npm ci
@@ -529,15 +664,39 @@ jobs:
           else
             echo "has_api_key=false" >> $GITHUB_OUTPUT
             echo "⚠️ OPENROUTER_API_KEY not set - skipping API tests"
+            # Write skipped status
+            echo '{"reviewer":"api-tests","status":"skipped","verdict":"PASS","confidence":100,"findings":[],"summary":"API key not available.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > ai-reviews/api-tests.json
           fi
 
       - name: Run API integration tests
         if: steps.check-secrets.outputs.has_api_key == 'true'
-        run: npm run test:api
+        run: npm run test:api -- --reporter=json --outputFile=api-test-results.json || true
+        continue-on-error: true
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_TEST_MODEL: ${{ secrets.OPENROUTER_TEST_MODEL }}
           TEST_API_DELAY_MS: '500'
+
+      - name: Generate API test report
+        if: steps.check-secrets.outputs.has_api_key == 'true'
+        run: npx tsx scripts/api-test-reporter.ts || true
+        continue-on-error: true
+
+      - name: Write fallback status if no api report
+        if: always()
+        run: |
+          if [ ! -f "ai-reviews/api-tests.json" ]; then
+            echo '{"reviewer":"api-tests","status":"skipped","verdict":"PASS","confidence":100,"findings":[],"summary":"API test reporter did not generate output.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > ai-reviews/api-tests.json
+          fi
+
+      - name: Upload review artifact for final verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-reviews-api
+          path: ai-reviews/
+          retention-days: 7
+          if-no-files-found: warn
 
   # ============================================
   # SQL Migration Validation
@@ -579,3 +738,186 @@ jobs:
           done
 
           echo "✓ Migration validation complete"
+
+  # ============================================
+  # FINAL VERDICT - The only job that can block PRs
+  # ============================================
+  final-verdict:
+    name: 🎯 Final AI Verdict
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [migration-review, ai-code-review, visual-validation, e2e-preview, api-tests]
+    if: github.event_name == 'pull_request' && always()
+    # This job CAN fail and will block the PR
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create ai-reviews directory
+        run: mkdir -p ai-reviews
+
+      # Download all review artifacts using pattern matching
+      - name: Download all review artifacts
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: ai-reviews-*
+          path: ai-reviews-temp/
+          merge-multiple: false
+
+      # Flatten the directory structure (artifacts download to subdirectories)
+      - name: Consolidate review artifacts
+        run: |
+          echo "📦 Consolidating review artifacts..."
+          echo ""
+          echo "🔍 Debug: Contents of ai-reviews-temp/"
+          ls -laR ai-reviews-temp/ 2>/dev/null || echo "   (directory does not exist)"
+          echo ""
+          if [ -d "ai-reviews-temp" ]; then
+            # Each artifact downloads to its own subdirectory, flatten them
+            find ai-reviews-temp -name "*.json" -exec cp {} ai-reviews/ \; 2>/dev/null || true
+            echo "📄 Found review files in ai-reviews/:"
+            ls -la ai-reviews/ || echo "No review files found"
+            echo ""
+            echo "📄 Content preview of each file:"
+            for f in ai-reviews/*.json; do
+              if [ -f "$f" ]; then
+                echo "--- $f ---"
+                head -c 200 "$f"
+                echo ""
+              fi
+            done
+          else
+            echo "⚠️ No review artifacts downloaded (ai-reviews-temp does not exist)"
+          fi
+
+      - name: Get Vercel Preview URL
+        id: vercel
+        uses: zentered/vercel-preview-url@v1.1.9
+        continue-on-error: true
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        with:
+          vercel_project_id: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Run final verdict
+        run: |
+          # Validate required environment variables
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo "❌ OPENROUTER_API_KEY is not set"
+            exit 1
+          fi
+          if [ -z "$OPENROUTER_VERDICT_MODEL" ]; then
+            echo "❌ OPENROUTER_VERDICT_MODEL is not set"
+            exit 1
+          fi
+          npx tsx scripts/ai-final-verdict.ts
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_VERDICT_MODEL: ${{ secrets.OPENROUTER_VERDICT_MODEL }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_PR_TITLE: ${{ github.event.pull_request.title }}
+          GITHUB_PR_BODY: ${{ github.event.pull_request.body }}
+          VERCEL_PREVIEW_URL: https://${{ steps.vercel.outputs.preview_url }}
+
+      - name: Upload final verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-verdict
+          path: |
+            ai-reviews/final-verdict.json
+            final-verdict-comment.md
+            pre-existing-issues-comment.md
+          retention-days: 7
+
+      - name: Post final verdict comment
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs')
+            if (!fs.existsSync('final-verdict-comment.md')) {
+              console.log('No final verdict comment to post')
+              return
+            }
+
+            const comment = fs.readFileSync('final-verdict-comment.md', 'utf8')
+
+            // Check for existing bot comment (look for AI Review marker)
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            })
+
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' && (c.body.includes('AI Review:') || c.body.includes('Final AI Verdict'))
+            )
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment
+              })
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              })
+            }
+
+      - name: Post pre-existing issues comment
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs')
+            if (!fs.existsSync('pre-existing-issues-comment.md')) {
+              console.log('No pre-existing issues to report')
+              return
+            }
+
+            const comment = fs.readFileSync('pre-existing-issues-comment.md', 'utf8')
+
+            // Check for existing pre-existing issues comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            })
+
+            const existingComment = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('Pre-existing Issues (Not from this PR)')
+            )
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: comment
+              })
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              })
+            }

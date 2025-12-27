@@ -14,6 +14,13 @@
 /test-results/
 tests/.auth/
 
+# AI review artifacts (generated during CI)
+.ai-reviews/*
+!.ai-reviews/.gitkeep
+!.ai-reviews/rollback-migrations/
+.ai-reviews/rollback-migrations/*
+!.ai-reviews/rollback-migrations/.gitkeep
+
 # next.js
 /.next/
 /out/

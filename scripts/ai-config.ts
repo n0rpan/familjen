@@ -195,6 +195,43 @@ export function getOpenRouterKey(): string {
 // Default timeout for AI API calls (2 minutes)
 const DEFAULT_TIMEOUT_MS = 120_000
 
+// Retry configuration for transient failures
+const MAX_RETRIES = 3
+const INITIAL_RETRY_DELAY_MS = 1000
+
+/**
+ * Execute a function with exponential backoff retry
+ * Retries on network errors and 5xx responses
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  operation: string,
+  maxRetries = MAX_RETRIES
+): Promise<T> {
+  let lastError: Error | null = null
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn()
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error))
+
+      // Don't retry on auth errors or validation errors
+      if (lastError.message.includes('401') || lastError.message.includes('400')) {
+        throw lastError
+      }
+
+      if (attempt < maxRetries) {
+        const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt)
+        console.warn(`⚠️ ${operation} failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms...`)
+        await new Promise(resolve => setTimeout(resolve, delay))
+      }
+    }
+  }
+
+  throw lastError
+}
+
 /**
  * Wrap a promise with a timeout
  * Prevents hung API calls from blocking CI indefinitely

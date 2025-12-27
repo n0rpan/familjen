@@ -595,15 +595,29 @@ Tests run on every PR via GitHub Actions:
 
 The CI pipeline uses AI to review code changes, following our philosophy: *"We don't test to make tests pass. We test to be confident busy parents won't have headaches."*
 
+### Architecture: Non-Blocking Reviewers + Final Verdict
+
+The CI uses a **two-tier architecture**:
+1. **Individual Reviewers** - Run in parallel, inform but don't block (exit 0)
+2. **Final Verdict** - The "super AI" that aggregates all findings and makes the sole PASS/BLOCK decision
+
+This design allows:
+- Fast feedback from multiple reviewers
+- Intelligent decision-making that considers context
+- No false positives blocking PRs unnecessarily
+
 ### AI Review Scripts
 
 ```
 scripts/
 ├── ai-config.ts              # Model config + OpenRouter structured outputs
-├── migration-ai-review.ts    # Reviews database migrations
-├── ai-code-review.ts         # Reviews PR code changes
-├── ai-visual-review.ts       # Compares screenshots (baseline-based)
-└── ai-visual-validation.ts   # Evaluates screenshots (no baselines needed)
+├── ai-review-types.ts        # Shared types for all reviewers (ReviewerOutput)
+├── migration-ai-review.ts    # Reviews database migrations (non-blocking)
+├── ai-code-review.ts         # Reviews PR code changes (non-blocking)
+├── ai-visual-validation.ts   # Evaluates screenshots (non-blocking)
+├── api-test-reporter.ts      # Converts Vitest results to ReviewerOutput
+├── e2e-test-reporter.ts      # Converts Playwright results to ReviewerOutput
+└── ai-final-verdict.ts       # The "super AI" decision maker (BLOCKING)
 ```
 
 ### Environment Variables
@@ -612,9 +626,10 @@ scripts/
 ```bash
 OPENROUTER_API_KEY=sk-or-v1-...
 OPENROUTER_FAST_MODEL=google/gemini-2.0-flash-001       # Migration review
-OPENROUTER_CAPABLE_MODEL=anthropic/claude-sonnet-4.5   # Code review
+OPENROUTER_CAPABLE_MODEL=anthropic/claude-sonnet-4     # Code review
 OPENROUTER_VISION_MODEL=google/gemini-2.0-flash-001    # Visual validation
-OPENROUTER_TEST_MODEL=google/gemini-2.0-flash-001      # API tests (main branch only)
+OPENROUTER_VERDICT_MODEL=anthropic/claude-opus-4       # Final verdict (most capable)
+OPENROUTER_TEST_MODEL=google/gemini-2.0-flash-001      # API tests
 ```
 
 **Optional:**
@@ -642,6 +657,9 @@ npm run ai:visual-review -- --update   # Update baselines from current
 
 # Visual validation (no baselines needed - default in CI)
 npm run ai:visual-validate             # Validates screenshots against design system
+
+# Final verdict (aggregates all reviewers, only run after other reviews)
+npm run ai:final-verdict               # Requires .ai-reviews/*.json files
 ```
 
 ### Migration Review
@@ -779,31 +797,54 @@ PR Created
     ├─► typecheck ────────────────┤
     │                             │
     ├─► migration-review ◄────────┘ (if migrations changed)
-    │
+    │       │ (non-blocking)
     └─► unit-tests ◄──────────────┘
             │
-            ├─► build ───────────────────────────────┐
-            │     │                                   │
-            │     ├─► ai-code-review → Posts PR comment
-            │     │                                   │
-            │     └─► e2e-preview ────────────────────┤
-            │           │                             │
-            │           ├─► Wait for Vercel preview   │
-            │           ├─► Capture screenshots       │
-            │           │   (mock auth + test data)   │
-            │           │                             │
-            │           └─► visual-validation ────────┘
-            │               → Posts PR comment with
-            │                 design system analysis
-            │
-            └─► (main only) api-tests
+            └─► build
+                  │
+                  ├─► ai-code-review ───────────────┐
+                  │   (non-blocking)                 │
+                  │                                  │
+                  ├─► visual-validation ─────────────┤  All upload to
+                  │   (non-blocking)                 │  .ai-reviews/*.json
+                  │                                  │
+                  ├─► e2e-preview ───────────────────┤
+                  │   (non-blocking)                 │
+                  │                                  │
+                  └─► api-tests ─────────────────────┘
+                            │
+                            └─► 🎯 FINAL VERDICT ◄── Downloads all artifacts
+                                    │                 Has tools to fetch context
+                                    │                 Makes PASS/BLOCK decision
+                                    ▼
+                               ✅ PASS → Merge allowed
+                               ❌ BLOCK → CI fails, PR blocked
 ```
 
 **Key features:**
-- Screenshots captured on real Vercel preview (not localhost)
-- Mock auth means no database setup needed
-- AI-generated Norwegian family data adapts to schema changes
-- Visual validation runs even if database migrations break things
+- All reviewers are **non-blocking** (`continue-on-error: true`)
+- Reviewers upload findings to `.ai-reviews/*.json` artifacts
+- Final verdict downloads all artifacts and aggregates findings
+- Final verdict has **tools** to read files, search code, test endpoints
+- Only the final verdict can fail CI and block the PR
+
+### Final Verdict Tools
+
+The "super AI" has access to tools for deeper investigation:
+
+| Tool | Purpose |
+|------|---------|
+| `read_file` | Read any file in the repo |
+| `read_diff` | Get the full PR diff |
+| `search_code` | Grep for patterns |
+| `get_commits` | List PR commits |
+| `check_migration_patterns` | Find dangerous SQL patterns |
+| `verify_rls_coverage` | Check new tables have RLS |
+| `test_endpoint` | Make HTTP requests to preview |
+| `verify_auth_required` | Test protected routes return 401 |
+| `smoke_test_critical_paths` | Quick health checks |
+| `verify_imports` | Check for hallucinated packages |
+| `check_env_usage` | Find undocumented env vars |
 
 ### Structured Outputs
 
