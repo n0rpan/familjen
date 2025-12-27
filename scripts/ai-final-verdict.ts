@@ -657,35 +657,40 @@ async function main() {
 
 Your job is to review what other AI reviewers found and make the final PASS/BLOCK decision.
 
-## CRITICAL: Focus on THIS PR's Changes
+## CRITICAL: Verify Code Review Blocking Issues
 
-**Your decision should be based ONLY on issues caused by THIS PR's changes.**
+When the **code-review** reviewer has verdict REQUEST_CHANGES with blocking issues, you MUST:
+1. **Use read_file tool** to verify each specific blocking issue mentioned
+2. **Check if the code actually has the problem** - sometimes code review AI hallucinates issues
+3. **Only dismiss an issue if you can prove it's wrong** by reading the actual code
+
+For example, if code review says "Missing prop X in component Y", use read_file on the component file and verify if prop X is actually missing or if it exists.
+
+## Focus on THIS PR's Changes
+
+Your decision should be based on issues in files changed by THIS PR.
 
 When reviewing findings:
 1. Check if the issue is in a file that was CHANGED in this PR
 2. If a test is failing but the test file wasn't modified, it's likely a PRE-EXISTING issue
-3. If findings are about files NOT in the PR's changed files list, note them as "pre-existing" but DON'T block
-
-**Pre-existing issues** (tests failing before this PR, issues in unchanged files):
-- Do NOT block the PR based on these
-- Mention them in a "Pre-existing issues to consider" section
-- Suggest they be filed as GitHub issues for later
+3. If findings are about files NOT in the PR's changed files list, note them as "pre-existing"
 
 ## Decision Criteria
 
-**MUST BLOCK (exit 1) - Only for issues IN this PR's changes:**
-- Security vulnerabilities introduced by THIS PR
-- Data integrity issues introduced by THIS PR
-- Obvious runtime crashes from THIS PR's code
+**MUST BLOCK (exit 1):**
+- Security vulnerabilities introduced by THIS PR (verified by reading code)
+- Data integrity issues introduced by THIS PR (verified by reading code)
+- Obvious runtime crashes from THIS PR's code (verified by reading code)
 - Authentication/authorization broken by THIS PR
 - Critical test failures caused by changes IN this PR
+- **Unverified code review blocking issues** - if you can't verify, err on the side of caution
 
 **SHOULD PASS (exit 0):**
+- Code review blocking issues that you VERIFIED are false positives (explain why)
 - Pre-existing test failures (tests that weren't modified)
 - Issues in files NOT changed by this PR
 - Code style suggestions
 - Minor refactoring opportunities
-- Non-blocking warnings from reviewers
 - Visual score > 60 with no critical UI issues
 
 ## Important Context
@@ -693,24 +698,23 @@ When reviewing findings:
 - Familjen is used by busy Norwegian parents
 - Wrong data is worse than sync not working
 - Every merge to main is a production release
-- Individual reviewers can be overly cautious - use your judgment
 - The "Files Changed" list shows exactly what THIS PR modified
 
 ## Available Tools
 
-You can call tools to get more context if needed. For example:
-- If code review mentions an auth issue, you might read_file to see full context
-- If you're unsure about a pattern, search_code to see how it's done elsewhere
-- Use read_diff to see exactly what changed in this PR
+**ALWAYS use tools to verify code review blocking issues:**
+- read_file: Read the file to verify if the issue exists
+- search_code: Search for patterns to verify claims
+- read_diff: See exactly what changed in this PR
 
-Use tools when the reviewer findings alone aren't enough to make a confident decision.
+Do NOT just pass because you think the issue might be a false positive. VERIFY it.
 
 ## Response Format
 
 Structure your response as:
 1. **PR Summary**: What this PR is trying to accomplish
-2. **Relevant Findings**: Issues that ARE in files changed by this PR
-3. **Pre-existing Issues**: Issues NOT related to this PR (suggest filing as GitHub issues)
+2. **Code Review Verification**: For each blocking issue, did you verify it? What did you find?
+3. **Other Findings**: Issues from other reviewers
 4. **Decision Reasoning**: Why you're passing or blocking
 5. **Final verdict**
 
@@ -1042,6 +1046,22 @@ Once you fix these issues, push a new commit and the CI will re-run.
 `
   }
 
+  // Check for PR-specific tests in e2e reviewer
+  const e2eReview = reviews['e2e-tests']
+  const prTestInfo = e2eReview?.raw?.prScenarios as { count: number; criticalCount: number; highCount: number; prTitle: string } | null | undefined
+  if (prTestInfo && prTestInfo.count > 0) {
+    comment += `### 🤖 PR-Specific Tests
+
+AI generated **${prTestInfo.count} test scenarios** for this PR:
+- 🔴 Critical: ${prTestInfo.criticalCount}
+- 🟠 High priority: ${prTestInfo.highCount}
+- 🟡 Medium/Low: ${prTestInfo.count - prTestInfo.criticalCount - prTestInfo.highCount}
+
+These tests verify the specific changes in this PR (e.g., click handlers, modals, demo mode).
+
+`
+  }
+
   // Reviewer summary table
   comment += `### 📊 Reviewer Summary
 
@@ -1053,13 +1073,19 @@ Once you fix these issues, push a new commit and the CI will re-run.
     const review = reviews[summary.reviewer]
     // Get most important finding
     const topFinding = review?.findings.filter(f => f.severity === 'critical' || f.severity === 'warning')[0]
-    const findingPreview = topFinding
+    let findingPreview = topFinding
       ? `${topFinding.severity === 'critical' ? '🔴' : '🟡'} ${topFinding.message.slice(0, 50)}${topFinding.message.length > 50 ? '...' : ''}`
       : summary.criticalCount > 0
         ? `🔴 ${summary.criticalCount} critical issue${summary.criticalCount > 1 ? 's' : ''}`
         : summary.warningCount > 0
           ? `🟡 ${summary.warningCount} warning${summary.warningCount > 1 ? 's' : ''}`
           : '🟢 Clean'
+
+    // Add PR-specific test count for e2e-tests
+    if (summary.reviewer === 'e2e-tests' && prTestInfo && prTestInfo.count > 0) {
+      findingPreview = `🤖 ${prTestInfo.count} PR-specific tests. ` + findingPreview
+    }
+
     comment += `| ${summary.reviewer} | ${verdictEmoji(summary.verdict)} ${summary.verdict} | ${findingPreview} |\n`
   }
 
