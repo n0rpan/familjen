@@ -293,10 +293,29 @@ Vercel automatically picks up `vercel.json` for cron job configuration.
 - **Row Level Security (RLS)**: All data scoped to household
 - **Encrypted credentials**: OAuth tokens and integration passwords encrypted at rest
 - **SECURITY DEFINER functions**: For cross-table operations
-- **Rate limiting**: On AI and sync endpoints
+- **Rate limiting**: On AI and sync endpoints (see below)
 - **Admin controls**: Per-household feature flags
 - **Security Headers**: HSTS (1-year), CSP, X-Powered-By disabled
 - **Middleware Optimization**: Cookie-based auth check before API calls
+
+### Rate Limiting
+
+Rate limiting protects expensive endpoints from abuse using Upstash Redis in production (in-memory fallback for development).
+
+**Per-user limits (authenticated):**
+| Endpoint | Limit | Window |
+|----------|-------|--------|
+| AI Suggestions | 10/min | 60s |
+| AI Parse Reminders | 20/min | 60s |
+| Calendar Sync | 30/min | 60s |
+| Integration Sync | 10/min | 60s |
+
+**Demo mode limits (global, shared across all demo users):**
+| Endpoint | Limit | Window |
+|----------|-------|--------|
+| AI Suggestions | 50/hour | 3600s |
+
+Demo mode uses cost-effective models and bypasses database connections for efficiency. Rate limits use global keys to prevent abuse across all demo sessions.
 
 ## AI-Powered CI/CD
 

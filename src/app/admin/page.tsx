@@ -427,6 +427,8 @@ function IntegrationDebug({ householdId }: { householdId: string }) {
 }
 
 export default function AdminPage() {
+  // NOTE: Admin page does NOT support demo mode - requires real authentication
+  // This prevents leaking admin interface structure to unauthenticated users
   const { t } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);

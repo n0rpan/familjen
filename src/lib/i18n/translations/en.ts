@@ -139,6 +139,7 @@ export const en: TranslationStrings = {
     resendCode: 'Resend code',
     differentEmail: 'Use different email',
     secureLogin: 'Secure login • No password required',
+    tryDemo: 'Try demo',
     errorNotAllowed: 'Your email is not approved. Contact administrator for access.',
     errorAuthFailed: 'Login failed. Please try again.',
     errorGeneric: 'Something went wrong. Please try again.',
@@ -1057,6 +1058,12 @@ export const en: TranslationStrings = {
     deleteAccountConfirm: 'Type "DELETE" to confirm:',
     deleteAccountButton: 'Delete account',
     accountDeleted: 'Your account has been deleted',
+  },
+
+  demo: {
+    banner: 'This is a demo with example data',
+    exit: 'Exit demo',
+    tryDemo: 'Try demo',
   },
 
   // Source URLs (manual calendar sources)

@@ -3,14 +3,21 @@ import { redirect } from 'next/navigation'
 import { getLanguageFromCookieOrBrowser } from '@/lib/i18n/cookie.server'
 import { getTranslations } from '@/lib/i18n/translations'
 import { FeedPage } from '@/components/feed/FeedPage'
+import { DemoFeedPage } from '@/components/demo/DemoFeedPage'
 import type { FeedFilter } from '@/components/feed/FeedFilters'
 
 interface Props {
-  searchParams: Promise<{ service?: string; type?: string }>
+  searchParams: Promise<{ service?: string; type?: string; demo?: string }>
 }
 
 export default async function Feed({ searchParams }: Props) {
   const params = await searchParams
+
+  // Check for demo mode
+  if (params.demo === 'true') {
+    return <DemoFeedPage />
+  }
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const language = await getLanguageFromCookieOrBrowser()

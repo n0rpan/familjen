@@ -8,6 +8,7 @@ import { User } from '@supabase/supabase-js'
 import { useTranslation } from '@/lib/i18n/context'
 import { TransitionLink } from './TransitionLink'
 import { usePrefetchRoutes, KEY_ROUTES, SECONDARY_ROUTES } from '@/hooks/usePrefetchRoutes'
+import { useIsDemo } from '@/lib/demo/context'
 
 // Notification badge component
 function NotificationBadge({ count }: { count: number }) {
@@ -135,6 +136,7 @@ export function Header() {
   const [notificationCount, setNotificationCount] = useState(0)
   const supabase = useMemo(() => createClient(), [])
   const t = useTranslation()
+  const isDemo = useIsDemo()
 
   // Proactively prefetch key routes for instant navigation
   // Primary routes (/, /uke, /feed) prefetch first, then secondary
@@ -258,7 +260,7 @@ export function Header() {
                 className="rounded-xl transition-transform group-hover:scale-105"
               />
               <span className="text-xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
-                Familjen
+                Familjen{isDemo && ' Demo'}
               </span>
             </TransitionLink>
 
@@ -424,7 +426,7 @@ export function Header() {
               className="rounded-xl transition-transform group-hover:scale-105"
             />
             <span className="text-lg font-semibold font-display" style={{ color: 'var(--foreground)' }}>
-              Familjen
+              Familjen{isDemo && ' Demo'}
             </span>
           </TransitionLink>
         </div>

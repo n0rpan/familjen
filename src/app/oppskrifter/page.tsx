@@ -1,17 +1,27 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import type { Recipe, Household } from '@/lib/types'
+/**
+ * Recipes Page
+ *
+ * Uses data hooks that automatically handle both demo and production modes.
+ * Same code runs for ?demo=true and regular authenticated access.
+ */
+
+import { useState, useMemo } from 'react'
+import { useRecipes, useHousehold, useShoppingLists } from '@/hooks/data'
+import type { Recipe } from '@/lib/types'
 import { useLanguage } from '@/lib/i18n/context'
 import { RecipesPagePartialSkeleton } from '@/components/Skeleton'
 
 export default function RecipesPage() {
   const { t } = useLanguage()
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [recipes, setRecipes] = useState<Recipe[]>([])
-  const [household, setHousehold] = useState<Household | null>(null)
+
+  // Data hooks - automatically handle demo vs production
+  const { household, loading: householdLoading } = useHousehold()
+  const { recipes, loading: recipesLoading, addRecipe, updateRecipe, deleteRecipe, refetch } = useRecipes()
+  const { addItemToList } = useShoppingLists()
+
+  // Local UI state
   const [showForm, setShowForm] = useState(false)
   const [newRecipe, setNewRecipe] = useState({
     name: '',
@@ -26,58 +36,7 @@ export default function RecipesPage() {
   const [filter, setFilter] = useState<'all' | 'favorites'>('all')
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
-  const supabase = useMemo(() => createClient(), [])
-
-  useEffect(() => {
-    loadData()
-  }, [])
-
-  const loadData = async () => {
-    setLoading(true)
-    setError(null)
-
-    try {
-      // First get user's membership to find their specific household
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        throw new Error(t.errors.unauthorized)
-      }
-
-      const { data: membership } = await supabase
-        .from('household_members')
-        .select('household_id')
-        .eq('user_id', user.id)
-        .maybeSingle()
-
-      if (!membership) {
-        setHousehold(null)
-        setRecipes([])
-        setLoading(false)
-        return
-      }
-
-      // Now fetch household by ID and recipes in parallel
-      const [householdResult, recipesResult] = await Promise.all([
-        supabase.from('households').select('id, name, ai_meal_context, share_names_with_ai, external_integrations_enabled, created_at').eq('id', membership.household_id).single(),
-        supabase.from('recipes').select('*').eq('household_id', membership.household_id).order('name'),
-      ])
-
-      if (householdResult.error) {
-        throw new Error(t.errors.couldNotLoadHousehold)
-      }
-      if (recipesResult.error) {
-        throw new Error(t.errors.couldNotLoadRecipes)
-      }
-
-      setHousehold(householdResult.data)
-      setRecipes(recipesResult.data || [])
-    } catch (err) {
-      console.error('Recipes page error:', err)
-      setError(err instanceof Error ? err.message : t.errors.generic)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const loading = householdLoading || recipesLoading
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -85,31 +44,37 @@ export default function RecipesPage() {
 
     setSaving(true)
 
-    await supabase.from('recipes').insert({
-      household_id: household.id,
-      name: newRecipe.name,
-      instructions: newRecipe.instructions || null,
-      external_link: newRecipe.external_link || null,
-      is_quick: newRecipe.is_quick,
-      is_kid_friendly: newRecipe.is_kid_friendly,
-      ingredients: ingredients.length > 0 ? ingredients : null,
-    })
+    try {
+      await addRecipe({
+        name: newRecipe.name,
+        instructions: newRecipe.instructions || null,
+        external_link: newRecipe.external_link || null,
+        is_quick: newRecipe.is_quick,
+        is_kid_friendly: newRecipe.is_kid_friendly,
+        is_favorite: false,
+        ingredients: ingredients.length > 0 ? ingredients : null,
+      })
 
-    setNewRecipe({
-      name: '',
-      instructions: '',
-      external_link: '',
-      is_quick: false,
-      is_kid_friendly: true,
-    })
-    setIngredients([])
-    setNewIngredient({ item: '', amount: '' })
-    setShowForm(false)
-    await loadData()
-    setSaving(false)
+      setNewRecipe({
+        name: '',
+        instructions: '',
+        external_link: '',
+        is_quick: false,
+        is_kid_friendly: true,
+      })
+      setIngredients([])
+      setNewIngredient({ item: '', amount: '' })
+      setShowForm(false)
+      setMessage({ type: 'success', text: t.success.saved })
+    } catch {
+      setMessage({ type: 'error', text: t.errors.saveFailed })
+    } finally {
+      setSaving(false)
+      setTimeout(() => setMessage(null), 3000)
+    }
   }
 
-  const addIngredient = () => {
+  const addIngredientToList = () => {
     if (!newIngredient.item.trim()) return
     setIngredients([...ingredients, { item: newIngredient.item.trim(), amount: newIngredient.amount.trim() }])
     setNewIngredient({ item: '', amount: '' })
@@ -119,17 +84,23 @@ export default function RecipesPage() {
     setIngredients(ingredients.filter((_, i) => i !== index))
   }
 
-  const deleteRecipe = async (id: string) => {
+  const handleDeleteRecipe = async (id: string) => {
     if (!confirm(t.recipes.deleteRecipeConfirm.replace('{name}', ''))) return
 
-    await supabase.from('recipes').delete().eq('id', id)
-    loadData()
+    try {
+      await deleteRecipe(id)
+    } catch {
+      setMessage({ type: 'error', text: t.errors.saveFailed })
+      setTimeout(() => setMessage(null), 3000)
+    }
   }
 
   const toggleFavorite = async (id: string, currentValue: boolean) => {
-    await supabase.from('recipes').update({ is_favorite: !currentValue }).eq('id', id)
-    // Optimistic update
-    setRecipes(recipes.map(r => r.id === id ? { ...r, is_favorite: !currentValue } : r))
+    try {
+      await updateRecipe(id, { is_favorite: !currentValue })
+    } catch {
+      // Silent fail for favorite toggle
+    }
   }
 
   const addToShoppingList = async (recipe: Recipe) => {
@@ -138,93 +109,39 @@ export default function RecipesPage() {
       setTimeout(() => setMessage(null), 3000)
       return
     }
-    if (!household) return
 
-    // Get or create the shopping list
-    let { data: lists } = await supabase
-      .from('shopping_lists')
-      .select('id')
-      .eq('household_id', household.id)
-      .limit(1)
-      .single()
-
-    if (!lists) {
-      // Create the list if it doesn't exist
-      const { data: newList } = await supabase
-        .from('shopping_lists')
-        .insert({ household_id: household.id, name: t.nav.shoppingList, sort_order: 0 })
-        .select('id')
-        .single()
-      lists = newList
-    }
-
-    if (!lists) {
-      setMessage({ type: 'error', text: t.errors.saveFailed })
-      setTimeout(() => setMessage(null), 3000)
-      return
-    }
-
-    // Add all ingredients to the list
-    const items = recipe.ingredients.map(ing => ({
-      list_id: lists.id,
-      name: ing.item,
-      quantity: ing.amount,
-      source_recipe_id: recipe.id,
-    }))
-
-    const { error } = await supabase.from('shopping_list_items').insert(items)
-
-    if (error) {
-      setMessage({ type: 'error', text: t.errors.saveFailed })
-    } else {
+    try {
+      // Add each ingredient to the shopping list
+      for (const ing of recipe.ingredients) {
+        await addItemToList({
+          name: ing.item,
+          quantity: ing.amount,
+          category: 'other',
+          source_recipe_id: recipe.id,
+          is_bought: false,
+        })
+      }
       setMessage({ type: 'success', text: t.success.saved })
+    } catch {
+      setMessage({ type: 'error', text: t.errors.saveFailed })
     }
     setTimeout(() => setMessage(null), 3000)
   }
 
   // Filter and sort recipes (favorites first)
-  const displayedRecipes = recipes
-    .filter(r => filter === 'all' || r.is_favorite)
-    .sort((a, b) => {
-      if (a.is_favorite && !b.is_favorite) return -1
-      if (!a.is_favorite && b.is_favorite) return 1
-      return a.name.localeCompare(b.name, 'nb')
-    })
+  const displayedRecipes = useMemo(() => {
+    return recipes
+      .filter(r => filter === 'all' || r.is_favorite)
+      .sort((a, b) => {
+        if (a.is_favorite && !b.is_favorite) return -1
+        if (!a.is_favorite && b.is_favorite) return 1
+        return a.name.localeCompare(b.name, 'nb')
+      })
+  }, [recipes, filter])
 
   // Only show skeleton if loading AND no cached data yet
   if (loading && !household) {
     return <RecipesPagePartialSkeleton t={t} />
-  }
-
-  if (error) {
-    return (
-      <div className="space-y-8 animate-fade-in">
-        <div
-          className="rounded-2xl p-8 text-center"
-          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-        >
-          <div
-            className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-6"
-            style={{ background: 'rgba(232, 120, 109, 0.15)' }}
-          >
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--color-coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10"/>
-              <line x1="12" y1="8" x2="12" y2="12"/>
-              <line x1="12" y1="16" x2="12.01" y2="16"/>
-            </svg>
-          </div>
-          <h2 className="text-2xl font-semibold font-display mb-3" style={{ color: 'var(--foreground)' }}>
-            {error}
-          </h2>
-          <p className="mb-8" style={{ color: 'var(--muted)' }}>
-            {t.errors.generic}
-          </p>
-          <button onClick={loadData} className="btn btn-primary">
-            {t.common.retry}
-          </button>
-        </div>
-      </div>
-    )
   }
 
   return (
@@ -372,7 +289,7 @@ export default function RecipesPage() {
                 type="text"
                 value={newIngredient.item}
                 onChange={(e) => setNewIngredient({ ...newIngredient, item: e.target.value })}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addIngredient(); } }}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addIngredientToList(); } }}
                 placeholder={t.recipes.ingredientsPlaceholder}
                 className="input text-sm"
                 style={{ flex: '1 1 auto', minWidth: 0 }}
@@ -381,14 +298,14 @@ export default function RecipesPage() {
                 type="text"
                 value={newIngredient.amount}
                 onChange={(e) => setNewIngredient({ ...newIngredient, amount: e.target.value })}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addIngredient(); } }}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addIngredientToList(); } }}
                 placeholder={t.recipes.portions}
                 className="input text-sm"
                 style={{ flex: '0 0 100px', width: '100px' }}
               />
               <button
                 type="button"
-                onClick={addIngredient}
+                onClick={addIngredientToList}
                 disabled={!newIngredient.item.trim()}
                 className="btn btn-secondary px-3"
               >
@@ -576,7 +493,7 @@ export default function RecipesPage() {
                     </button>
                   )}
                   <button
-                    onClick={() => deleteRecipe(recipe.id)}
+                    onClick={() => handleDeleteRecipe(recipe.id)}
                     className="p-2 rounded-lg transition-colors hover:bg-red-50"
                     style={{ color: 'var(--muted)' }}
                     title={t.recipes.deleteRecipe}

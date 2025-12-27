@@ -139,6 +139,7 @@ export const nb: TranslationStrings = {
     resendCode: 'Send ny kode',
     differentEmail: 'Bruk annen e-post',
     secureLogin: 'Trygg innlogging • Ingen passord nødvendig',
+    tryDemo: 'Prøv demo',
     errorNotAllowed: 'Din e-post er ikke godkjent. Kontakt administrator for tilgang.',
     errorAuthFailed: 'Innlogging feilet. Prøv igjen.',
     errorGeneric: 'Noe gikk galt. Prøv igjen.',
@@ -1055,6 +1056,12 @@ export const nb: TranslationStrings = {
     deleteAccountConfirm: 'Skriv "SLETT" for å bekrefte',
     deleteAccountButton: 'Slett konto',
     accountDeleted: 'Din konto er slettet',
+  },
+
+  demo: {
+    banner: 'Dette er en demo med eksempeldata',
+    exit: 'Avslutt demo',
+    tryDemo: 'Prøv demo',
   },
 
   sourceUrls: {

@@ -23,7 +23,7 @@
  */
 
 import { execSync } from 'child_process'
-import { writeFileSync } from 'fs'
+import { writeFileSync, readFileSync, existsSync } from 'fs'
 import { AI_MODELS, callOpenRouterStructured, SCHEMAS, type CodeReviewResult } from './ai-config'
 
 interface DualReviewResult {
@@ -106,7 +106,13 @@ function getChangedFiles(baseBranch: string): string[] {
   }
 }
 
-function buildReviewPrompt(diff: string, changedFiles: string[]): string {
+function getDocumentation(): { claudeMd: string; readmeMd: string } {
+  const claudeMd = existsSync('CLAUDE.md') ? readFileSync('CLAUDE.md', 'utf-8') : ''
+  const readmeMd = existsSync('README.md') ? readFileSync('README.md', 'utf-8') : ''
+  return { claudeMd, readmeMd }
+}
+
+function buildReviewPrompt(diff: string, changedFiles: string[], docs: { claudeMd: string; readmeMd: string }): string {
   // Log size for awareness - no truncation, modern LLMs handle large contexts
   const sizeKB = Math.round(diff.length / 1024)
   console.log(`📦 Diff size: ${sizeKB}KB (${changedFiles.length} files)`)
@@ -116,6 +122,13 @@ function buildReviewPrompt(diff: string, changedFiles: string[]): string {
   }
 
   const fileList = changedFiles.slice(0, 100).join('\n')
+
+  // Check if documentation was modified in this PR
+  const docsModified = changedFiles.some(f => f === 'CLAUDE.md' || f === 'README.md')
+
+  // Truncate documentation to key sections for context (first ~4000 chars each)
+  const claudeMdContext = docs.claudeMd.slice(0, 4000) + (docs.claudeMd.length > 4000 ? '\n... (truncated)' : '')
+  const readmeMdContext = docs.readmeMd.slice(0, 4000) + (docs.readmeMd.length > 4000 ? '\n... (truncated)' : '')
 
   return `You are a senior developer reviewing a PR for Familjen, a Norwegian family planning app.
 
@@ -134,8 +147,23 @@ function buildReviewPrompt(diff: string, changedFiles: string[]): string {
 - Child colors: sky, coral, sage, honey, lavender, mint
 - Norwegian terms: Henting=Pickup, Middag=Dinner, Husstand=Household
 
+## Current Documentation
+
+### CLAUDE.md (Development Guide)
+\`\`\`markdown
+${claudeMdContext}
+\`\`\`
+
+### README.md (Project Overview)
+\`\`\`markdown
+${readmeMdContext}
+\`\`\`
+
 ## Changed Files
 ${fileList}
+
+## Documentation Status
+${docsModified ? '✅ Documentation was updated in this PR' : '⚠️ Documentation was NOT updated in this PR'}
 
 ## PR Diff
 \`\`\`diff
@@ -174,6 +202,16 @@ ${diff}
 - [ ] Correct TypeScript types (no \`any\` without reason)
 - [ ] Follows existing codebase patterns
 - [ ] No dead code or unused imports
+
+### Documentation (check against CLAUDE.md and README.md above)
+- [ ] New features/patterns are documented in CLAUDE.md
+- [ ] New API endpoints added to API Routes table
+- [ ] New environment variables added to README.md
+- [ ] Rate limiting changes documented in Rate Limiting section
+- [ ] If adding new integration: docs/api-integrations.md updated
+- [ ] If changing database: schema tables documented
+
+If code adds significant new functionality that is NOT reflected in the documentation, flag this as a blocking issue. Good documentation helps busy parents understand the codebase.
 
 Focus on practical issues that would cause problems for busy parents.
 Don't be pedantic about style. Be thorough about security and data integrity.`
@@ -337,16 +375,20 @@ async function main() {
   const changedFiles = getChangedFiles(baseBranch)
   console.log(`Files: ${changedFiles.length}`)
 
-  // Skip for docs-only changes
-  const codeFiles = changedFiles.filter(
-    (f) => !f.endsWith('.md') && !f.endsWith('.txt') && !f.endsWith('.json') && !f.startsWith('.')
+  // Skip for config-only changes (but NOT docs - we want to review doc changes too)
+  const codeOrDocsFiles = changedFiles.filter(
+    (f) => !f.endsWith('.txt') && !f.endsWith('.json') && !f.startsWith('.') || f === 'CLAUDE.md' || f === 'README.md'
   )
-  if (codeFiles.length === 0) {
-    console.log('✅ Only docs/config changes, skipping')
+  if (codeOrDocsFiles.length === 0) {
+    console.log('✅ Only config changes, skipping')
     process.exit(0)
   }
 
-  const prompt = buildReviewPrompt(diff, changedFiles)
+  // Load current documentation for context
+  const docs = getDocumentation()
+  console.log(`📚 Documentation: CLAUDE.md (${Math.round(docs.claudeMd.length / 1024)}KB), README.md (${Math.round(docs.readmeMd.length / 1024)}KB)`)
+
+  const prompt = buildReviewPrompt(diff, changedFiles, docs)
 
   let comment: string
   let finalVerdict: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'

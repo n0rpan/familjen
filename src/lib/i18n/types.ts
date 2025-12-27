@@ -147,6 +147,7 @@ export interface TranslationStrings {
     resendCode: string
     differentEmail: string
     secureLogin: string
+    tryDemo: string
     errorNotAllowed: string
     errorAuthFailed: string
     errorGeneric: string
@@ -1093,6 +1094,13 @@ export interface TranslationStrings {
     deleteAccountConfirm: string
     deleteAccountButton: string
     accountDeleted: string
+  }
+
+  // Demo mode
+  demo: {
+    banner: string  // "This is a demo with example data"
+    exit: string    // "Exit demo"
+    tryDemo: string // "Try demo"
   }
 
   // Source URLs (manual calendar sources)

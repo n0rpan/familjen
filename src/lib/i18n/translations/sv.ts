@@ -139,6 +139,7 @@ export const sv: TranslationStrings = {
     resendCode: 'Skicka ny kod',
     differentEmail: 'Använd annan e-post',
     secureLogin: 'Säker inloggning • Inget lösenord krävs',
+    tryDemo: 'Prova demo',
     errorNotAllowed: 'Din e-post är inte godkänd. Kontakta administratören för tillgång.',
     errorAuthFailed: 'Inloggning misslyckades. Försök igen.',
     errorGeneric: 'Något gick fel. Försök igen.',
@@ -1054,6 +1055,12 @@ export const sv: TranslationStrings = {
     deleteAccountConfirm: 'Skriv "RADERA" for att bekrafta',
     deleteAccountButton: 'Radera konto',
     accountDeleted: 'Ditt konto har raderats',
+  },
+
+  demo: {
+    banner: 'Detta ar en demo med exempeldata',
+    exit: 'Avsluta demo',
+    tryDemo: 'Prova demo',
   },
 
   sourceUrls: {

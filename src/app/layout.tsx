@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
 import { Outfit, Fraunces } from "next/font/google";
 import "./globals.css";
 import { Header } from "@/components/Header";
@@ -11,6 +12,7 @@ import { OfflineIndicator } from "@/components/OfflineIndicator";
 import { RealtimeWrapper } from "@/components/RealtimeWrapper";
 import { NavigationProvider } from "@/lib/navigation";
 import { PageContent } from "@/components/PageContent";
+import { DemoWrapper } from "@/components/demo/DemoWrapper";
 
 // Self-hosted fonts with next/font for better performance (no render-blocking)
 const outfit = Outfit({
@@ -67,20 +69,24 @@ export default async function RootLayout({
       <body className="antialiased grain app-shell font-sans" style={{ background: 'var(--background)' }}>
         <LanguageProvider initialLanguage={language}>
           <NavigationProvider>
-            <RealtimeWrapper>
-              <OfflineIndicator />
-              <Header />
-              <div className="app-shell-content pt-mobile-header">
-                <AppShell>
-                  <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-24 md:pb-6 relative z-0" style={{ viewTransitionName: 'page-content' }}>
-                    <PageContent>
-                      {children}
-                    </PageContent>
-                  </main>
-                </AppShell>
-              </div>
-              <UpdatePrompt />
-            </RealtimeWrapper>
+            <Suspense fallback={null}>
+              <DemoWrapper>
+                <RealtimeWrapper>
+                  <OfflineIndicator />
+                  <Header />
+                  <div className="app-shell-content pt-mobile-header">
+                    <AppShell>
+                      <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-24 md:pb-6 relative z-0" style={{ viewTransitionName: 'page-content' }}>
+                        <PageContent>
+                          {children}
+                        </PageContent>
+                      </main>
+                    </AppShell>
+                  </div>
+                  <UpdatePrompt />
+                </RealtimeWrapper>
+              </DemoWrapper>
+            </Suspense>
           </NavigationProvider>
         </LanguageProvider>
         <ServiceWorkerRegistration />

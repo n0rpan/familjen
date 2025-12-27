@@ -4,7 +4,7 @@ import { getUserHousehold } from '@/lib/supabase/household'
 import { validateOrigin } from '@/lib/config'
 import type { MealSuggestion } from '@/lib/types'
 import { aiSuggestRequestSchema, validateRequest } from '@/lib/schemas'
-import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
+import { checkRateLimit, createRateLimitKey, RATE_LIMITS, checkDemoRateLimit, isDemoRequest } from '@/lib/rate-limit'
 import { extractJSON } from '@/lib/json-extract'
 import { formatDateISO } from '@/lib/utils'
 import { validateMealSuggestions } from '@/lib/ai-validation'
@@ -39,15 +39,58 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
     }
 
-    const supabase = await createClient()
+    // Check if this is a demo mode request
+    const isDemo = isDemoRequest(request)
 
-    // Check authentication
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
+    // Validate request body first (needed for both demo and production)
+    const validation = await validateRequest(request, aiSuggestRequestSchema)
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error }, { status: 400 })
+    }
+    const { weekStart, existingMeals } = validation.data
+
+    // Demo mode: handle entirely without Supabase client
+    if (isDemo) {
+      // Check global demo rate limit
+      const demoRateLimit = await checkDemoRateLimit('aiSuggest')
+      if (demoRateLimit.limited) {
+        return NextResponse.json(
+          { error: `Demo-modus har nådd grensen. Prøv igjen om ${Math.ceil(demoRateLimit.retryAfter / 60)} minutter.` },
+          { status: 429, headers: { 'Retry-After': String(demoRateLimit.retryAfter) } }
+        )
+      }
+
+      // Use cost-effective model and hardcoded demo context
+      const demoContext = {
+        childrenAges: [
+          { name: 'Emilie', age: 8, allergies: [] },
+          { name: 'Oliver', age: 5, allergies: ['skalldyr'] },
+          { name: 'Sofie', age: 3, allergies: [] },
+        ],
+        allAllergies: ['skalldyr'],
+        recipes: [
+          { name: 'Taco', is_favorite: true, is_quick: true },
+          { name: 'Fiskegrateng', is_favorite: false, is_quick: false },
+          { name: 'Pasta Bolognese', is_favorite: true, is_quick: true },
+          { name: 'Kyllingwok', is_favorite: false, is_quick: true },
+        ],
+        recentMealNames: ['Taco', 'Pizza', 'Fiskepinner'],
+        weekContext: 'Enkel hverdagsmat som barna liker. Oliver liker ikke sterkt.',
+      }
+
+      return handleDemoAIRequest('google/gemini-2.5-flash-lite', weekStart, existingMeals, demoContext)
     }
 
-    // Check rate limit
+    // Production mode: create Supabase client and authenticate
+    const supabase = await createClient()
+
+    const { data, error: authError } = await supabase.auth.getUser()
+    if (authError || !data.user) {
+      return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
+    }
+    const user = data.user
+
+    // Check rate limit for authenticated users
     const rateLimitKey = createRateLimitKey(user.id, 'aiSuggest')
     const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.aiSuggest)
     if (rateLimit.limited) {
@@ -57,12 +100,8 @@ export async function POST(request: Request) {
       )
     }
 
-    // Validate request body
-    const validation = await validateRequest(request, aiSuggestRequestSchema)
-    if (!validation.success) {
-      return NextResponse.json({ error: validation.error }, { status: 400 })
-    }
-    const { weekStart, existingMeals } = validation.data
+    // Use cost-effective model as default
+    let model = 'google/gemini-2.5-flash-lite'
 
     // Fetch model from app_settings
     const { data: modelSetting } = await supabase
@@ -71,7 +110,7 @@ export async function POST(request: Request) {
       .eq('key', 'openrouter_model')
       .single()
 
-    const model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
+    model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
 
     // Fetch household data (using safe multi-row handler)
     const { data: household, error: householdError } = await getUserHousehold(supabase)
@@ -489,4 +528,166 @@ function buildPrompt(context: PromptContext): string {
   }
 
   return prompt
+}
+
+/**
+ * Handle AI meal suggestion request in demo mode
+ * Uses simplified context and doesn't require database access
+ */
+async function handleDemoAIRequest(
+  model: string,
+  weekStart: string,
+  existingMeals: { date: string; name: string | null }[],
+  demoContext: {
+    childrenAges: { name: string; age: number; allergies: string[] }[]
+    allAllergies: string[]
+    recipes: { name: string; is_favorite: boolean; is_quick: boolean }[]
+    recentMealNames: string[]
+    weekContext: string
+  }
+): Promise<Response> {
+  const apiKey = process.env.OPENROUTER_API_KEY
+  if (!apiKey) {
+    return NextResponse.json({ error: 'OpenRouter API-nøkkel ikke konfigurert' }, { status: 500 })
+  }
+
+  // Determine which days need suggestions (skip weekends)
+  const daysNeedingSuggestions: { date: string; partial?: string }[] = []
+  const startDate = new Date(weekStart)
+
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(startDate)
+    date.setDate(date.getDate() + i)
+    const dateStr = formatDateISO(date)
+
+    const existingMeal = existingMeals.find(m => m.date === dateStr)
+    const dayOfWeek = date.getDay()
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
+
+    if (!existingMeal?.name || existingMeal.name.length < 3) {
+      if (!isWeekend) {
+        daysNeedingSuggestions.push({ date: dateStr })
+      }
+    } else if (existingMeal.name.length < 15) {
+      daysNeedingSuggestions.push({ date: dateStr, partial: existingMeal.name })
+    }
+  }
+
+  if (daysNeedingSuggestions.length === 0) {
+    return NextResponse.json({ suggestions: [] })
+  }
+
+  // Build simplified prompt for demo
+  const season = getNorwegianSeason()
+  const prompt = buildPrompt({
+    daysNeedingSuggestions,
+    childrenAges: demoContext.childrenAges,
+    parentCount: 2,
+    recipes: demoContext.recipes.map(r => ({
+      id: `demo-${r.name}`,
+      name: r.name,
+      is_favorite: r.is_favorite,
+      is_quick: r.is_quick,
+      is_kid_friendly: true,
+    })),
+    favoriteRecipes: demoContext.recipes.filter(r => r.is_favorite).map(r => ({ name: r.name })),
+    recentMealNames: demoContext.recentMealNames,
+    holidays: [],
+    defaultContext: 'Enkel hverdagsmat. Unngå skalldyr (allergi).',
+    weekContext: demoContext.weekContext,
+    season,
+    allAllergies: demoContext.allAllergies,
+    shareNamesWithAi: true,
+  })
+
+  // Call OpenRouter API
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 15000)
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+        'X-Title': 'Familjen Demo',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: 'system',
+            content: `Du er en hjelpsom assistent for norsk familieplanlegging. Du foreslår middager som er:
+- Enkle å lage (få ingredienser, kort tilberedningstid)
+- Barnevennlige (passer for barn i alle aldre)
+- Proteinrike og næringsrike
+- Varierte gjennom uken
+
+KRITISK VIKTIG: Familien har skalldyrallergi - ALDRI foreslå retter med skalldyr, reker, krabbe, hummer, etc.
+
+Svar ALLTID i gyldig JSON-format med denne strukturen:
+{
+  "suggestions": [
+    {
+      "day": "YYYY-MM-DD",
+      "name": "Oppskriftsnavn",
+      "description": "Kort beskrivelse av retten",
+      "ingredients": [{"item": "ingrediens", "amount": "mengde"}],
+      "is_quick": true/false,
+      "is_kid_friendly": true/false
+    }
+  ]
+}
+
+Ikke inkluder noe annet enn JSON i svaret.`,
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+        response_format: MEAL_SUGGESTION_SCHEMA,
+      }),
+      signal: controller.signal,
+    })
+
+    clearTimeout(timeoutId)
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('OpenRouter API error (demo):', response.status, errorText)
+      return NextResponse.json({ error: 'AI-tjenesten svarer ikke' }, { status: 502 })
+    }
+
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content
+
+    if (!content) {
+      return NextResponse.json({ error: 'Tomt svar fra AI' }, { status: 500 })
+    }
+
+    // Parse and validate response
+    const parsed = extractJSON<{ suggestions: MealSuggestion[] }>(content)
+    if (!parsed?.suggestions) {
+      console.error('Failed to parse AI response (demo):', content)
+      return NextResponse.json({ error: 'Kunne ikke tolke AI-svaret' }, { status: 500 })
+    }
+
+    // Basic validation for demo (skip full allergy check since we trust the prompt)
+    const suggestions = parsed.suggestions.filter(s =>
+      s.day && s.name && s.name.length > 2
+    )
+
+    return NextResponse.json({ suggestions })
+  } catch (error) {
+    clearTimeout(timeoutId)
+    if (error instanceof Error && error.name === 'AbortError') {
+      return NextResponse.json({ error: 'AI-forespørsel tidsavbrutt' }, { status: 504 })
+    }
+    console.error('Demo AI request error:', error)
+    return NextResponse.json({ error: 'En feil oppstod' }, { status: 500 })
+  }
 }
