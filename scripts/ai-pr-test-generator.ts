@@ -81,26 +81,76 @@ interface GeneratedTests {
 // PR Analysis
 // ============================================
 
-function getGitDiff(baseBranch: string): string {
-  try {
-    return execSync(`git diff ${baseBranch}...HEAD`, { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 })
-  } catch {
-    // Fallback: diff against origin/main
+function ensureBaseBranchFetched(baseBranch: string): string {
+  // In CI, we need to fetch the base branch first
+  const isCI = process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true'
+
+  if (isCI) {
+    // Use GITHUB_BASE_REF if available (e.g., "main")
+    const baseRef = process.env.GITHUB_BASE_REF || 'main'
+    console.log(`   CI detected, fetching base branch: ${baseRef}`)
+
     try {
-      return execSync('git diff origin/main...HEAD', { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 })
+      // Fetch the base branch
+      execSync(`git fetch origin ${baseRef}:refs/remotes/origin/${baseRef}`, {
+        encoding: 'utf-8',
+        stdio: 'pipe'
+      })
+      return `origin/${baseRef}`
+    } catch (error) {
+      console.warn(`   Warning: Could not fetch ${baseRef}, trying shallow fetch...`)
+      try {
+        execSync(`git fetch --depth=1 origin ${baseRef}`, {
+          encoding: 'utf-8',
+          stdio: 'pipe'
+        })
+        return `origin/${baseRef}`
+      } catch {
+        console.warn(`   Warning: Could not fetch base branch, will use HEAD~10`)
+        return 'HEAD~10'
+      }
+    }
+  }
+
+  return baseBranch
+}
+
+function getGitDiff(baseBranch: string): string {
+  const actualBase = ensureBaseBranchFetched(baseBranch)
+
+  try {
+    return execSync(`git diff ${actualBase}...HEAD`, { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 })
+  } catch {
+    // Fallback: try two-dot diff
+    try {
+      return execSync(`git diff ${actualBase}..HEAD`, { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 })
     } catch {
-      // Last resort: diff uncommitted changes
-      return execSync('git diff HEAD', { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 })
+      // Last resort: diff recent commits
+      console.warn('   Warning: Could not get diff, using last 10 commits')
+      return execSync('git diff HEAD~10..HEAD', { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 })
     }
   }
 }
 
 function getChangedFiles(baseBranch: string): string[] {
+  const actualBase = ensureBaseBranchFetched(baseBranch)
+
   try {
-    const output = execSync(`git diff --name-only ${baseBranch}...HEAD`, { encoding: 'utf-8' })
+    const output = execSync(`git diff --name-only ${actualBase}...HEAD`, { encoding: 'utf-8' })
     return output.split('\n').filter(Boolean)
   } catch {
-    return []
+    try {
+      const output = execSync(`git diff --name-only ${actualBase}..HEAD`, { encoding: 'utf-8' })
+      return output.split('\n').filter(Boolean)
+    } catch {
+      // Last resort: recent commits
+      try {
+        const output = execSync('git diff --name-only HEAD~10..HEAD', { encoding: 'utf-8' })
+        return output.split('\n').filter(Boolean)
+      } catch {
+        return []
+      }
+    }
   }
 }
 

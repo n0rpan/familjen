@@ -484,6 +484,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for PR diff comparison
 
       - uses: actions/setup-node@v4
         with:
@@ -539,6 +541,7 @@ jobs:
           OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}
           GITHUB_PR_TITLE: ${{ github.event.pull_request.title }}
           GITHUB_PR_BODY: ${{ github.event.pull_request.body }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
 
       - name: Run E2E tests against preview
         id: e2e-tests
