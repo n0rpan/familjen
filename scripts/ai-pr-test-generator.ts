@@ -179,9 +179,19 @@ function getPRContext(): { title: string; body: string } {
 // AI Test Generation
 // ============================================
 
-const TEST_GENERATION_PROMPT = `You are a QA engineer analyzing a Pull Request to generate targeted E2E test scenarios.
+const TEST_GENERATION_PROMPT = `You are a QA engineer analyzing a Pull Request to generate TARGETED E2E test scenarios.
 
-## Context
+## CRITICAL: Focus on PR-Specific Changes Only
+
+Your primary goal is to test WHAT THIS PR CHANGES, not general app functionality.
+- If the PR fixes navigation links → test those specific links work
+- If the PR adds a modal → test the modal opens and closes correctly
+- If the PR fixes a bug → test the bug is actually fixed
+- If the PR changes demo mode → test demo mode specifically
+
+DO NOT generate generic tests for pages that aren't affected by the PR.
+
+## App Context
 This is a Norwegian family planning app (Familjen) with:
 - Home page (\`/\`) showing today's overview
 - Week planner (\`/uke\`) with pickups, meals, events, tasks
@@ -190,35 +200,43 @@ This is a Norwegian family planning app (Familjen) with:
 
 ## Your Task
 Analyze the PR diff and generate test scenarios that:
-1. Verify the new/changed functionality works
-2. Check for regressions in related features
-3. Test error states and edge cases
-4. Verify demo mode works if demo-related files changed
+1. **DIRECTLY verify the PR's claimed fix/feature** (HIGHEST PRIORITY)
+2. Test the specific user flows affected by the change
+3. Verify edge cases ONLY if relevant to the PR changes
+
+## Quality Over Quantity
+- Generate 2-5 highly relevant scenarios, not 8 generic ones
+- Each test should verify something the PR specifically changes
+- Include a clear \`prContext\` explaining why this test is relevant to THIS PR
 
 ## Test Scenario Format
 For each scenario, provide:
-- A descriptive name
-- Priority (critical/high/medium/low)
+- A descriptive name that mentions the PR change
+- Priority (critical for direct PR verification, lower for related checks)
 - The page URL to test
 - Whether it needs auth or demo mode
 - Concrete steps (click, fill, wait)
 - Assertions to verify success
+- \`prContext\`: "This tests the fix for X introduced in this PR"
 
 ## Selector Tips
 Use these patterns for robust selectors:
 - Text content: \`text=Middag\`, \`text=Legg til\`
 - Test IDs: \`[data-testid="week-grid"]\`
 - Roles: \`button:has-text("Lagre")\`
-- Combine: \`div.modal >> text=Detaljer\`
+- Links: \`a[href*="demo=true"]\` for demo-aware links
 
-## Important Notes
-- Focus on USER-FACING behavior, not implementation details
-- Demo mode is accessed via \`?demo=true\` query param
-- Event clicks should open detail modals
-- Pickup assignments should be visible with member names
-- Meals should show food names or "Middag" label
+## Example: Good vs Bad
 
-Generate 3-8 test scenarios based on what changed in the PR.
+❌ BAD (generic, not PR-specific):
+- "Verify home page loads" - too generic
+- "Check all navigation works" - tests everything, not the PR change
+
+✅ GOOD (PR-specific):
+- "Verify demo mode navigation preserves ?demo=true parameter" - tests the actual fix
+- "Click week link in demo mode, verify URL has demo=true" - specific, actionable
+
+Generate 2-5 focused test scenarios based on what SPECIFICALLY changed in the PR.
 `
 
 const TEST_SCHEMA = {
@@ -330,7 +348,11 @@ ${relevantFiles.join('\n')}
 ${truncatedDiff}
 \`\`\`
 
-Generate test scenarios for this PR. Focus on testing the actual changes, especially any new UI interactions, modals, click handlers, or demo mode changes.`
+Generate 2-5 FOCUSED test scenarios for this PR.
+
+IMPORTANT: Each test must directly verify something this PR changes. Read the diff carefully and identify what user-facing behavior changed, then write tests that verify those specific changes work correctly.
+
+If the PR title mentions a fix (e.g., "Fix demo navigation"), the FIRST test should verify that exact fix.`
     }
   ]
 
