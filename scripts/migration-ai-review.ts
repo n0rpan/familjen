@@ -2,12 +2,20 @@
 /**
  * AI-Powered Migration Review
  *
+ * IMPORTANT: This script is NON-BLOCKING.
+ * - It reports findings but does NOT fail the CI
+ * - Only the final verdict script can block PRs
+ * - Exit 0 = review completed (even if issues found)
+ * - Exit 1 = script itself failed (API error, couldn't run)
+ *
  * Reviews new database migrations for:
  * - Naming conventions (snake_case, plural tables)
  * - RLS security (policies, SECURITY DEFINER)
  * - Data integrity (foreign keys, constraints)
  * - Rollback safety
  * - Familjen-specific patterns
+ *
+ * Also generates rollback SQL for each migration.
  *
  * Usage:
  *   npx tsx scripts/migration-ai-review.ts
@@ -18,6 +26,14 @@ import { readFileSync, readdirSync, existsSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { execSync } from 'child_process'
 import { AI_MODELS, callOpenRouterStructured, SCHEMAS, type MigrationReviewResult } from './ai-config'
+import {
+  type ReviewerOutput,
+  type Finding,
+  type RollbackMigration,
+  saveReviewerOutput,
+  saveRollbackMigration,
+  verdictEmoji,
+} from './ai-review-types'
 
 const MIGRATIONS_DIR = 'supabase/migrations'
 
@@ -122,6 +138,80 @@ ${newMigration.content}
 Analyze the migration and provide your assessment.`
 }
 
+/**
+ * Generate rollback SQL for a migration
+ */
+async function generateRollbackSql(migration: MigrationFile): Promise<RollbackMigration> {
+  const rollbackPrompt = `You are a PostgreSQL expert. Generate a rollback SQL script that reverses this migration.
+
+## Migration to Reverse
+### ${migration.name}
+\`\`\`sql
+${migration.content}
+\`\`\`
+
+## Rules
+1. Generate SQL that completely reverses the migration
+2. DROP tables/columns that were created
+3. Recreate tables/columns that were dropped (if possible)
+4. Reverse any RLS policy changes
+5. Reverse any function changes
+6. Use IF EXISTS to make rollback idempotent
+7. If data loss would occur, add a comment warning about it
+
+Respond with ONLY the SQL rollback script, no explanations. Start with a comment header.`
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: AI_MODELS.fast,
+        messages: [{ role: 'user', content: rollbackPrompt }],
+        temperature: 0,
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`)
+    }
+
+    const data = (await response.json()) as { choices: Array<{ message: { content: string } }> }
+    const rollbackSql = data.choices[0]?.message?.content || '-- Rollback generation failed'
+
+    // Parse warnings from comments in the SQL
+    const warnings: string[] = []
+    const warningMatches = rollbackSql.match(/-- WARNING:.*$/gm) || []
+    for (const match of warningMatches) {
+      warnings.push(match.replace('-- WARNING:', '').trim())
+    }
+
+    // Check if reversible (no data loss warnings)
+    const isReversible = !rollbackSql.toLowerCase().includes('data loss') && !rollbackSql.toLowerCase().includes('cannot be reversed')
+
+    return {
+      originalFile: migration.name,
+      rollbackSql,
+      isReversible,
+      warnings,
+      generatedAt: new Date().toISOString(),
+      generatedBy: AI_MODELS.fast,
+    }
+  } catch (error) {
+    return {
+      originalFile: migration.name,
+      rollbackSql: `-- Rollback generation failed: ${error instanceof Error ? error.message : 'Unknown error'}\n-- Manual rollback required`,
+      isReversible: false,
+      warnings: ['Automatic rollback generation failed - manual SQL required'],
+      generatedAt: new Date().toISOString(),
+      generatedBy: AI_MODELS.fast,
+    }
+  }
+}
+
 async function reviewMigration(migration: MigrationFile, previousMigrations: MigrationFile[]): Promise<MigrationReviewResult> {
   const prompt = buildReviewPrompt(migration, previousMigrations)
 
@@ -178,44 +268,157 @@ function formatReviewOutput(migration: string, review: MigrationReviewResult): v
   }
 }
 
+/**
+ * Convert MigrationReviewResult issues to Finding[] format
+ */
+function convertToFindings(review: MigrationReviewResult, migrationFile: string): Finding[] {
+  const findings: Finding[] = []
+
+  for (const issue of review.issues) {
+    findings.push({
+      severity: issue.severity === 'critical' ? 'critical' : issue.severity === 'warning' ? 'warning' : 'info',
+      category: 'migration',
+      message: issue.message,
+      file: `supabase/migrations/${migrationFile}`,
+      line: issue.line ?? undefined,
+    })
+  }
+
+  return findings
+}
+
+/**
+ * Map migration verdict to reviewer verdict
+ */
+function mapVerdict(verdict: 'PASS' | 'FAIL' | 'WARN'): 'PASS' | 'WARN' | 'FAIL' {
+  switch (verdict) {
+    case 'PASS': return 'PASS'
+    case 'FAIL': return 'FAIL'
+    case 'WARN': return 'WARN'
+  }
+}
+
 async function main() {
+  const startTime = Date.now()
   const args = process.argv.slice(2)
   const reviewAll = args.includes('--all')
 
-  console.log('🔍 AI Migration Review')
+  console.log('🔍 AI Migration Review (Non-Blocking)')
   console.log(`Mode: ${reviewAll ? 'All migrations' : 'New migrations only'}`)
+
+  // Check for API key
+  if (!process.env.OPENROUTER_API_KEY) {
+    console.error('❌ OPENROUTER_API_KEY not set')
+    const errorOutput: ReviewerOutput = {
+      reviewer: 'migration-review',
+      model: 'none',
+      timestamp: new Date().toISOString(),
+      duration_ms: Date.now() - startTime,
+      status: 'failed',
+      verdict: 'ERROR',
+      confidence: 0,
+      findings: [{
+        severity: 'critical',
+        category: 'runtime-error',
+        message: 'OPENROUTER_API_KEY not set',
+      }],
+      summary: 'Migration review failed: API key not configured.',
+    }
+    saveReviewerOutput(errorOutput)
+    process.exit(1) // Script failed to run
+  }
 
   const migrations = getMigrations()
   if (migrations.length === 0) {
     console.log('No migrations found.')
+    const skippedOutput: ReviewerOutput = {
+      reviewer: 'migration-review',
+      model: 'none',
+      timestamp: new Date().toISOString(),
+      duration_ms: Date.now() - startTime,
+      status: 'skipped',
+      verdict: 'PASS',
+      confidence: 100,
+      findings: [],
+      summary: 'No migrations to review.',
+    }
+    saveReviewerOutput(skippedOutput)
     process.exit(0)
   }
 
   const toReview = reviewAll ? migrations : getNewMigrations(migrations)
   if (toReview.length === 0) {
     console.log('✅ No new migrations to review.')
+    const skippedOutput: ReviewerOutput = {
+      reviewer: 'migration-review',
+      model: 'none',
+      timestamp: new Date().toISOString(),
+      duration_ms: Date.now() - startTime,
+      status: 'skipped',
+      verdict: 'PASS',
+      confidence: 100,
+      findings: [],
+      summary: 'No new migrations to review.',
+    }
+    saveReviewerOutput(skippedOutput)
     process.exit(0)
   }
 
   console.log(`Found ${toReview.length} migration(s) to review`)
 
   const results: Array<{ name: string; review: MigrationReviewResult }> = []
-  let hasFailure = false
-  let hasWarning = false
+  const allFindings: Finding[] = []
+  let worstVerdict: 'PASS' | 'WARN' | 'FAIL' = 'PASS'
 
   for (const migration of toReview) {
     const previousMigrations = migrations.filter((m) => m.timestamp < migration.timestamp)
+
+    // Review the migration
     const review = await reviewMigration(migration, previousMigrations)
     results.push({ name: migration.name, review })
     formatReviewOutput(migration.name, review)
 
-    if (review.verdict === 'FAIL') hasFailure = true
-    if (review.verdict === 'WARN') hasWarning = true
+    // Convert to findings
+    allFindings.push(...convertToFindings(review, migration.name))
+
+    // Track worst verdict
+    if (review.verdict === 'FAIL') worstVerdict = 'FAIL'
+    else if (review.verdict === 'WARN' && worstVerdict !== 'FAIL') worstVerdict = 'WARN'
+
+    // Generate rollback SQL
+    console.log(`   Generating rollback SQL...`)
+    const rollback = await generateRollbackSql(migration)
+    saveRollbackMigration(rollback)
+    if (!rollback.isReversible) {
+      console.log(`   ⚠️ Migration may not be fully reversible`)
+      allFindings.push({
+        severity: 'warning',
+        category: 'migration',
+        message: `Migration may not be fully reversible: ${rollback.warnings.join(', ') || 'potential data loss'}`,
+        file: `supabase/migrations/${migration.name}`,
+      })
+    }
   }
 
-  // Write results to file for GitHub Actions
+  // Write old format for backwards compatibility
   writeFileSync('migration-review.json', JSON.stringify(results, null, 2))
-  console.log('\n📄 Results written to migration-review.json')
+
+  // Save in new standardized format
+  const output: ReviewerOutput = {
+    reviewer: 'migration-review',
+    model: AI_MODELS.fast,
+    timestamp: new Date().toISOString(),
+    duration_ms: Date.now() - startTime,
+    status: 'completed',
+    verdict: mapVerdict(worstVerdict),
+    confidence: worstVerdict === 'PASS' ? 90 : worstVerdict === 'WARN' ? 75 : 85,
+    findings: allFindings,
+    summary: allFindings.length === 0
+      ? `Reviewed ${results.length} migration(s) - all passed.`
+      : `Reviewed ${results.length} migration(s) - found ${allFindings.filter(f => f.severity === 'critical').length} critical issues, ${allFindings.filter(f => f.severity === 'warning').length} warnings.`,
+    raw: results,
+  }
+  saveReviewerOutput(output)
 
   // Summary
   console.log('\n' + '='.repeat(60))
@@ -225,20 +428,35 @@ async function main() {
   console.log(`Passed: ${results.filter((r) => r.review.verdict === 'PASS').length}`)
   console.log(`Warnings: ${results.filter((r) => r.review.verdict === 'WARN').length}`)
   console.log(`Failed: ${results.filter((r) => r.review.verdict === 'FAIL').length}`)
+  console.log(`\n📄 Results: .ai-reviews/migration-review.json`)
+  console.log(`📄 Rollbacks: .ai-reviews/rollback-migrations/`)
 
-  if (hasFailure) {
-    console.log('\n❌ Review failed - critical issues found')
-    process.exit(1)
-  } else if (hasWarning) {
-    console.log('\n⚠️ Review passed with warnings')
-    process.exit(0)
-  } else {
-    console.log('\n✅ All migrations passed review')
-    process.exit(0)
-  }
+  // Always exit 0 - review completed, final verdict decides blocking
+  console.log(`\n${verdictEmoji(mapVerdict(worstVerdict))} Review complete (${mapVerdict(worstVerdict)})`)
+  process.exit(0)
 }
 
 main().catch((error) => {
+  const startTime = Date.now()
   console.error('Migration review failed:', error.message)
-  process.exit(1)
+
+  // Save error output
+  const errorOutput: ReviewerOutput = {
+    reviewer: 'migration-review',
+    model: AI_MODELS.fast,
+    timestamp: new Date().toISOString(),
+    duration_ms: 0,
+    status: 'failed',
+    verdict: 'ERROR',
+    confidence: 0,
+    findings: [{
+      severity: 'critical',
+      category: 'runtime-error',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    }],
+    summary: 'Migration review failed due to an error.',
+  }
+  saveReviewerOutput(errorOutput)
+
+  process.exit(1) // Script itself failed
 })
