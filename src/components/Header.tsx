@@ -138,6 +138,11 @@ export function Header() {
   const t = useTranslation()
   const isDemo = useIsDemo()
 
+  // Helper to create demo-aware links (preserves ?demo=true in demo mode)
+  const getDemoHref = useCallback((href: string) => {
+    return isDemo ? `${href}?demo=true` : href
+  }, [isDemo])
+
   // Proactively prefetch key routes for instant navigation
   // Primary routes (/, /uke, /feed) prefetch first, then secondary
   usePrefetchRoutes([...KEY_ROUTES, ...SECONDARY_ROUTES])
@@ -145,17 +150,17 @@ export function Header() {
   // Primary navigation items (shown in both desktop and mobile bottom bar)
   // Structure: Hjem, Uke, Feed, Handleliste + Mer menu
   const primaryNav = useMemo(() => [
-    { name: t.nav.home, href: '/', icon: HomeIcon },
-    { name: t.nav.weekPlan, href: '/uke', icon: CalendarIcon },
-    { name: t.nav.feed, href: '/feed', icon: FeedIcon },
-    { name: t.nav.shoppingList, href: '/handleliste', icon: ShoppingIcon },
-  ], [t.nav])
+    { name: t.nav.home, href: getDemoHref('/'), icon: HomeIcon },
+    { name: t.nav.weekPlan, href: getDemoHref('/uke'), icon: CalendarIcon },
+    { name: t.nav.feed, href: getDemoHref('/feed'), icon: FeedIcon },
+    { name: t.nav.shoppingList, href: getDemoHref('/handleliste'), icon: ShoppingIcon },
+  ], [t.nav, getDemoHref])
 
   // Secondary nav items (shown in "More" menu on both desktop and mobile)
   const secondaryNav = useMemo(() => [
-    { name: t.nav.recipes, href: '/oppskrifter', icon: BookIcon },
-    { name: t.nav.settings, href: '/innstillinger', icon: SettingsIcon },
-  ], [t.nav])
+    { name: t.nav.recipes, href: getDemoHref('/oppskrifter'), icon: BookIcon },
+    { name: t.nav.settings, href: getDemoHref('/innstillinger'), icon: SettingsIcon },
+  ], [t.nav, getDemoHref])
 
   // Check if current page is a secondary nav item (not in primary nav)
   const isSecondaryActive = useMemo(() =>
@@ -251,7 +256,7 @@ export function Header() {
         <div className="max-w-6xl mx-auto px-6 w-full">
           <div className="flex justify-between items-center h-16">
             {/* Logo */}
-            <TransitionLink href="/" className="flex items-center gap-3 group">
+            <TransitionLink href={getDemoHref('/')} className="flex items-center gap-3 group">
               <Image
                 src="/icons/icon.svg"
                 alt="Familjen"
@@ -339,7 +344,7 @@ export function Header() {
                       {/* Home Control (before Settings) */}
                       {hasHomeControl && (
                         <TransitionLink
-                          href="/styring"
+                          href={getDemoHref('/styring')}
                           onClick={() => setMoreMenuOpen(false)}
                           className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-all duration-200 hover:bg-[var(--sand)]"
                           style={{
@@ -417,7 +422,7 @@ export function Header() {
         }}
       >
         <div className="flex justify-center items-center h-14 px-4">
-          <TransitionLink href="/" className="flex items-center gap-2 group">
+          <TransitionLink href={getDemoHref('/')} className="flex items-center gap-2 group">
             <Image
               src="/icons/icon.svg"
               alt="Familjen"
@@ -546,7 +551,7 @@ export function Header() {
           {/* Home Control (before Settings) */}
           {hasHomeControl && (
             <TransitionLink
-              href="/styring"
+              href={getDemoHref('/styring')}
               onClick={() => setMoreMenuOpen(false)}
               className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 touch-feedback focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
               style={{
