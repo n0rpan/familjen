@@ -4,9 +4,20 @@ import { config } from 'dotenv'
 // Load environment variables from .env.local for local development
 config({ path: '.env.local' })
 
-// Configurable model via environment variable (GitHub secret)
-// Valid cheap models: google/gemini-2.5-flash-lite, google/gemini-2.0-flash-exp:free
-export const TEST_MODEL = process.env.OPENROUTER_TEST_MODEL || 'google/gemini-2.5-flash-lite'
+// Model via environment variable (GitHub secret) - no hardcoded defaults
+// Set OPENROUTER_TEST_MODEL in GitHub Secrets or .env.local
+function getRequiredTestModel(): string {
+  const model = process.env.OPENROUTER_TEST_MODEL
+  if (!model) {
+    throw new Error(
+      'OPENROUTER_TEST_MODEL environment variable is required. ' +
+        'Set it in GitHub Secrets or .env.local (e.g., google/gemini-2.0-flash-001)'
+    )
+  }
+  return model
+}
+
+export const TEST_MODEL = getRequiredTestModel()
 
 // Add delay between tests to respect rate limits
 const TEST_DELAY = parseInt(process.env.TEST_API_DELAY_MS || '500')

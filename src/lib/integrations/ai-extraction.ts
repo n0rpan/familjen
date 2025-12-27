@@ -5,6 +5,7 @@
 
 import { extractJSON } from '@/lib/json-extract'
 import { formatDateISO } from '@/lib/utils'
+import { sanitizeDate, sanitizeTime } from '@/lib/sanitize'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export interface ExtractedAction {
@@ -262,7 +263,9 @@ Return only the JSON array, no other text.`
       return []
     }
 
-    // Validate and normalize actions
+    // Validate and normalize actions using sanitize helpers
+    // sanitizeDate validates format AND that date is real (catches Feb 30 -> Mar 1)
+    // sanitizeTime validates format AND range (0-23 hours, 0-59 minutes)
     return actions
       .filter(
         (action) =>
@@ -275,8 +278,8 @@ Return only the JSON array, no other text.`
       .map((action) => ({
         type: action.type,
         title: action.title.slice(0, 100), // Truncate long titles
-        date: isValidDate(action.date) ? action.date : null,
-        time: isValidTime(action.time) ? action.time : null,
+        date: sanitizeDate(action.date),
+        time: sanitizeTime(action.time),
         description: action.description || null,
         confidence: typeof action.confidence === 'number' ? Math.min(1, Math.max(0, action.confidence)) : 0.5,
       }))
@@ -284,20 +287,4 @@ Return only the JSON array, no other text.`
     console.error('Error calling OpenRouter:', error)
     return []
   }
-}
-
-/**
- * Validate date string format (YYYY-MM-DD).
- */
-function isValidDate(date: unknown): date is string {
-  if (typeof date !== 'string') return false
-  return /^\d{4}-\d{2}-\d{2}$/.test(date)
-}
-
-/**
- * Validate time string format (HH:MM or HH:MM:SS).
- */
-function isValidTime(time: unknown): time is string {
-  if (typeof time !== 'string') return false
-  return /^\d{2}:\d{2}(:\d{2})?$/.test(time)
 }

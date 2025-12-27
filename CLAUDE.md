@@ -325,46 +325,511 @@ ON CONFLICT (email) DO UPDATE SET is_admin = true, can_create_household = true;
 ## Development Commands
 
 ```bash
+# Development
 npm run dev          # Development server
 npm run build        # Production build
 npm run lint         # TypeScript + ESLint
+
+# Testing
 npm run test         # Run tests in watch mode
 npm run test:run     # Run tests once
+npm run test:coverage # Run tests with coverage
+npm run test:e2e     # Run Playwright E2E tests
+npm run test:e2e:ui  # Run E2E tests with UI
+
+# AI Reviews (requires OPENROUTER_API_KEY)
+npm run ai:migration-review  # Review new database migrations
+npm run ai:code-review       # Review code changes vs main
+npm run ai:visual-review     # Compare screenshots (needs baselines)
+
+# Database
 npx supabase db push # Push migrations
 ```
 
 ## Testing
 
-Tests use Vitest and are located in `tests/`. Run with `npm run test:run`.
+Tests use Vitest for unit/integration tests and Playwright for E2E tests. Located in `tests/`. Run with `npm run test:run`.
+
+### Testing Philosophy
+
+**Core Principles:**
+
+1. **Wrong data is worse than sync not working** - Users trust that synced data from integrations (Spond, MyKid, etc.) is accurate. If we show wrong pickup times, event dates, or messages, users will miss important things. A failed sync with clear error message is far better than silently showing corrupted data.
+
+2. **Users must know when something fails** - When an integration sync fails, the user should see a clear message in their language. They should understand if they can fix it themselves (wrong password) or need to contact support (server error).
+
+3. **Every merge to main is a release** - There's no staging environment. Real users depend on the app working. Tests must catch regressions before merge.
+
+4. **Test what matters, not what's easy** - Focus on user-facing behavior and data integrity, not implementation details.
 
 ### Test Structure
 
 ```
 tests/
-├── setup.ts              # Test setup with jsdom
+├── setup.ts                          # Test setup with jsdom
 ├── lib/
-│   ├── utils.test.ts     # Date formatting, utilities
-│   └── ics-parser.test.ts # ICS calendar parsing
-└── hooks/
-    └── useUndoStack.test.ts # Undo/redo functionality
+│   ├── utils.test.ts                 # Date formatting, utilities
+│   ├── ics-parser.test.ts            # ICS calendar parsing
+│   ├── credentials.test.ts           # Credential encryption/decryption
+│   ├── sanitize.test.ts              # Date/time validation
+│   └── api-errors.test.ts            # Standardized API error responses
+├── hooks/
+│   ├── useUndoStack.test.ts          # Undo/redo functionality
+│   ├── useBackgroundSync.test.ts     # Offline queue processing
+│   └── useSwipeDelete.test.ts        # Touch gesture handling
+└── integrations/
+    ├── spond-client.test.ts          # Spond auth + data mappers
+    └── mykid-client.test.ts          # MyKid 3-step CSRF auth + mappers
+```
+
+### What to Test
+
+**Always test:**
+- Integration client authentication flows
+- Data mappers (external API → database format) - **critical for data integrity**
+- Error handling and user-facing error messages
+- Date/time parsing and formatting
+- Credential encryption/decryption
+- Hooks with complex state logic
+
+**Test integration mappers thoroughly:**
+```typescript
+// Integration mappers are critical - wrong mapping = wrong data shown to users
+describe('mapEventToDb', () => {
+  it('maps Spond event to database format', () => {
+    const spondEvent = {
+      id: 'event-123',
+      heading: 'Football Training',        // Spond uses 'heading', not 'title'
+      startTimestamp: '2024-12-20T18:00:00.000Z',
+      endTimestamp: '2024-12-20T20:00:00.000Z',
+      type: 'EVENT',                       // Gets lowercased
+    }
+    const mapped = SpondClient.mapEventToDb(spondEvent, 'group-456')
+
+    expect(mapped.title).toBe('Football Training')
+    expect(mapped.eventDate).toBe('2024-12-20')
+    expect(mapped.eventType).toBe('event')  // lowercase
+  })
+})
+```
+
+### Error Handling Helpers
+
+**Use `ApiErrors` for all API routes:**
+```typescript
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
+
+// Returns Norwegian user-facing messages
+return ApiErrors.unauthorized()     // "Du må logge inn på nytt"
+return ApiErrors.forbidden()        // "Du har ikke tilgang til dette"
+return ApiErrors.notFound('Barn')   // "Barn ble ikke funnet"
+return ApiErrors.validation('E-post er påkrevd', { field: 'email' })
+return ApiErrors.rateLimit(30)      // "Vennligst vent 30 sekunder..."
+return ApiErrors.authFailed('Spond') // "Kunne ikke logge inn på Spond"
+
+// Never expose internal errors to users
+return ApiErrors.internal({
+  internalMessage: 'DB connection failed: ECONNREFUSED'  // Logged, not shown
+})
+
+// Catch-all for unexpected errors
+try {
+  // ...
+} catch (error) {
+  return handleApiError(error, 'calendar sync')  // Logs context, returns 500
+}
+```
+
+**Use type-safe credential helpers:**
+```typescript
+import { decryptCredentials, isSpondCredentials } from '@/lib/credentials'
+
+const result = await decryptCredentials<SpondCredentials>(supabase, encrypted)
+if (!result.success) {
+  return ApiErrors.internal({ internalMessage: result.error })
+}
+if (!isSpondCredentials(result.credentials)) {
+  return ApiErrors.internal({ internalMessage: 'Invalid Spond credentials format' })
+}
+const { email, password } = result.credentials
+```
+
+**Use sanitize helpers for AI-generated dates:**
+```typescript
+import { sanitizeDate, sanitizeTime } from '@/lib/sanitize'
+
+// AI might return invalid dates like "2024-02-30" - sanitizeDate catches this
+const validDate = sanitizeDate(aiResponse.date)   // null if invalid
+const validTime = sanitizeTime(aiResponse.time)   // null if invalid or out of range
 ```
 
 ### Writing Tests
 
 ```typescript
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-describe('myFunction', () => {
-  it('should do something', () => {
-    expect(myFunction()).toBe(expected)
+describe('MyFunction', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()  // Always reset mocks
+  })
+
+  it('handles success case', () => {
+    expect(myFunction('valid')).toBe(expected)
+  })
+
+  it('returns null for invalid input', () => {
+    expect(myFunction('invalid')).toBeNull()
+  })
+
+  it('throws on missing required data', () => {
+    expect(() => myFunction(undefined)).toThrow()
   })
 })
 ```
 
+### Mocking Patterns
+
+**Mock fetch for integration clients:**
+```typescript
+const mockFetch = vi.fn()
+global.fetch = mockFetch
+
+mockFetch.mockResolvedValueOnce({
+  ok: true,
+  json: () => Promise.resolve({ loginToken: 'token-123' }),
+})
+```
+
+**Mock Supabase client:**
+```typescript
+vi.mock('@/lib/supabase/client', () => ({
+  createClient: vi.fn(() => ({
+    from: vi.fn(() => ({
+      insert: vi.fn().mockResolvedValue({ error: null }),
+      update: vi.fn(() => ({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      })),
+    })),
+  })),
+}))
+```
+
+### E2E Testing (Playwright)
+
+E2E tests use Playwright with **mock auth and AI-generated test data**. This allows testing on fresh Vercel previews without needing a real database or test user.
+
+**Test Structure:**
+```
+tests/e2e/
+├── fixtures/
+│   ├── mock-auth.ts           # Mock Supabase auth state
+│   └── test-data-generator.ts  # AI-generated Norwegian family data
+├── critical-journeys.spec.ts   # User journey tests with mock data
+├── design-system.spec.ts       # Deterministic design checks (no AI)
+├── capture-screenshots.spec.ts # Screenshot capture for AI validation
+└── auth.setup.ts               # Real auth (only used if credentials provided)
+```
+
+**Mock Auth Mode (Default):**
+```typescript
+// tests/e2e/critical-journeys.spec.ts
+import { test, expect } from '@playwright/test'
+import { setupTestFixture } from './fixtures/mock-auth'
+
+test('home page shows children and pickups', async ({ page, context }) => {
+  // Set up mock auth and AI-generated test data
+  const { household } = await setupTestFixture(context, page, {
+    childCount: 2,
+    memberCount: 2,
+    withPickups: true,
+  })
+
+  await page.goto('/')
+
+  // Test data is automatically injected via route mocks
+  for (const child of household.children) {
+    await expect(page.locator(`text=${child.name}`)).toBeVisible()
+  }
+})
+```
+
+**Run E2E tests:**
+```bash
+npx playwright test                    # Mock auth (default)
+npx playwright test --project=chromium # Desktop only
+PLAYWRIGHT_BASE_URL=https://preview.vercel.app npx playwright test
+
+# With real auth (optional - needs test user in database)
+E2E_TEST_EMAIL=test@example.com E2E_TEST_PASSWORD=secret npx playwright test
+```
+
+**Benefits of Mock Auth:**
+- Works on fresh Vercel previews with no database setup
+- Tests adapts to schema changes (AI generates valid data)
+- No need to maintain test users or seed data
+- Tests run faster (no auth API calls)
+
 ### Current Coverage
 
-- **35 tests** covering utilities, ICS parsing, and undo stack
-- Focus on critical paths: date handling, calendar sync, user interactions
+- **220+ tests** covering:
+  - Utilities (date formatting, ICS parsing)
+  - Hooks (undo stack, background sync, swipe delete)
+  - Integration clients (Spond, MyKid auth flows and mappers)
+  - API error helpers
+  - Credential handling
+  - Data sanitization
+
+### CI/CD Integration
+
+Tests run on every PR via GitHub Actions:
+- TypeScript compilation check
+- ESLint
+- Vitest unit tests
+- AI Migration Review (for PRs with migrations)
+- AI Code Review (posts comment to PR)
+- AI Visual Review (optional, if baselines exist)
+
+**Before merging:** All tests must pass. No exceptions.
+
+## AI-Powered CI/CD
+
+The CI pipeline uses AI to review code changes, following our philosophy: *"We don't test to make tests pass. We test to be confident busy parents won't have headaches."*
+
+### AI Review Scripts
+
+```
+scripts/
+├── ai-config.ts              # Model config + OpenRouter structured outputs
+├── migration-ai-review.ts    # Reviews database migrations
+├── ai-code-review.ts         # Reviews PR code changes
+├── ai-visual-review.ts       # Compares screenshots (baseline-based)
+└── ai-visual-validation.ts   # Evaluates screenshots (no baselines needed)
+```
+
+### Environment Variables
+
+**Required (GitHub Secrets):**
+```bash
+OPENROUTER_API_KEY=sk-or-v1-...
+OPENROUTER_FAST_MODEL=google/gemini-2.0-flash-001       # Migration review
+OPENROUTER_CAPABLE_MODEL=anthropic/claude-sonnet-4.5   # Code review
+OPENROUTER_VISION_MODEL=google/gemini-2.0-flash-001    # Visual validation
+OPENROUTER_TEST_MODEL=google/gemini-2.0-flash-001      # API tests (main branch only)
+```
+
+**Optional:**
+```bash
+OPENROUTER_IMAGE_MODEL=stabilityai/stable-diffusion-xl  # Image generation tests
+```
+
+**Note:** All model env vars are required - no hardcoded defaults. This ensures you're always using your intended models and prevents silent fallbacks to stale model IDs when you update your secrets.
+
+### Running Locally
+
+```bash
+# Review new migrations
+npm run ai:migration-review
+npm run ai:migration-review -- --all  # Review all migrations
+
+# Review code changes
+npm run ai:code-review
+npm run ai:code-review -- --base origin/main
+
+# Visual review (baseline-based, optional)
+npm run ai:visual-review
+npm run ai:visual-review -- --capture  # Show capture instructions
+npm run ai:visual-review -- --update   # Update baselines from current
+
+# Visual validation (no baselines needed - default in CI)
+npm run ai:visual-validate             # Validates screenshots against design system
+```
+
+### Migration Review
+
+Reviews new database migrations for:
+- **Naming conventions**: snake_case tables/columns, verb-prefix functions
+- **RLS security**: Policies, SECURITY DEFINER, household_id scoping
+- **Data integrity**: Foreign keys, constraints, indexes
+- **Rollback safety**: IF EXISTS, reversible changes
+- **Familjen patterns**: TIMESTAMPTZ, UUIDs, household isolation
+
+```typescript
+// Output format (structured via JSON schema)
+{
+  "verdict": "PASS" | "FAIL" | "WARN",
+  "issues": [{ "severity": "critical|warning|info", "message": "...", "line": 42 }],
+  "suggestions": ["Add index on household_id"],
+  "summary": "Migration adds user preferences table with proper RLS..."
+}
+```
+
+### Code Review
+
+Reviews PR diffs for:
+- **Security**: Auth checks, RLS policies, input sanitization, no secrets
+- **Data integrity**: Error handling, optimistic update rollbacks
+- **Norwegian app specifics**: i18n translations, child colors, date formatting
+- **AI agent detection**: Hallucinated imports, placeholder TODOs, logic vs comments
+- **Code quality**: TypeScript types, patterns, dead code
+
+Posts a comment to the PR with verdict and actionable feedback:
+```markdown
+## 🤖 AI Code Review
+
+**Verdict:** APPROVE
+
+This PR adds sync failure banners with proper error handling...
+
+### 💡 Suggestions
+- `src/components/Banner.tsx:42`: Consider memoizing the filter function
+```
+
+### Visual Review (Baseline-Based)
+
+Compares baseline screenshots with current screenshots to detect:
+- Critical elements present (pickups, meals, tasks visible)
+- Accessibility concerns (contrast, touch targets 44px+)
+- Obvious bugs (overlapping elements, cut-off text)
+- Mobile usability (one-handed use for busy parents)
+
+**Setup baselines:**
+```bash
+# 1. Capture current screenshots
+npx playwright test capture-screenshots --project=chromium
+
+# 2. Review and set as baselines
+npm run ai:visual-review -- --update
+
+# 3. Commit baselines
+git add tests/visual/baselines/
+git commit -m "Add visual regression baselines"
+```
+
+### Visual Validation (No Baselines Needed)
+
+The preferred approach for CI - AI evaluates screenshots against design system expectations:
+
+**What it checks:**
+- **Design System Compliance**: Colors, typography, spacing, touch targets
+- **Content Visibility**: Expected elements present (children, pickups, meals)
+- **Mobile Usability**: Can busy parents use this with one hand?
+- **Norwegian Context**: ø, æ, å characters render correctly
+
+**How it works:**
+1. Playwright captures screenshots using mock auth + AI-generated test data
+2. Works on fresh Vercel previews with no real database needed
+3. AI vision model evaluates each screenshot against expectations
+4. Results posted as PR comment with PASS/WARN/FAIL verdict
+
+**Page expectations are defined in code:**
+```typescript
+// scripts/ai-visual-validation.ts
+const PAGE_EXPECTATIONS = [
+  {
+    name: 'home',
+    description: 'Home page showing today\'s overview for a busy parent',
+    mustShow: [
+      'Today\'s date or "I dag"',
+      'Children names or pickup assignments',
+      'Navigation (bottom or sidebar)',
+    ],
+    mustNotShow: [
+      'Error messages or crash screens',
+      'Infinite loading spinners',
+    ],
+    mobileConsiderations: [
+      'Most important info (pickups) should be immediately visible',
+      'No horizontal scrolling',
+    ],
+  },
+  // ... more pages
+]
+```
+
+**Output format:**
+```json
+{
+  "verdict": "PASS",
+  "score": 85,
+  "designSystemCompliance": {
+    "colorPalette": true,
+    "typography": true,
+    "spacing": true,
+    "touchTargets": true
+  },
+  "contentVisibility": {
+    "expected": ["pickups", "children", "navigation"],
+    "found": ["pickups", "children", "navigation"],
+    "missing": []
+  },
+  "mobileUsability": {
+    "score": 90,
+    "notes": ["Good thumb zone placement for navigation"]
+  },
+  "summary": "Home page renders correctly with all expected elements visible"
+}
+```
+
+### CI Pipeline Flow
+
+```
+PR Created
+    │
+    ├─► lint ─────────────────────┐
+    ├─► typecheck ────────────────┤
+    │                             │
+    ├─► migration-review ◄────────┘ (if migrations changed)
+    │
+    └─► unit-tests ◄──────────────┘
+            │
+            ├─► build ───────────────────────────────┐
+            │     │                                   │
+            │     ├─► ai-code-review → Posts PR comment
+            │     │                                   │
+            │     └─► e2e-preview ────────────────────┤
+            │           │                             │
+            │           ├─► Wait for Vercel preview   │
+            │           ├─► Capture screenshots       │
+            │           │   (mock auth + test data)   │
+            │           │                             │
+            │           └─► visual-validation ────────┘
+            │               → Posts PR comment with
+            │                 design system analysis
+            │
+            └─► (main only) api-tests
+```
+
+**Key features:**
+- Screenshots captured on real Vercel preview (not localhost)
+- Mock auth means no database setup needed
+- AI-generated Norwegian family data adapts to schema changes
+- Visual validation runs even if database migrations break things
+
+### Structured Outputs
+
+All AI reviews use OpenRouter's structured outputs feature with JSON schemas to guarantee consistent response formats:
+
+```typescript
+// From scripts/ai-config.ts
+export const SCHEMAS = {
+  migrationReview: {
+    type: 'object',
+    properties: {
+      verdict: { type: 'string', enum: ['PASS', 'FAIL', 'WARN'] },
+      issues: { type: 'array', items: { ... } },
+      // ...
+    },
+    required: ['verdict', 'issues', 'suggestions', 'summary'],
+    additionalProperties: false,
+  },
+  // codeReview, visualReview schemas...
+}
+```
+
+This ensures:
+- No parsing failures from malformed JSON
+- Type-safe results in TypeScript
+- Consistent output across different models
 
 ## Internationalization (i18n)
 

@@ -203,7 +203,10 @@ export async function verifyNoAllergens(
     return { containsAllergen: false, reason: 'No API key, skipping AI verification' }
   }
 
-  const model = process.env.OPENROUTER_TEST_MODEL || 'google/gemini-2.0-flash-lite'
+  const model = process.env.OPENROUTER_TEST_MODEL
+  if (!model) {
+    return { containsAllergen: false, reason: 'OPENROUTER_TEST_MODEL not set, skipping AI verification' }
+  }
 
   const prompt = `You are a food allergy expert. Analyze if this meal contains any of the specified allergens.
 
@@ -274,8 +277,12 @@ export async function generateProductImage(productDescription: string = 'random 
     return null
   }
 
-  // Use Stable Diffusion XL for image generation
-  const imageModel = process.env.OPENROUTER_IMAGE_MODEL || 'stabilityai/stable-diffusion-xl-base-1.0'
+  // Image model from env (no hardcoded default)
+  const imageModel = process.env.OPENROUTER_IMAGE_MODEL
+  if (!imageModel) {
+    console.warn('[generateProductImage] OPENROUTER_IMAGE_MODEL not set, using fallback image')
+    return null
+  }
 
   try {
     const response = await fetch('https://openrouter.ai/api/v1/images/generations', {
