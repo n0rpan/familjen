@@ -229,12 +229,17 @@ Key migrations (in order):
 ### Google Cloud Console Setup
 Google OAuth is handled by our custom flow (shows `familjen.eu` instead of Supabase URL):
 
-1. Create OAuth 2.0 Client ID in Google Cloud Console
-2. Add authorized redirect URIs:
+1. Configure OAuth consent screen (APIs & Services → OAuth consent screen)
+   - User type: External
+   - App name: Familjen
+   - Support email: your email
+   - Scopes: `openid`, `email`, `profile`
+2. Create OAuth 2.0 Client ID (APIs & Services → Credentials)
+3. Add authorized redirect URIs:
    - `https://familjen.eu/api/auth/google/callback` (login)
    - `https://familjen.eu/api/calendar/callback` (calendar sync)
    - For local dev: `http://localhost:3000/api/auth/google/callback`
-3. Copy Client ID and Client Secret to environment variables
+4. Copy Client ID and Client Secret to environment variables
 
 ### Required Database Columns
 Ensure these columns exist (some migrations may not apply cleanly):

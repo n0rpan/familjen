@@ -113,6 +113,7 @@ export async function GET(request: NextRequest) {
 
       if (!allowed) {
         // Open signup: auto-add new users to allowlist
+        console.log('[Auth] Auto-enrolling new user:', user.email.toLowerCase())
         await adminClient
           .from('allowed_emails')
           .insert({
