@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { TodaySection } from '@/components/TodaySection'
 import { AIHeadsUpSection } from '@/components/AIHeadsUpSection'
-import { WeekGrid } from '@/components/WeekGrid'
+import { WeekSection } from '@/components/WeekSection'
 import { UniversalAIInput } from '@/components/ai'
 import { SuggestionBanner } from '@/components/integrations/SuggestionReview'
 import { RecentPhotos } from '@/components/RecentPhotos'
@@ -230,7 +230,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     )
   }
 
-  const { children, members, pickups, meals, memberEvents, childTasks, holidays, recentPhotos, weekStart } = homeData
+  const { children, members, pickups, meals, memberEvents, householdEvents, externalEvents, childTasks, holidays, recentPhotos, weekStart } = homeData
   const todaySummary = getTodaySummary(homeData)
 
   // Check if we have any data set up
@@ -379,12 +379,15 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             {t.common.edit} →
           </TransitionLink>
         </div>
-        <WeekGrid
+        <WeekSection
           children={children || []}
           members={members || []}
           pickups={pickups || []}
           meals={meals || []}
           memberEvents={memberEvents || []}
+          householdEvents={householdEvents || []}
+          externalEvents={externalEvents || []}
+          childTasks={childTasks || []}
           holidays={holidays}
           weekStart={weekStart}
         />
