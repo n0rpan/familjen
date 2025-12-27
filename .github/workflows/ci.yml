@@ -529,6 +529,17 @@ jobs:
           echo "preview_url=$URL" >> $GITHUB_OUTPUT
           echo "Preview URL: https://$URL"
 
+      - name: Generate PR-specific test scenarios
+        id: generate-tests
+        if: steps.preview.outputs.preview_url
+        continue-on-error: true
+        run: npx tsx scripts/ai-pr-test-generator.ts --base origin/${{ github.base_ref }}
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}
+          GITHUB_PR_TITLE: ${{ github.event.pull_request.title }}
+          GITHUB_PR_BODY: ${{ github.event.pull_request.body }}
+
       - name: Run E2E tests against preview
         id: e2e-tests
         if: steps.preview.outputs.preview_url
@@ -538,6 +549,11 @@ jobs:
           npx playwright test tests/e2e/design-system.spec.ts --project=chromium
           # Run language detection tests (Norwegian, English, Swedish)
           npx playwright test tests/e2e/language-detection.spec.ts --project=chromium
+          # Run PR-specific generated tests (if they exist)
+          if [ -f "tests/e2e/generated/pr-scenarios.json" ]; then
+            echo "🤖 Running AI-generated PR-specific tests..."
+            npx playwright test tests/e2e/pr-scenarios.spec.ts --project=chromium || true
+          fi
         env:
           PLAYWRIGHT_BASE_URL: https://${{ steps.preview.outputs.preview_url }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
@@ -583,6 +599,7 @@ jobs:
           path: |
             playwright-report/
             tests/visual/current/
+            tests/e2e/generated/
           retention-days: 7
 
       - name: Post preview URL comment

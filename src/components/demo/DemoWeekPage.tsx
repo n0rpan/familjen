@@ -303,7 +303,7 @@ function DemoDetailModal({
   } else if (content.type === 'household') {
     const event = content.event
     title = event.title
-    subtitle = t.home.familyEvent
+    subtitle = t.week.familyEvent
     date = event.event_date + (event.end_date && event.end_date !== event.event_date ? ` → ${event.end_date}` : '')
     time = event.event_time?.substring(0, 5) || ''
     location = event.location || ''
@@ -311,7 +311,7 @@ function DemoDetailModal({
   } else if (content.type === 'external') {
     const event = content.event
     title = event.title
-    subtitle = event.source || t.common.external
+    subtitle = event.integration?.display_name || event.integration?.service || t.common.external
     date = event.event_date + (event.end_date && event.end_date !== event.event_date ? ` → ${event.end_date}` : '')
     time = event.event_time?.substring(0, 5) || ''
     location = event.location || ''
@@ -319,12 +319,13 @@ function DemoDetailModal({
   } else if (content.type === 'task') {
     const task = content.task
     const child = childrenList.find(c => c.id === task.child_id)
+    const taskConfig = getTaskConfig(task.task_type)
     title = task.title
     subtitle = child?.name || t.common.unknown
     date = task.date
     time = task.time?.substring(0, 5) || ''
     notes = task.notes || ''
-    config = getTaskConfig(task.task_type)
+    config = { bg: 'rgba(229, 185, 94, 0.2)', text: 'var(--color-honey)', icon: taskConfig.icon }
   }
 
   return (
