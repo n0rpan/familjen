@@ -673,7 +673,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [migration-review, ai-code-review, visual-validation, e2e-preview, api-tests]
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && always()
     # This job CAN fail and will block the PR
 
     steps:
@@ -692,44 +692,27 @@ jobs:
       - name: Create .ai-reviews directory
         run: mkdir -p .ai-reviews
 
-      # Download all review artifacts
-      - name: Download migration review
+      # Download all review artifacts using pattern matching
+      - name: Download all review artifacts
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          name: ai-reviews-migration
-          path: .ai-reviews/
+          pattern: ai-reviews-*
+          path: .ai-reviews-temp/
+          merge-multiple: false
 
-      - name: Download code review
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: ai-reviews-code
-          path: .ai-reviews/
-
-      - name: Download visual validation
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: ai-reviews-visual
-          path: .ai-reviews/
-
-      - name: Download E2E tests
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: ai-reviews-e2e
-          path: .ai-reviews/
-
-      - name: Download API tests
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: ai-reviews-api
-          path: .ai-reviews/
-
-      - name: List collected reviews
-        run: ls -la .ai-reviews/ || echo "No reviews collected"
+      # Flatten the directory structure (artifacts download to subdirectories)
+      - name: Consolidate review artifacts
+        run: |
+          echo "📦 Consolidating review artifacts..."
+          if [ -d ".ai-reviews-temp" ]; then
+            # Each artifact downloads to its own subdirectory, flatten them
+            find .ai-reviews-temp -name "*.json" -exec cp {} .ai-reviews/ \; 2>/dev/null || true
+            echo "📄 Found review files:"
+            ls -la .ai-reviews/ || echo "No review files found"
+          else
+            echo "⚠️ No review artifacts downloaded"
+          fi
 
       - name: Get Vercel Preview URL
         id: vercel

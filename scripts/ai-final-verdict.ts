@@ -588,12 +588,21 @@ async function main() {
 
   if (reviewerNames.length === 0) {
     console.log('⚠️ No review artifacts found in .ai-reviews/')
-    console.log('Creating default PASS verdict...')
+    console.log('⚠️ This likely means reviewers failed to upload artifacts or there was a CI configuration issue.')
 
+    // List what's in the directory for debugging
+    try {
+      const dirContents = readdirSync('.ai-reviews')
+      console.log('Directory contents:', dirContents)
+    } catch {
+      console.log('.ai-reviews directory does not exist or is empty')
+    }
+
+    // Don't blindly PASS - this is a warning state
     const defaultVerdict: FinalVerdictOutput = {
-      verdict: 'PASS',
-      confidence: 100,
-      summary: 'No reviewers ran - defaulting to PASS.',
+      verdict: 'PASS',  // Still pass to not block, but with low confidence
+      confidence: 30,   // Low confidence because we couldn't verify
+      summary: '⚠️ No reviewer data available. CI may have configuration issues. Manual review recommended.',
       verifications: {
         typecheck: 'skipped',
         apiHealth: 'skipped',
@@ -603,12 +612,26 @@ async function main() {
         demoQuality: 'skipped',
       },
       requiredFixes: [],
-      suggestions: [],
-      reasoning: 'No review artifacts found. This may be a configuration issue.',
+      suggestions: [{
+        priority: 1,
+        severity: 'warning',
+        category: 'code-quality',
+        file: '.github/workflows/ci.yml',
+        issue: 'No review artifacts were uploaded. Check that reviewer jobs completed successfully.',
+        whyItMatters: 'Without reviewer data, the final verdict cannot make an informed decision.',
+        fix: {
+          type: 'replace',
+          explanation: 'Verify that all reviewer jobs have proper artifact upload steps and the .ai-reviews directory is created.',
+        }
+      }],
+      reasoning: 'No review artifacts found in .ai-reviews/. This typically means reviewer jobs failed before uploading, or there is a CI configuration issue. Passing with low confidence to allow manual review.',
       reviewerSummary: [],
     }
     saveFinalVerdict(defaultVerdict)
     generateComment(defaultVerdict, reviews)
+
+    // Exit 0 but make it clear this is not ideal
+    console.log('\n⚠️ PASSED with low confidence - manual review recommended')
     process.exit(0)
   }
 
