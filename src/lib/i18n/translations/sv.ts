@@ -67,6 +67,9 @@ export const sv: TranslationStrings = {
     free: 'Gratis',
     navigatedTo: 'Navigerade till',
     unknown: 'Okänd',
+    demoMode: 'Demoläge',
+    viewOnly: 'Endast visning',
+    external: 'Extern',
   },
 
   // Date/Time

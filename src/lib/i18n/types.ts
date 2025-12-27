@@ -75,6 +75,9 @@ export interface TranslationStrings {
     free: string
     navigatedTo: string
     unknown: string
+    demoMode: string
+    viewOnly: string
+    external: string
   }
 
   // Date/Time

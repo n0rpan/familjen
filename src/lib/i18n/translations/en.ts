@@ -67,6 +67,9 @@ export const en: TranslationStrings = {
     free: 'Free',
     navigatedTo: 'Navigated to',
     unknown: 'Unknown',
+    demoMode: 'Demo mode',
+    viewOnly: 'View only',
+    external: 'External',
   },
 
   // Date/Time

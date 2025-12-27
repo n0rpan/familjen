@@ -67,6 +67,9 @@ export const nb: TranslationStrings = {
     free: 'Gratis',
     navigatedTo: 'Navigert til',
     unknown: 'Ukjent',
+    demoMode: 'Demomodus',
+    viewOnly: 'Kun visning',
+    external: 'Ekstern',
   },
 
   // Date/Time
