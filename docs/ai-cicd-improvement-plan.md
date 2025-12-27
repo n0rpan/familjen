@@ -25,6 +25,232 @@ Add these to GitHub Actions Secrets:
 
 ---
 
+## Enhanced Tool Categories
+
+The final verdict AI has access to **four categories** of tools:
+
+### Category 1: Context Gathering (Read-Only)
+Basic tools for understanding the codebase and PR.
+
+| Tool | Purpose |
+|------|---------|
+| `read_file(path)` | Read any file in the repo |
+| `read_diff()` | Get full PR diff |
+| `search_code(query, glob)` | Search for patterns |
+| `get_commits()` | List commits in this PR |
+| `get_file_history(path)` | Recent changes to a file |
+| `get_related_prs(files)` | Previous PRs touching same files |
+| `get_pr_comments()` | Existing discussion |
+| `get_test_output(type)` | Full test logs |
+
+### Category 2: Database/Migration Safety
+Tools to verify database changes are safe.
+
+| Tool | Purpose |
+|------|---------|
+| `check_migration_patterns()` | Analyze SQL for dangerous patterns (DROP without IF EXISTS, DELETE without WHERE, missing transactions) |
+| `verify_rls_coverage()` | Check all new tables have RLS policies defined |
+| `get_schema_diff()` | Compare current schema with what migrations will produce |
+| `check_rollback_safety()` | Verify migrations can be reversed (has IF EXISTS, no data loss) |
+| `find_missing_indexes()` | Check if new foreign keys or frequently-queried columns lack indexes |
+
+### Category 3: Live Verification (Actual API Calls)
+Tools that make real calls to the Vercel preview deployment.
+
+| Tool | Purpose |
+|------|---------|
+| `test_endpoint(method, path, body?)` | Make actual HTTP call to preview, return status + response |
+| `verify_auth_required(path)` | Test that protected endpoint returns 401 without auth |
+| `check_rate_limiting(path)` | Verify rate limiting is in place (hit endpoint multiple times) |
+| `smoke_test_critical_paths()` | Test core user journeys: login flow, home page loads, API health |
+
+### Category 4: Code Verification
+Tools to verify code quality and correctness.
+
+| Tool | Purpose |
+|------|---------|
+| `run_typecheck(files?)` | Run TypeScript compiler on specific files or all changed files |
+| `verify_imports()` | Check all imports in changed files resolve (no hallucinated packages) |
+| `check_env_usage()` | Find new env var usage, verify documented in README/CLAUDE.md |
+| `check_breaking_changes()` | Detect removed/changed exports that might break consumers |
+| `verify_translations()` | Check new user-facing strings have nb/sv/en translations |
+
+---
+
+## Actionable Output Format
+
+The final verdict outputs **two formats**:
+
+### 1. Human-Readable PR Comment
+Posted to GitHub for developers to read.
+
+### 2. Machine-Readable JSON
+Saved as `final-verdict.json` for AI coding agents to consume.
+
+```typescript
+interface FinalVerdictOutput {
+  verdict: 'PASS' | 'BLOCK'
+  confidence: number  // 0-100
+  summary: string     // 1-2 sentences
+
+  // Verification results from tools
+  verifications: {
+    typecheck: 'pass' | 'fail' | 'skipped'
+    api_health: 'pass' | 'fail' | 'skipped'
+    migration_safety: 'pass' | 'warn' | 'fail' | 'skipped'
+    rls_coverage: 'pass' | 'fail' | 'skipped'
+    auth_required: 'pass' | 'fail' | 'skipped'
+  }
+
+  // Blocking issues that MUST be fixed
+  required_fixes: ActionableIssue[]
+
+  // Non-blocking suggestions
+  suggestions: ActionableIssue[]
+
+  // Context for why this decision was made
+  reasoning: string
+}
+
+interface ActionableIssue {
+  priority: number              // 1 = fix first, 2 = fix second, etc.
+  severity: 'critical' | 'warning' | 'info'
+  category: IssueCategory
+
+  // Location
+  file: string
+  line?: number
+  end_line?: number            // For multi-line issues
+
+  // Description
+  issue: string                // What's wrong
+  why_it_matters: string       // Impact on users
+
+  // How to fix it
+  fix: Fix
+
+  // Reference for learning
+  reference?: {
+    file: string               // Example of correct pattern
+    line: number
+    description: string
+  }
+}
+
+type IssueCategory =
+  | 'security'           // Auth, injection, secrets
+  | 'data-integrity'     // Error handling, RLS, validation
+  | 'runtime-error'      // Crashes, null pointers, missing imports
+  | 'migration'          // Database schema issues
+  | 'api-contract'       // Breaking changes
+  | 'i18n'               // Missing translations
+  | 'accessibility'      // UI/UX issues
+  | 'performance'        // Slow queries, missing indexes
+  | 'code-quality'       // Style, patterns, best practices
+
+interface Fix {
+  type: 'replace' | 'insert_before' | 'insert_after' | 'delete' | 'wrap'
+
+  // For 'replace': what to find and what to replace with
+  old_code?: string
+  new_code?: string
+
+  // For 'insert_before' / 'insert_after': code to add
+  code?: string
+
+  // For 'wrap': wrapper template with {{content}} placeholder
+  wrapper?: string
+
+  // Human explanation
+  explanation: string
+}
+```
+
+### Example Output
+
+```json
+{
+  "verdict": "BLOCK",
+  "confidence": 92,
+  "summary": "Missing authentication check on new API endpoint could allow unauthorized data access.",
+
+  "verifications": {
+    "typecheck": "pass",
+    "api_health": "pass",
+    "migration_safety": "pass",
+    "rls_coverage": "pass",
+    "auth_required": "fail"
+  },
+
+  "required_fixes": [
+    {
+      "priority": 1,
+      "severity": "critical",
+      "category": "security",
+      "file": "src/app/api/children/[id]/route.ts",
+      "line": 8,
+      "issue": "Missing authentication check - endpoint is publicly accessible",
+      "why_it_matters": "Anyone could read/modify child data without being logged in",
+      "fix": {
+        "type": "insert_before",
+        "code": "const supabase = await createClient()\nconst { data: { user } } = await supabase.auth.getUser()\nif (!user) {\n  return ApiErrors.unauthorized()\n}\n",
+        "explanation": "Add authentication check before processing request"
+      },
+      "reference": {
+        "file": "src/app/api/pickups/route.ts",
+        "line": 12,
+        "description": "See how pickups endpoint handles auth"
+      }
+    }
+  ],
+
+  "suggestions": [
+    {
+      "priority": 1,
+      "severity": "info",
+      "category": "code-quality",
+      "file": "src/app/api/children/[id]/route.ts",
+      "line": 25,
+      "issue": "Consider adding rate limiting to prevent abuse",
+      "why_it_matters": "High-traffic endpoint without rate limiting could be exploited",
+      "fix": {
+        "type": "insert_before",
+        "code": "const rateLimit = await checkRateLimit(createRateLimitKey(user.id, 'children'), RATE_LIMITS.default)\nif (rateLimit.limited) {\n  return ApiErrors.rateLimit(rateLimit.retryAfter)\n}\n",
+        "explanation": "Add rate limiting using existing infrastructure"
+      },
+      "reference": {
+        "file": "src/app/api/openrouter/suggest/route.ts",
+        "line": 15,
+        "description": "See AI suggestion endpoint for rate limiting pattern"
+      }
+    }
+  ],
+
+  "reasoning": "The code review flagged a potential auth issue. I used verify_auth_required() to test the endpoint and confirmed it returns 200 without authentication. This is a critical security issue that must be fixed before merge. The migration review and visual validation both passed, and API tests show the endpoint works correctly once auth is added."
+}
+```
+
+### Why This Format Works
+
+**For Humans:**
+- Clear priority ordering (fix #1 first, then #2)
+- Explains *why* it matters (not just what's wrong)
+- Points to reference code to learn from
+
+**For AI Coding Agents:**
+- Exact file:line locations
+- Structured fix instructions (replace/insert/delete)
+- Category tags to understand issue type
+- Priority ordering for systematic fixes
+
+**For Claude Code specifically:**
+The `fix` object maps directly to Claude Code's Edit tool:
+- `replace` → Edit with old_string/new_string
+- `insert_before` → Read file, find line, Edit to add before
+- `insert_after` → Read file, find line, Edit to add after
+
+---
+
 ## Architecture Overview
 
 ```
@@ -387,6 +613,121 @@ const TOOLS: Anthropic.Tool[] = [
       },
       required: ['test_type']
     }
+  },
+
+  // ============================================
+  // DATABASE/MIGRATION SAFETY TOOLS
+  // ============================================
+  {
+    name: 'check_migration_patterns',
+    description: 'Analyze SQL migrations for dangerous patterns (DROP without IF EXISTS, DELETE without WHERE, missing transactions)',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'verify_rls_coverage',
+    description: 'Check that all new tables in migrations have RLS policies defined',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'check_rollback_safety',
+    description: 'Verify migrations can be safely rolled back (IF EXISTS clauses, no irreversible data changes)',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+
+  // ============================================
+  // LIVE VERIFICATION TOOLS
+  // ============================================
+  {
+    name: 'test_endpoint',
+    description: 'Make an actual HTTP request to the Vercel preview deployment',
+    input_schema: {
+      type: 'object',
+      properties: {
+        method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'DELETE'] },
+        path: { type: 'string', description: 'API path (e.g., /api/health)' },
+        body: { type: 'object', description: 'Optional request body for POST/PUT' },
+        headers: { type: 'object', description: 'Optional headers' }
+      },
+      required: ['method', 'path']
+    }
+  },
+  {
+    name: 'verify_auth_required',
+    description: 'Test that a protected endpoint returns 401/403 without authentication',
+    input_schema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'API path to test' }
+      },
+      required: ['path']
+    }
+  },
+  {
+    name: 'smoke_test_critical_paths',
+    description: 'Run quick smoke tests on critical user journeys (home page loads, API health, etc.)',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+
+  // ============================================
+  // CODE VERIFICATION TOOLS
+  // ============================================
+  {
+    name: 'run_typecheck',
+    description: 'Run TypeScript compiler on changed files to verify types',
+    input_schema: {
+      type: 'object',
+      properties: {
+        files: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Specific files to check (default: all changed files)'
+        }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'verify_imports',
+    description: 'Check that all imports in changed files resolve (no hallucinated packages)',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'check_env_usage',
+    description: 'Find new environment variable usage and verify they are documented',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'verify_translations',
+    description: 'Check that new user-facing strings have translations in nb.ts, sv.ts, en.ts',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
   }
 ]
 
@@ -477,6 +818,327 @@ function executeTool(name: string, input: Record<string, unknown>): string {
       const path = paths[testType]
       if (!path || !existsSync(path)) return `No ${testType} test output found`
       return readFileSync(path, 'utf-8')
+    }
+
+    // ============================================
+    // DATABASE/MIGRATION SAFETY TOOLS
+    // ============================================
+
+    case 'check_migration_patterns': {
+      const patterns = {
+        dropWithoutIfExists: /DROP\s+(TABLE|INDEX|FUNCTION|TRIGGER|POLICY)\s+(?!IF\s+EXISTS)/gi,
+        deleteWithoutWhere: /DELETE\s+FROM\s+\w+\s*;/gi,
+        truncate: /TRUNCATE\s+/gi,
+        alterColumnType: /ALTER\s+COLUMN\s+\w+\s+TYPE/gi,
+        dropColumn: /DROP\s+COLUMN\s+(?!IF\s+EXISTS)/gi,
+      }
+
+      const baseBranch = process.env.GITHUB_BASE_REF || 'main'
+      const changedMigrations = execSync(
+        `git diff --name-only origin/${baseBranch}...HEAD | grep 'supabase/migrations/' || true`,
+        { encoding: 'utf-8' }
+      ).trim().split('\n').filter(Boolean)
+
+      if (changedMigrations.length === 0) {
+        return 'No migrations changed in this PR'
+      }
+
+      const issues: string[] = []
+      for (const file of changedMigrations) {
+        if (!existsSync(file)) continue
+        const content = readFileSync(file, 'utf-8')
+
+        for (const [name, pattern] of Object.entries(patterns)) {
+          const matches = content.match(pattern)
+          if (matches) {
+            issues.push(`${file}: Found ${name} pattern: ${matches.slice(0, 2).join(', ')}`)
+          }
+        }
+      }
+
+      return issues.length > 0
+        ? `⚠️ Dangerous patterns found:\n${issues.join('\n')}`
+        : '✅ No dangerous patterns found in migrations'
+    }
+
+    case 'verify_rls_coverage': {
+      const baseBranch = process.env.GITHUB_BASE_REF || 'main'
+      const changedMigrations = execSync(
+        `git diff --name-only origin/${baseBranch}...HEAD | grep 'supabase/migrations/' || true`,
+        { encoding: 'utf-8' }
+      ).trim().split('\n').filter(Boolean)
+
+      const newTables: string[] = []
+      const tablesWithRLS: string[] = []
+
+      for (const file of changedMigrations) {
+        if (!existsSync(file)) continue
+        const content = readFileSync(file, 'utf-8')
+
+        // Find CREATE TABLE statements
+        const tableMatches = content.matchAll(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)/gi)
+        for (const match of tableMatches) {
+          newTables.push(match[1])
+        }
+
+        // Find ALTER TABLE ... ENABLE ROW LEVEL SECURITY
+        const rlsMatches = content.matchAll(/ALTER\s+TABLE\s+(\w+)\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY/gi)
+        for (const match of rlsMatches) {
+          tablesWithRLS.push(match[1])
+        }
+      }
+
+      const tablesWithoutRLS = newTables.filter(t => !tablesWithRLS.includes(t))
+
+      if (tablesWithoutRLS.length > 0) {
+        return `⚠️ Tables without RLS: ${tablesWithoutRLS.join(', ')}\nAll tables should have RLS enabled.`
+      }
+      return newTables.length > 0
+        ? `✅ All ${newTables.length} new tables have RLS enabled`
+        : '✅ No new tables in migrations'
+    }
+
+    case 'check_rollback_safety': {
+      const baseBranch = process.env.GITHUB_BASE_REF || 'main'
+      const changedMigrations = execSync(
+        `git diff --name-only origin/${baseBranch}...HEAD | grep 'supabase/migrations/' || true`,
+        { encoding: 'utf-8' }
+      ).trim().split('\n').filter(Boolean)
+
+      const issues: string[] = []
+
+      for (const file of changedMigrations) {
+        if (!existsSync(file)) continue
+        const content = readFileSync(file, 'utf-8')
+
+        // Check for irreversible operations
+        if (/DROP\s+TABLE\s+(?!IF\s+EXISTS)/i.test(content)) {
+          issues.push(`${file}: DROP TABLE without IF EXISTS - may fail on rollback`)
+        }
+        if (/DELETE\s+FROM/i.test(content) && !/BEGIN|TRANSACTION/i.test(content)) {
+          issues.push(`${file}: DELETE outside transaction - data loss is irreversible`)
+        }
+        if (/ALTER\s+COLUMN.*TYPE/i.test(content)) {
+          issues.push(`${file}: ALTER COLUMN TYPE - may lose data on type conversion`)
+        }
+      }
+
+      return issues.length > 0
+        ? `⚠️ Rollback concerns:\n${issues.join('\n')}`
+        : '✅ Migrations appear safe to rollback'
+    }
+
+    // ============================================
+    // LIVE VERIFICATION TOOLS
+    // ============================================
+
+    case 'test_endpoint': {
+      const previewUrl = process.env.VERCEL_PREVIEW_URL
+      if (!previewUrl) return 'Error: VERCEL_PREVIEW_URL not set'
+
+      const method = input.method as string
+      const path = input.path as string
+      const body = input.body as object | undefined
+      const headers = input.headers as Record<string, string> | undefined
+
+      try {
+        const curlCmd = [
+          'curl', '-s', '-w', '\\n%{http_code}',
+          '-X', method,
+          ...(headers ? Object.entries(headers).flatMap(([k, v]) => ['-H', `${k}: ${v}`]) : []),
+          ...(body ? ['-d', JSON.stringify(body), '-H', 'Content-Type: application/json'] : []),
+          `${previewUrl}${path}`
+        ].join(' ')
+
+        const result = execSync(curlCmd, { encoding: 'utf-8', timeout: 30000 })
+        const lines = result.trim().split('\n')
+        const statusCode = lines.pop()
+        const responseBody = lines.join('\n')
+
+        return `Status: ${statusCode}\nResponse: ${responseBody.slice(0, 1000)}`
+      } catch (e) {
+        return `Error calling endpoint: ${e}`
+      }
+    }
+
+    case 'verify_auth_required': {
+      const previewUrl = process.env.VERCEL_PREVIEW_URL
+      if (!previewUrl) return 'Error: VERCEL_PREVIEW_URL not set'
+
+      const path = input.path as string
+
+      try {
+        const result = execSync(
+          `curl -s -w '\\n%{http_code}' -X GET '${previewUrl}${path}'`,
+          { encoding: 'utf-8', timeout: 30000 }
+        )
+        const lines = result.trim().split('\n')
+        const statusCode = parseInt(lines.pop() || '0')
+
+        if (statusCode === 401 || statusCode === 403) {
+          return `✅ Endpoint ${path} correctly requires auth (${statusCode})`
+        } else if (statusCode >= 200 && statusCode < 300) {
+          return `❌ SECURITY ISSUE: ${path} returns ${statusCode} without auth!`
+        } else {
+          return `⚠️ Endpoint ${path} returned ${statusCode} - may need investigation`
+        }
+      } catch (e) {
+        return `Error testing auth: ${e}`
+      }
+    }
+
+    case 'smoke_test_critical_paths': {
+      const previewUrl = process.env.VERCEL_PREVIEW_URL
+      if (!previewUrl) return 'Error: VERCEL_PREVIEW_URL not set'
+
+      const paths = [
+        { path: '/', name: 'Home page', expectAuth: false },
+        { path: '/login', name: 'Login page', expectAuth: false },
+        { path: '/api/health', name: 'Health check', expectAuth: false },
+      ]
+
+      const results: string[] = []
+      for (const { path, name, expectAuth } of paths) {
+        try {
+          const result = execSync(
+            `curl -s -w '\\n%{http_code}' -X GET '${previewUrl}${path}'`,
+            { encoding: 'utf-8', timeout: 30000 }
+          )
+          const statusCode = parseInt(result.trim().split('\n').pop() || '0')
+
+          if (statusCode >= 200 && statusCode < 400) {
+            results.push(`✅ ${name}: OK (${statusCode})`)
+          } else if (expectAuth && (statusCode === 401 || statusCode === 403)) {
+            results.push(`✅ ${name}: Auth required as expected (${statusCode})`)
+          } else {
+            results.push(`❌ ${name}: FAILED (${statusCode})`)
+          }
+        } catch (e) {
+          results.push(`❌ ${name}: Error - ${e}`)
+        }
+      }
+
+      return results.join('\n')
+    }
+
+    // ============================================
+    // CODE VERIFICATION TOOLS
+    // ============================================
+
+    case 'run_typecheck': {
+      const files = input.files as string[] | undefined
+      try {
+        if (files && files.length > 0) {
+          return execSync(`npx tsc --noEmit ${files.join(' ')}`, { encoding: 'utf-8' })
+        }
+        return execSync('npx tsc --noEmit', { encoding: 'utf-8', timeout: 60000 })
+      } catch (e: unknown) {
+        const error = e as { stdout?: string; stderr?: string }
+        return `TypeScript errors:\n${error.stdout || error.stderr || e}`
+      }
+    }
+
+    case 'verify_imports': {
+      const baseBranch = process.env.GITHUB_BASE_REF || 'main'
+      const changedFiles = execSync(
+        `git diff --name-only origin/${baseBranch}...HEAD | grep -E '\\.(ts|tsx)$' || true`,
+        { encoding: 'utf-8' }
+      ).trim().split('\n').filter(Boolean)
+
+      const packageJson = JSON.parse(readFileSync('package.json', 'utf-8'))
+      const deps = {
+        ...packageJson.dependencies,
+        ...packageJson.devDependencies
+      }
+
+      const issues: string[] = []
+      for (const file of changedFiles.slice(0, 20)) {  // Limit for performance
+        if (!existsSync(file)) continue
+        const content = readFileSync(file, 'utf-8')
+
+        // Find external imports (not relative, not @ alias)
+        const imports = content.matchAll(/from\s+['"]([^.@][^'"]+)['"]/g)
+        for (const match of imports) {
+          const pkg = match[1].split('/')[0]
+          if (!deps[pkg] && !['react', 'next'].includes(pkg)) {
+            issues.push(`${file}: Unknown import '${pkg}' - not in package.json`)
+          }
+        }
+      }
+
+      return issues.length > 0
+        ? `⚠️ Import issues:\n${issues.join('\n')}`
+        : '✅ All imports resolve correctly'
+    }
+
+    case 'check_env_usage': {
+      const baseBranch = process.env.GITHUB_BASE_REF || 'main'
+      const diff = execSync(`git diff origin/${baseBranch}...HEAD`, { encoding: 'utf-8' })
+
+      // Find new process.env usage
+      const envMatches = diff.matchAll(/\+.*process\.env\.(\w+)/g)
+      const newEnvVars = new Set<string>()
+      for (const match of envMatches) {
+        newEnvVars.add(match[1])
+      }
+
+      if (newEnvVars.size === 0) {
+        return '✅ No new environment variables detected'
+      }
+
+      // Check if documented
+      const claudeMd = existsSync('CLAUDE.md') ? readFileSync('CLAUDE.md', 'utf-8') : ''
+      const readmeMd = existsSync('README.md') ? readFileSync('README.md', 'utf-8') : ''
+      const docs = claudeMd + readmeMd
+
+      const undocumented = [...newEnvVars].filter(v => !docs.includes(v))
+
+      if (undocumented.length > 0) {
+        return `⚠️ New env vars not documented: ${undocumented.join(', ')}\nPlease add to README.md or CLAUDE.md`
+      }
+      return `✅ All new env vars documented: ${[...newEnvVars].join(', ')}`
+    }
+
+    case 'verify_translations': {
+      const baseBranch = process.env.GITHUB_BASE_REF || 'main'
+      const diff = execSync(`git diff origin/${baseBranch}...HEAD`, { encoding: 'utf-8' })
+
+      // Find potential new translation keys (t.something patterns)
+      const tMatches = diff.matchAll(/\+.*\bt\.(\w+)\.(\w+)/g)
+      const newKeys = new Set<string>()
+      for (const match of tMatches) {
+        newKeys.add(`${match[1]}.${match[2]}`)
+      }
+
+      if (newKeys.size === 0) {
+        return '✅ No new translation keys detected'
+      }
+
+      // Check all translation files
+      const langs = ['nb', 'sv', 'en']
+      const missing: Record<string, string[]> = {}
+
+      for (const lang of langs) {
+        const path = `src/lib/i18n/translations/${lang}.ts`
+        if (!existsSync(path)) continue
+        const content = readFileSync(path, 'utf-8')
+
+        for (const key of newKeys) {
+          const [section, name] = key.split('.')
+          if (!content.includes(name)) {
+            if (!missing[lang]) missing[lang] = []
+            missing[lang].push(key)
+          }
+        }
+      }
+
+      const issues = Object.entries(missing)
+        .filter(([, keys]) => keys.length > 0)
+        .map(([lang, keys]) => `${lang}.ts missing: ${keys.join(', ')}`)
+
+      return issues.length > 0
+        ? `⚠️ Missing translations:\n${issues.join('\n')}`
+        : `✅ All translation keys present in nb/sv/en`
     }
 
     default:
