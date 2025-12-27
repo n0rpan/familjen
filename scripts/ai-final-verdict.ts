@@ -947,6 +947,9 @@ function separateFindings(
 
 /**
  * Generate the main PR comment (human-focused, about THIS PR)
+ *
+ * This comment is SELF-CONTAINED - it tells you exactly what to fix in this PR
+ * without needing to read any other comments or artifacts.
  */
 function generateMainComment(
   verdict: FinalVerdictOutput,
@@ -965,103 +968,174 @@ function generateMainComment(
   const badgeColor = verdict.verdict === 'BLOCK' ? 'red' : 'brightgreen'
   const badgeUrl = `https://img.shields.io/badge/AI%20Review-${encodeURIComponent(status)}-${badgeColor}`
 
-  let comment = `![AI Review](${badgeUrl})
-
-## ${emoji} AI Review: ${prTitle}
-
-${verdict.summary}
-
-### 📊 Reviewer Summary
-
-| Reviewer | Verdict | Confidence | Findings |
-|----------|---------|------------|----------|
-`
-
-  for (const summary of verdict.reviewerSummary) {
-    const findings = summary.criticalCount > 0
-      ? `🔴 ${summary.criticalCount} critical`
-      : summary.warningCount > 0
-        ? `🟡 ${summary.warningCount} warnings`
-        : '🟢 Clean'
-    comment += `| ${summary.reviewer} | ${verdictEmoji(summary.verdict)} ${summary.verdict} | ${summary.confidence}% | ${findings} |\n`
-  }
-
   // PR-relevant findings (issues IN this PR)
   const prCritical = prRelevant.filter(f => f.severity === 'critical')
   const prWarnings = prRelevant.filter(f => f.severity === 'warning')
   const prInfo = prRelevant.filter(f => f.severity === 'info')
 
-  if (prCritical.length > 0) {
-    comment += `\n### 🚫 Must Fix (in this PR)\n\n`
-    for (const fix of prCritical.slice(0, 5)) {
-      comment += `1. **\`${fix.file}${fix.line ? `:${fix.line}` : ''}\`** - ${fix.issue}\n`
+  let comment = `![AI Review](${badgeUrl})
+
+## ${emoji} AI Review: ${prTitle}
+
+`
+
+  // BLOCKED - Show exactly what must be fixed
+  if (verdict.verdict === 'BLOCK') {
+    comment += `### ❌ This PR is blocked until the following issues are fixed:
+
+`
+    // Show ALL critical issues with full context
+    for (let i = 0; i < prCritical.length; i++) {
+      const fix = prCritical[i]
+      const location = fix.line ? `${fix.file}:${fix.line}` : fix.file
+      comment += `**${i + 1}. \`${location}\`**
+
+`
+      comment += `${fix.issue}
+
+`
+      if (fix.whyItMatters && !fix.whyItMatters.startsWith('Found by')) {
+        comment += `> **Why it matters:** ${fix.whyItMatters}
+
+`
+      }
       if (fix.fix?.explanation) {
-        comment += `   > ${fix.fix.explanation}\n`
+        comment += `> **How to fix:** ${fix.fix.explanation}
+
+`
       }
     }
-    if (prCritical.length > 5) {
-      comment += `\n_...and ${prCritical.length - 5} more critical issues_\n`
+
+    if (prCritical.length === 0) {
+      // Check if there are critical issues from reviewers we should surface
+      for (const name of Object.keys(reviews)) {
+        const review = reviews[name]
+        const criticalFindings = review.findings.filter(f => f.severity === 'critical')
+        for (const finding of criticalFindings) {
+          const location = finding.line ? `${finding.file || 'unknown'}:${finding.line}` : (finding.file || 'unknown')
+          comment += `**\`${location}\`** (from ${name})
+
+${finding.message}
+
+`
+        }
+      }
     }
+
+    comment += `---
+
+Once you fix these issues, push a new commit and the CI will re-run.
+
+`
+  } else {
+    // PASSED - Show summary
+    comment += `${verdict.summary}
+
+`
   }
 
-  if (prWarnings.length > 0) {
-    comment += `\n### ⚠️ Suggestions for this PR\n\n`
+  // Reviewer summary table
+  comment += `### 📊 Reviewer Summary
+
+| Reviewer | Verdict | Key Findings |
+|----------|---------|--------------|
+`
+
+  for (const summary of verdict.reviewerSummary) {
+    const review = reviews[summary.reviewer]
+    // Get most important finding
+    const topFinding = review?.findings.filter(f => f.severity === 'critical' || f.severity === 'warning')[0]
+    const findingPreview = topFinding
+      ? `${topFinding.severity === 'critical' ? '🔴' : '🟡'} ${topFinding.message.slice(0, 50)}${topFinding.message.length > 50 ? '...' : ''}`
+      : summary.criticalCount > 0
+        ? `🔴 ${summary.criticalCount} critical issue${summary.criticalCount > 1 ? 's' : ''}`
+        : summary.warningCount > 0
+          ? `🟡 ${summary.warningCount} warning${summary.warningCount > 1 ? 's' : ''}`
+          : '🟢 Clean'
+    comment += `| ${summary.reviewer} | ${verdictEmoji(summary.verdict)} ${summary.verdict} | ${findingPreview} |\n`
+  }
+
+  // Warnings and suggestions (only if not blocked, or show briefly if blocked)
+  if (verdict.verdict !== 'BLOCK' && prWarnings.length > 0) {
+    comment += `
+### ⚠️ Suggestions (optional but recommended)
+
+`
     for (const warning of prWarnings.slice(0, 5)) {
-      comment += `- **\`${warning.file}\`**: ${warning.issue}\n`
+      const location = warning.line ? `${warning.file}:${warning.line}` : warning.file
+      comment += `- **\`${location}\`**: ${warning.issue}\n`
     }
     if (prWarnings.length > 5) {
-      comment += `\n_...and ${prWarnings.length - 5} more warnings_\n`
+      comment += `\n_...and ${prWarnings.length - 5} more suggestions_\n`
     }
   }
 
-  if (prInfo.length > 0 && prCritical.length === 0) {
-    comment += `\n### 💡 Minor suggestions\n\n`
+  if (verdict.verdict !== 'BLOCK' && prInfo.length > 0) {
+    comment += `
+### 💡 Minor notes
+
+`
     for (const info of prInfo.slice(0, 3)) {
       comment += `- \`${info.file}\`: ${info.issue}\n`
     }
     if (prInfo.length > 3) {
-      comment += `\n_...and ${prInfo.length - 3} more_\n`
+      comment += `\n_...and ${prInfo.length - 3} more minor notes_\n`
     }
   }
 
-  // Note about pre-existing issues (if any)
-  if (preExisting.length > 0) {
-    comment += `\n### 📋 Pre-existing issues (not from this PR)\n\n`
-    comment += `Found **${preExisting.length}** issues in files not changed by this PR. `
-    comment += `These should be addressed separately. See follow-up comment below.\n`
-  }
+  // Decision reasoning (brief, key points only)
+  comment += `
+### 🧠 Why this decision?
 
-  // Decision reasoning
-  comment += `\n### 🧠 Decision\n\n`
+`
   const reasoningEnd = verdict.reasoning.indexOf('FINAL VERDICT:')
   const reasoning = reasoningEnd > 0 ? verdict.reasoning.slice(0, reasoningEnd).trim() : verdict.reasoning
 
-  // Extract just the key decision points (last paragraph or so)
-  const paragraphs = reasoning.split('\n\n').filter(p => p.trim())
-  const keyReasoning = paragraphs.slice(-2).join('\n\n')
-  comment += keyReasoning.slice(0, 800) + (keyReasoning.length > 800 ? '...' : '')
+  // Find the decision paragraph
+  const decisionMatch = reasoning.match(/(?:Decision|Reasoning|Conclusion|Based on)[:\s](.+?)(?:\n\n|$)/is)
+  if (decisionMatch) {
+    comment += decisionMatch[1].trim().slice(0, 500)
+  } else {
+    // Fallback: last substantial paragraph
+    const paragraphs = reasoning.split('\n\n').filter(p => p.trim() && p.length > 50)
+    const keyReasoning = paragraphs.slice(-1).join('\n\n')
+    comment += keyReasoning.slice(0, 500)
+  }
+  comment += (reasoning.length > 500 ? '...' : '')
+
+  // Note about pre-existing issues (if any) - brief mention, details in separate comment
+  if (preExisting.length > 0) {
+    comment += `
+
+---
+
+📋 **Note:** Found ${preExisting.length} issue${preExisting.length > 1 ? 's' : ''} in files NOT changed by this PR. These are pre-existing and won't block this PR. See the follow-up comment for details.`
+  }
 
   // Collapsed section for AI agents
-  comment += `\n\n<details>
-<summary>📎 Raw data for AI agents</summary>
+  comment += `
+
+<details>
+<summary>📎 For AI agents: structured data</summary>
 
 \`\`\`json
 ${JSON.stringify({
   verdict: verdict.verdict,
   confidence: verdict.confidence,
   prRelevantFindings: prRelevant.length,
-  preExistingFindings: preExisting.length,
-  reviewers: verdict.reviewerSummary,
+  criticalInPR: prCritical.length,
+  warningsInPR: prWarnings.length,
+  preExistingCount: preExisting.length,
   verifications: verdict.verifications,
-  artifactPath: 'ai-reviews/final-verdict.json',
 }, null, 2)}
 \`\`\`
 
-**Full artifacts:** Download from GitHub Actions → Artifacts → \`ai-reviews-final-verdict\`
-
 </details>`
 
-  comment += `\n\n---\n*AI Review by \`${VERDICT_MODEL.split('/').pop()}\`*`
+  comment += `
+
+---
+*AI Review by \`${VERDICT_MODEL.split('/').pop()}\` • [View full artifacts](${process.env.GITHUB_SERVER_URL || 'https://github.com'}/${process.env.GITHUB_REPOSITORY || 'repo'}/actions/runs/${process.env.GITHUB_RUN_ID || 'latest'})*`
 
   return comment
 }
