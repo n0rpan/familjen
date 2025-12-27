@@ -47,6 +47,16 @@ export const RATE_LIMITS = {
   urlFetch: { limit: 10, windowMs: 60 * 1000 },
 } as const
 
+// Demo mode rate limits - stricter to prevent abuse
+// These are GLOBAL limits across all demo users
+export const DEMO_RATE_LIMITS = {
+  // AI suggestions in demo - 50/hour globally (cheap model, ~$0.01/hour)
+  aiSuggest: { limit: 50, windowMs: 60 * 60 * 1000 },
+} as const
+
+// Cooldown after hitting demo limit (5 minutes)
+export const DEMO_COOLDOWN_MS = 5 * 60 * 1000
+
 // ============================================================================
 // Upstash Redis Rate Limiter (production)
 // ============================================================================
@@ -164,4 +174,31 @@ export async function checkRateLimit(
  */
 export function createRateLimitKey(userId: string, endpoint: string): string {
   return `${endpoint}:${userId}`
+}
+
+/**
+ * Check if demo mode request should be rate limited
+ * Uses a GLOBAL key (shared across all demo users) for stricter limits
+ *
+ * @param endpoint - The endpoint being accessed (e.g., 'aiSuggest')
+ * @returns { limited: true, retryAfter: number } or { limited: false }
+ */
+export async function checkDemoRateLimit(
+  endpoint: keyof typeof DEMO_RATE_LIMITS
+): Promise<{ limited: false } | { limited: true; retryAfter: number }> {
+  const config = DEMO_RATE_LIMITS[endpoint]
+  if (!config) {
+    return { limited: false }
+  }
+
+  // Use global key for demo (all demo users share the same limit)
+  const globalKey = `demo:global:${endpoint}`
+  return checkRateLimit(globalKey, config)
+}
+
+/**
+ * Check if request is from demo mode (via header)
+ */
+export function isDemoRequest(request: Request): boolean {
+  return request.headers.get('x-demo-mode') === 'true'
 }
