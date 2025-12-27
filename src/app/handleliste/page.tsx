@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { ShoppingList, ShoppingListItem, Household } from '@/lib/types'
 import { useLanguage } from '@/lib/i18n/context'
@@ -22,12 +23,21 @@ import {
 } from '@/lib/prefetch/fetchers'
 import { setCache } from '@/lib/cache'
 import type { ShoppingCacheData } from '@/lib/types'
+import { DemoShoppingPage } from '@/components/demo/DemoShoppingPage'
 
 interface ListWithItems extends ShoppingList {
   items: ShoppingListItem[]
 }
 
 export default function ShoppingListPage() {
+  // Check for demo mode
+  const searchParams = useSearchParams()
+  const isDemo = searchParams.get('demo') === 'true'
+
+  // Demo mode: render demo shopping page
+  if (isDemo) {
+    return <DemoShoppingPage />
+  }
   const { t } = useLanguage()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

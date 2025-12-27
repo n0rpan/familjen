@@ -1,12 +1,22 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Recipe, Household } from '@/lib/types'
 import { useLanguage } from '@/lib/i18n/context'
 import { RecipesPagePartialSkeleton } from '@/components/Skeleton'
+import { DemoRecipesPage } from '@/components/demo/DemoRecipesPage'
 
 export default function RecipesPage() {
+  // Check for demo mode
+  const searchParams = useSearchParams()
+  const isDemo = searchParams.get('demo') === 'true'
+
+  // Demo mode: render demo recipes page
+  if (isDemo) {
+    return <DemoRecipesPage />
+  }
   const { t } = useLanguage()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

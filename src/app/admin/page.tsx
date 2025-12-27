@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import type {
@@ -15,6 +16,7 @@ import { useLanguage } from "@/lib/i18n/context";
 import { UnmatchedCalendarTray } from "@/components/UnmatchedCalendarTray";
 import { AdminPageSkeleton } from "@/components/Skeleton";
 import { SectionHeader } from "@/app/innstillinger/components";
+import { DemoAdminPage } from "@/components/demo/DemoAdminPage";
 
 // Extended types for admin view
 interface HouseholdWithDetails extends Household {
@@ -428,6 +430,14 @@ function IntegrationDebug({ householdId }: { householdId: string }) {
 
 export default function AdminPage() {
   const { t } = useLanguage();
+  const searchParams = useSearchParams();
+  const isDemo = searchParams.get("demo") === "true";
+
+  // Demo mode: render demo admin page
+  if (isDemo) {
+    return <DemoAdminPage />;
+  }
+
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);

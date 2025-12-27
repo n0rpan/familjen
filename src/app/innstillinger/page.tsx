@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Child, HouseholdMember, Household, ChildColor, SettingsCacheData } from '@/lib/types'
 import { getCachedSettingsData, getSettingsCacheKey } from '@/lib/prefetch/fetchers'
@@ -26,8 +26,17 @@ import {
   FamilyCalendarSection,
 } from './sections'
 import { CollapsibleSection, SectionGroupLabel } from './components'
+import { DemoSettingsPage } from '@/components/demo/DemoSettingsPage'
 
 export default function SettingsPage() {
+  // Check for demo mode
+  const searchParams = useSearchParams()
+  const isDemo = searchParams.get('demo') === 'true'
+
+  // Demo mode: render demo settings page
+  if (isDemo) {
+    return <DemoSettingsPage />
+  }
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)

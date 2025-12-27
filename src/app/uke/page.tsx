@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { WeekGrid } from '@/components/WeekGrid'
 import { formatDateISO, getWeekStart, addDays, formatWeekHeaderLocalized, type Holiday } from '@/lib/utils'
@@ -19,6 +20,7 @@ import { getCachedWeekData, getWeekCacheKey, prefetchWeekData } from '@/lib/pref
 import { setCache } from '@/lib/cache'
 import { MemberEventModal, HouseholdEventModal, ChildTaskModal, ExternalEventModal } from './components'
 import type { ExternalEventLocalOverrides } from '@/lib/types'
+import { DemoWeekPage } from '@/components/demo/DemoWeekPage'
 
 // Dynamic imports for code splitting
 const DayPicker = dynamic(
@@ -32,6 +34,14 @@ const AISuggestionModal = dynamic(
 )
 
 export default function WeekEditPage() {
+  // Check for demo mode
+  const searchParams = useSearchParams()
+  const isDemo = searchParams.get('demo') === 'true'
+
+  // Demo mode: render demo week page
+  if (isDemo) {
+    return <DemoWeekPage />
+  }
   const { language, t } = useLanguage()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)

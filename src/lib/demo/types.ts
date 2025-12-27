@@ -19,14 +19,14 @@ import type {
   MemberEvent,
   HouseholdEvent,
   ExternalEvent,
-  ExternalMessage,
-  ExternalPhoto,
   ShoppingList,
   ShoppingListItem,
   WishlistItem,
   AllowedEmail,
 } from '@/lib/types'
 import type { Holiday } from '@/lib/utils'
+import type { FeedMessage } from '@/components/feed/MessageCard'
+import type { FeedPhoto } from '@/components/feed/PhotoGallery'
 
 /**
  * Complete demo state stored in sessionStorage
@@ -48,8 +48,8 @@ export interface DemoState {
   holidays: Holiday[]
 
   // Feed data
-  feedMessages: ExternalMessage[]
-  feedPhotos: ExternalPhoto[]
+  feedMessages: FeedMessage[]
+  feedPhotos: FeedPhoto[]
 
   // Shopping & Wishlists
   shoppingLists: ShoppingListWithItems[]

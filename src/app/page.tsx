@@ -11,8 +11,21 @@ import { TransitionLink } from '@/components/TransitionLink'
 import Image from 'next/image'
 import { getLanguageFromCookieOrBrowser } from '@/lib/i18n/cookie.server'
 import { getTranslations } from '@/lib/i18n/translations'
+import { DemoHomePage } from '@/components/demo/DemoHomePage'
 
-export default async function HomePage() {
+interface HomePageProps {
+  searchParams: Promise<{ demo?: string }>
+}
+
+export default async function HomePage({ searchParams }: HomePageProps) {
+  // Check for demo mode
+  const params = await searchParams
+  const isDemo = params.demo === 'true'
+
+  // Demo mode: render client-side demo page
+  if (isDemo) {
+    return <DemoHomePage />
+  }
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const language = await getLanguageFromCookieOrBrowser()

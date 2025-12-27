@@ -18,14 +18,14 @@ import type {
   MemberEvent,
   HouseholdEvent,
   ExternalEvent,
-  ExternalMessage,
-  ExternalPhoto,
   ShoppingList,
   ShoppingListItem,
   WishlistItem,
   AllowedEmail,
 } from '@/lib/types'
 import type { Holiday } from '@/lib/utils'
+import type { FeedMessage } from '@/components/feed/MessageCard'
+import type { FeedPhoto } from '@/components/feed/PhotoGallery'
 import type { DemoState, AdminHousehold, ShoppingListWithItems } from './types'
 import { DEMO_STATE_VERSION } from './types'
 import { formatDateISO, addDays } from '@/lib/utils'
@@ -204,7 +204,7 @@ function generatePickups(): Pickup[] {
 
 function generateMeals(): Meal[] {
   const weekDates = getWeekDates()
-  const mealPlan = [
+  const mealPlan: (string | null)[] = [
     'Kyllingwok med ris',
     'Fiskegrateng',
     'Pasta Bolognese',
@@ -214,20 +214,22 @@ function generateMeals(): Meal[] {
     null, // Sunday - no plan
   ]
 
-  return weekDates
-    .map((date, i) => {
-      if (!mealPlan[i]) return null
-      return {
+  const meals: Meal[] = []
+  weekDates.forEach((date, i) => {
+    const customMeal = mealPlan[i]
+    if (customMeal) {
+      meals.push({
         id: `demo-meal-${formatDateISO(date)}`,
         household_id: HOUSEHOLD_ID,
         date: formatDateISO(date),
         recipe_id: null,
-        custom_meal: mealPlan[i],
+        custom_meal: customMeal,
         notes: null,
         created_at: new Date().toISOString(),
-      }
-    })
-    .filter((m): m is Meal => m !== null)
+      })
+    }
+  })
+  return meals
 }
 
 function generateRecipes(): Recipe[] {
@@ -315,6 +317,14 @@ function generateChildTasks(): ChildTask[] {
   const thursday = formatDateISO(weekDates[3])
   const friday = formatDateISO(weekDates[4])
 
+  const baseTask = {
+    recurrence_pattern: null,
+    parent_task_id: null,
+    completed_at: null,
+    completed_by: null,
+    updated_at: null,
+  }
+
   return [
     {
       id: 'demo-task-1',
@@ -322,13 +332,13 @@ function generateChildTasks(): ChildTask[] {
       child_id: CHILD_EMILIE_ID,
       date: monday,
       time: null,
-      task_type: 'bring',
+      task_type: 'bring' as const,
       title: 'Ta med gymtøy',
       notes: 'Husk innesko!',
-      status: 'open',
-      source: 'manual',
-      external_id: null,
+      status: 'open' as const,
+      source: 'manual' as const,
       created_at: new Date().toISOString(),
+      ...baseTask,
     },
     {
       id: 'demo-task-2',
@@ -336,13 +346,13 @@ function generateChildTasks(): ChildTask[] {
       child_id: CHILD_OLIVER_ID,
       date: wednesday,
       time: '10:00',
-      task_type: 'appointment',
+      task_type: 'appointment' as const,
       title: 'Tannlegetime',
       notes: 'Hos Dr. Berg, Majorstuen',
-      status: 'open',
-      source: 'manual',
-      external_id: null,
+      status: 'open' as const,
+      source: 'manual' as const,
       created_at: new Date().toISOString(),
+      ...baseTask,
     },
     {
       id: 'demo-task-3',
@@ -350,13 +360,13 @@ function generateChildTasks(): ChildTask[] {
       child_id: CHILD_OLIVER_ID,
       date: thursday,
       time: null,
-      task_type: 'bring',
+      task_type: 'bring' as const,
       title: 'Ta med regntøy',
       notes: 'Utedag i barnehagen',
-      status: 'open',
-      source: 'manual',
-      external_id: null,
+      status: 'open' as const,
+      source: 'manual' as const,
       created_at: new Date().toISOString(),
+      ...baseTask,
     },
     {
       id: 'demo-task-4',
@@ -364,13 +374,13 @@ function generateChildTasks(): ChildTask[] {
       child_id: CHILD_SOFIE_ID,
       date: tuesday,
       time: null,
-      task_type: 'reminder',
+      task_type: 'reminder' as const,
       title: 'Lever samtykkeskjema',
       notes: 'For fotografering',
-      status: 'open',
-      source: 'manual',
-      external_id: null,
+      status: 'open' as const,
+      source: 'manual' as const,
       created_at: new Date().toISOString(),
+      ...baseTask,
     },
     {
       id: 'demo-task-5',
@@ -378,13 +388,13 @@ function generateChildTasks(): ChildTask[] {
       child_id: CHILD_EMILIE_ID,
       date: friday,
       time: '14:00',
-      task_type: 'appointment',
+      task_type: 'appointment' as const,
       title: 'Utviklingssamtale',
       notes: 'Med klasselærer',
-      status: 'open',
-      source: 'manual',
-      external_id: null,
+      status: 'open' as const,
+      source: 'manual' as const,
       created_at: new Date().toISOString(),
+      ...baseTask,
     },
   ]
 }
@@ -404,7 +414,7 @@ function generateMemberEvents(): MemberEvent[] {
       date: nextTuesday,
       end_date: nextWednesday,
       title: 'Jobbreise til Oslo',
-      event_type: 'work_travel',
+      event_type: 'travel',
       event_time: null,
       source: 'manual',
       source_email: null,
@@ -436,7 +446,7 @@ function generateMemberEvents(): MemberEvent[] {
       date: nextFriday,
       end_date: null,
       title: 'Middag med kollegaer',
-      event_type: 'dinner',
+      event_type: 'other',
       event_time: '19:00',
       source: 'manual',
       source_email: null,
@@ -494,6 +504,7 @@ function generateExternalEvents(): ExternalEvent[] {
       raw_data: null,
       is_hidden: false,
       local_overrides: null,
+      user_notes: null,
       created_at: new Date().toISOString(),
       updated_at: null,
       integration: {
@@ -514,7 +525,7 @@ function generateHolidays(): Holiday[] {
 // Feed Data
 // ============================================================================
 
-function generateFeedMessages(): ExternalMessage[] {
+function generateFeedMessages(): FeedMessage[] {
   const today = new Date()
   const yesterday = addDays(today, -1)
   const twoDaysAgo = addDays(today, -2)
@@ -530,8 +541,7 @@ function generateFeedMessages(): ExternalMessage[] {
       body: 'Husk å ta med drikke og gode sko! Vi skal ha matchtrening denne uken. Alle må møte presis.',
       message_date: formatDateISO(yesterday),
       source_type: 'message',
-      raw_data: null,
-      created_at: yesterday.toISOString(),
+      service: 'spond' as const,
     },
     {
       id: 'demo-msg-2',
@@ -543,8 +553,7 @@ function generateFeedMessages(): ExternalMessage[] {
       body: 'I dag har vi vært på tur i skogen og funnet høstblader 🍂 Barna koste seg masse! Neste uke skal vi lage kunst av bladene.',
       message_date: formatDateISO(today),
       source_type: 'newsletter',
-      raw_data: null,
-      created_at: today.toISOString(),
+      service: 'mykid' as const,
     },
     {
       id: 'demo-msg-3',
@@ -556,8 +565,7 @@ function generateFeedMessages(): ExternalMessage[] {
       body: 'Påminnelse: Foreldremøte torsdag kl 18:00 i klasserommet. Vi skal gå gjennom høstens planer og det blir mulighet for spørsmål.',
       message_date: formatDateISO(twoDaysAgo),
       source_type: 'message',
-      raw_data: null,
-      created_at: twoDaysAgo.toISOString(),
+      service: 'iskole' as const,
     },
     {
       id: 'demo-msg-4',
@@ -569,13 +577,12 @@ function generateFeedMessages(): ExternalMessage[] {
       body: 'Vi har fotografering neste uke! Vennligst lever samtykkeskjema innen tirsdag.',
       message_date: formatDateISO(twoDaysAgo),
       source_type: 'message',
-      raw_data: null,
-      created_at: twoDaysAgo.toISOString(),
+      service: 'mykid' as const,
     },
   ]
 }
 
-function generateFeedPhotos(): ExternalPhoto[] {
+function generateFeedPhotos(): FeedPhoto[] {
   // Demo photos would reference files in public/demo/feed/
   // For now, return empty - photos require actual image files
   return []
@@ -597,7 +604,7 @@ function generateShoppingLists(): ShoppingListWithItems[] {
       updated_at: new Date().toISOString(),
       items: [
         { id: 'demo-item-1', list_id: 'demo-list-groceries', name: 'Melk', quantity: '2L', is_bought: false, category: 'dairy', source_recipe_id: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-        { id: 'demo-item-2', list_id: 'demo-list-groceries', name: 'Brød', quantity: '1', is_bought: false, category: 'bakery', source_recipe_id: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+        { id: 'demo-item-2', list_id: 'demo-list-groceries', name: 'Brød', quantity: '1', is_bought: false, category: 'pantry', source_recipe_id: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
         { id: 'demo-item-3', list_id: 'demo-list-groceries', name: 'Bananer', quantity: '1 kg', is_bought: false, category: 'produce', source_recipe_id: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
         { id: 'demo-item-4', list_id: 'demo-list-groceries', name: 'Kyllingfilet', quantity: '500g', is_bought: true, category: 'meat', source_recipe_id: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
         { id: 'demo-item-5', list_id: 'demo-list-groceries', name: 'Egg', quantity: '12 stk', is_bought: false, category: 'dairy', source_recipe_id: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
@@ -622,8 +629,7 @@ function generateWishlists(): WishlistItem[] {
       occasion: 'birthday',
       status: 'open',
       reserved_by: null,
-      bought_by: null,
-      bought_at: null,
+      reserved_at: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     },
@@ -641,8 +647,7 @@ function generateWishlists(): WishlistItem[] {
       occasion: 'christmas',
       status: 'open',
       reserved_by: null,
-      bought_by: null,
-      bought_at: null,
+      reserved_at: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     },
@@ -660,8 +665,7 @@ function generateWishlists(): WishlistItem[] {
       occasion: 'birthday',
       status: 'reserved',
       reserved_by: MEMBER_ERIK_ID,
-      bought_by: null,
-      bought_at: null,
+      reserved_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     },

@@ -195,6 +195,7 @@ export function DemoDataProvider({ children }: DemoDataProviderProps) {
         ...task,
         id: `demo-task-${Date.now()}`,
         created_at: new Date().toISOString(),
+        updated_at: null,
       }
 
       const newState = { ...prev, childTasks: [...prev.childTasks, newTask] }
