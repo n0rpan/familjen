@@ -598,11 +598,11 @@ async function main() {
       console.log('.ai-reviews directory does not exist or is empty')
     }
 
-    // Don't blindly PASS - this is a warning state
+    // BLOCK when no reviewer data - we can't approve what we can't verify
     const defaultVerdict: FinalVerdictOutput = {
-      verdict: 'PASS',  // Still pass to not block, but with low confidence
-      confidence: 30,   // Low confidence because we couldn't verify
-      summary: '⚠️ No reviewer data available. CI may have configuration issues. Manual review recommended.',
+      verdict: 'BLOCK',  // Block - missing artifacts indicates CI issue
+      confidence: 100,   // High confidence this is wrong
+      summary: '❌ No reviewer data available. CI failed to upload review artifacts. Cannot approve without verification.',
       verifications: {
         typecheck: 'skipped',
         apiHealth: 'skipped',
@@ -611,28 +611,28 @@ async function main() {
         authRequired: 'skipped',
         demoQuality: 'skipped',
       },
-      requiredFixes: [],
-      suggestions: [{
+      requiredFixes: [{
         priority: 1,
-        severity: 'warning',
-        category: 'code-quality',
+        severity: 'critical',
+        category: 'ci-infrastructure',
         file: '.github/workflows/ci.yml',
-        issue: 'No review artifacts were uploaded. Check that reviewer jobs completed successfully.',
-        whyItMatters: 'Without reviewer data, the final verdict cannot make an informed decision.',
+        issue: 'No review artifacts were uploaded by reviewer jobs.',
+        whyItMatters: 'Without reviewer data, the final verdict cannot verify code quality, security, or correctness.',
         fix: {
           type: 'replace',
-          explanation: 'Verify that all reviewer jobs have proper artifact upload steps and the .ai-reviews directory is created.',
+          explanation: 'Check that all reviewer jobs completed and uploaded to .ai-reviews/. Look for mkdir -p .ai-reviews before scripts run.',
         }
       }],
-      reasoning: 'No review artifacts found in .ai-reviews/. This typically means reviewer jobs failed before uploading, or there is a CI configuration issue. Passing with low confidence to allow manual review.',
+      suggestions: [],
+      reasoning: 'No review artifacts found in .ai-reviews/. This typically means reviewer jobs failed before uploading, or there is a CI configuration issue. Blocking to prevent unreviewed code from being merged.',
       reviewerSummary: [],
     }
     saveFinalVerdict(defaultVerdict)
     generateComment(defaultVerdict, reviews)
 
-    // Exit 0 but make it clear this is not ideal
-    console.log('\n⚠️ PASSED with low confidence - manual review recommended')
-    process.exit(0)
+    // Exit 1 to fail CI - we can't approve without reviewer data
+    console.log('\n❌ BLOCKED - No reviewer artifacts found. Fix CI configuration.')
+    process.exit(1)
   }
 
   console.log(`📄 Loaded ${reviewerNames.length} reviewer outputs:`)
