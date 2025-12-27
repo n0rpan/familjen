@@ -587,15 +587,15 @@ async function main() {
   const reviewerNames = Object.keys(reviews)
 
   if (reviewerNames.length === 0) {
-    console.log('⚠️ No review artifacts found in .ai-reviews/')
+    console.log('⚠️ No review artifacts found in ai-reviews/')
     console.log('⚠️ This likely means reviewers failed to upload artifacts or there was a CI configuration issue.')
 
     // List what's in the directory for debugging
     try {
-      const dirContents = readdirSync('.ai-reviews')
+      const dirContents = readdirSync('ai-reviews')
       console.log('Directory contents:', dirContents)
     } catch {
-      console.log('.ai-reviews directory does not exist or is empty')
+      console.log('ai-reviews directory does not exist or is empty')
     }
 
     // BLOCK when no reviewer data - we can't approve what we can't verify
@@ -620,11 +620,11 @@ async function main() {
         whyItMatters: 'Without reviewer data, the final verdict cannot verify code quality, security, or correctness.',
         fix: {
           type: 'replace',
-          explanation: 'Check that all reviewer jobs completed and uploaded to .ai-reviews/. Look for mkdir -p .ai-reviews before scripts run.',
+          explanation: 'Check that all reviewer jobs completed and uploaded to ai-reviews/. Look for mkdir -p ai-reviews before scripts run.',
         }
       }],
       suggestions: [],
-      reasoning: 'No review artifacts found in .ai-reviews/. This typically means reviewer jobs failed before uploading, or there is a CI configuration issue. Blocking to prevent unreviewed code from being merged.',
+      reasoning: 'No review artifacts found in ai-reviews/. This typically means reviewer jobs failed before uploading, or there is a CI configuration issue. Blocking to prevent unreviewed code from being merged.',
       reviewerSummary: [],
     }
     saveFinalVerdict(defaultVerdict)

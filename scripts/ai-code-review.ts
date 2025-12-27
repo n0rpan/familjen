@@ -608,7 +608,7 @@ async function main() {
 
     // Save comment for GitHub posting
     writeFileSync('ai-review-comment.md', comment)
-    console.log('\n📄 Results: .ai-reviews/code-review.json, ai-review-comment.md')
+    console.log('\n📄 Results: ai-reviews/code-review.json, ai-review-comment.md')
 
     // Always exit 0 - we completed the review successfully
     // The verdict doesn't affect exit code; final verdict will decide

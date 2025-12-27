@@ -16,7 +16,7 @@
 
 /**
  * Standardized output format for all reviewers.
- * Each reviewer saves this as JSON to .ai-reviews/<reviewer>.json
+ * Each reviewer saves this as JSON to ai-reviews/<reviewer>.json
  */
 export interface ReviewerOutput {
   // Metadata
@@ -233,10 +233,10 @@ export interface DemoIssue {
 import { mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'fs'
 import { join } from 'path'
 
-const REVIEWS_DIR = '.ai-reviews'
+const REVIEWS_DIR = 'ai-reviews'
 
 /**
- * Ensure the .ai-reviews directory exists
+ * Ensure the ai-reviews directory exists
  */
 export function ensureReviewsDir(): void {
   if (!existsSync(REVIEWS_DIR)) {
@@ -255,7 +255,7 @@ export function saveReviewerOutput(output: ReviewerOutput): void {
 }
 
 /**
- * Load all reviewer outputs from the .ai-reviews directory
+ * Load all reviewer outputs from the ai-reviews directory
  */
 export function loadAllReviewerOutputs(): Record<string, ReviewerOutput> {
   if (!existsSync(REVIEWS_DIR)) {

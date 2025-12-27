@@ -100,41 +100,9 @@ jobs:
           retention-days: 7
 
   # ============================================
-  # STAGE 3: Build verification (after tests)
+  # NOTE: Build is done by Vercel - we rely on Vercel preview for build verification
+  # This saves ~2min CI time since Vercel builds first anyway
   # ============================================
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: [unit-tests]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      # Cache Next.js build artifacts
-      - name: Cache Next.js build
-        uses: actions/cache@v4
-        with:
-          path: .next/cache
-          key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.ts', '**/*.tsx') }}
-          restore-keys: |
-            ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
-            ${{ runner.os }}-nextjs-
-
-      - name: Build application
-        run: npm run build
-        env:
-          # Placeholder env vars for build (actual values in Vercel)
-          NEXT_PUBLIC_SUPABASE_URL: 'https://placeholder.supabase.co'
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: 'placeholder'
 
   # ============================================
   # AI Migration Review (for PRs with migrations)
@@ -165,8 +133,8 @@ jobs:
           echo "has_migrations=$([[ $CHANGED -gt 0 ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
           echo "Found $CHANGED migration changes"
 
-      - name: Create .ai-reviews directory
-        run: mkdir -p .ai-reviews
+      - name: Create ai-reviews directory
+        run: mkdir -p ai-reviews
 
       - name: Install dependencies
         if: steps.check-migrations.outputs.has_migrations == 'true'
@@ -192,14 +160,14 @@ jobs:
       - name: Write skipped status if no migrations
         if: steps.check-migrations.outputs.has_migrations != 'true'
         run: |
-          echo '{"reviewer":"migration-review","status":"skipped","verdict":"PASS","confidence":100,"findings":[],"summary":"No migrations to review.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > .ai-reviews/migration-review.json
+          echo '{"reviewer":"migration-review","status":"skipped","verdict":"PASS","confidence":100,"findings":[],"summary":"No migrations to review.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > ai-reviews/migration-review.json
 
       - name: Upload review artifact for final verdict
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ai-reviews-migration
-          path: .ai-reviews/
+          path: ai-reviews/
           retention-days: 7
           if-no-files-found: warn
 
@@ -219,7 +187,7 @@ jobs:
     name: AI Code Review
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [unit-tests, build]
+    needs: [unit-tests]
     if: github.event_name == 'pull_request'
     continue-on-error: true  # Non-blocking - final verdict decides
 
@@ -233,8 +201,8 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Create .ai-reviews directory
-        run: mkdir -p .ai-reviews
+      - name: Create ai-reviews directory
+        run: mkdir -p ai-reviews
 
       - name: Install dependencies
         run: npm ci
@@ -265,19 +233,19 @@ jobs:
       - name: Write fallback status if no code review
         if: always()
         run: |
-          if [ ! -f ".ai-reviews/code-review.json" ]; then
-            echo '{"reviewer":"code-review","status":"failed","verdict":"ERROR","confidence":0,"findings":[{"severity":"critical","category":"runtime-error","message":"Code review script did not produce output"}],"summary":"Code review failed to run. Check CI logs.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > .ai-reviews/code-review.json
+          if [ ! -f "ai-reviews/code-review.json" ]; then
+            echo '{"reviewer":"code-review","status":"failed","verdict":"ERROR","confidence":0,"findings":[{"severity":"critical","category":"runtime-error","message":"Code review script did not produce output"}],"summary":"Code review failed to run. Check CI logs.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > ai-reviews/code-review.json
           fi
 
-      - name: Debug - Show .ai-reviews contents before upload
+      - name: Debug - Show ai-reviews contents before upload
         if: always()
         run: |
-          echo "📁 Contents of .ai-reviews/ before upload:"
-          ls -la .ai-reviews/ || echo "(directory does not exist)"
+          echo "📁 Contents of ai-reviews/ before upload:"
+          ls -la ai-reviews/ || echo "(directory does not exist)"
           echo ""
-          if [ -f ".ai-reviews/code-review.json" ]; then
+          if [ -f "ai-reviews/code-review.json" ]; then
             echo "📄 code-review.json preview:"
-            head -c 300 .ai-reviews/code-review.json
+            head -c 300 ai-reviews/code-review.json
           fi
 
       - name: Upload review artifact for final verdict
@@ -285,7 +253,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ai-reviews-code
-          path: .ai-reviews/
+          path: ai-reviews/
           retention-days: 7
           if-no-files-found: warn
 
@@ -348,7 +316,7 @@ jobs:
     name: AI Visual Validation
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [build]
+    needs: [unit-tests]
     if: github.event_name == 'pull_request'
     # Visual validation is advisory, not blocking. Reasons:
     # 1. New features may intentionally change UI (not a regression)
@@ -365,8 +333,8 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Create .ai-reviews directory
-        run: mkdir -p .ai-reviews
+      - name: Create ai-reviews directory
+        run: mkdir -p ai-reviews
 
       - name: Install dependencies
         run: npm ci
@@ -418,13 +386,13 @@ jobs:
       - name: Write skipped status if no preview URL
         if: steps.vercel.outputs.preview_url == ''
         run: |
-          echo '{"reviewer":"visual-validation","status":"skipped","verdict":"PASS","confidence":100,"findings":[],"summary":"No Vercel preview URL available.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > .ai-reviews/visual-validation.json
+          echo '{"reviewer":"visual-validation","status":"skipped","verdict":"PASS","confidence":100,"findings":[],"summary":"No Vercel preview URL available.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > ai-reviews/visual-validation.json
 
       - name: Write fallback status if no visual validation
         if: always()
         run: |
-          if [ ! -f ".ai-reviews/visual-validation.json" ]; then
-            echo '{"reviewer":"visual-validation","status":"failed","verdict":"ERROR","confidence":0,"findings":[{"severity":"critical","category":"runtime-error","message":"Visual validation script did not produce output"}],"summary":"Visual validation failed to run. Check CI logs.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > .ai-reviews/visual-validation.json
+          if [ ! -f "ai-reviews/visual-validation.json" ]; then
+            echo '{"reviewer":"visual-validation","status":"failed","verdict":"ERROR","confidence":0,"findings":[{"severity":"critical","category":"runtime-error","message":"Visual validation script did not produce output"}],"summary":"Visual validation failed to run. Check CI logs.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > ai-reviews/visual-validation.json
           fi
 
       - name: Upload review artifact for final verdict
@@ -432,7 +400,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ai-reviews-visual
-          path: .ai-reviews/
+          path: ai-reviews/
           retention-days: 7
           if-no-files-found: warn
 
@@ -494,7 +462,7 @@ jobs:
     name: E2E Tests (Preview)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [build]
+    needs: [unit-tests]
     if: github.event_name == 'pull_request'
     continue-on-error: true  # Non-blocking - final verdict decides
 
@@ -506,8 +474,8 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Create .ai-reviews directory
-        run: mkdir -p .ai-reviews
+      - name: Create ai-reviews directory
+        run: mkdir -p ai-reviews
 
       - name: Install dependencies
         run: npm ci
@@ -563,8 +531,8 @@ jobs:
       - name: Write fallback status if no e2e report
         if: always()
         run: |
-          if [ ! -f ".ai-reviews/e2e-tests.json" ]; then
-            echo '{"reviewer":"e2e-tests","status":"skipped","verdict":"PASS","confidence":100,"findings":[],"summary":"E2E test reporter did not generate output.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > .ai-reviews/e2e-tests.json
+          if [ ! -f "ai-reviews/e2e-tests.json" ]; then
+            echo '{"reviewer":"e2e-tests","status":"skipped","verdict":"PASS","confidence":100,"findings":[],"summary":"E2E test reporter did not generate output.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > ai-reviews/e2e-tests.json
           fi
 
       - name: Upload review artifact for final verdict
@@ -572,7 +540,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ai-reviews-e2e
-          path: .ai-reviews/
+          path: ai-reviews/
           retention-days: 7
           if-no-files-found: warn
 
@@ -651,8 +619,8 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Create .ai-reviews directory
-        run: mkdir -p .ai-reviews
+      - name: Create ai-reviews directory
+        run: mkdir -p ai-reviews
 
       - name: Install dependencies
         run: npm ci
@@ -666,7 +634,7 @@ jobs:
             echo "has_api_key=false" >> $GITHUB_OUTPUT
             echo "⚠️ OPENROUTER_API_KEY not set - skipping API tests"
             # Write skipped status
-            echo '{"reviewer":"api-tests","status":"skipped","verdict":"PASS","confidence":100,"findings":[],"summary":"API key not available.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > .ai-reviews/api-tests.json
+            echo '{"reviewer":"api-tests","status":"skipped","verdict":"PASS","confidence":100,"findings":[],"summary":"API key not available.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > ai-reviews/api-tests.json
           fi
 
       - name: Run API integration tests
@@ -686,8 +654,8 @@ jobs:
       - name: Write fallback status if no api report
         if: always()
         run: |
-          if [ ! -f ".ai-reviews/api-tests.json" ]; then
-            echo '{"reviewer":"api-tests","status":"skipped","verdict":"PASS","confidence":100,"findings":[],"summary":"API test reporter did not generate output.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > .ai-reviews/api-tests.json
+          if [ ! -f "ai-reviews/api-tests.json" ]; then
+            echo '{"reviewer":"api-tests","status":"skipped","verdict":"PASS","confidence":100,"findings":[],"summary":"API test reporter did not generate output.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > ai-reviews/api-tests.json
           fi
 
       - name: Upload review artifact for final verdict
@@ -695,7 +663,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ai-reviews-api
-          path: .ai-reviews/
+          path: ai-reviews/
           retention-days: 7
           if-no-files-found: warn
 
@@ -764,8 +732,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Create .ai-reviews directory
-        run: mkdir -p .ai-reviews
+      - name: Create ai-reviews directory
+        run: mkdir -p ai-reviews
 
       # Download all review artifacts using pattern matching
       - name: Download all review artifacts
@@ -773,7 +741,7 @@ jobs:
         continue-on-error: true
         with:
           pattern: ai-reviews-*
-          path: .ai-reviews-temp/
+          path: ai-reviews-temp/
           merge-multiple: false
 
       # Flatten the directory structure (artifacts download to subdirectories)
@@ -781,17 +749,17 @@ jobs:
         run: |
           echo "📦 Consolidating review artifacts..."
           echo ""
-          echo "🔍 Debug: Contents of .ai-reviews-temp/"
-          ls -laR .ai-reviews-temp/ 2>/dev/null || echo "   (directory does not exist)"
+          echo "🔍 Debug: Contents of ai-reviews-temp/"
+          ls -laR ai-reviews-temp/ 2>/dev/null || echo "   (directory does not exist)"
           echo ""
-          if [ -d ".ai-reviews-temp" ]; then
+          if [ -d "ai-reviews-temp" ]; then
             # Each artifact downloads to its own subdirectory, flatten them
-            find .ai-reviews-temp -name "*.json" -exec cp {} .ai-reviews/ \; 2>/dev/null || true
-            echo "📄 Found review files in .ai-reviews/:"
-            ls -la .ai-reviews/ || echo "No review files found"
+            find ai-reviews-temp -name "*.json" -exec cp {} ai-reviews/ \; 2>/dev/null || true
+            echo "📄 Found review files in ai-reviews/:"
+            ls -la ai-reviews/ || echo "No review files found"
             echo ""
             echo "📄 Content preview of each file:"
-            for f in .ai-reviews/*.json; do
+            for f in ai-reviews/*.json; do
               if [ -f "$f" ]; then
                 echo "--- $f ---"
                 head -c 200 "$f"
@@ -799,7 +767,7 @@ jobs:
               fi
             done
           else
-            echo "⚠️ No review artifacts downloaded (.ai-reviews-temp does not exist)"
+            echo "⚠️ No review artifacts downloaded (ai-reviews-temp does not exist)"
           fi
 
       - name: Get Vercel Preview URL
@@ -838,7 +806,7 @@ jobs:
         with:
           name: final-verdict
           path: |
-            .ai-reviews/final-verdict.json
+            ai-reviews/final-verdict.json
             final-verdict-comment.md
           retention-days: 7
 

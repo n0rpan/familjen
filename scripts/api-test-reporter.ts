@@ -317,7 +317,7 @@ async function main() {
       }
     }
 
-    console.log(`\n📄 Results: .ai-reviews/api-tests.json`)
+    console.log(`\n📄 Results: ai-reviews/api-tests.json`)
 
     // Always exit 0 - review completed, final verdict decides blocking
     console.log(`\n${verdictEmoji(verdict)} API test report complete (${verdict})`)

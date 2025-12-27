@@ -602,7 +602,7 @@ async function main() {
     console.log('')
     console.log(`   ${report.recommendation}`)
     console.log('='.repeat(50))
-    console.log(`\n📄 Results: .ai-reviews/visual-validation.json`)
+    console.log(`\n📄 Results: ai-reviews/visual-validation.json`)
 
     // Generate markdown comment for PR
     const commentPath = 'visual-validation-comment.md'

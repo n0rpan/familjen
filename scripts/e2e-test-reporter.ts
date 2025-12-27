@@ -347,7 +347,7 @@ async function main() {
       }
     }
 
-    console.log(`\n📄 Results: .ai-reviews/e2e-tests.json`)
+    console.log(`\n📄 Results: ai-reviews/e2e-tests.json`)
 
     // Always exit 0 - review completed, final verdict decides blocking
     console.log(`\n${verdictEmoji(verdict)} E2E report complete (${verdict})`)

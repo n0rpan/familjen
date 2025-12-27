@@ -428,8 +428,8 @@ async function main() {
   console.log(`Passed: ${results.filter((r) => r.review.verdict === 'PASS').length}`)
   console.log(`Warnings: ${results.filter((r) => r.review.verdict === 'WARN').length}`)
   console.log(`Failed: ${results.filter((r) => r.review.verdict === 'FAIL').length}`)
-  console.log(`\n📄 Results: .ai-reviews/migration-review.json`)
-  console.log(`📄 Rollbacks: .ai-reviews/rollback-migrations/`)
+  console.log(`\n📄 Results: ai-reviews/migration-review.json`)
+  console.log(`📄 Rollbacks: ai-reviews/rollback-migrations/`)
 
   // Always exit 0 - review completed, final verdict decides blocking
   console.log(`\n${verdictEmoji(mapVerdict(worstVerdict))} Review complete (${mapVerdict(worstVerdict)})`)
