@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { TodayOverview } from './TodayOverview'
 import { MemberEventModal, HouseholdEventModal, ChildTaskModal, ExternalEventModal } from '@/app/uke/components'
@@ -18,17 +19,20 @@ interface TodaySectionProps {
 
 export function TodaySection({ summary, holidays = [], members, children, householdId }: TodaySectionProps) {
   const { t } = useLanguage()
+  const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
 
   // Current summary state (allows updates after modal actions)
   const [currentSummary, setCurrentSummary] = useState(summary)
 
-  // Sync summary prop to state when it changes (fixes stale state bug)
-  useEffect(() => {
-    setCurrentSummary(summary)
-  }, [summary])
+  // Clear error after 5 seconds
+  const showError = useCallback((message: string) => {
+    setError(message)
+    setTimeout(() => setError(null), 5000)
+  }, [])
 
   // Member event modal state
   const [showMemberEventModal, setShowMemberEventModal] = useState(false)
@@ -67,6 +71,17 @@ export function TodaySection({ summary, holidays = [], members, children, househ
     time: '',
     notes: '',
   })
+
+  // Check if any modal is open (to prevent race conditions during editing)
+  const isAnyModalOpen = showMemberEventModal || showHouseholdEventModal || showExternalEventModal || showTaskModal
+
+  // Sync summary prop to state when it changes (fixes stale state bug)
+  // Only sync when no modal is open to prevent overwriting editor state
+  useEffect(() => {
+    if (!isAnyModalOpen) {
+      setCurrentSummary(summary)
+    }
+  }, [summary, isAnyModalOpen])
 
   // Reload data after changes
   const reloadData = useCallback(async () => {
@@ -107,7 +122,7 @@ export function TodaySection({ summary, holidays = [], members, children, househ
     setSaving(true)
     try {
       if (editingMemberEvent) {
-        await supabase
+        const { error: dbError } = await supabase
           .from('member_events')
           .update({
             member_id: memberEventForm.member_id,
@@ -117,34 +132,38 @@ export function TodaySection({ summary, holidays = [], members, children, househ
             end_date: memberEventForm.end_date || null,
           })
           .eq('id', editingMemberEvent.id)
+        if (dbError) throw dbError
       }
       closeMemberEventModal()
-      reloadData()
+      router.refresh()
     } catch (err) {
       console.error('Error saving member event:', err)
+      showError(t.errors.couldNotSaveEvent)
     } finally {
       setSaving(false)
     }
-  }, [editingMemberEvent, memberEventForm, supabase, closeMemberEventModal, reloadData])
+  }, [editingMemberEvent, memberEventForm, supabase, closeMemberEventModal, router, showError, t.errors.couldNotSaveEvent])
 
   const deleteMemberEvent = useCallback(async () => {
     if (!editingMemberEvent) return
 
     setSaving(true)
     try {
-      await supabase
+      const { error: dbError } = await supabase
         .from('member_events')
         .delete()
         .eq('id', editingMemberEvent.id)
+      if (dbError) throw dbError
 
       closeMemberEventModal()
-      reloadData()
+      router.refresh()
     } catch (err) {
       console.error('Error deleting member event:', err)
+      showError(t.errors.deleteFailed)
     } finally {
       setSaving(false)
     }
-  }, [editingMemberEvent, supabase, closeMemberEventModal, reloadData])
+  }, [editingMemberEvent, supabase, closeMemberEventModal, router, showError, t.errors.deleteFailed])
 
   // Household event handlers
   const handleHouseholdEventClick = useCallback((event: HouseholdEvent) => {
@@ -182,7 +201,7 @@ export function TodaySection({ summary, holidays = [], members, children, househ
     setSaving(true)
     try {
       if (editingHouseholdEvent) {
-        await supabase
+        const { error: dbError } = await supabase
           .from('household_events')
           .update({
             title: householdEventForm.title,
@@ -192,15 +211,17 @@ export function TodaySection({ summary, holidays = [], members, children, househ
             location: householdEventForm.location || null,
           })
           .eq('id', editingHouseholdEvent.id)
+        if (dbError) throw dbError
       }
       closeHouseholdEventModal()
-      reloadData()
+      router.refresh()
     } catch (err) {
       console.error('Error saving household event:', err)
+      showError(t.errors.couldNotSaveEvent)
     } finally {
       setSaving(false)
     }
-  }, [editingHouseholdEvent, householdEventForm, supabase, closeHouseholdEventModal, reloadData])
+  }, [editingHouseholdEvent, householdEventForm, supabase, closeHouseholdEventModal, router, showError, t.errors.couldNotSaveEvent])
 
   const deleteHouseholdEvent = useCallback(async () => {
     if (!editingHouseholdEvent) return
@@ -212,19 +233,21 @@ export function TodaySection({ summary, holidays = [], members, children, househ
 
     setSaving(true)
     try {
-      await supabase
+      const { error: dbError } = await supabase
         .from('household_events')
         .delete()
         .eq('id', editingHouseholdEvent.id)
+      if (dbError) throw dbError
 
       closeHouseholdEventModal()
-      reloadData()
+      router.refresh()
     } catch (err) {
       console.error('Error deleting household event:', err)
+      showError(t.errors.deleteFailed)
     } finally {
       setSaving(false)
     }
-  }, [editingHouseholdEvent, supabase, closeHouseholdEventModal, reloadData])
+  }, [editingHouseholdEvent, supabase, closeHouseholdEventModal, router, showError, t.errors.deleteFailed])
 
   // External event handlers
   const handleExternalEventClick = useCallback((event: ExternalEvent) => {
@@ -246,7 +269,7 @@ export function TodaySection({ summary, holidays = [], members, children, househ
 
     setSaving(true)
     try {
-      await supabase
+      const { error: dbError } = await supabase
         .from('external_events')
         .update({
           local_overrides: updates.local_overrides,
@@ -254,15 +277,17 @@ export function TodaySection({ summary, holidays = [], members, children, househ
           is_hidden: updates.is_hidden,
         })
         .eq('id', editingExternalEvent.id)
+      if (dbError) throw dbError
 
       closeExternalEventModal()
-      reloadData()
+      router.refresh()
     } catch (err) {
       console.error('Error saving external event:', err)
+      showError(t.errors.couldNotSaveEvent)
     } finally {
       setSaving(false)
     }
-  }, [editingExternalEvent, supabase, closeExternalEventModal, reloadData])
+  }, [editingExternalEvent, supabase, closeExternalEventModal, router, showError, t.errors.couldNotSaveEvent])
 
   // Task handlers
   const handleTaskClick = useCallback((task: ChildTask) => {
@@ -297,7 +322,7 @@ export function TodaySection({ summary, holidays = [], members, children, househ
     setSaving(true)
     try {
       if (editingTask) {
-        await supabase
+        const { error: dbError } = await supabase
           .from('child_tasks')
           .update({
             child_id: taskForm.child_id,
@@ -308,37 +333,73 @@ export function TodaySection({ summary, holidays = [], members, children, househ
             notes: taskForm.notes || null,
           })
           .eq('id', editingTask.id)
+        if (dbError) throw dbError
       }
       closeTaskModal()
-      reloadData()
+      router.refresh()
     } catch (err) {
       console.error('Error saving task:', err)
+      showError(t.errors.couldNotSaveTask)
     } finally {
       setSaving(false)
     }
-  }, [editingTask, taskForm, supabase, closeTaskModal, reloadData])
+  }, [editingTask, taskForm, supabase, closeTaskModal, router, showError, t.errors.couldNotSaveTask])
 
   const deleteTask = useCallback(async () => {
     if (!editingTask) return
 
     setSaving(true)
     try {
-      await supabase
+      const { error: dbError } = await supabase
         .from('child_tasks')
         .delete()
         .eq('id', editingTask.id)
+      if (dbError) throw dbError
 
       closeTaskModal()
-      reloadData()
+      router.refresh()
     } catch (err) {
       console.error('Error deleting task:', err)
+      showError(t.errors.deleteFailed)
     } finally {
       setSaving(false)
     }
-  }, [editingTask, supabase, closeTaskModal, reloadData])
+  }, [editingTask, supabase, closeTaskModal, router, showError, t.errors.deleteFailed])
 
   return (
     <>
+      {/* Error Toast */}
+      {error && (
+        <div
+          className="fixed bottom-24 left-4 right-4 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg animate-fade-in"
+          style={{
+            background: 'var(--card)',
+            border: '1px solid var(--color-coral)',
+          }}
+          role="alert"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <p className="flex-1 text-sm" style={{ color: 'var(--foreground)' }}>
+            {error}
+          </p>
+          <button
+            onClick={() => setError(null)}
+            className="shrink-0 p-1 rounded-md transition-colors hover:bg-[var(--sand)]"
+            style={{ color: 'var(--muted)' }}
+            aria-label={t.common.close}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       <TodayOverview
         key={reloadKey}
         summary={currentSummary}

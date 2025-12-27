@@ -80,6 +80,8 @@ const CHILD_COLOR_MAP: Record<ChildColor, { bg: string; text: string }> = {
 | Component | Purpose |
 |-----------|---------|
 | `WeekGrid` | Desktop 7-day grid with pickups, events, tasks, meals |
+| `WeekSection` | Client wrapper for WeekGrid with event modals (used on home page) |
+| `TodaySection` | Client wrapper for TodayOverview with event modals |
 | `TodayOverview` | Today's summary card |
 | `DayView` | Single day detail view |
 | `MealSelector` | Recipe/custom meal dropdown |
