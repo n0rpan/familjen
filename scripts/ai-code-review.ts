@@ -6,8 +6,11 @@
  * - FAST model: Quick check, often different vendor perspective
  * - CAPABLE model: Thorough analysis with deeper reasoning
  *
- * Both reviews are posted to give reviewers multiple perspectives.
- * Request changes if EITHER model finds blocking issues.
+ * IMPORTANT: This script is NON-BLOCKING.
+ * - It reports findings but does NOT fail the CI
+ * - Only the final verdict script can block PRs
+ * - Exit 0 = review completed (even if issues found)
+ * - Exit 1 = script itself failed (API error, couldn't run)
  *
  * Checks for:
  * - Security issues (auth, RLS, injection)
@@ -25,6 +28,13 @@
 import { execSync } from 'child_process'
 import { writeFileSync, readFileSync, existsSync } from 'fs'
 import { AI_MODELS, callOpenRouterStructured, SCHEMAS, type CodeReviewResult } from './ai-config'
+import {
+  type ReviewerOutput,
+  type Finding,
+  saveReviewerOutput,
+  verdictEmoji,
+  categoryEmoji,
+} from './ai-review-types'
 
 interface DualReviewResult {
   fast: CodeReviewResult | null
@@ -239,6 +249,62 @@ function formatReviewOutput(review: CodeReviewResult): void {
   }
 }
 
+/**
+ * Convert old CodeReviewResult format to new Finding[] format
+ */
+function convertToFindings(review: CodeReviewResult): Finding[] {
+  const findings: Finding[] = []
+
+  // Convert blocking issues to critical findings
+  for (const b of review.blocking) {
+    findings.push({
+      severity: 'critical',
+      category: categorizeFinding(b.issue),
+      message: b.issue,
+      file: b.file,
+      line: b.line ?? undefined,
+    })
+  }
+
+  // Convert suggestions to info/warning findings
+  for (const s of review.suggestions) {
+    findings.push({
+      severity: 'info',
+      category: categorizeFinding(s.suggestion),
+      message: s.suggestion,
+      file: s.file,
+      line: s.line ?? undefined,
+    })
+  }
+
+  return findings
+}
+
+/**
+ * Try to categorize a finding based on its message content
+ */
+function categorizeFinding(message: string): Finding['category'] {
+  const lower = message.toLowerCase()
+
+  if (lower.includes('auth') || lower.includes('security') || lower.includes('secret') || lower.includes('rls')) {
+    return 'security'
+  }
+  if (lower.includes('error handling') || lower.includes('validation') || lower.includes('null')) {
+    return 'data-integrity'
+  }
+  if (lower.includes('import') || lower.includes('crash') || lower.includes('undefined')) {
+    return 'runtime-error'
+  }
+  if (lower.includes('translation') || lower.includes('i18n') || lower.includes('norwegian')) {
+    return 'i18n'
+  }
+  if (lower.includes('performance') || lower.includes('slow') || lower.includes('index')) {
+    return 'performance'
+  }
+
+  return 'code-quality'
+}
+
 function generateReviewSection(review: CodeReviewResult, modelName: string, label: string): string {
   const emoji = { APPROVE: '✅', REQUEST_CHANGES: '❌', COMMENT: '💬' }
 
@@ -269,9 +335,8 @@ function generateDualComment(result: DualReviewResult): string {
   let body = `## 🤖 AI Code Review (Dual-Model)\n\n`
   body += `**Combined Verdict:** ${emoji[result.combinedVerdict]} ${result.combinedVerdict}\n\n`
 
-  if (result.combinedVerdict === 'REQUEST_CHANGES') {
-    body += `> ⚠️ At least one model found blocking issues that should be addressed.\n\n`
-  }
+  // Note that this is non-blocking
+  body += `> ℹ️ This review is informational. The final verdict will decide if the PR can merge.\n\n`
 
   body += `---\n\n`
 
@@ -293,6 +358,10 @@ function generateDualComment(result: DualReviewResult): string {
 function generateSingleComment(review: CodeReviewResult, modelName: string): string {
   let body = `## 🤖 AI Code Review\n\n`
   body += `**Verdict:** ${review.verdict}\n\n`
+
+  // Note that this is non-blocking
+  body += `> ℹ️ This review is informational. The final verdict will decide if the PR can merge.\n\n`
+
   body += `${review.summary}\n`
 
   if (review.blocking.length > 0) {
@@ -348,19 +417,49 @@ function combineVerdicts(
   return 'COMMENT'
 }
 
+/**
+ * Map combined verdict to new ReviewerVerdict type
+ */
+function mapVerdict(verdict: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'): 'PASS' | 'WARN' | 'FAIL' {
+  switch (verdict) {
+    case 'APPROVE': return 'PASS'
+    case 'REQUEST_CHANGES': return 'FAIL'
+    case 'COMMENT': return 'WARN'
+  }
+}
+
 async function main() {
+  const startTime = Date.now()
   const singleMode = getSingleModelMode()
 
-  console.log('🔍 AI Code Review')
+  console.log('🔍 AI Code Review (Non-Blocking)')
   if (singleMode) {
     console.log(`Mode: Single (${singleMode === 'fast' ? AI_MODELS.fast : AI_MODELS.capable})`)
   } else {
     console.log(`Mode: Dual (${AI_MODELS.fast} + ${AI_MODELS.capable})`)
   }
 
+  // Check for API key
   if (!process.env.OPENROUTER_API_KEY) {
     console.error('❌ OPENROUTER_API_KEY not set')
-    process.exit(0)
+    // Save error output
+    const errorOutput: ReviewerOutput = {
+      reviewer: 'code-review',
+      model: 'none',
+      timestamp: new Date().toISOString(),
+      duration_ms: Date.now() - startTime,
+      status: 'failed',
+      verdict: 'ERROR',
+      confidence: 0,
+      findings: [{
+        severity: 'critical',
+        category: 'runtime-error',
+        message: 'OPENROUTER_API_KEY not set',
+      }],
+      summary: 'Code review failed: API key not configured.',
+    }
+    saveReviewerOutput(errorOutput)
+    process.exit(1) // Script failed to run
   }
 
   const baseBranch = getBaseBranch()
@@ -369,6 +468,19 @@ async function main() {
   const diff = getDiff(baseBranch)
   if (!diff.trim()) {
     console.log('✅ No changes to review')
+    // Save skipped output
+    const skippedOutput: ReviewerOutput = {
+      reviewer: 'code-review',
+      model: 'none',
+      timestamp: new Date().toISOString(),
+      duration_ms: Date.now() - startTime,
+      status: 'skipped',
+      verdict: 'PASS',
+      confidence: 100,
+      findings: [],
+      summary: 'No changes to review.',
+    }
+    saveReviewerOutput(skippedOutput)
     process.exit(0)
   }
 
@@ -381,6 +493,18 @@ async function main() {
   )
   if (codeOrDocsFiles.length === 0) {
     console.log('✅ Only config changes, skipping')
+    const skippedOutput: ReviewerOutput = {
+      reviewer: 'code-review',
+      model: 'none',
+      timestamp: new Date().toISOString(),
+      duration_ms: Date.now() - startTime,
+      status: 'skipped',
+      verdict: 'PASS',
+      confidence: 100,
+      findings: [],
+      summary: 'Only configuration changes, no code review needed.',
+    }
+    saveReviewerOutput(skippedOutput)
     process.exit(0)
   }
 
@@ -392,83 +516,141 @@ async function main() {
 
   let comment: string
   let finalVerdict: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'
+  let allFindings: Finding[] = []
+  let modelsUsed: string
 
-  if (singleMode) {
-    const model = singleMode === 'fast' ? AI_MODELS.fast : AI_MODELS.capable
-    const review = await runReview(model, prompt, '🤖 Review')
+  try {
+    if (singleMode) {
+      const model = singleMode === 'fast' ? AI_MODELS.fast : AI_MODELS.capable
+      modelsUsed = model
+      const review = await runReview(model, prompt, '🤖 Review')
 
-    if (!review) {
-      writeFileSync('ai-review-result.json', JSON.stringify({
-        verdict: 'COMMENT',
-        blocking: [],
-        suggestions: [],
-        summary: 'AI review failed. Manual review recommended.',
-      }, null, 2))
-      process.exit(0)
-    }
+      if (!review) {
+        throw new Error('AI review returned null')
+      }
 
-    formatReviewOutput(review)
-    writeFileSync('ai-review-result.json', JSON.stringify(review, null, 2))
-    comment = generateSingleComment(review, model)
-    finalVerdict = review.verdict
-  } else {
-    console.log('\n🚀 Running dual-model review...')
+      formatReviewOutput(review)
+      allFindings = convertToFindings(review)
+      comment = generateSingleComment(review, model)
+      finalVerdict = review.verdict
+    } else {
+      console.log('\n🚀 Running dual-model review...')
+      modelsUsed = `${AI_MODELS.fast} + ${AI_MODELS.capable}`
 
-    const [fastReview, capableReview] = await Promise.all([
-      runReview(AI_MODELS.fast, prompt, `A (${AI_MODELS.fast.split('/').pop()})`),
-      runReview(AI_MODELS.capable, prompt, `B (${AI_MODELS.capable.split('/').pop()})`),
-    ])
+      const [fastReview, capableReview] = await Promise.all([
+        runReview(AI_MODELS.fast, prompt, `A (${AI_MODELS.fast.split('/').pop()})`),
+        runReview(AI_MODELS.capable, prompt, `B (${AI_MODELS.capable.split('/').pop()})`),
+      ])
 
-    if (!fastReview && !capableReview) {
-      writeFileSync('ai-review-result.json', JSON.stringify({
-        verdict: 'COMMENT',
-        blocking: [],
-        suggestions: [],
-        summary: 'Both AI reviews failed. Manual review recommended.',
-      }, null, 2))
-      process.exit(0)
-    }
+      if (!fastReview && !capableReview) {
+        throw new Error('Both AI reviews failed')
+      }
 
-    const combinedVerdict = combineVerdicts(fastReview, capableReview)
+      finalVerdict = combineVerdicts(fastReview, capableReview)
 
-    const result: DualReviewResult = {
-      fast: fastReview,
-      capable: capableReview,
-      combinedVerdict,
-    }
+      // Combine findings from both reviews
+      if (fastReview) {
+        allFindings.push(...convertToFindings(fastReview))
+      }
+      if (capableReview) {
+        allFindings.push(...convertToFindings(capableReview))
+      }
 
-    if (fastReview) {
+      // Deduplicate findings by message
+      const seen = new Set<string>()
+      allFindings = allFindings.filter(f => {
+        const key = `${f.file}:${f.line}:${f.message}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+
+      const result: DualReviewResult = {
+        fast: fastReview,
+        capable: capableReview,
+        combinedVerdict: finalVerdict,
+      }
+
+      if (fastReview) {
+        console.log('\n' + '='.repeat(60))
+        console.log(`MODEL A (${AI_MODELS.fast})`)
+        formatReviewOutput(fastReview)
+      }
+      if (capableReview) {
+        console.log('\n' + '='.repeat(60))
+        console.log(`MODEL B (${AI_MODELS.capable})`)
+        formatReviewOutput(capableReview)
+      }
+
       console.log('\n' + '='.repeat(60))
-      console.log(`MODEL A (${AI_MODELS.fast})`)
-      formatReviewOutput(fastReview)
-    }
-    if (capableReview) {
-      console.log('\n' + '='.repeat(60))
-      console.log(`MODEL B (${AI_MODELS.capable})`)
-      formatReviewOutput(capableReview)
+      console.log(`COMBINED: ${finalVerdict}`)
+
+      // Keep old format for backwards compatibility
+      writeFileSync('ai-review-result.json', JSON.stringify(result, null, 2))
+      comment = generateDualComment(result)
     }
 
-    console.log('\n' + '='.repeat(60))
-    console.log(`COMBINED: ${combinedVerdict}`)
+    // Save in new standardized format
+    const output: ReviewerOutput = {
+      reviewer: 'code-review',
+      model: modelsUsed,
+      timestamp: new Date().toISOString(),
+      duration_ms: Date.now() - startTime,
+      status: 'completed',
+      verdict: mapVerdict(finalVerdict),
+      confidence: finalVerdict === 'APPROVE' ? 85 : finalVerdict === 'COMMENT' ? 70 : 90,
+      findings: allFindings,
+      summary: allFindings.length === 0
+        ? 'No issues found in code review.'
+        : `Found ${allFindings.filter(f => f.severity === 'critical').length} critical issues, ${allFindings.filter(f => f.severity === 'warning').length} warnings.`,
+    }
+    saveReviewerOutput(output)
 
-    writeFileSync('ai-review-result.json', JSON.stringify(result, null, 2))
-    comment = generateDualComment(result)
-    finalVerdict = combinedVerdict
-  }
+    // Save comment for GitHub posting
+    writeFileSync('ai-review-comment.md', comment)
+    console.log('\n📄 Results: .ai-reviews/code-review.json, ai-review-comment.md')
 
-  writeFileSync('ai-review-comment.md', comment)
-  console.log('\n📄 Results: ai-review-result.json, ai-review-comment.md')
-
-  if (finalVerdict === 'REQUEST_CHANGES') {
-    console.log('❌ Review requests changes')
-    process.exit(1)
-  } else {
-    console.log('✅ Review complete')
+    // Always exit 0 - we completed the review successfully
+    // The verdict doesn't affect exit code; final verdict will decide
+    console.log(`\n${verdictEmoji(mapVerdict(finalVerdict))} Review complete (${mapVerdict(finalVerdict)})`)
     process.exit(0)
+
+  } catch (error) {
+    console.error('❌ Review failed:', error instanceof Error ? error.message : error)
+
+    // Save error output
+    const errorOutput: ReviewerOutput = {
+      reviewer: 'code-review',
+      model: singleMode ? (singleMode === 'fast' ? AI_MODELS.fast : AI_MODELS.capable) : `${AI_MODELS.fast} + ${AI_MODELS.capable}`,
+      timestamp: new Date().toISOString(),
+      duration_ms: Date.now() - startTime,
+      status: 'failed',
+      verdict: 'ERROR',
+      confidence: 0,
+      findings: [{
+        severity: 'critical',
+        category: 'runtime-error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      }],
+      summary: 'Code review failed due to an error. Manual review recommended.',
+    }
+    saveReviewerOutput(errorOutput)
+
+    // Save a basic comment so something gets posted
+    writeFileSync('ai-review-comment.md', `## 🤖 AI Code Review
+
+**Status:** ❌ ERROR
+
+The AI code review failed to complete. Manual review recommended.
+
+Error: ${error instanceof Error ? error.message : 'Unknown error'}
+
+---
+*Review attempted but failed*`)
+
+    // Exit 1 because the script itself failed
+    process.exit(1)
   }
 }
 
-main().catch((error) => {
-  console.error('Review failed:', error.message)
-  process.exit(1)
-})
+main()
