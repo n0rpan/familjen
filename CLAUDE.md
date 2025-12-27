@@ -105,10 +105,12 @@ Key interfaces:
 
 | Route | Purpose |
 |-------|---------|
+| `/api/auth/google` | Start Google OAuth for login (shows familjen.eu) |
+| `/api/auth/google/callback` | Handle Google OAuth callback |
 | `/api/openrouter/suggest` | AI meal suggestions |
 | `/api/openrouter/models` | Available AI models |
-| `/api/calendar/auth` | Start Google OAuth |
-| `/api/calendar/callback` | OAuth callback |
+| `/api/calendar/auth` | Start Google OAuth for calendar |
+| `/api/calendar/callback` | Calendar OAuth callback |
 | `/api/calendar/sync` | Sync inbound calendar events |
 | `/api/calendar/send-invite` | Send pickup to work calendar |
 | `/api/openrouter/analyze-wishlist-image` | AI extracts product info from images |
@@ -222,8 +224,22 @@ Key migrations (in order):
 2. Run migrations via SQL Editor (CLI may have permission issues):
    - Copy content from `supabase/migrations/20251216000000_base_schema.sql`
    - Run in SQL Editor
-3. Set up Google OAuth in Supabase Auth → Providers → Google
-4. Configure Site URL in Auth → URL Configuration (e.g., `https://familjen.eu`)
+3. Configure Site URL in Auth → URL Configuration (e.g., `https://familjen.eu`)
+
+### Google Cloud Console Setup
+Google OAuth is handled by our custom flow (shows `familjen.eu` instead of Supabase URL):
+
+1. Configure OAuth consent screen (APIs & Services → OAuth consent screen)
+   - User type: External
+   - App name: Familjen
+   - Support email: your email
+   - Scopes: `openid`, `email`, `profile`
+2. Create OAuth 2.0 Client ID (APIs & Services → Credentials)
+3. Add authorized redirect URIs:
+   - `https://familjen.eu/api/auth/google/callback` (login)
+   - `https://familjen.eu/api/calendar/callback` (calendar sync)
+   - For local dev: `http://localhost:3000/api/auth/google/callback`
+4. Copy Client ID and Client Secret to environment variables
 
 ### Required Database Columns
 Ensure these columns exist (some migrations may not apply cleanly):
@@ -309,8 +325,10 @@ NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 SUPABASE_SERVICE_ROLE_KEY=eyJ... (from Legacy API keys)
 OPENROUTER_API_KEY=sk-or-...
+# Google OAuth (required - used for login AND calendar sync)
 GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=xxx
+# Only needed for calendar sync feature
 GOOGLE_REDIRECT_URI=https://your-domain.com/api/calendar/callback
 ```
 

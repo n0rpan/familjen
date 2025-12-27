@@ -35,18 +35,11 @@ function LoginContent() {
     }
   }, [searchParams, t])
 
-  const handleGoogleLogin = async () => {
+  const handleGoogleLogin = () => {
     setLoading(true)
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    })
-    if (error) {
-      setMessage({ type: 'error', text: error.message })
-      setLoading(false)
-    }
+    // Redirect to our custom OAuth endpoint which shows familjen.eu in Google's OAuth screen
+    // instead of the Supabase URL
+    window.location.href = '/api/auth/google'
   }
 
   const handleSendCode = async (e: React.FormEvent) => {
