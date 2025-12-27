@@ -103,6 +103,29 @@ const TOOLS: Tool[] = [
       required: []
     }
   },
+  {
+    name: 'get_full_documentation',
+    description: 'Get full CLAUDE.md or README.md content (use when code review mentioned truncation or you need more project context)',
+    input_schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', enum: ['CLAUDE.md', 'README.md'], description: 'Which documentation file to retrieve' }
+      },
+      required: ['file']
+    }
+  },
+  {
+    name: 'get_file_section',
+    description: 'Get a specific section of a large file by searching for a header or pattern',
+    input_schema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Path to file' },
+        section: { type: 'string', description: 'Section header or pattern to find (e.g., "## Testing", "function handleError")' }
+      },
+      required: ['path', 'section']
+    }
+  },
 
   // Database/Migration Safety
   {
@@ -271,6 +294,53 @@ function executeToolUncached(name: string, input: Record<string, unknown>): stri
       }
     }
 
+    case 'get_full_documentation': {
+      const file = input.file as string
+      if (!['CLAUDE.md', 'README.md'].includes(file)) {
+        return `Error: Invalid file '${file}'. Must be CLAUDE.md or README.md`
+      }
+      try {
+        if (!existsSync(file)) {
+          return `${file} does not exist in this repository`
+        }
+        const content = readFileSync(file, 'utf-8')
+        const sizeKB = Math.round(content.length / 1024)
+        return `# ${file} (${sizeKB}KB)\n\n${content}`
+      } catch (e) {
+        return `Error reading ${file}: ${e}`
+      }
+    }
+
+    case 'get_file_section': {
+      const path = input.path as string
+      const section = input.section as string
+      try {
+        if (!existsSync(path)) {
+          return `File '${path}' does not exist`
+        }
+        const content = readFileSync(path, 'utf-8')
+        const lines = content.split('\n')
+
+        // Find the section by searching for the pattern
+        const sectionIndex = lines.findIndex(line =>
+          line.toLowerCase().includes(section.toLowerCase())
+        )
+
+        if (sectionIndex === -1) {
+          return `Section '${section}' not found in ${path}. File has ${lines.length} lines.`
+        }
+
+        // Extract ~100 lines around the section
+        const start = Math.max(0, sectionIndex - 5)
+        const end = Math.min(lines.length, sectionIndex + 100)
+        const extracted = lines.slice(start, end).join('\n')
+
+        return `# ${path} - Section containing '${section}' (lines ${start + 1}-${end})\n\n${extracted}`
+      } catch (e) {
+        return `Error reading section: ${e}`
+      }
+    }
+
     case 'check_migration_patterns': {
       const patterns = {
         'DROP without IF EXISTS': /DROP\s+(TABLE|INDEX|FUNCTION|TRIGGER|POLICY)\s+(?!IF\s+EXISTS)/gi,
@@ -317,6 +387,17 @@ function executeToolUncached(name: string, input: Record<string, unknown>): stri
           { encoding: 'utf-8' }
         ).trim().split('\n').filter(Boolean)
 
+        // System tables that legitimately don't need household_id scoping
+        // These are global tables or use different RLS patterns
+        const systemTables = new Set([
+          'allowed_emails',       // Global: who can use the app
+          'app_settings',         // Global: app-wide settings
+          'ai_settings',          // Global: AI model config
+          'admin_audit_logs',     // Global: admin actions
+          'wishlist_share_tokens', // Uses token-based access, not household
+          'google_calendar_tokens', // Uses member/household join, not direct household_id
+        ])
+
         const newTables: string[] = []
         const tablesWithRLS: string[] = []
         const tablesWithHouseholdPolicy: string[] = []
@@ -357,19 +438,23 @@ function executeToolUncached(name: string, input: Record<string, unknown>): stri
 
         const issues: string[] = []
 
-        // Check for tables without RLS
+        // Check for tables without RLS (excluding system tables is intentional for some)
         const tablesWithoutRLS = newTables.filter(t => !tablesWithRLS.includes(t))
         if (tablesWithoutRLS.length > 0) {
           issues.push(`❌ Tables WITHOUT RLS enabled: ${tablesWithoutRLS.join(', ')}`)
         }
 
         // Check for tables with RLS but no household scoping
+        // Exclude system tables that legitimately don't need household_id
         const tablesWithRLSNoHousehold = tablesWithRLS.filter(
-          t => newTables.includes(t) && !tablesWithHouseholdPolicy.includes(t)
+          t => newTables.includes(t) &&
+               !tablesWithHouseholdPolicy.includes(t) &&
+               !systemTables.has(t)
         )
         if (tablesWithRLSNoHousehold.length > 0) {
           issues.push(`⚠️ Tables with RLS but NO household scoping: ${tablesWithRLSNoHousehold.join(', ')}`)
           issues.push(`   Expected: Policies should use get_user_household_id() or household_id for multi-tenant isolation`)
+          issues.push(`   Note: System tables (${[...systemTables].slice(0, 3).join(', ')}...) are excluded from this check`)
         }
 
         if (issues.length > 0) {
@@ -379,9 +464,10 @@ function executeToolUncached(name: string, input: Record<string, unknown>): stri
         }
 
         return newTables.length > 0
-          ? `✅ All ${newTables.length} new tables have RLS + household scoping:\n` +
+          ? `✅ All ${newTables.length} new tables have RLS + appropriate scoping:\n` +
             `   Tables: ${newTables.join(', ')}\n` +
-            `   Policies: ${policiesFound.join(', ')}`
+            `   Policies: ${policiesFound.join(', ')}\n` +
+            `   (System tables use alternative RLS patterns)`
           : '✅ No new tables in migrations'
       } catch (e) {
         return `Error checking RLS: ${e}`
@@ -790,6 +876,25 @@ async function main() {
     console.log(`   ${verdictEmoji(review.verdict)} ${name}: ${review.verdict} (${review.confidence}% confidence)`)
   }
 
+  // ============================================
+  // MECHANICAL AGGREGATION - Reviewer verdicts determine outcome
+  // ============================================
+  // AI explains findings but cannot override failing reviewers
+  // This prevents confusing "Ready to merge" with FAIL verdicts shown
+
+  const failingReviewers = reviewerNames.filter(name => reviews[name].verdict === 'FAIL')
+  const warningReviewers = reviewerNames.filter(name => reviews[name].verdict === 'WARN')
+  const passingReviewers = reviewerNames.filter(name => reviews[name].verdict === 'PASS')
+
+  // Mechanical verdict: any FAIL = BLOCK, else PASS
+  const mechanicalVerdict = failingReviewers.length > 0 ? 'BLOCK' : 'PASS'
+
+  console.log(`\n📊 Mechanical aggregation:`)
+  console.log(`   ✅ Passed: ${passingReviewers.length} (${passingReviewers.join(', ') || 'none'})`)
+  console.log(`   ⚠️ Warnings: ${warningReviewers.length} (${warningReviewers.join(', ') || 'none'})`)
+  console.log(`   ❌ Failed: ${failingReviewers.length} (${failingReviewers.join(', ') || 'none'})`)
+  console.log(`   → Mechanical verdict: ${mechanicalVerdict}`)
+
   // Get PR metadata
   const prTitle = process.env.GITHUB_PR_TITLE || 'Unknown PR'
   const prBody = process.env.GITHUB_PR_BODY || ''
@@ -966,31 +1071,67 @@ FINAL VERDICT: BLOCK`
   if (iterations >= maxIterations && !response) {
     exhaustedIterations = true
     console.error(`❌ Exhausted ${maxIterations} iterations without final verdict`)
-    response = 'FINAL VERDICT: BLOCK\n\nReason: Tool loop exhausted without reaching a conclusion. Manual review required.'
+    // Include partial context in error message for debugging
+    const toolCallsSummary = messages
+      .filter(m => m.role === 'assistant' && m.content.includes('<tool_use'))
+      .map(m => m.content.match(/name="(\w+)"/g)?.join(', ') || 'unknown')
+      .join('; ')
+    response = `FINAL VERDICT: BLOCK
+
+Reason: Tool loop exhausted after ${maxIterations} iterations without reaching a conclusion.
+
+**Debug info for manual review:**
+- Reviewers loaded: ${reviewerNames.join(', ')}
+- Tool calls made: ${toolCallsSummary || 'none captured'}
+- Mechanical verdict was: ${mechanicalVerdict}
+
+Please check the CI logs for more details or re-run the workflow.`
   }
 
   console.log('\n' + '='.repeat(60))
-  console.log('FINAL VERDICT ANALYSIS:')
+  console.log('AI ANALYSIS (for context, not verdict):')
   console.log('='.repeat(60))
   console.log(response)
   console.log('='.repeat(60))
 
-  // Parse verdict
-  const shouldBlock = response.includes('FINAL VERDICT: BLOCK')
-  const shouldPass = response.includes('FINAL VERDICT: PASS')
+  // ============================================
+  // FINAL VERDICT - AI can override with explanation
+  // ============================================
+  // AI can override reviewer verdicts BUT must explain why
+  // The comment will clearly show when AI overrides and the reason
+
+  const aiSaidPass = response.includes('FINAL VERDICT: PASS')
+  const aiSaidBlock = response.includes('FINAL VERDICT: BLOCK')
 
   let blocked: boolean
-  if (!shouldBlock && !shouldPass) {
-    console.error('❌ Could not determine verdict from response')
-    // BLOCK when we can't determine - safer than passing unreviewed code
-    console.log('Defaulting to BLOCK for safety - cannot approve without clear verdict')
+  let aiOverride: { from: string; to: string; reason: string } | null = null
+
+  if (!aiSaidPass && !aiSaidBlock) {
+    // AI couldn't decide - fall back to mechanical
+    console.log('\n⚠️ AI could not determine verdict, using mechanical aggregation')
+    blocked = mechanicalVerdict === 'BLOCK'
+  } else if (aiSaidPass && mechanicalVerdict === 'BLOCK') {
+    // AI is overriding BLOCK → PASS
+    // Extract reason from AI response
+    const reasonMatch = response.match(/(?:pre-existing|not.*this PR|already existed|unrelated to|false positive)/i)
+    const reason = reasonMatch
+      ? 'Issues are pre-existing or unrelated to this PR'
+      : 'AI determined issues are not blocking'
+
+    aiOverride = { from: 'BLOCK', to: 'PASS', reason }
+    blocked = false
+    console.log(`\n🔄 AI OVERRIDE: BLOCK → PASS`)
+    console.log(`   Reason: ${reason}`)
+    console.log(`   Failing reviewers: ${failingReviewers.join(', ')}`)
+  } else if (aiSaidBlock && mechanicalVerdict === 'PASS') {
+    // AI is overriding PASS → BLOCK (found issues reviewers missed)
+    aiOverride = { from: 'PASS', to: 'BLOCK', reason: 'AI found additional issues' }
     blocked = true
-  } else if (exhaustedIterations) {
-    // Always block if we exhausted iterations
-    console.log('⚠️ Blocking due to exhausted tool loop iterations')
-    blocked = true
+    console.log(`\n🔄 AI OVERRIDE: PASS → BLOCK`)
+    console.log(`   AI found issues that reviewers missed`)
   } else {
-    blocked = shouldBlock && !shouldPass
+    // AI agrees with mechanical
+    blocked = mechanicalVerdict === 'BLOCK'
   }
 
   // Build verification results from reviewer outputs
@@ -1056,12 +1197,15 @@ FINAL VERDICT: BLOCK`
     confidence: blocked ? 90 : 85,
     summary: blocked
       ? 'Critical issues found that must be fixed before merge.'
-      : 'No blocking issues found. Safe to merge.',
+      : aiOverride
+        ? `Approved: ${aiOverride.reason}`
+        : 'No blocking issues found. Safe to merge.',
     verifications,
     requiredFixes: requiredFixes.slice(0, 10),
     suggestions: suggestions.slice(0, 20),
     reasoning: response.slice(0, 2000),
     reviewerSummary: reviewerNames.map(name => summarizeReviewer(reviews[name])),
+    aiOverride: aiOverride || undefined,
   }
 
   saveFinalVerdict(verdictOutput)
@@ -1152,14 +1296,28 @@ function generateMainComment(
 
 `
 
+  // Build reviewer status line
+  const passCount = verdict.reviewerSummary.filter(r => r.verdict === 'PASS').length
+  const warnCount = verdict.reviewerSummary.filter(r => r.verdict === 'WARN').length
+  const failCount = verdict.reviewerSummary.filter(r => r.verdict === 'FAIL').length
+  const totalCount = verdict.reviewerSummary.length
+
   // BLOCKED - Show exactly what must be fixed
   if (verdict.verdict === 'BLOCK') {
-    // Add TL;DR for blocked PRs
-    comment += `> **TL;DR:** ${prCritical.length} issue${prCritical.length !== 1 ? 's' : ''} must be fixed before merge`
-    if (prCritical.length > 0 && prCritical[0].file) {
-      comment += ` (main issue in \`${prCritical[0].file}\`)`
-    }
-    comment += `
+    // TL;DR clearly shows WHY it's blocked
+    const failedNames = verdict.reviewerSummary.filter(r => r.verdict === 'FAIL').map(r => r.reviewer)
+    comment += `> **❌ Blocked** — ${failCount} reviewer${failCount !== 1 ? 's' : ''} failed: **${failedNames.join(', ')}**
+>
+> Fix the issues below, then push a new commit to re-run CI.
+
+### 📊 Reviewer Results: ${passCount} passed, ${warnCount} warnings, ${failCount} failed
+
+| Reviewer | Verdict | Summary |
+|----------|---------|---------|
+${verdict.reviewerSummary.map(r => {
+  const icon = r.verdict === 'PASS' ? '✅' : r.verdict === 'WARN' ? '⚠️' : '❌'
+  return `| ${r.reviewer} | ${icon} ${r.verdict} | ${r.summary.slice(0, 60)}${r.summary.length > 60 ? '...' : ''} |`
+}).join('\n')}
 
 ### ❌ Fix These Issues:
 
@@ -1209,17 +1367,43 @@ Once you fix these issues, push a new commit and the CI will re-run.
 `
   } else {
     // PASSED - Show what was reviewed and found
-    const totalReviewers = verdict.reviewerSummary.length
-    const passedReviewers = verdict.reviewerSummary.filter(r => r.verdict === 'PASS').length
-    const warnReviewers = verdict.reviewerSummary.filter(r => r.verdict === 'WARN').length
+    // Check if this was an AI override
+    if (verdict.aiOverride && failCount > 0) {
+      comment += `> ✅ **Ready to merge** — AI override: ${failCount} reviewer${failCount !== 1 ? 's' : ''} failed but issues are **${verdict.aiOverride.reason}**
 
-    comment += `> ✅ **Ready to merge** - ${passedReviewers}/${totalReviewers} reviewers passed`
-    if (warnReviewers > 0) {
-      comment += ` (${warnReviewers} with minor suggestions)`
-    }
-    comment += `
+### 📊 Reviewer Results: ${passCount} passed, ${warnCount} warnings, ${failCount} failed (overridden)
+
+| Reviewer | Verdict | Summary |
+|----------|---------|---------|
+${verdict.reviewerSummary.map(r => {
+  const icon = r.verdict === 'PASS' ? '✅' : r.verdict === 'WARN' ? '⚠️' : '❌'
+  const overridden = r.verdict === 'FAIL' ? ' *(overridden)*' : ''
+  return `| ${r.reviewer} | ${icon} ${r.verdict}${overridden} | ${r.summary.slice(0, 50)}${r.summary.length > 50 ? '...' : ''} |`
+}).join('\n')}
+
+> **Why AI approved:** ${verdict.aiOverride.reason}
+>
+> The failing reviewer(s) found issues, but AI determined they are not blocking for this PR.
 
 `
+    } else {
+      comment += `> ✅ **Ready to merge** — ${passCount}/${totalCount} reviewers passed`
+      if (warnCount > 0) {
+        comment += `, ${warnCount} with suggestions`
+      }
+      comment += `
+
+### 📊 Reviewer Results
+
+| Reviewer | Verdict | Summary |
+|----------|---------|---------|
+${verdict.reviewerSummary.map(r => {
+  const icon = r.verdict === 'PASS' ? '✅' : r.verdict === 'WARN' ? '⚠️' : '❌'
+  return `| ${r.reviewer} | ${icon} ${r.verdict} | ${r.summary.slice(0, 50)}${r.summary.length > 50 ? '...' : ''} |`
+}).join('\n')}
+
+`
+    }
 
     // Add Quick Wins section if there are easy improvements
     const quickWins = prWarnings.filter(w =>

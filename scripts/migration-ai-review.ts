@@ -86,10 +86,21 @@ function getNewMigrations(migrations: MigrationFile[]): MigrationFile[] {
 }
 
 function buildReviewPrompt(newMigration: MigrationFile, previousMigrations: MigrationFile[]): string {
-  // Include last 5 migrations for context - full content, modern LLMs handle it well
+  // Smart truncation for context migrations
+  // Include last 3 migrations with full content, older ones truncated
   const contextMigrations = previousMigrations.slice(-5)
+  const MAX_CONTEXT_MIGRATION_CHARS = 5000
+
   const contextSection = contextMigrations
-    .map((m) => `### ${m.name}\n\`\`\`sql\n${m.content}\n\`\`\``)
+    .map((m, idx) => {
+      const isRecent = idx >= contextMigrations.length - 3
+      if (isRecent || m.content.length <= MAX_CONTEXT_MIGRATION_CHARS) {
+        return `### ${m.name}\n\`\`\`sql\n${m.content}\n\`\`\``
+      }
+      // Truncate older migrations but show key parts (CREATE TABLE, RLS)
+      const truncated = m.content.slice(0, MAX_CONTEXT_MIGRATION_CHARS)
+      return `### ${m.name} (truncated - ${Math.round(m.content.length / 1024)}KB total)\n\`\`\`sql\n${truncated}\n... [truncated]\n\`\`\``
+    })
     .join('\n\n')
 
   return `You are a PostgreSQL and Supabase expert reviewing database migrations for Familjen, a Norwegian family planning app.

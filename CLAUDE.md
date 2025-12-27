@@ -874,9 +874,20 @@ PR Created
 **Key features:**
 - All reviewers are **non-blocking** (`continue-on-error: true`)
 - Reviewers upload findings to `.ai-reviews/*.json` artifacts
-- Final verdict downloads all artifacts and aggregates findings
-- Final verdict has **tools** to read files, search code, test endpoints
-- Only the final verdict can fail CI and block the PR
+- Final verdict uses **mechanical aggregation**: any FAIL reviewer = BLOCK
+- AI can override with explicit explanation (shown in PR comment)
+- Final verdict has **tools** to fetch more context when needed
+- Smart truncation: reviewers get truncated context, can request full docs
+
+### Verdict Aggregation
+
+The final verdict follows this logic:
+1. **Mechanical verdict**: If any reviewer has FAIL → default BLOCK
+2. **AI analysis**: AI can override BLOCK→PASS if issues are pre-existing/unrelated
+3. **Explicit override**: When AI overrides, the PR comment clearly shows:
+   - Which reviewers failed
+   - Why AI approved anyway
+   - Mark overridden verdicts in the table
 
 ### Final Verdict Tools
 
@@ -888,13 +899,30 @@ The "super AI" has access to tools for deeper investigation:
 | `read_diff` | Get the full PR diff |
 | `search_code` | Grep for patterns |
 | `get_commits` | List PR commits |
+| `get_full_documentation` | Get full CLAUDE.md or README.md (when truncated) |
+| `get_file_section` | Get specific section of a large file |
 | `check_migration_patterns` | Find dangerous SQL patterns |
-| `verify_rls_coverage` | Check new tables have RLS |
+| `verify_rls_coverage` | Check new tables have RLS + household scoping |
 | `test_endpoint` | Make HTTP requests to preview |
 | `verify_auth_required` | Test protected routes return 401 |
 | `smoke_test_critical_paths` | Quick health checks |
 | `verify_imports` | Check for hallucinated packages |
 | `check_env_usage` | Find undocumented env vars |
+| `check_typescript` | Run tsc on changed files |
+
+### Smart Truncation
+
+To balance cost vs context, reviewers use smart truncation:
+- **Code review**: Diff truncated at 100KB, docs at 15KB each
+- **Migration review**: Last 3 migrations full, older ones truncated at 5KB
+- **Final verdict**: Has tools to fetch full context when needed
+
+When content is truncated, the AI sees a note like:
+```
+... [CLAUDE.md truncated: 25KB more available]
+```
+
+If the AI needs more context, it can use `get_full_documentation` or `get_file_section`.
 
 ### Structured Outputs
 

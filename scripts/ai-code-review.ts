@@ -122,23 +122,74 @@ function getDocumentation(): { claudeMd: string; readmeMd: string } {
   return { claudeMd, readmeMd }
 }
 
+// Smart truncation helper - truncate with metadata about what's cut
+function smartTruncate(content: string, maxChars: number, label: string): { text: string; wasTruncated: boolean; totalChars: number } {
+  if (content.length <= maxChars) {
+    return { text: content, wasTruncated: false, totalChars: content.length }
+  }
+  const truncated = content.slice(0, maxChars)
+  // Try to cut at a newline for cleaner truncation
+  const lastNewline = truncated.lastIndexOf('\n')
+  const cutPoint = lastNewline > maxChars * 0.8 ? lastNewline : maxChars
+
+  return {
+    text: truncated.slice(0, cutPoint) + `\n\n... [${label} truncated: ${Math.round((content.length - cutPoint) / 1024)}KB more available]`,
+    wasTruncated: true,
+    totalChars: content.length
+  }
+}
+
 function buildReviewPrompt(diff: string, changedFiles: string[], docs: { claudeMd: string; readmeMd: string }): string {
-  // Log size for awareness - no truncation, modern LLMs handle large contexts
+  // Smart truncation limits (balance cost vs context)
+  const MAX_DIFF_CHARS = 100000      // ~100KB diff - most PRs fit
+  const MAX_DOC_CHARS = 15000        // ~15KB per doc - key sections fit
+  const MAX_FILES_SHOWN = 100
+
+  // Track what was truncated for AI awareness
+  const truncationInfo: string[] = []
+
+  // Truncate diff if very large
+  const diffResult = smartTruncate(diff, MAX_DIFF_CHARS, 'diff')
+  if (diffResult.wasTruncated) {
+    truncationInfo.push(`Diff was truncated from ${Math.round(diffResult.totalChars / 1024)}KB to ${Math.round(MAX_DIFF_CHARS / 1024)}KB`)
+  }
+
+  // Truncate docs
+  const claudeMdResult = smartTruncate(docs.claudeMd, MAX_DOC_CHARS, 'CLAUDE.md')
+  const readmeMdResult = smartTruncate(docs.readmeMd, MAX_DOC_CHARS, 'README.md')
+  if (claudeMdResult.wasTruncated) {
+    truncationInfo.push(`CLAUDE.md was truncated from ${Math.round(claudeMdResult.totalChars / 1024)}KB to ${Math.round(MAX_DOC_CHARS / 1024)}KB`)
+  }
+  if (readmeMdResult.wasTruncated) {
+    truncationInfo.push(`README.md was truncated from ${Math.round(readmeMdResult.totalChars / 1024)}KB to ${Math.round(MAX_DOC_CHARS / 1024)}KB`)
+  }
+
   const sizeKB = Math.round(diff.length / 1024)
   console.log(`📦 Diff size: ${sizeKB}KB (${changedFiles.length} files)`)
+  if (truncationInfo.length > 0) {
+    console.log(`📐 Smart truncation applied: ${truncationInfo.join(', ')}`)
+  }
 
   if (sizeKB > 500) {
     console.warn(`⚠️ Large diff (${sizeKB}KB) - consider breaking into smaller PRs`)
   }
 
-  const fileList = changedFiles.slice(0, 100).join('\n')
+  const fileList = changedFiles.slice(0, MAX_FILES_SHOWN).join('\n')
+  const filesNote = changedFiles.length > MAX_FILES_SHOWN
+    ? `\n(showing first ${MAX_FILES_SHOWN} of ${changedFiles.length} files)`
+    : ''
 
   // Check if documentation was modified in this PR
   const docsModified = changedFiles.some(f => f === 'CLAUDE.md' || f === 'README.md')
 
-  // Include full documentation - modern LLMs handle large contexts well
-  const claudeMdContext = docs.claudeMd
-  const readmeMdContext = docs.readmeMd
+  // Include documentation with smart truncation
+  const claudeMdContext = claudeMdResult.text
+  const readmeMdContext = readmeMdResult.text
+
+  // Truncation notice for AI
+  const truncationNotice = truncationInfo.length > 0
+    ? `\n## ⚠️ Context Truncation\n${truncationInfo.map(t => `- ${t}`).join('\n')}\n\nIf you need more context for a specific file or section, note it in your review and the final verdict will investigate.\n`
+    : ''
 
   return `You are a senior developer reviewing a PR for Familjen, a Norwegian family planning app.
 
@@ -170,14 +221,14 @@ ${readmeMdContext}
 \`\`\`
 
 ## Changed Files
-${fileList}
+${fileList}${filesNote}
 
 ## Documentation Status
 ${docsModified ? '✅ Documentation was updated in this PR' : '⚠️ Documentation was NOT updated in this PR'}
-
+${truncationNotice}
 ## PR Diff
 \`\`\`diff
-${diff}
+${diffResult.text}
 \`\`\`
 
 ## Review Checklist
