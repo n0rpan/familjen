@@ -1059,6 +1059,12 @@ export const en: TranslationStrings = {
     accountDeleted: 'Your account has been deleted',
   },
 
+  demo: {
+    banner: 'This is a demo with example data',
+    exit: 'Exit demo',
+    tryDemo: 'Try demo',
+  },
+
   // Source URLs (manual calendar sources)
   sourceUrls: {
     title: 'Calendar sources',

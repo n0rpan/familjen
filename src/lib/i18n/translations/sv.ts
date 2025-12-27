@@ -1056,6 +1056,12 @@ export const sv: TranslationStrings = {
     accountDeleted: 'Ditt konto har raderats',
   },
 
+  demo: {
+    banner: 'Detta ar en demo med exempeldata',
+    exit: 'Avsluta demo',
+    tryDemo: 'Prova demo',
+  },
+
   sourceUrls: {
     title: 'Kalenderkallor',
     description: 'Lagg till externa kalendrar och skolrutiner',

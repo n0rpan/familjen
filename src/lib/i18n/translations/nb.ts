@@ -1057,6 +1057,12 @@ export const nb: TranslationStrings = {
     accountDeleted: 'Din konto er slettet',
   },
 
+  demo: {
+    banner: 'Dette er en demo med eksempeldata',
+    exit: 'Avslutt demo',
+    tryDemo: 'Prøv demo',
+  },
+
   sourceUrls: {
     title: 'Kalenderkilder',
     description: 'Legg til eksterne kalendere og skoleruter',

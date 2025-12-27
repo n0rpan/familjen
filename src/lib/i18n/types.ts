@@ -1095,6 +1095,13 @@ export interface TranslationStrings {
     accountDeleted: string
   }
 
+  // Demo mode
+  demo: {
+    banner: string  // "This is a demo with example data"
+    exit: string    // "Exit demo"
+    tryDemo: string // "Try demo"
+  }
+
   // Source URLs (manual calendar sources)
   sourceUrls: {
     title: string
