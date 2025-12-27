@@ -45,6 +45,7 @@ export type ReviewerType =
   | 'migration-review'
   | 'visual-validation'
   | 'api-tests'
+  | 'e2e-tests'         // UAT on demo/mock data
   | 'demo-quality'
 
 export type ReviewerVerdict =

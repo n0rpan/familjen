@@ -2,6 +2,12 @@
 /**
  * AI Visual Validation (No Baselines Needed)
  *
+ * IMPORTANT: This script is NON-BLOCKING.
+ * - It reports findings but does NOT fail the CI
+ * - Only the final verdict script can block PRs
+ * - Exit 0 = review completed (even if issues found)
+ * - Exit 1 = script itself failed (API error, couldn't run)
+ *
  * Uses AI vision to evaluate if screenshots "look right" based on:
  * - Design system compliance
  * - Expected content visibility
@@ -19,6 +25,12 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { AI_MODELS, SCHEMAS, fetchWithStructuredOutput } from './ai-config'
+import {
+  type ReviewerOutput,
+  type Finding,
+  saveReviewerOutput,
+  verdictEmoji,
+} from './ai-review-types'
 
 // ============================================
 // Types
@@ -432,9 +444,70 @@ async function validateAllScreenshots(screenshotDir: string): Promise<OverallRep
 // CLI
 // ============================================
 
+/**
+ * Convert ValidationResult issues to Finding[] format
+ */
+function convertToFindings(results: ValidationResult[]): Finding[] {
+  const findings: Finding[] = []
+
+  for (const result of results) {
+    for (const issue of result.issues) {
+      findings.push({
+        severity: issue.severity,
+        category: 'accessibility', // Visual issues map to accessibility
+        message: `[${result.page}] ${issue.description}`,
+        file: `tests/visual/current/${result.page}.png`,
+      })
+    }
+
+    // Add findings for missing content
+    for (const missing of result.contentVisibility.missing) {
+      findings.push({
+        severity: 'warning',
+        category: 'accessibility',
+        message: `[${result.page}] Expected content not visible: ${missing}`,
+        file: `tests/visual/current/${result.page}.png`,
+      })
+    }
+
+    // Add findings for design system non-compliance
+    const ds = result.designSystemCompliance
+    if (!ds.colorPalette) {
+      findings.push({
+        severity: 'info',
+        category: 'accessibility',
+        message: `[${result.page}] Color palette does not match design system`,
+        file: `tests/visual/current/${result.page}.png`,
+      })
+    }
+    if (!ds.touchTargets) {
+      findings.push({
+        severity: 'warning',
+        category: 'accessibility',
+        message: `[${result.page}] Touch targets may be too small`,
+        file: `tests/visual/current/${result.page}.png`,
+      })
+    }
+  }
+
+  return findings
+}
+
+/**
+ * Map overall report verdict to reviewer verdict
+ */
+function mapVerdict(report: OverallReport): 'PASS' | 'WARN' | 'FAIL' {
+  if (report.failed > 0) return 'FAIL'
+  if (report.warned > 0) return 'WARN'
+  return 'PASS'
+}
+
 async function main() {
+  const startTime = Date.now()
   const args = process.argv.slice(2)
   let screenshotDir = 'tests/visual/current'
+
+  console.log('🔍 AI Visual Validation (Non-Blocking)\n')
 
   // Parse arguments
   for (let i = 0; i < args.length; i++) {
@@ -449,7 +522,21 @@ async function main() {
     console.error(`\n❌ Screenshot directory not found: ${screenshotDir}`)
     console.log('\nTo capture screenshots:')
     console.log('  npx playwright test capture-screenshots --project=chromium')
-    process.exit(1)
+
+    // Save skipped output
+    const skippedOutput: ReviewerOutput = {
+      reviewer: 'visual-validation',
+      model: 'none',
+      timestamp: new Date().toISOString(),
+      duration_ms: Date.now() - startTime,
+      status: 'skipped',
+      verdict: 'PASS',
+      confidence: 100,
+      findings: [],
+      summary: 'No screenshots to validate.',
+    }
+    saveReviewerOutput(skippedOutput)
+    process.exit(0) // Not an error - just nothing to validate
   }
 
   // Check for screenshots
@@ -458,7 +545,20 @@ async function main() {
     console.error(`\n❌ No screenshots found in: ${screenshotDir}`)
     console.log('\nTo capture screenshots:')
     console.log('  npx playwright test capture-screenshots --project=chromium')
-    process.exit(1)
+
+    const skippedOutput: ReviewerOutput = {
+      reviewer: 'visual-validation',
+      model: 'none',
+      timestamp: new Date().toISOString(),
+      duration_ms: Date.now() - startTime,
+      status: 'skipped',
+      verdict: 'PASS',
+      confidence: 100,
+      findings: [],
+      summary: 'No screenshots found to validate.',
+    }
+    saveReviewerOutput(skippedOutput)
+    process.exit(0)
   }
 
   console.log(`\n📷 Found ${screenshots.length} screenshots: ${screenshots.join(', ')}`)
@@ -466,10 +566,29 @@ async function main() {
   try {
     const report = await validateAllScreenshots(screenshotDir)
 
-    // Save report
+    // Save report (old format for backwards compatibility)
     const reportPath = 'visual-validation-report.json'
     fs.writeFileSync(reportPath, JSON.stringify(report, null, 2))
     console.log(`\n📄 Report saved: ${reportPath}`)
+
+    // Convert to findings
+    const findings = convertToFindings(report.results)
+    const verdict = mapVerdict(report)
+
+    // Save in new standardized format
+    const output: ReviewerOutput = {
+      reviewer: 'visual-validation',
+      model: AI_MODELS.vision,
+      timestamp: new Date().toISOString(),
+      duration_ms: Date.now() - startTime,
+      status: 'completed',
+      verdict,
+      confidence: report.averageScore,
+      findings,
+      summary: `Validated ${report.totalPages} pages - Score: ${report.averageScore}/100. ${report.passed} passed, ${report.warned} warnings, ${report.failed} failed.`,
+      raw: report,
+    }
+    saveReviewerOutput(output)
 
     // Print summary
     console.log('\n' + '='.repeat(50))
@@ -483,20 +602,48 @@ async function main() {
     console.log('')
     console.log(`   ${report.recommendation}`)
     console.log('='.repeat(50))
+    console.log(`\n📄 Results: .ai-reviews/visual-validation.json`)
 
     // Generate markdown comment for PR
     const commentPath = 'visual-validation-comment.md'
     const comment = generatePRComment(report)
-    fs.writeFileSync(commentPath, comment)
+    // Add note that this is informational
+    const commentWithNote = comment.replace(
+      '## ',
+      '## '
+    ).replace(
+      '---\n*Validated',
+      '> ℹ️ This review is informational. The final verdict will decide if the PR can merge.\n\n---\n*Validated'
+    )
+    fs.writeFileSync(commentPath, commentWithNote)
     console.log(`\n💬 PR comment saved: ${commentPath}`)
 
-    // Exit with appropriate code
-    if (report.failed > 0) {
-      process.exit(1)
-    }
+    // Always exit 0 - review completed, final verdict decides blocking
+    console.log(`\n${verdictEmoji(verdict)} Validation complete (${verdict})`)
+    process.exit(0)
+
   } catch (error) {
     console.error('\n❌ Validation failed:', error)
-    process.exit(1)
+
+    // Save error output
+    const errorOutput: ReviewerOutput = {
+      reviewer: 'visual-validation',
+      model: AI_MODELS.vision,
+      timestamp: new Date().toISOString(),
+      duration_ms: Date.now() - startTime,
+      status: 'failed',
+      verdict: 'ERROR',
+      confidence: 0,
+      findings: [{
+        severity: 'critical',
+        category: 'runtime-error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      }],
+      summary: 'Visual validation failed due to an error.',
+    }
+    saveReviewerOutput(errorOutput)
+
+    process.exit(1) // Script itself failed
   }
 }
 

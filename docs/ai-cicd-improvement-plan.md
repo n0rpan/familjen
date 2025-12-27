@@ -411,10 +411,10 @@ PR to main
     │   │  │              │  │ (Flash)      │  │  (Flash)     │     │
     │   │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘     │
     │   │         │                 │                 │             │
-    │   │  ┌──────────────┐                                         │
-    │   │  │  API Tests   │  ← Moved from main-only to PR           │
-    │   │  │  (real calls)│                                         │
-    │   │  └──────┬───────┘                                         │
+    │   │  ┌──────────────┐  ┌──────────────┐                       │
+    │   │  │  API Tests   │  │  E2E Tests   │  ← UAT on demo data   │
+    │   │  │  (real calls)│  │  (Playwright)│                       │
+    │   │  └──────┬───────┘  └──────┬───────┘                       │
     │   │         │                 │                 │             │
     │   │         ▼                 ▼                 ▼             │
     │   │                                                           │
@@ -433,6 +433,7 @@ PR to main
 │  ├── .ai-reviews/migration-review.json                              │
 │  ├── .ai-reviews/visual-validation.json                             │
 │  ├── .ai-reviews/api-tests.json                                     │
+│  ├── .ai-reviews/e2e-tests.json      ← E2E is UAT on demo/mock data │
 │  └── PR metadata (title, description, files)                        │
 │                                                                     │
 │  Tools Available (can call as needed):                              │
