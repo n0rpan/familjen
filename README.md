@@ -352,12 +352,12 @@ The AI visual validation system is unique - it doesn't require baseline screensh
 
 ### Final Verdict System
 
-All individual reviewers are **non-blocking** - they report findings but don't fail CI. A single "Final Verdict" AI aggregates all results:
+All individual reviewers are **non-blocking** - they report findings but don't fail CI. A single "Final Verdict" aggregates all results:
 
-1. **Mechanical Aggregation**: If any reviewer fails → default BLOCK
-2. **AI Override**: AI can override BLOCK→PASS if issues are pre-existing/unrelated
-3. **Explicit Explanation**: PR comment clearly shows when AI overrides and why
-4. **Tools for Investigation**: Final verdict can fetch full docs, read files, run TypeScript checks
+1. **Strict Mechanical Aggregation**: If any reviewer fails → BLOCK (no exceptions)
+2. **No AI Override**: AI analyzes and explains but cannot change the verdict
+3. **Consistent Status**: PR comment always matches CI status - no "Approved" when CI fails
+4. **Tools for Investigation**: Final verdict can fetch full docs, read files, explain findings
 
 ### Smart Truncation
 
