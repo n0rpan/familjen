@@ -147,6 +147,7 @@ export interface TranslationStrings {
     resendCode: string
     differentEmail: string
     secureLogin: string
+    tryDemo: string
     errorNotAllowed: string
     errorAuthFailed: string
     errorGeneric: string

@@ -4,14 +4,18 @@
  * DemoHomePage Component
  *
  * Client-side version of the home page that uses demo data hooks.
- * Rendered when ?demo=true is in the URL.
+ * Enhanced to match production UI for visual testing.
  */
 
+import { useMemo } from 'react'
 import { useWeekData, getTodaySummaryFromWeekData } from '@/hooks/data'
 import { TodaySection } from '@/components/TodaySection'
 import { WeekGrid } from '@/components/WeekGrid'
+import { AIHeadsUpSection } from '@/components/AIHeadsUpSection'
 import { TransitionLink } from '@/components/TransitionLink'
 import { useLanguage } from '@/lib/i18n/context'
+import { formatDateISO, addDays } from '@/lib/utils'
+import type { AIHeadsUp } from '@/lib/types'
 
 export function DemoHomePage() {
   const { t } = useLanguage()
@@ -30,6 +34,59 @@ export function DemoHomePage() {
     loading,
     error,
   } = weekData
+
+  // Generate sample AI heads-up data for demo
+  const demoHeadsUps: AIHeadsUp[] = useMemo(() => {
+    const today = new Date()
+    const tomorrow = addDays(today, 1)
+    const nextWeek = addDays(today, 5)
+
+    return [
+      {
+        id: 'demo-headsup-1',
+        type: 'suggestion',
+        priority: 'normal',
+        title: 'Husk gymtøy',
+        description: 'Emma har gym på torsdag',
+        date: formatDateISO(tomorrow),
+        endDate: null,
+        time: '08:00',
+        childId: children[0]?.id || 'demo-child',
+        childName: children[0]?.name || 'Emma',
+        memberId: null,
+        memberName: null,
+        source: {
+          table: 'external_suggestions',
+          id: 'demo-suggestion-1',
+          sourceType: 'suggestion',
+          displayName: 'Barnehagen',
+        },
+        hasConflict: false,
+        href: '/uke?demo=true',
+      },
+      {
+        id: 'demo-headsup-2',
+        type: 'member_event',
+        priority: 'high',
+        title: 'Pappa på jobb-reise',
+        description: 'Mandag til onsdag',
+        date: formatDateISO(nextWeek),
+        endDate: formatDateISO(addDays(nextWeek, 2)),
+        time: null,
+        childId: null,
+        childName: null,
+        memberId: members[0]?.id || 'demo-member',
+        memberName: members[0]?.name || 'Pappa',
+        source: {
+          table: 'member_events',
+          id: 'demo-event-1',
+          sourceType: 'memberEvent',
+        },
+        hasConflict: true,
+        href: '/uke?demo=true',
+      },
+    ]
+  }, [children, members])
 
   // Show loading state
   if (loading) {
@@ -132,6 +189,32 @@ export function DemoHomePage() {
         </TransitionLink>
       )}
 
+      {/* Demo AI Input Placeholder */}
+      <div
+        className="rounded-2xl p-4"
+        style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+      >
+        <div className="flex items-center gap-3">
+          <div
+            className="w-10 h-10 rounded-xl flex items-center justify-center"
+            style={{ background: 'rgba(126, 182, 196, 0.2)' }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-sky)" strokeWidth="2">
+              <path d="M12 2a10 10 0 1 0 10 10H12V2Z" />
+              <path d="M12 2a10 10 0 0 1 10 10" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          </div>
+          <input
+            type="text"
+            placeholder="Spør AI om hjelp..."
+            className="flex-1 bg-transparent text-sm outline-none"
+            style={{ color: 'var(--muted)' }}
+            disabled
+          />
+        </div>
+      </div>
+
       {/* Today's Overview */}
       <TodaySection
         summary={todaySummary}
@@ -140,6 +223,9 @@ export function DemoHomePage() {
         children={children}
         householdId={household?.id || 'demo'}
       />
+
+      {/* AI Heads Up - Week lookahead */}
+      <AIHeadsUpSection items={demoHeadsUps} />
 
       {/* Week Grid */}
       <div>

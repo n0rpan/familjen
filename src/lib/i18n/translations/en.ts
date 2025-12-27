@@ -139,6 +139,7 @@ export const en: TranslationStrings = {
     resendCode: 'Resend code',
     differentEmail: 'Use different email',
     secureLogin: 'Secure login • No password required',
+    tryDemo: 'Try demo',
     errorNotAllowed: 'Your email is not approved. Contact administrator for access.',
     errorAuthFailed: 'Login failed. Please try again.',
     errorGeneric: 'Something went wrong. Please try again.',

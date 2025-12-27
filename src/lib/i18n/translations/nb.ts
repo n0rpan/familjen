@@ -139,6 +139,7 @@ export const nb: TranslationStrings = {
     resendCode: 'Send ny kode',
     differentEmail: 'Bruk annen e-post',
     secureLogin: 'Trygg innlogging • Ingen passord nødvendig',
+    tryDemo: 'Prøv demo',
     errorNotAllowed: 'Din e-post er ikke godkjent. Kontakt administrator for tilgang.',
     errorAuthFailed: 'Innlogging feilet. Prøv igjen.',
     errorGeneric: 'Noe gikk galt. Prøv igjen.',

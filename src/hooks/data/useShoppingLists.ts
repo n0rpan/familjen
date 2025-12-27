@@ -23,6 +23,7 @@ export interface UseShoppingListsReturn {
   updateList: (listId: string, updates: Partial<ShoppingList>) => Promise<void>
   deleteList: (listId: string) => Promise<void>
   addItem: (listId: string, item: Omit<ShoppingListItem, 'id' | 'created_at' | 'updated_at' | 'list_id'>) => Promise<void>
+  addItemToList: (item: Omit<ShoppingListItem, 'id' | 'created_at' | 'updated_at' | 'list_id'>) => Promise<void>
   updateItem: (itemId: string, updates: Partial<ShoppingListItem>) => Promise<void>
   deleteItem: (itemId: string) => Promise<void>
   refetch: () => void
@@ -195,6 +196,30 @@ export function useShoppingLists(): UseShoppingListsReturn {
     }
   }, [isDemo, supabase, demoMutations, fetchData])
 
+  // Add item to default list (convenience function)
+  const addItemToList = useCallback(async (
+    item: Omit<ShoppingListItem, 'id' | 'created_at' | 'updated_at' | 'list_id'>
+  ) => {
+    // Get or create the default list
+    let listId: string | null = null
+
+    if (isDemo && demoState) {
+      // In demo mode, use the first list
+      listId = demoState.shoppingLists[0]?.id || null
+    } else if (lists.length > 0) {
+      // Use first existing list
+      listId = lists[0].id
+    } else if (supabase && household?.id) {
+      // Create a new list
+      const newList = await addList('Handleliste')
+      listId = newList?.id || null
+    }
+
+    if (listId) {
+      await addItem(listId, item)
+    }
+  }, [isDemo, demoState, lists, supabase, household?.id, addList, addItem])
+
   // Update item mutation
   const updateItem = useCallback(async (itemId: string, updates: Partial<ShoppingListItem>) => {
     if (isDemo) {
@@ -249,6 +274,7 @@ export function useShoppingLists(): UseShoppingListsReturn {
       updateList,
       deleteList,
       addItem,
+      addItemToList,
       updateItem,
       deleteItem,
       refetch: () => {}, // No-op in demo
@@ -263,6 +289,7 @@ export function useShoppingLists(): UseShoppingListsReturn {
     updateList,
     deleteList,
     addItem,
+    addItemToList,
     updateItem,
     deleteItem,
     refetch: fetchData,

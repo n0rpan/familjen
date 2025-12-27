@@ -398,6 +398,24 @@ function LoginContent() {
           >
             {t.login.secureLogin}
           </p>
+
+          {/* Demo mode link */}
+          <div className="text-center mt-6">
+            <TransitionLink
+              href="/?demo=true"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all hover:scale-105"
+              style={{
+                background: 'rgba(126, 182, 196, 0.15)',
+                color: 'var(--color-sky)',
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+              {t.login.tryDemo || 'Prøv demo'}
+            </TransitionLink>
+          </div>
         </div>
       </div>
     </div>
