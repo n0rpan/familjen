@@ -47,6 +47,40 @@ const API_KEY = process.env.OPENROUTER_API_KEY
 const API_TIMEOUT_MS = 180_000
 
 // ============================================
+// Git Utilities
+// ============================================
+
+/**
+ * Ensure we have full git history for proper diff from main.
+ * This is critical for the final verdict to see all PR changes.
+ */
+function ensureFullGitHistory(): void {
+  const baseBranch = process.env.GITHUB_BASE_REF || 'main'
+  console.log(`Ensuring full git history for diff against ${baseBranch}...`)
+
+  try {
+    // First, try to unshallow if we have a shallow clone
+    try {
+      execSync(`git fetch --unshallow origin ${baseBranch}`, {
+        encoding: 'utf-8',
+        stdio: 'pipe',
+      })
+      console.log('   ✓ Unshallowed git history')
+    } catch {
+      // Already unshallowed or not shallow, do regular fetch
+      execSync(`git fetch origin ${baseBranch}`, {
+        encoding: 'utf-8',
+        stdio: 'pipe',
+      })
+      console.log('   ✓ Fetched origin/' + baseBranch)
+    }
+  } catch (error) {
+    console.warn(`   ⚠️ Could not fetch ${baseBranch}: ${error instanceof Error ? error.message : 'Unknown'}`)
+    console.warn('   Some git operations may use fallback (HEAD~1)')
+  }
+}
+
+// ============================================
 // Tool Definitions (matching Anthropic SDK format)
 // ============================================
 
@@ -863,6 +897,9 @@ async function main() {
   // CRITICAL: Write a processing comment to prevent stale comments if script crashes
   // This is written AFTER API key check so we don't leave "Processing..." on config errors
   writeProcessingComment()
+
+  // Ensure we have full git history for proper diffs
+  ensureFullGitHistory()
 
   // Load all reviewer outputs
   const reviews = loadAllReviewerOutputs()
