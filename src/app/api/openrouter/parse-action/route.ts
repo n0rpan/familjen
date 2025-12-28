@@ -57,60 +57,62 @@ function getTomorrow(todayStr: string): string {
 }
 
 // Helper to get the next occurrence of a weekday (0=Sunday, 5=Friday, 6=Saturday)
+// "fra og med i dag" - includes today if today is that weekday
 function getNextWeekday(todayStr: string, targetDay: number): string {
   const today = new Date(todayStr + 'T12:00:00')
   const todayDay = today.getDay()
   let daysToAdd = targetDay - todayDay
+  // If already passed this week, go to next week
   if (daysToAdd < 0) daysToAdd += 7
-  if (daysToAdd === 0) daysToAdd = 0 // Same day = today
   const target = new Date(today)
   target.setDate(today.getDate() + daysToAdd)
   return target.toISOString().split('T')[0]
 }
 
 // Helper to generate a date lookup table for the LLM
-// This gives concrete dates so the LLM doesn't need to calculate them
+// Supports Norwegian, Swedish, and English weekday names
 function getWeekdayDates(todayStr: string): string {
-  const days = ['søndag', 'mandag', 'tirsdag', 'onsdag', 'torsdag', 'fredag', 'lørdag']
+  // Weekday names in Norwegian, Swedish, and English (index 0=Sunday)
+  const daysNb = ['søndag', 'mandag', 'tirsdag', 'onsdag', 'torsdag', 'fredag', 'lørdag']
+  const daysSv = ['söndag', 'måndag', 'tisdag', 'onsdag', 'torsdag', 'fredag', 'lördag']
+  const daysEn = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+
   const today = new Date(todayStr + 'T12:00:00')
   const todayDay = today.getDay()
 
   const result: string[] = []
 
-  // Calculate dates for each weekday (this week and next week)
+  // Calculate dates for each weekday
   for (let i = 0; i < 7; i++) {
-    // Days from today to this weekday (can be 0 to 6, or negative if already passed)
     let daysFromToday = i - todayDay
-
-    // If the day has already passed this week, use next week
-    if (daysFromToday < 0) {
-      daysFromToday += 7
-    }
+    if (daysFromToday < 0) daysFromToday += 7
 
     const targetDate = new Date(today)
     targetDate.setDate(today.getDate() + daysFromToday)
     const dateStr = targetDate.toISOString().split('T')[0]
 
+    // Show all language variants for this date
+    const names = `"${daysNb[i]}"/"${daysSv[i]}"/"${daysEn[i]}"`
     if (daysFromToday === 0) {
-      result.push(`- "${days[i]}" = ${dateStr} (i dag)`)
+      result.push(`- ${names} = ${dateStr} (i dag/idag/today)`)
     } else if (daysFromToday === 1) {
-      result.push(`- "${days[i]}" = ${dateStr} (i morgen)`)
+      result.push(`- ${names} = ${dateStr} (i morgen/imorgon/tomorrow)`)
     } else {
-      result.push(`- "${days[i]}" = ${dateStr}`)
+      result.push(`- ${names} = ${dateStr}`)
     }
   }
 
-  // Also add "neste [weekday]" for clarity
+  // Also add "neste/nästa/next [weekday]" for clarity
   result.push('')
-  result.push('For "neste [ukedag]" (alltid minst 7 dager frem):')
-  for (let i = 1; i <= 5; i++) { // Mon-Fri only for "neste"
+  result.push('For "neste/nästa/next [weekday]" (always 7+ days ahead):')
+  for (let i = 1; i <= 5; i++) { // Mon-Fri only
     const targetDate = new Date(today)
     let daysFromToday = i - todayDay
     if (daysFromToday <= 0) daysFromToday += 7
-    daysFromToday += 7 // Add another week for "neste"
+    daysFromToday += 7
     targetDate.setDate(today.getDate() + daysFromToday)
     const dateStr = targetDate.toISOString().split('T')[0]
-    result.push(`- "neste ${days[i]}" = ${dateStr}`)
+    result.push(`- "neste/nästa/next ${daysNb[i]}" = ${dateStr}`)
   }
 
   return result.join('\n')
