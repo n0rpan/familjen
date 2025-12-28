@@ -274,7 +274,12 @@ export function loadAllReviewerOutputs(): Record<string, ReviewerOutput> {
     if (file.endsWith('.json') && !file.startsWith('final-')) {
       const name = file.replace('.json', '')
       try {
-        reviews[name] = JSON.parse(readFileSync(join(REVIEWS_DIR, file), 'utf-8'))
+        const parsed = JSON.parse(readFileSync(join(REVIEWS_DIR, file), 'utf-8'))
+        // Ensure findings is always an array (defensive against malformed JSON)
+        reviews[name] = {
+          ...parsed,
+          findings: Array.isArray(parsed.findings) ? parsed.findings : [],
+        }
       } catch (e) {
         console.warn(`⚠️ Failed to parse ${file}: ${e}`)
       }

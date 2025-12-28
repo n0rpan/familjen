@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import { TransitionLink } from '@/components/TransitionLink'
 import { getAccountDisplayName } from '@/lib/integrations/somfy/utils'
+import { useRealtimeSubscription, createInFilter } from '@/hooks/useRealtimeSubscription'
+import { useVisiblePolling, formatLastUpdated } from '@/hooks/useVisiblePolling'
 import { TEMPERATURE } from '@/lib/integrations/melcloud/constants'
 import {
   FAN_SPEEDS,
@@ -154,6 +156,26 @@ export function MelCloudACPanel({ compact = false, showSettingsLink = true }: Me
     loadData()
   }, [loadData])
 
+  // Poll for device state updates every 30 seconds when page is visible
+  const { lastUpdated, isPolling: isRefreshing } = useVisiblePolling({
+    intervalMs: 30000,
+    enabled: !loading && devices.length > 0,
+    onPoll: loadData,
+  })
+
+  // Get device IDs for realtime subscription
+  const deviceIds = useMemo(() => devices.map(d => d.id), [devices])
+
+  // Realtime subscription for MelCloud device state changes
+  useRealtimeSubscription<MelCloudACDevice>({
+    table: 'melcloud_devices',
+    filter: createInFilter('id', deviceIds),
+    onUpdate: (newRecord) => {
+      setDevices(prev => prev.map(d => d.id === newRecord.id ? { ...d, ...newRecord } : d))
+    },
+    enabled: !loading && deviceIds.length > 0 && !!createInFilter('id', deviceIds),
+  })
+
   // Haptic feedback for touch devices
   const triggerHaptic = useCallback(() => {
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
@@ -301,6 +323,15 @@ export function MelCloudACPanel({ compact = false, showSettingsLink = true }: Me
     return null // Don't show empty state - just hide when no devices
   }
 
+  // Format last updated text
+  const lastUpdatedText = lastUpdated
+    ? formatLastUpdated(lastUpdated, {
+        justNow: t.homeControl?.justNow || 'Akkurat nå',
+        minutesAgo: t.homeControl?.minutesAgo || '{count} min siden',
+        hoursAgo: t.homeControl?.hoursAgo || '{count} timer siden',
+      })
+    : ''
+
   return (
     <div className="space-y-4">
       {/* Error Toast */}
@@ -325,6 +356,16 @@ export function MelCloudACPanel({ compact = false, showSettingsLink = true }: Me
               <line x1="6" y1="6" x2="18" y2="18"/>
             </svg>
           </button>
+        </div>
+      )}
+
+      {/* Last Updated Indicator */}
+      {lastUpdatedText && (
+        <div className="flex items-center justify-end gap-2 text-xs" style={{ color: 'var(--muted)' }}>
+          {isRefreshing && (
+            <span className="loading-spinner" style={{ width: 12, height: 12, borderWidth: 1.5 }} />
+          )}
+          <span>{t.homeControl?.lastUpdated || 'Oppdatert'}: {lastUpdatedText}</span>
         </div>
       )}
 

@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import { TransitionLink } from '@/components/TransitionLink'
 import { getAccountDisplayName } from '@/lib/integrations/somfy/utils'
+import { useRealtimeSubscription, createInFilter } from '@/hooks/useRealtimeSubscription'
+import { useVisiblePolling, formatLastUpdated } from '@/hooks/useVisiblePolling'
 import { TEMPERATURE } from '@/lib/integrations/toshiba/constants'
 import {
   FAN_SPEEDS,
@@ -152,6 +154,26 @@ export function ToshibaACPanel({ compact = false, showSettingsLink = true }: Tos
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  // Poll for device state updates every 30 seconds when page is visible
+  const { lastUpdated, isPolling: isRefreshing } = useVisiblePolling({
+    intervalMs: 30000,
+    enabled: !loading && devices.length > 0,
+    onPoll: loadData,
+  })
+
+  // Get device IDs for realtime subscription
+  const deviceIds = useMemo(() => devices.map(d => d.id), [devices])
+
+  // Realtime subscription for Toshiba AC device state changes
+  useRealtimeSubscription<ToshibaACDevice>({
+    table: 'toshiba_ac_devices',
+    filter: createInFilter('id', deviceIds),
+    onUpdate: (newRecord) => {
+      setDevices(prev => prev.map(d => d.id === newRecord.id ? { ...d, ...newRecord } : d))
+    },
+    enabled: !loading && deviceIds.length > 0 && !!createInFilter('id', deviceIds),
+  })
 
   // Haptic feedback for touch devices
   const triggerHaptic = useCallback(() => {
@@ -328,6 +350,15 @@ export function ToshibaACPanel({ compact = false, showSettingsLink = true }: Tos
     )
   }
 
+  // Format last updated text
+  const lastUpdatedText = lastUpdated
+    ? formatLastUpdated(lastUpdated, {
+        justNow: t.homeControl?.justNow || 'Akkurat nå',
+        minutesAgo: t.homeControl?.minutesAgo || '{count} min siden',
+        hoursAgo: t.homeControl?.hoursAgo || '{count} timer siden',
+      })
+    : ''
+
   return (
     <div className="space-y-4">
       {/* Error Toast */}
@@ -352,6 +383,16 @@ export function ToshibaACPanel({ compact = false, showSettingsLink = true }: Tos
               <line x1="6" y1="6" x2="18" y2="18"/>
             </svg>
           </button>
+        </div>
+      )}
+
+      {/* Last Updated Indicator */}
+      {lastUpdatedText && (
+        <div className="flex items-center justify-end gap-2 text-xs" style={{ color: 'var(--muted)' }}>
+          {isRefreshing && (
+            <span className="loading-spinner" style={{ width: 12, height: 12, borderWidth: 1.5 }} />
+          )}
+          <span>{t.homeControl?.lastUpdated || 'Oppdatert'}: {lastUpdatedText}</span>
         </div>
       )}
 

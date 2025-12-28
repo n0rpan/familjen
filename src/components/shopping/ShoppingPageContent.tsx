@@ -13,8 +13,11 @@ import { useUndoStack } from '@/hooks/useUndoStack'
 import { ShoppingItem } from '@/components/shopping/ShoppingItem'
 import { ShoppingUndoToast } from '@/components/shopping/ShoppingUndoToast'
 import { ShoppingSuggestions } from '@/components/shopping/ShoppingSuggestions'
+import { ShoppingFilters } from '@/components/shopping/ShoppingFilters'
+import { ShoppingCategoryGroup } from '@/components/shopping/ShoppingCategoryGroup'
 import { WishlistOverview } from '@/components/wishlist'
-import type { ShoppingCategory } from '@/lib/constants'
+import type { ShoppingCategory, ShoppingFilter, ShoppingViewMode } from '@/lib/constants'
+import { DEFAULT_FILTER_CATEGORIES, DEFAULT_CATEGORY_ORDER } from '@/lib/constants'
 import {
   getCachedShoppingData,
   fetchAndCacheShoppingData,
@@ -35,6 +38,8 @@ export function ShoppingPageContent() {
   const [lists, setLists] = useState<ListWithItems[]>([])
   const [newItemText, setNewItemText] = useState<Record<string, string>>({})
   const [newItemQuantity, setNewItemQuantity] = useState<Record<string, string>>({})
+  const [viewMode, setViewMode] = useState<ShoppingViewMode>('newest')
+  const [activeFilter, setActiveFilter] = useState<ShoppingFilter>('all')
   const [duplicateWarning, setDuplicateWarning] = useState<{
     listId: string
     matches: Array<{ id: string; name: string; quantity: string | null }>
@@ -312,6 +317,57 @@ export function ShoppingPageContent() {
   }, [household, lists])
 
   const listIds = useMemo(() => lists.map(l => l.id), [lists])
+
+  // Filter items based on active filter
+  const getFilteredItems = useCallback((items: ShoppingListItem[]) => {
+    if (activeFilter === 'all') return items
+    const allowedCategories = DEFAULT_FILTER_CATEGORIES[activeFilter]
+    return items.filter(item => allowedCategories.includes(item.category as ShoppingCategory))
+  }, [activeFilter])
+
+  // Compute item counts per filter for the filter buttons
+  const itemCounts = useMemo(() => {
+    const allItems = lists.flatMap(l => l.items.filter(i => !i.is_bought))
+    const counts: Record<ShoppingFilter, number> = {
+      all: allItems.length,
+      dagligvarer: 0,
+      hjem: 0,
+      annet: 0,
+    }
+
+    allItems.forEach(item => {
+      const category = item.category as ShoppingCategory
+      if (DEFAULT_FILTER_CATEGORIES.dagligvarer.includes(category)) {
+        counts.dagligvarer++
+      } else if (DEFAULT_FILTER_CATEGORIES.hjem.includes(category)) {
+        counts.hjem++
+      } else {
+        counts.annet++
+      }
+    })
+
+    return counts
+  }, [lists])
+
+  // Group items by category for category view
+  const groupItemsByCategory = useCallback((items: ShoppingListItem[]) => {
+    const groups: Record<ShoppingCategory, ShoppingListItem[]> = {} as Record<ShoppingCategory, ShoppingListItem[]>
+
+    DEFAULT_CATEGORY_ORDER.forEach(cat => {
+      groups[cat] = []
+    })
+
+    items.forEach(item => {
+      const category = (item.category as ShoppingCategory) || 'other'
+      if (!groups[category]) groups[category] = []
+      groups[category].push(item)
+    })
+
+    // Return only non-empty categories in the correct order
+    return DEFAULT_CATEGORY_ORDER
+      .filter(cat => groups[cat].length > 0)
+      .map(cat => ({ category: cat, items: groups[cat] }))
+  }, [])
 
   const handleItemInsert = useCallback((record: ShoppingListItem) => {
     if (!listIds.includes(record.list_id)) return
@@ -648,10 +704,22 @@ export function ShoppingPageContent() {
         </p>
       </div>
 
+      {/* View mode and filter controls */}
+      <ShoppingFilters
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        activeFilter={activeFilter}
+        onFilterChange={setActiveFilter}
+        itemCounts={itemCounts}
+      />
+
       <div className="grid gap-6 md:grid-cols-2">
         {lists.map(list => {
-          const unboughtItems = list.items.filter(i => !i.is_bought)
-          const boughtItems = list.items.filter(i => i.is_bought)
+          // Apply filter to items
+          const filteredItems = getFilteredItems(list.items)
+          const unboughtItems = filteredItems.filter(i => !i.is_bought)
+          const boughtItems = filteredItems.filter(i => i.is_bought)
+          const categoryGroups = viewMode === 'category' ? groupItemsByCategory(unboughtItems) : []
 
           return (
             <div
@@ -786,13 +854,55 @@ export function ShoppingPageContent() {
                       </svg>
                     </div>
                     <p className="text-sm font-medium mb-1" style={{ color: 'var(--foreground)' }}>
-                      {t.shopping.emptyList}
+                      {activeFilter !== 'all' ? t.shopping.noItemsInFilter : t.shopping.emptyList}
                     </p>
                     <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                      {t.shopping.emptyListDesc}
+                      {activeFilter !== 'all' ? t.shopping.tryOtherFilter : t.shopping.emptyListDesc}
                     </p>
                   </div>
+                ) : viewMode === 'category' ? (
+                  /* Category view - items grouped by category */
+                  <div className="p-3 space-y-2">
+                    {categoryGroups.map(group => (
+                      <ShoppingCategoryGroup
+                        key={group.category}
+                        category={group.category}
+                        items={group.items}
+                        allBought={group.items.every(i => i.is_bought)}
+                        onToggleBought={toggleBought}
+                        onDeleteItem={deleteItem}
+                        isRecentlyChanged={isRecentlyChanged}
+                      />
+                    ))}
+
+                    {boughtItems.length > 0 && (
+                      <div
+                        className="mt-4 pt-3 border-t"
+                        style={{ borderColor: 'var(--border)' }}
+                      >
+                        <div className="px-1 py-2">
+                          <span className="text-xs font-medium" style={{ color: 'var(--muted)' }}>
+                            {t.common.done} ({boughtItems.length})
+                          </span>
+                        </div>
+                        <div className="space-y-1">
+                          {boughtItems.map(item => (
+                            <ShoppingItem
+                              key={item.id}
+                              item={item}
+                              isBought={true}
+                              isRecentlyChanged={isRecentlyChanged(item.id)}
+                              onToggle={toggleBought}
+                              onDelete={deleteItem}
+                              isMobile={isMobile}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 ) : (
+                  /* Newest first view - flat list */
                   <>
                     {unboughtItems.map(item => (
                       <ShoppingItem

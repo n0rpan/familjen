@@ -59,11 +59,28 @@ function getMigrations(): MigrationFile[] {
   }))
 }
 
+function ensureMainBranchFetched(): void {
+  try {
+    // Unshallow if needed to get full history for proper diff
+    try {
+      execSync('git fetch --unshallow origin main', { encoding: 'utf-8', stdio: 'pipe' })
+    } catch {
+      // Already unshallowed or not shallow, do regular fetch
+      execSync('git fetch origin main', { encoding: 'utf-8', stdio: 'pipe' })
+    }
+  } catch (error) {
+    console.warn('Warning: Could not fetch origin/main')
+  }
+}
+
 function getNewMigrations(migrations: MigrationFile[]): MigrationFile[] {
   // Check if we're in a PR context by comparing with base branch
   try {
+    // Ensure we have full history from main for proper diff
+    ensureMainBranchFetched()
+
     // Get list of changed files compared to origin/main
-    const changedFiles = execSync('git diff --name-only origin/main...HEAD 2>/dev/null || git diff --name-only HEAD~1', {
+    const changedFiles = execSync('git diff --name-only origin/main...HEAD', {
       encoding: 'utf-8',
     })
       .trim()

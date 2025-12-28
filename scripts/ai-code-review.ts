@@ -71,10 +71,20 @@ function ensureBaseBranchFetched(baseBranch: string): void {
     const remote = baseBranch.split('/')[0] || 'origin'
     const branch = baseBranch.replace(`${remote}/`, '')
     console.log(`Fetching ${remote}/${branch}...`)
-    execSync(`git fetch ${remote} ${branch} --depth=1`, {
-      encoding: 'utf-8',
-      stdio: 'pipe',
-    })
+    // Use --unshallow if we have a shallow clone, otherwise full fetch
+    // This ensures git merge-base can find the common ancestor
+    try {
+      execSync(`git fetch --unshallow ${remote} ${branch}`, {
+        encoding: 'utf-8',
+        stdio: 'pipe',
+      })
+    } catch {
+      // Already unshallowed or not a shallow clone, do regular fetch
+      execSync(`git fetch ${remote} ${branch}`, {
+        encoding: 'utf-8',
+        stdio: 'pipe',
+      })
+    }
   } catch (error) {
     console.warn(`Warning: Could not fetch base branch: ${error instanceof Error ? error.message : 'Unknown'}`)
   }
