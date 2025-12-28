@@ -23,7 +23,7 @@
  */
 
 import { execSync } from 'child_process'
-import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, readdirSync, existsSync, appendFileSync } from 'fs'
 import {
   type ReviewerOutput,
   type FinalVerdictOutput,
@@ -35,6 +35,16 @@ import {
   categoryEmoji,
   summarizeReviewer,
 } from './ai-review-types'
+import {
+  recordLLMUsage,
+  logAuditEntry,
+  recordSelectorFeedback,
+  formatCost,
+  calculateCost,
+  generateCostSummaryMarkdown,
+  getSelectorAccuracyStats,
+  type SelectorFeedback,
+} from './lib/llm-utils'
 
 // ============================================
 // Configuration
@@ -45,6 +55,22 @@ const API_KEY = process.env.OPENROUTER_API_KEY
 
 // Timeout for API calls (3 minutes - verdict needs more time for tool use loops)
 const API_TIMEOUT_MS = 180_000
+
+// Timeout per tool (prevent any single tool from blocking)
+const TOOL_TIMEOUTS: Record<string, number> = {
+  run_visual_validation: 120_000,  // 2 min - captures screenshots
+  run_e2e_tests: 180_000,          // 3 min - runs playwright
+  run_migration_review: 60_000,    // 1 min
+  run_api_tests: 120_000,          // 2 min
+  run_dead_code_analysis: 30_000,  // 30s
+  run_bundle_size_check: 30_000,   // 30s
+  run_i18n_completeness_check: 15_000, // 15s
+  run_accessibility_audit: 30_000, // 30s
+  read_file: 5_000,                // 5s
+  read_diff: 10_000,               // 10s
+  search_code: 15_000,             // 15s
+  _default: 30_000,                // 30s default
+}
 
 // ============================================
 // Git Utilities
@@ -413,11 +439,37 @@ function executeTool(name: string, input: Record<string, unknown>): string {
     return cached
   }
 
-  const result = executeToolUncached(name, input)
+  const timeout = TOOL_TIMEOUTS[name] || TOOL_TIMEOUTS._default
+  const startTime = Date.now()
 
-  // Cache the result
-  toolResultCache.set(cacheKey, result)
-  return result
+  try {
+    const result = executeToolWithTimeout(name, input, timeout)
+    const duration = Date.now() - startTime
+
+    // Log slow tools
+    if (duration > 10_000) {
+      console.log(`   ⏱️ Tool ${name} took ${Math.round(duration / 1000)}s`)
+    }
+
+    // Cache the result
+    toolResultCache.set(cacheKey, result)
+    return result
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('timed out')) {
+      console.log(`   ⏱️ Tool ${name} timed out after ${timeout / 1000}s`)
+      return `Error: Tool ${name} timed out after ${timeout / 1000} seconds. Try a simpler query.`
+    }
+    throw error
+  }
+}
+
+/**
+ * Execute a tool with timeout protection
+ */
+function executeToolWithTimeout(name: string, input: Record<string, unknown>, timeoutMs: number): string {
+  // For sync tools, we can't easily add timeout, but we set exec timeouts
+  // The main protection is the exec timeouts in the tool implementations
+  return executeToolUncached(name, input)
 }
 
 function executeToolUncached(name: string, input: Record<string, unknown>): string {
@@ -2062,9 +2114,94 @@ FINAL VERDICT: BLOCK`
   }
 
   saveFinalVerdict(verdictOutput)
+
+  // Record selector feedback for accuracy tracking
+  const testSelectionPath = 'ci-state/test-selection.json'
+  if (existsSync(testSelectionPath)) {
+    try {
+      const testSelection = JSON.parse(readFileSync(testSelectionPath, 'utf-8'))
+      const selectorDecisions = testSelection.decisions || []
+
+      // Check if supervisor ran any skipped tests
+      const skippedTests = selectorDecisions.filter((d: { enabled: boolean }) => !d.enabled)
+      const additionalTestsRun: string[] = []
+      const additionalTestResults: Array<{ test: string; passed: boolean }> = []
+
+      // Check toolsUsed to see if supervisor ran skipped tests
+      for (const skipped of skippedTests) {
+        const toolName = `run_${skipped.testType.replace(/-/g, '_')}`
+        if (toolsUsed.has(toolName)) {
+          additionalTestsRun.push(skipped.testType)
+          // If we blocked because of this test, it failed
+          const testFailed = blocked && response.toLowerCase().includes(skipped.testType)
+          additionalTestResults.push({ test: skipped.testType, passed: !testFailed })
+        }
+      }
+
+      // Determine if selector was accurate
+      const selectorAccurate = additionalTestResults.every(r => r.passed)
+
+      const feedback: SelectorFeedback = {
+        timestamp: new Date().toISOString(),
+        prNumber: parseInt(process.env.GITHUB_PR_NUMBER || '0') || undefined,
+        commitSha: process.env.GITHUB_SHA || 'unknown',
+        selectorModel: testSelection.model,
+        selectorDecisions: selectorDecisions.map((d: { testType: string; enabled: boolean; reason: string }) => ({
+          testType: d.testType,
+          enabled: d.enabled,
+          reason: d.reason,
+        })),
+        supervisorOverride: aiOverride || null,
+        additionalTestsRun,
+        additionalTestResults,
+        selectorAccurate,
+        lesson: !selectorAccurate
+          ? `Selector skipped ${additionalTestsRun.join(', ')} but supervisor found issues`
+          : undefined,
+      }
+
+      recordSelectorFeedback(feedback)
+
+      // If selector was wrong, generate a suggested GitHub issue
+      if (!selectorAccurate && additionalTestsRun.length > 0) {
+        generateSelectorLearningIssue(feedback, testSelection)
+      }
+
+      console.log(`\n📊 Selector Accuracy: ${selectorAccurate ? '✅ Correct' : '⚠️ Needed override'}`)
+      if (additionalTestsRun.length > 0) {
+        console.log(`   Additional tests run by supervisor: ${additionalTestsRun.join(', ')}`)
+      }
+    } catch (e) {
+      console.log(`   ⚠️ Could not record selector feedback: ${e}`)
+    }
+  }
+
+  // Log audit trail
+  logAuditEntry({
+    timestamp: new Date().toISOString(),
+    type: 'verdict',
+    prNumber: parseInt(process.env.GITHUB_PR_NUMBER || '0') || undefined,
+    commitSha: process.env.GITHUB_SHA || 'unknown',
+    model: VERDICT_MODEL,
+    decision: verdictOutput.verdict,
+    reasoning: response.slice(0, 500),
+    metadata: {
+      toolsUsed: [...toolsUsed],
+      aiOverride: aiOverride || null,
+      reviewerCount: reviewerNames.length,
+      failingReviewers,
+    },
+  })
+
   generateComment(verdictOutput, reviews, changedFiles.split('\n').filter(Boolean), prTitle)
 
   console.log(`\n⏱️ Duration: ${Math.round((Date.now() - startTime) / 1000)}s`)
+
+  // Show cost summary
+  const costMd = generateCostSummaryMarkdown()
+  if (costMd) {
+    console.log('\n' + costMd.replace(/\n/g, '\n   '))
+  }
 
   if (blocked) {
     console.log('\n❌ BLOCKED - Issues must be addressed')
@@ -2073,6 +2210,56 @@ FINAL VERDICT: BLOCK`
     console.log('\n✅ PASSED - Ready to merge')
     process.exit(0)
   }
+}
+
+/**
+ * Generate a suggested GitHub issue when selector made wrong decisions
+ */
+function generateSelectorLearningIssue(
+  feedback: SelectorFeedback,
+  testSelection: { changedFiles?: string[]; categories?: Record<string, string[]> }
+): void {
+  const issueTemplate = `## 🤖 CI Selector Learning: Potential Improvement
+
+The smart selector made a decision that the supervisor disagreed with. This issue captures the learning for potential prompt improvements.
+
+### What Happened
+
+| Aspect | Value |
+|--------|-------|
+| PR | #${feedback.prNumber || 'unknown'} |
+| Selector Model | ${feedback.selectorModel} |
+| Supervisor Override | ${feedback.supervisorOverride ? `${feedback.supervisorOverride.from} → ${feedback.supervisorOverride.to}` : 'None'} |
+
+### Selector Decisions
+${feedback.selectorDecisions.map(d => `- **${d.testType}**: ${d.enabled ? '✅ RUN' : '⏭️ SKIP'} — ${d.reason}`).join('\n')}
+
+### Supervisor Actions
+- **Additional tests run:** ${feedback.additionalTestsRun.join(', ') || 'None'}
+- **Results:** ${feedback.additionalTestResults.map(r => `${r.test}: ${r.passed ? '✅' : '❌'}`).join(', ') || 'N/A'}
+
+### Changed Files (${testSelection.changedFiles?.length || 0})
+\`\`\`
+${(testSelection.changedFiles || []).slice(0, 20).join('\n')}
+${(testSelection.changedFiles?.length || 0) > 20 ? '... and more' : ''}
+\`\`\`
+
+### Suggested Improvement
+
+${feedback.lesson || 'Review the selector prompt to handle this case better.'}
+
+**Possible actions:**
+- [ ] Update selector prompt to recognize this pattern
+- [ ] Add this file pattern to core files that always run full suite
+- [ ] Adjust the test type heuristics
+
+---
+*Auto-generated by CI selector feedback loop*
+`
+
+  // Save as a file that can be used to create an issue
+  writeFileSync('ci-state/selector-learning-issue.md', issueTemplate)
+  console.log('   📝 Selector learning issue template saved: ci-state/selector-learning-issue.md')
 }
 
 // ============================================

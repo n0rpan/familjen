@@ -10,6 +10,7 @@
  * - Conservative: When in doubt, run the test (one extra check > one missed bug)
  * - Incremental: Skip tests if files haven't changed since last green run
  * - Context-aware: Recommend extended checks based on PR content
+ * - Cached: Same diff = same decision (saves API calls)
  *
  * Extended Checks (recommended by LLM based on context):
  * - dead-code-analysis: For refactoring PRs
@@ -19,11 +20,15 @@
  * - security-audit: For auth/API changes
  *
  * Usage:
- *   npx tsx scripts/ai-test-selector.ts [--base <branch>]
+ *   npx tsx scripts/ai-test-selector.ts [--base <branch>] [--dry-run]
+ *
+ * Flags:
+ *   --base <branch>  Base branch for diff (default: main)
+ *   --dry-run        Show what would happen without calling LLM
  *
  * Environment:
- *   OPENROUTER_API_KEY - Required
- *   OPENROUTER_FAST_MODEL - Required (e.g., google/gemini-2.0-flash-001)
+ *   OPENROUTER_API_KEY - Required (unless --dry-run)
+ *   OPENROUTER_FAST_MODEL - Required (unless --dry-run)
  *   GITHUB_PR_NUMBER - PR number
  *   GITHUB_BASE_REF - Base branch
  *
@@ -32,7 +37,7 @@
  */
 
 import { execSync } from 'child_process'
-import { writeFileSync, existsSync, mkdirSync } from 'fs'
+import { writeFileSync, existsSync, mkdirSync, readFileSync } from 'fs'
 import { join } from 'path'
 import {
   loadPRState,
@@ -48,6 +53,15 @@ import {
   type PRState,
 } from './lib/pr-state'
 import { quickImpactCheck, categorizeChanges, CORE_FILES } from './lib/dependency-graph'
+import {
+  recordLLMUsage,
+  hashDiff,
+  getCachedDecision,
+  cacheDecision,
+  logAuditEntry,
+  formatCost,
+  calculateCost,
+} from './lib/llm-utils'
 
 // ============================================
 // Configuration
@@ -191,12 +205,20 @@ interface LLMResponse {
   reasoning: string
 }
 
+interface LLMCallResult {
+  response: LLMResponse
+  usage: {
+    inputTokens: number
+    outputTokens: number
+  }
+}
+
 async function callLLMForDecision(
   changedFiles: string[],
   categories: ReturnType<typeof categorizeChanges>,
   prState: PRState | null,
   deltaFiles: string[]
-): Promise<LLMResponse> {
+): Promise<LLMCallResult> {
   if (!API_KEY) {
     throw new Error('OPENROUTER_API_KEY is required - CI cannot proceed without LLM')
   }
@@ -346,13 +368,19 @@ Decide which tests to run and recommend any extended checks. Remember: when in d
     const data = await response.json()
     const content = data.choices?.[0]?.message?.content || ''
 
+    // Extract usage stats
+    const usage = {
+      inputTokens: data.usage?.prompt_tokens || 0,
+      outputTokens: data.usage?.completion_tokens || 0,
+    }
+
     try {
       const parsed = JSON.parse(content) as LLMResponse
       // Ensure extendedChecks is an array
       if (!Array.isArray(parsed.extendedChecks)) {
         parsed.extendedChecks = []
       }
-      return parsed
+      return { response: parsed, usage }
     } catch {
       // Try to extract JSON from response
       const jsonMatch = content.match(/\{[\s\S]*\}/)
@@ -361,7 +389,7 @@ Decide which tests to run and recommend any extended checks. Remember: when in d
         if (!Array.isArray(parsed.extendedChecks)) {
           parsed.extendedChecks = []
         }
-        return parsed
+        return { response: parsed, usage }
       }
       throw new Error('Failed to parse LLM response as JSON')
     }
@@ -369,6 +397,40 @@ Decide which tests to run and recommend any extended checks. Remember: when in d
     clearTimeout(timeout)
     throw error
   }
+}
+
+/**
+ * Write error output for PR comment
+ */
+function writeErrorOutput(errorMessage: string, baseBranch: string, prNumber: number | null): void {
+  if (!existsSync(STATE_DIR)) {
+    mkdirSync(STATE_DIR, { recursive: true })
+  }
+
+  const errorOutput = {
+    error: true,
+    message: errorMessage,
+    timestamp: new Date().toISOString(),
+    baseBranch,
+    prNumber,
+    help: {
+      possibleCauses: [
+        'OpenRouter API is down',
+        'Invalid or expired API key',
+        'Invalid model name',
+        'Rate limited',
+      ],
+      howToFix: [
+        'Check OpenRouter status: https://status.openrouter.ai',
+        'Verify OPENROUTER_API_KEY in GitHub Secrets',
+        'Verify OPENROUTER_FAST_MODEL in GitHub Secrets',
+        'Wait a few minutes and re-run the workflow',
+      ],
+      localTesting: 'npx tsx scripts/ai-test-selector.ts --dry-run --base main',
+    },
+  }
+
+  writeFileSync(join(STATE_DIR, 'selector-error.json'), JSON.stringify(errorOutput, null, 2))
 }
 
 // ============================================
@@ -384,23 +446,44 @@ async function main() {
   const baseIndex = args.indexOf('--base')
   const baseBranch = baseIndex >= 0 ? args[baseIndex + 1] : process.env.GITHUB_BASE_REF || 'main'
   const prNumber = process.env.GITHUB_PR_NUMBER ? parseInt(process.env.GITHUB_PR_NUMBER) : null
+  const isDryRun = args.includes('--dry-run')
 
   console.log(`📌 Base branch: ${baseBranch}`)
   console.log(`📌 PR number: ${prNumber || 'N/A'}`)
-
-  // Validate required environment variables
-  if (!API_KEY) {
-    console.error('❌ OPENROUTER_API_KEY is required')
-    console.error('   The smart selector requires LLM to make decisions.')
-    console.error('   Set OPENROUTER_API_KEY in GitHub Secrets.')
-    process.exit(1)
+  if (isDryRun) {
+    console.log('📌 Mode: DRY RUN (no LLM calls)')
   }
 
-  if (!FAST_MODEL) {
-    console.error('❌ OPENROUTER_FAST_MODEL is required')
-    console.error('   The smart selector requires a model to make decisions.')
-    console.error('   Set OPENROUTER_FAST_MODEL in GitHub Secrets.')
-    process.exit(1)
+  // Validate required environment variables (unless dry-run)
+  if (!isDryRun) {
+    if (!API_KEY) {
+      writeErrorOutput('OPENROUTER_API_KEY is required', baseBranch, prNumber)
+      console.error('❌ OPENROUTER_API_KEY is required')
+      console.error('')
+      console.error('   The smart selector requires LLM to make decisions.')
+      console.error('')
+      console.error('   To fix this:')
+      console.error('   1. Go to GitHub repo → Settings → Secrets → Actions')
+      console.error('   2. Add OPENROUTER_API_KEY secret')
+      console.error('   3. Get key from https://openrouter.ai/keys')
+      console.error('')
+      console.error('   For local testing, use --dry-run flag:')
+      console.error('   npx tsx scripts/ai-test-selector.ts --dry-run --base main')
+      process.exit(1)
+    }
+
+    if (!FAST_MODEL) {
+      writeErrorOutput('OPENROUTER_FAST_MODEL is required', baseBranch, prNumber)
+      console.error('❌ OPENROUTER_FAST_MODEL is required')
+      console.error('')
+      console.error('   The smart selector requires a model to make decisions.')
+      console.error('')
+      console.error('   To fix this:')
+      console.error('   1. Go to GitHub repo → Settings → Secrets → Actions')
+      console.error('   2. Add OPENROUTER_FAST_MODEL secret')
+      console.error('   3. Recommended: google/gemini-2.0-flash-001')
+      process.exit(1)
+    }
   }
 
   // Ensure we have git history
@@ -417,6 +500,19 @@ async function main() {
     return
   }
 
+  // Get the diff for caching
+  let diff = ''
+  try {
+    diff = execSync(`git diff origin/${baseBranch.replace(/^origin\//, '')}...HEAD`, {
+      encoding: 'utf-8',
+      maxBuffer: 5 * 1024 * 1024,
+    })
+  } catch {
+    diff = changedFiles.join('\n') // Fallback to file list
+  }
+  const diffHash = hashDiff(diff)
+  console.log(`📝 Diff hash: ${diffHash}`)
+
   // Categorize changes
   const categories = categorizeChanges(changedFiles)
   console.log('\n📊 Categories:')
@@ -431,6 +527,52 @@ async function main() {
   console.log(`   Config: ${categories.config.length}`)
   console.log(`   Docs: ${categories.docs.length}`)
 
+  // DRY RUN: Show what would happen and exit
+  if (isDryRun) {
+    console.log('\n' + '='.repeat(50))
+    console.log('🏃 DRY RUN - What would happen:')
+    console.log('='.repeat(50))
+
+    const impact = quickImpactCheck(changedFiles)
+    const isDocsOnly = categories.docs.length > 0 &&
+      categories.components.length === 0 &&
+      categories.pages.length === 0 &&
+      categories.api.length === 0 &&
+      categories.lib.length === 0
+
+    console.log('\n📋 Impact Analysis:')
+    console.log(`   Core files touched: ${impact.coreFileChanged}`)
+    console.log(`   Has migrations: ${impact.affectsMigrations}`)
+    console.log(`   Has UI changes: ${impact.affectsComponents}`)
+    console.log(`   Has API changes: ${impact.affectsApi}`)
+    console.log(`   Is docs only: ${isDocsOnly}`)
+
+    console.log('\n🔮 Predicted decisions (heuristic):')
+    console.log('   lint: RUN (always)')
+    console.log('   typecheck: RUN (always)')
+    console.log(`   unit-tests: ${isDocsOnly ? 'SKIP' : 'RUN'}`)
+    console.log(`   migration-review: ${impact.affectsMigrations ? 'RUN' : 'SKIP'}`)
+    console.log('   code-review: RUN (always for PRs)')
+    console.log(`   visual-validation: ${impact.affectsComponents ? 'RUN' : 'SKIP'}`)
+    console.log(`   e2e-tests: ${isDocsOnly ? 'SKIP' : 'RUN'}`)
+    console.log(`   api-tests: ${impact.affectsApi ? 'RUN' : 'SKIP'}`)
+
+    console.log('\n💡 Extended checks that might be recommended:')
+    if (categories.components.length > 3) {
+      console.log('   - accessibility-audit (many component changes)')
+    }
+    if (changedFiles.some(f => f.includes('package.json'))) {
+      console.log('   - bundle-size-check (package.json changed)')
+    }
+    if (categories.lib.length > 5) {
+      console.log('   - dead-code-analysis (many lib changes)')
+    }
+
+    console.log('\n📝 To run with LLM, remove --dry-run flag')
+    console.log('   (requires OPENROUTER_API_KEY and OPENROUTER_FAST_MODEL)')
+    return
+  }
+
   // Load PR state
   let prState = loadPRState()
   if (!prState && prNumber) {
@@ -443,18 +585,75 @@ async function main() {
     console.log(`\n📝 Files changed since last CI run: ${deltaFiles.length}`)
   }
 
-  // Get LLM decision - NO FALLBACK, will fail if LLM fails
-  console.log(`\n🤖 Consulting ${FAST_MODEL}...`)
-
+  // Check cache first
+  const cached = getCachedDecision(diffHash)
   let llmResponse: LLMResponse
-  try {
-    llmResponse = await callLLMForDecision(changedFiles, categories, prState, deltaFiles)
-    console.log('   ✓ LLM decision received')
-  } catch (error) {
-    console.error(`\n❌ LLM call failed: ${error}`)
-    console.error('   CI cannot proceed without LLM decision.')
-    console.error('   Check OPENROUTER_API_KEY and OPENROUTER_FAST_MODEL.')
-    process.exit(1)
+  let fromCache = false
+
+  if (cached) {
+    console.log(`\n📦 Using cached decision (hash: ${diffHash})`)
+    console.log(`   Cached at: ${cached.timestamp}`)
+    console.log(`   Model: ${cached.model}`)
+    llmResponse = {
+      decisions: cached.decisions as LLMDecision[],
+      extendedChecks: cached.extendedChecks as ExtendedCheck[],
+      reasoning: cached.reasoning,
+    }
+    fromCache = true
+  } else {
+    // Get LLM decision - NO FALLBACK, will fail if LLM fails
+    console.log(`\n🤖 Consulting ${FAST_MODEL}...`)
+
+    const llmStartTime = Date.now()
+    try {
+      const result = await callLLMForDecision(changedFiles, categories, prState, deltaFiles)
+      llmResponse = result.response
+      const llmDuration = Date.now() - llmStartTime
+
+      console.log('   ✓ LLM decision received')
+
+      // Record cost
+      const cost = calculateCost(FAST_MODEL!, result.usage.inputTokens, result.usage.outputTokens)
+      console.log(`   💰 Cost: ${formatCost(cost)} (${result.usage.inputTokens} in, ${result.usage.outputTokens} out)`)
+
+      recordLLMUsage({
+        model: FAST_MODEL!,
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        estimatedCostUSD: cost,
+        timestamp: new Date().toISOString(),
+        operation: 'selector',
+        prNumber: prNumber || undefined,
+        commitSha: getCurrentCommitSha(),
+        durationMs: llmDuration,
+      })
+
+      // Cache the decision
+      cacheDecision(
+        diffHash,
+        llmResponse.decisions,
+        llmResponse.extendedChecks,
+        llmResponse.reasoning,
+        FAST_MODEL!
+      )
+      console.log(`   📦 Decision cached (hash: ${diffHash})`)
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      writeErrorOutput(errorMessage, baseBranch, prNumber)
+
+      console.error(`\n❌ LLM call failed: ${errorMessage}`)
+      console.error('')
+      console.error('   CI cannot proceed without LLM decision.')
+      console.error('')
+      console.error('   Possible causes:')
+      console.error('   1. OpenRouter API is down → Check https://status.openrouter.ai')
+      console.error('   2. Invalid API key → Verify OPENROUTER_API_KEY secret')
+      console.error('   3. Invalid model → Verify OPENROUTER_FAST_MODEL secret')
+      console.error('   4. Rate limited → Wait and retry')
+      console.error('')
+      console.error('   To retry: Re-run the workflow')
+      process.exit(1)
+    }
   }
 
   // Apply incremental skip logic (check if files changed since last green)
@@ -593,7 +792,29 @@ async function main() {
 
   console.log('')
   console.log(`🧠 Reasoning: ${llmResponse.reasoning}`)
+
+  // Log audit trail
+  logAuditEntry({
+    timestamp: new Date().toISOString(),
+    type: 'selector',
+    prNumber: prNumber || undefined,
+    commitSha: getCurrentCommitSha(),
+    model: fromCache ? `${FAST_MODEL} (cached)` : FAST_MODEL!,
+    decision: `${testsToRun} run, ${testsToSkip} skip, ${extendedChecks.length} extended`,
+    reasoning: llmResponse.reasoning,
+    metadata: {
+      fromCache,
+      testsToRun,
+      testsToSkip,
+      extendedChecks: extendedChecks.map(c => c.type),
+      changedFilesCount: changedFiles.length,
+    },
+  })
+
   console.log(`\n⏱️ Duration: ${Math.round((Date.now() - startTime) / 1000)}s`)
+  if (fromCache) {
+    console.log('   📦 (from cache - no API cost)')
+  }
 }
 
 /**
