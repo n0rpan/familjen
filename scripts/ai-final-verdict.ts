@@ -280,6 +280,9 @@ function executeTool(name: string, input: Record<string, unknown>): string {
 function executeToolUncached(name: string, input: Record<string, unknown>): string {
   const baseBranch = process.env.GITHUB_BASE_REF || 'main'
   const previewUrl = process.env.VERCEL_PREVIEW_URL
+  const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+  // Build curl header for Vercel protection bypass
+  const bypassHeader = bypassSecret ? `-H 'x-vercel-protection-bypass: ${bypassSecret}'` : ''
 
   switch (name) {
     case 'read_file': {
@@ -519,9 +522,10 @@ function executeToolUncached(name: string, input: Record<string, unknown>): stri
         const curlCmd = [
           'curl', '-s', '-w', '\\n%{http_code}',
           '-X', method,
+          bypassHeader, // Include Vercel protection bypass
           ...(body ? ['-d', JSON.stringify(body), '-H', 'Content-Type: application/json'] : []),
           `${previewUrl}${path}`
-        ].join(' ')
+        ].filter(Boolean).join(' ')
 
         const result = execSync(curlCmd, { encoding: 'utf-8', timeout: 30000 })
         const lines = result.trim().split('\n')
@@ -540,8 +544,9 @@ function executeToolUncached(name: string, input: Record<string, unknown>): stri
       const path = input.path as string
 
       try {
+        // Use bypass header to get past Vercel protection, then check app-level auth
         const result = execSync(
-          `curl -s -w '\\n%{http_code}' -X GET '${previewUrl}${path}'`,
+          `curl -s -w '\\n%{http_code}' ${bypassHeader} -X GET '${previewUrl}${path}'`,
           { encoding: 'utf-8', timeout: 30000 }
         )
         const lines = result.trim().split('\n')
@@ -571,8 +576,9 @@ function executeToolUncached(name: string, input: Record<string, unknown>): stri
       const results: string[] = []
       for (const { path, name } of paths) {
         try {
+          // Include bypass header to get past Vercel protection
           const result = execSync(
-            `curl -s -w '\\n%{http_code}' -X GET '${previewUrl}${path}'`,
+            `curl -s -w '\\n%{http_code}' ${bypassHeader} -X GET '${previewUrl}${path}'`,
             { encoding: 'utf-8', timeout: 30000 }
           )
           const statusCode = parseInt(result.trim().split('\n').pop() || '0')
