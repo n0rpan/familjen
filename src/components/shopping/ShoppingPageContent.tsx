@@ -85,9 +85,15 @@ export function ShoppingPageContent() {
   const realtime = useRealtimeOptional()
 
   // Get final values early (demo mode uses hook data, production uses local state)
-  // This is computed here so useMemos below can use it
-  const finalLists = isDemo ? (effectiveLists || []) : lists
-  const finalHousehold = isDemo ? effectiveHousehold : household
+  // Wrapped in useMemo to ensure stable references for downstream useMemos
+  const finalLists = useMemo(
+    () => isDemo ? (effectiveLists || []) : lists,
+    [isDemo, effectiveLists, lists]
+  )
+  const finalHousehold = useMemo(
+    () => isDemo ? effectiveHousehold : household,
+    [isDemo, effectiveHousehold, household]
+  )
 
   // Track items we're currently modifying to prevent double-updates
   const pendingChanges = useRef<Set<string>>(new Set())
