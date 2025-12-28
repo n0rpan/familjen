@@ -1,269 +1,65 @@
 'use client'
 
 import { useMemo, useState, useEffect, useCallback } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { useWeekData, getTodaySummaryFromWeekData } from '@/hooks/data'
+import { useWeekData, useHousehold, getTodaySummaryFromWeekData } from '@/hooks/data'
 import { HomePageContent } from '@/components/home/HomePageContent'
 import { TransitionLink } from '@/components/TransitionLink'
 import { useLanguage } from '@/lib/i18n/context'
 import Image from 'next/image'
 import { formatDateISO, addDays } from '@/lib/utils'
-import type { AIHeadsUp, Household, HouseholdMember, Child } from '@/lib/types'
+import type { AIHeadsUp, Child } from '@/lib/types'
 
 export default function HomePage() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const isDemo = searchParams.get('demo') === 'true'
   const { t } = useLanguage()
-  const supabase = useMemo(() => createClient(), [])
 
-  // Demo mode data - useWeekData auto-detects demo mode via context
+  // Use the unified data hooks - they work for both demo and production
   const weekData = useWeekData()
+  const { household, currentMember, loading: householdLoading } = useHousehold()
 
-  // Production mode state
-  const [loading, setLoading] = useState(!isDemo)
-  const [authState, setAuthState] = useState<'loading' | 'loggedOut' | 'noHousehold' | 'noChildren' | 'ready'>('loading')
-  const [household, setHousehold] = useState<Household | null>(null)
-  const [members, setMembers] = useState<HouseholdMember[]>([])
-  const [children, setChildren] = useState<Child[]>([])
-  const [userId, setUserId] = useState<string | null>(null)
-  const [homeData, setHomeData] = useState<{
-    pickups: Parameters<typeof HomePageContent>[0]['pickups']
-    meals: Parameters<typeof HomePageContent>[0]['meals']
-    memberEvents: Parameters<typeof HomePageContent>[0]['memberEvents']
-    householdEvents: Parameters<typeof HomePageContent>[0]['householdEvents']
-    externalEvents: Parameters<typeof HomePageContent>[0]['externalEvents']
-    childTasks: Parameters<typeof HomePageContent>[0]['childTasks']
-    holidays: Parameters<typeof HomePageContent>[0]['holidays']
-    weekStart: Date
-    aiHeadsUps: AIHeadsUp[]
-    recentPhotos: Parameters<typeof HomePageContent>[0]['recentPhotos']
-    todaySummary: Parameters<typeof HomePageContent>[0]['todaySummary']
-    childrenWithoutPickup: Child[]
-    noMeal: boolean
-    isAllReady: boolean
-  } | null>(null)
+  // Auth state management for production mode
+  const [authChecked, setAuthChecked] = useState(isDemo)
+  const [isLoggedIn, setIsLoggedIn] = useState(isDemo)
+  const [inviteClaimed, setInviteClaimed] = useState(false)
 
-  // Load production data
-  const loadData = useCallback(async () => {
-    if (isDemo) return
+  // Create supabase client only for auth check and invite claiming
+  const supabase = useMemo(() => isDemo ? null : createClient(), [isDemo])
 
-    setLoading(true)
-    try {
-      // Check auth
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        setAuthState('loggedOut')
-        setLoading(false)
-        return
-      }
-      setUserId(user.id)
+  // Check auth and try to claim invite (only in production)
+  useEffect(() => {
+    if (isDemo || !supabase) {
+      setAuthChecked(true)
+      return
+    }
 
-      // Check household membership
-      let { data: myMembership } = await supabase
-        .from('household_members')
-        .select('id, household_id')
-        .eq('user_id', user.id)
-        .single()
+    const checkAuthAndClaimInvite = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        setIsLoggedIn(!!user)
 
-      // Try to claim pending invite
-      if (!myMembership) {
-        const { data: claimedInvite } = await supabase.rpc('claim_invite_for_current_user')
-        if (claimedInvite && claimedInvite.length > 0) {
-          myMembership = {
-            id: claimedInvite[0].member_id,
-            household_id: claimedInvite[0].household_id
+        // If user is logged in but has no household, try to claim invite
+        if (user && !household && !householdLoading && !inviteClaimed) {
+          const { data: claimedInvite } = await supabase.rpc('claim_invite_for_current_user')
+          if (claimedInvite && claimedInvite.length > 0) {
+            setInviteClaimed(true)
+            // Force a reload to pick up the new household
+            window.location.reload()
           }
         }
+      } catch (error) {
+        console.error('Auth check error:', error)
+      } finally {
+        setAuthChecked(true)
       }
-
-      if (!myMembership) {
-        setAuthState('noHousehold')
-        setLoading(false)
-        return
-      }
-
-      const householdId = myMembership.household_id
-
-      // Load household data in parallel
-      const [
-        { data: householdData },
-        { data: membersData },
-        { data: childrenData },
-      ] = await Promise.all([
-        supabase.from('households').select('*').eq('id', householdId).single(),
-        supabase.from('household_members').select('*').eq('household_id', householdId),
-        supabase.from('children').select('*').eq('household_id', householdId).order('sort_order', { ascending: true }),
-      ])
-
-      if (!householdData) {
-        setAuthState('noHousehold')
-        setLoading(false)
-        return
-      }
-
-      setHousehold(householdData as Household)
-      setMembers((membersData || []) as HouseholdMember[])
-      setChildren((childrenData || []) as Child[])
-
-      // Check if setup is needed
-      if (!childrenData || childrenData.length === 0) {
-        setAuthState('noChildren')
-        setLoading(false)
-        return
-      }
-
-      // Load all home page data
-      const today = new Date()
-      const todayStr = formatDateISO(today)
-      const weekStart = new Date(today)
-      weekStart.setDate(today.getDate() - today.getDay() + 1) // Monday
-      const weekEnd = new Date(weekStart)
-      weekEnd.setDate(weekStart.getDate() + 6)
-      const weekStartStr = formatDateISO(weekStart)
-      const weekEndStr = formatDateISO(weekEnd)
-
-      const [
-        { data: pickupsData },
-        { data: mealsData },
-        { data: memberEventsData },
-        { data: householdEventsData },
-        { data: externalEventsData },
-        { data: childTasksData },
-        { data: aiHeadsUpsData },
-        { data: photosData },
-      ] = await Promise.all([
-        supabase
-          .from('pickups')
-          .select('*, children(name, color), picker:household_members!pickups_picker_id_fkey(id, name, short_name)')
-          .eq('household_id', householdId)
-          .gte('date', weekStartStr)
-          .lte('date', weekEndStr),
-        supabase
-          .from('meals')
-          .select('*, recipes(id, name, description)')
-          .eq('household_id', householdId)
-          .gte('date', weekStartStr)
-          .lte('date', weekEndStr),
-        supabase
-          .from('member_events')
-          .select('*')
-          .eq('household_id', householdId)
-          .gte('date', weekStartStr)
-          .lte('date', weekEndStr),
-        supabase
-          .from('household_events')
-          .select('*')
-          .eq('household_id', householdId)
-          .gte('date', weekStartStr)
-          .lte('date', weekEndStr),
-        supabase
-          .from('external_events')
-          .select('*, external_integrations!inner(household_id)')
-          .eq('external_integrations.household_id', householdId)
-          .gte('event_date', weekStartStr)
-          .lte('event_date', weekEndStr),
-        supabase
-          .from('child_tasks')
-          .select('*, children!inner(household_id)')
-          .eq('children.household_id', householdId)
-          .gte('date', weekStartStr)
-          .lte('date', weekEndStr),
-        supabase
-          .from('ai_heads_ups')
-          .select('*')
-          .eq('household_id', householdId)
-          .eq('is_dismissed', false)
-          .gte('date', todayStr)
-          .order('date', { ascending: true })
-          .limit(5),
-        supabase
-          .from('external_photos')
-          .select('*, external_integrations!inner(household_id), children(name)')
-          .eq('external_integrations.household_id', householdId)
-          .order('taken_at', { ascending: false })
-          .limit(8),
-      ])
-
-      // Transform data
-      const pickups = (pickupsData || []).map(p => ({
-        ...p,
-        child_name: p.children?.name || '',
-        child_color: p.children?.color || 'sky',
-        picker_name: p.picker?.name || null,
-        picker_short_name: p.picker?.short_name || null,
-      }))
-
-      const meals = (mealsData || []).map(m => ({
-        ...m,
-        recipe: m.recipes || null,
-      }))
-
-      // Calculate today's summary
-      const todayPickups = pickups.filter(p => p.date === todayStr)
-      const todayMeal = meals.find(m => m.date === todayStr)
-      const todayTasks = (childTasksData || []).filter(t => t.date === todayStr)
-
-      const todaySummary = {
-        date: todayStr,
-        pickups: todayPickups,
-        meal: todayMeal || null,
-        tasks: todayTasks,
-        events: [],
-      }
-
-      // Calculate attention status
-      const childrenWithoutPickup = (childrenData || []).filter(child =>
-        !todayPickups.some(p => p.child_id === child.id && p.picker_id)
-      ) as Child[]
-      const noMeal = !todayMeal || (!todayMeal.recipe_id && !todayMeal.custom_meal)
-      const isAllReady = childrenWithoutPickup.length === 0 && !noMeal
-
-      // Transform photos
-      const recentPhotos = (photosData || []).map(p => ({
-        id: p.id,
-        title: p.title,
-        taken_at: p.taken_at,
-        storage_path: p.storage_path,
-        thumbnail_path: p.thumbnail_path,
-        child_name: p.children?.name || null,
-        image_url: null,
-      }))
-
-      setHomeData({
-        pickups,
-        meals,
-        memberEvents: (memberEventsData || []) as Parameters<typeof HomePageContent>[0]['memberEvents'],
-        householdEvents: (householdEventsData || []) as Parameters<typeof HomePageContent>[0]['householdEvents'],
-        externalEvents: (externalEventsData || []) as Parameters<typeof HomePageContent>[0]['externalEvents'],
-        childTasks: (childTasksData || []) as Parameters<typeof HomePageContent>[0]['childTasks'],
-        holidays: [],
-        weekStart,
-        aiHeadsUps: (aiHeadsUpsData || []) as AIHeadsUp[],
-        recentPhotos,
-        todaySummary,
-        childrenWithoutPickup,
-        noMeal,
-        isAllReady,
-      })
-
-      setAuthState('ready')
-    } catch (error) {
-      console.error('Error loading home data:', error)
-      setAuthState('loggedOut')
-    } finally {
-      setLoading(false)
     }
-  }, [isDemo, supabase])
 
-  useEffect(() => {
-    if (!isDemo) {
-      loadData()
-    }
-  }, [isDemo, loadData])
+    checkAuthAndClaimInvite()
+  }, [isDemo, supabase, household, householdLoading, inviteClaimed])
 
-  // Demo mode: Generate AI heads-up data
+  // Generate demo AI heads-up data
   const demoHeadsUps: AIHeadsUp[] = useMemo(() => {
     if (!isDemo || weekData.children.length === 0) return []
 
@@ -319,72 +115,10 @@ export default function HomePage() {
     ]
   }, [isDemo, weekData.children, weekData.members])
 
-  // Demo mode rendering
-  if (isDemo) {
-    if (weekData.loading) {
-      return (
-        <div className="space-y-8 animate-fade-in">
-          <div
-            className="rounded-2xl p-8 text-center"
-            style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-          >
-            <div className="animate-pulse">
-              <div className="h-8 w-48 bg-gray-200 rounded mx-auto mb-4" />
-              <div className="h-4 w-32 bg-gray-200 rounded mx-auto" />
-            </div>
-          </div>
-        </div>
-      )
-    }
+  // Loading state
+  const isLoading = !authChecked || weekData.loading || householdLoading
 
-    if (weekData.error) {
-      return (
-        <div className="space-y-8 animate-fade-in">
-          <div
-            className="rounded-2xl p-8 text-center"
-            style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-          >
-            <p className="text-red-500">{weekData.error}</p>
-          </div>
-        </div>
-      )
-    }
-
-    const todaySummary = getTodaySummaryFromWeekData(weekData)
-    const todayPickups = weekData.pickups.filter(p => p.date === todaySummary.date)
-    const todayMeal = weekData.meals.find(m => m.date === todaySummary.date)
-    const childrenWithoutPickup = weekData.children.filter(child =>
-      !todayPickups.some(p => p.child_id === child.id && p.picker_id)
-    )
-    const noMeal = !todayMeal || (!todayMeal.recipe_id && !todayMeal.custom_meal)
-    const isAllReady = childrenWithoutPickup.length === 0 && !noMeal
-
-    return (
-      <HomePageContent
-        householdId={weekData.household?.id || 'demo'}
-        children={weekData.children}
-        members={weekData.members}
-        todaySummary={todaySummary}
-        pickups={weekData.pickups}
-        meals={weekData.meals}
-        memberEvents={weekData.memberEvents}
-        householdEvents={weekData.householdEvents}
-        externalEvents={weekData.externalEvents}
-        childTasks={weekData.tasks}
-        holidays={weekData.holidays}
-        weekStart={weekData.weekStart}
-        aiHeadsUps={demoHeadsUps}
-        recentPhotos={[]}
-        childrenWithoutPickup={childrenWithoutPickup}
-        noMeal={noMeal}
-        isAllReady={isAllReady}
-        isDemo={true}
-      />
-    )
-  }
-
-  // Production mode: Loading state
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="space-y-8 animate-fade-in">
         <div
@@ -400,8 +134,22 @@ export default function HomePage() {
     )
   }
 
-  // Production mode: Not logged in
-  if (authState === 'loggedOut') {
+  // Error state
+  if (weekData.error) {
+    return (
+      <div className="space-y-8 animate-fade-in">
+        <div
+          className="rounded-2xl p-8 text-center"
+          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+        >
+          <p className="text-red-500">{weekData.error}</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Not logged in (production only)
+  if (!isDemo && !isLoggedIn) {
     return (
       <div className="min-h-[70vh] flex items-center justify-center">
         <div className="text-center max-w-md mx-auto animate-fade-in">
@@ -430,8 +178,8 @@ export default function HomePage() {
     )
   }
 
-  // Production mode: No household
-  if (authState === 'noHousehold') {
+  // No household (production only)
+  if (!isDemo && isLoggedIn && !household) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center animate-fade-in">
         <div className="w-full max-w-md mx-auto px-4">
@@ -535,8 +283,8 @@ export default function HomePage() {
     )
   }
 
-  // Production mode: No children (needs setup)
-  if (authState === 'noChildren') {
+  // No children (needs setup) - production only
+  if (!isDemo && household && weekData.children.length === 0) {
     return (
       <div className="space-y-8 animate-fade-in">
         <div
@@ -570,63 +318,37 @@ export default function HomePage() {
     )
   }
 
-  // Production mode: Ready with data
-  if (authState === 'ready' && homeData && household) {
-    return (
-      <HomePageContent
-        householdId={household.id}
-        currentUserId={userId || undefined}
-        children={children}
-        members={members}
-        todaySummary={homeData.todaySummary}
-        pickups={homeData.pickups}
-        meals={homeData.meals}
-        memberEvents={homeData.memberEvents}
-        householdEvents={homeData.householdEvents}
-        externalEvents={homeData.externalEvents}
-        childTasks={homeData.childTasks}
-        holidays={homeData.holidays}
-        weekStart={homeData.weekStart}
-        aiHeadsUps={homeData.aiHeadsUps}
-        recentPhotos={homeData.recentPhotos}
-        childrenWithoutPickup={homeData.childrenWithoutPickup}
-        noMeal={homeData.noMeal}
-        isAllReady={homeData.isAllReady}
-        isDemo={false}
-      />
-    )
-  }
+  // Ready with data - calculate today's summary
+  const todaySummary = getTodaySummaryFromWeekData(weekData)
+  const todayPickups = weekData.pickups.filter(p => p.date === todaySummary.date)
+  const todayMeal = weekData.meals.find(m => m.date === todaySummary.date)
+  const childrenWithoutPickup = weekData.children.filter(child =>
+    !todayPickups.some(p => p.child_id === child.id && p.picker_id)
+  ) as Child[]
+  const noMeal = !todayMeal || (!todayMeal.recipe_id && !todayMeal.custom_meal)
+  const isAllReady = childrenWithoutPickup.length === 0 && !noMeal
 
-  // Error state
   return (
-    <div className="space-y-8 animate-fade-in">
-      <div
-        className="rounded-2xl p-8 md:p-12 text-center"
-        style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-      >
-        <div
-          className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-6"
-          style={{ background: 'rgba(232, 120, 109, 0.15)' }}
-        >
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--color-coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10"/>
-            <line x1="12" y1="8" x2="12" y2="12"/>
-            <line x1="12" y1="16" x2="12.01" y2="16"/>
-          </svg>
-        </div>
-        <h2 className="text-2xl font-semibold font-display mb-3" style={{ color: 'var(--foreground)' }}>
-          {t.errors.loadFailed}
-        </h2>
-        <p className="mb-8 max-w-md mx-auto" style={{ color: 'var(--muted)' }}>
-          {t.errors.generic}
-        </p>
-        <button
-          onClick={() => loadData()}
-          className="btn btn-primary"
-        >
-          {t.common.retry}
-        </button>
-      </div>
-    </div>
+    <HomePageContent
+      householdId={weekData.household?.id || 'demo'}
+      currentUserId={currentMember?.user_id || undefined}
+      children={weekData.children}
+      members={weekData.members}
+      todaySummary={todaySummary}
+      pickups={weekData.pickups}
+      meals={weekData.meals}
+      memberEvents={weekData.memberEvents}
+      householdEvents={weekData.householdEvents}
+      externalEvents={weekData.externalEvents}
+      childTasks={weekData.tasks}
+      holidays={weekData.holidays}
+      weekStart={weekData.weekStart}
+      aiHeadsUps={isDemo ? demoHeadsUps : []}
+      recentPhotos={[]}
+      childrenWithoutPickup={childrenWithoutPickup}
+      noMeal={noMeal}
+      isAllReady={isAllReady}
+      isDemo={isDemo}
+    />
   )
 }

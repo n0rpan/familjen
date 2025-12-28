@@ -129,10 +129,10 @@ export default function WeekEditPage() {
   // Demo mode data hook - only used when isDemo is true
   const demoData = useWeekData({ weekOffset })
 
-  // Demo mode helper
-  const showDemoMessage = useCallback(() => {
+  // Demo mode helper - shows info message and returns void
+  // Note: Handlers must check isDemo and return early after calling this
+  const showDemoMessage = useCallback((): void => {
     showMessage('error', t.common.viewOnly || 'View only in demo mode')
-    return true
   }, [t.common.viewOnly])
 
   // Track pending changes to prevent duplicate handling
