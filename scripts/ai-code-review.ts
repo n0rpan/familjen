@@ -139,7 +139,7 @@ function smartTruncate(content: string, maxChars: number, label: string): { text
   }
 }
 
-// Security-critical file patterns - these should never be truncated
+// Security-critical file patterns - these should NEVER be truncated
 const SECURITY_CRITICAL_PATTERNS = [
   /\/auth/i,                    // Auth handlers
   /\/rls/i,                     // RLS policies
@@ -155,6 +155,39 @@ function isSecurityCriticalFile(file: string): boolean {
   return SECURITY_CRITICAL_PATTERNS.some(pattern => pattern.test(file))
 }
 
+/**
+ * Split a unified diff into per-file chunks
+ * Returns a map of filename -> diff content
+ */
+function splitDiffByFile(diff: string): Map<string, string> {
+  const result = new Map<string, string>()
+  const lines = diff.split('\n')
+  let currentFile = ''
+  let currentChunk: string[] = []
+
+  for (const line of lines) {
+    // Match diff --git a/path/to/file b/path/to/file
+    const fileMatch = line.match(/^diff --git a\/(.+?) b\//)
+    if (fileMatch) {
+      // Save previous file if exists
+      if (currentFile && currentChunk.length > 0) {
+        result.set(currentFile, currentChunk.join('\n'))
+      }
+      currentFile = fileMatch[1]
+      currentChunk = [line]
+    } else {
+      currentChunk.push(line)
+    }
+  }
+
+  // Save last file
+  if (currentFile && currentChunk.length > 0) {
+    result.set(currentFile, currentChunk.join('\n'))
+  }
+
+  return result
+}
+
 function buildReviewPrompt(diff: string, changedFiles: string[], docs: { claudeMd: string; readmeMd: string }): string {
   // Smart truncation limits (balance cost vs context)
   const MAX_DIFF_CHARS = 100000      // ~100KB diff - most PRs fit
@@ -163,23 +196,48 @@ function buildReviewPrompt(diff: string, changedFiles: string[], docs: { claudeM
 
   // Track what was truncated for AI awareness
   const truncationInfo: string[] = []
-  const securityWarnings: string[] = []
 
-  // Identify security-critical files in this PR
+  // Identify security-critical files in this PR - these are NEVER truncated
   const securityFiles = changedFiles.filter(isSecurityCriticalFile)
   if (securityFiles.length > 0) {
-    console.log(`🔒 Security-critical files detected: ${securityFiles.join(', ')}`)
+    console.log(`🔒 Security-critical files detected (will NOT be truncated): ${securityFiles.join(', ')}`)
   }
 
-  // Truncate diff if very large, but WARN about security files
-  const diffResult = smartTruncate(diff, MAX_DIFF_CHARS, 'diff')
-  if (diffResult.wasTruncated) {
-    truncationInfo.push(`Diff was truncated from ${Math.round(diffResult.totalChars / 1024)}KB to ${Math.round(MAX_DIFF_CHARS / 1024)}KB`)
+  // Split diff by file to preserve security-critical files in full
+  const diffByFile = splitDiffByFile(diff)
 
-    // Check if security-critical files might have been cut
-    if (securityFiles.length > 0) {
-      securityWarnings.push(`⚠️ SECURITY WARNING: This PR contains security-critical files (${securityFiles.join(', ')}) but the diff was truncated. These files may not be fully visible. Use the 'get_file_section' tool in final verdict to review them in full.`)
+  // Separate security-critical diffs from regular diffs
+  let securityDiff = ''
+  let regularDiff = ''
+
+  for (const [file, content] of diffByFile) {
+    if (isSecurityCriticalFile(file)) {
+      securityDiff += content + '\n'
+    } else {
+      regularDiff += content + '\n'
     }
+  }
+
+  // Security files are NEVER truncated - calculate remaining budget for regular files
+  const securityDiffSize = securityDiff.length
+  const remainingBudget = Math.max(0, MAX_DIFF_CHARS - securityDiffSize)
+
+  console.log(`🔒 Security diff size: ${Math.round(securityDiffSize / 1024)}KB (preserved in full)`)
+  console.log(`📄 Regular diff size: ${Math.round(regularDiff.length / 1024)}KB (budget: ${Math.round(remainingBudget / 1024)}KB)`)
+
+  // Truncate only the regular (non-security) diff
+  let finalDiff: string
+  if (regularDiff.length > remainingBudget && remainingBudget > 0) {
+    const truncatedRegular = smartTruncate(regularDiff, remainingBudget, 'non-security diff')
+    truncationInfo.push(`Non-security diff was truncated from ${Math.round(regularDiff.length / 1024)}KB to ${Math.round(remainingBudget / 1024)}KB`)
+    finalDiff = securityDiff + '\n\n--- SECURITY-CRITICAL FILES ABOVE (full) | REGULAR FILES BELOW (may be truncated) ---\n\n' + truncatedRegular.text
+  } else if (remainingBudget === 0 && regularDiff.length > 0) {
+    // Security files used entire budget - include note about skipped files
+    truncationInfo.push(`⚠️ Security files used entire ${Math.round(MAX_DIFF_CHARS / 1024)}KB budget. Non-security files (${changedFiles.filter(f => !isSecurityCriticalFile(f)).length} files) not included.`)
+    finalDiff = securityDiff + '\n\n--- SECURITY FILES ONLY (non-security files omitted due to size) ---\n'
+  } else {
+    // Everything fits
+    finalDiff = securityDiff + regularDiff
   }
 
   // Truncate docs
@@ -214,17 +272,13 @@ function buildReviewPrompt(diff: string, changedFiles: string[], docs: { claudeM
   const claudeMdContext = claudeMdResult.text
   const readmeMdContext = readmeMdResult.text
 
-  // Truncation notice for AI (including security warnings)
+  // Truncation notice for AI
   let truncationNotice = ''
-  if (truncationInfo.length > 0 || securityWarnings.length > 0) {
+  if (truncationInfo.length > 0) {
     truncationNotice = '\n## ⚠️ Context Truncation\n'
-    if (truncationInfo.length > 0) {
-      truncationNotice += truncationInfo.map(t => `- ${t}`).join('\n') + '\n'
-    }
-    if (securityWarnings.length > 0) {
-      truncationNotice += '\n### 🔒 Security Files Note\n'
-      truncationNotice += securityWarnings.join('\n') + '\n'
-      truncationNotice += '\n**IMPORTANT:** Flag any security-critical file changes for full review by the final verdict.\n'
+    truncationNotice += truncationInfo.map(t => `- ${t}`).join('\n') + '\n'
+    if (securityFiles.length > 0) {
+      truncationNotice += '\n🔒 **Security files were preserved in full** - auth, RLS, credentials, and migration files are never truncated.\n'
     }
     truncationNotice += '\nIf you need more context for a specific file or section, note it in your review and the final verdict will investigate.\n'
   }
@@ -266,7 +320,7 @@ ${docsModified ? '✅ Documentation was updated in this PR' : '⚠️ Documentat
 ${truncationNotice}
 ## PR Diff
 \`\`\`diff
-${diffResult.text}
+${finalDiff}
 \`\`\`
 
 ## Review Checklist

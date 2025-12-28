@@ -854,16 +854,16 @@ async function main() {
   const startTime = Date.now()
   console.log('🎯 Final Verdict - Aggregating all reviews...\n')
 
-  // CRITICAL: Write a processing comment first to prevent stale comments
-  // If the script crashes, this ensures we don't leave an old "Approved" comment
-  writeProcessingComment()
-
-  // Check for API key
+  // Check for API key FIRST - before writing any comments
   if (!API_KEY) {
     console.error('❌ OPENROUTER_API_KEY not set')
     writeErrorComment('OPENROUTER_API_KEY not set')
     process.exit(1)
   }
+
+  // CRITICAL: Write a processing comment to prevent stale comments if script crashes
+  // This is written AFTER API key check so we don't leave "Processing..." on config errors
+  writeProcessingComment()
 
   // Load all reviewer outputs
   const reviews = loadAllReviewerOutputs()
