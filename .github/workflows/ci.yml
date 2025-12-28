@@ -818,9 +818,10 @@ jobs:
     name: API Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [unit-tests]
+    needs: [unit-tests, smart-selector]
     # Run if: PR and selector says run, OR push to main (protection)
-    # Note: smart-selector only runs on PRs, so we check its output conditionally
+    # smart-selector only runs on PRs, but we need it in needs to access outputs
+    # On main, smart-selector is skipped so outputs are empty, but we hit the push condition
     if: |
       always() &&
       needs.unit-tests.result == 'success' &&

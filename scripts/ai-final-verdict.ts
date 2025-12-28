@@ -51,7 +51,7 @@ import {
 // Configuration
 // ============================================
 
-const VERDICT_MODEL = process.env.OPENROUTER_VERDICT_MODEL || 'anthropic/claude-sonnet-4-20250514'
+const VERDICT_MODEL = process.env.OPENROUTER_VERDICT_MODEL
 const API_KEY = process.env.OPENROUTER_API_KEY
 
 // Timeout for API calls (3 minutes - verdict needs more time for tool use loops)
@@ -1087,7 +1087,8 @@ ${result.slice(-500)}`
 
     case 'run_api_tests': {
       const tests = (input.tests as string[] | undefined) || []
-      const testArg = tests.length > 0 ? `--grep "${tests.join('|')}"` : ''
+      // Vitest uses file paths directly, not --grep (that's Jest/Mocha)
+      const testArg = tests.length > 0 ? tests.join(' ') : ''
       console.log('   🔌 Running API tests...')
 
       try {
@@ -1625,10 +1626,15 @@ async function main() {
   const startTime = Date.now()
   console.log('🎯 Final Verdict - Aggregating all reviews...\n')
 
-  // Check for API key FIRST - before writing any comments
+  // Check for required env vars FIRST - before writing any comments
   if (!API_KEY) {
     console.error('❌ OPENROUTER_API_KEY not set')
     writeErrorComment('OPENROUTER_API_KEY not set')
+    process.exit(1)
+  }
+  if (!VERDICT_MODEL) {
+    console.error('❌ OPENROUTER_VERDICT_MODEL not set')
+    writeErrorComment('OPENROUTER_VERDICT_MODEL not set - no fallback, configure in GitHub secrets')
     process.exit(1)
   }
 

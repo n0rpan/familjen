@@ -733,7 +733,7 @@ The CI uses a **two-tier AI architecture** for smart test optimization:
 │  🧠 Wise Supervisor (Tier 2)                                 │
 │  - Reviews ALL findings AND selector's decisions             │
 │  - Can OVERRIDE selector and run skipped tests               │
-│  - Uses most capable model (Claude Opus) for final decision  │
+│  - Uses OPENROUTER_VERDICT_MODEL for final decision           │
 │  - Has tools to run visual/e2e/api tests if needed           │
 └─────────────────────────────────────────────────────────────┘
 ```

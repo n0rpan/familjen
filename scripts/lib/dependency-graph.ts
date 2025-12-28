@@ -54,6 +54,7 @@ export interface SuggestedScope {
 export const CORE_FILES = new Set([
   'src/lib/types.ts',
   'src/lib/utils.ts',
+  'src/lib/api-errors.ts', // Error handling patterns affect all API routes
   'src/lib/supabase/client.ts',
   'src/lib/supabase/server.ts',
   'src/lib/supabase/middleware.ts',
