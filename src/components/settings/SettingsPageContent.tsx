@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Child, HouseholdMember, Household, ChildColor, SettingsCacheData } from '@/lib/types'
 import { getCachedSettingsData, getSettingsCacheKey } from '@/lib/prefetch/fetchers'
@@ -19,6 +19,7 @@ import { ISkoleIntegration } from '@/components/integrations/ISkoleIntegration'
 import { MyKidIntegration } from '@/components/integrations/MyKidIntegration'
 import { ManualSourceUrls } from '@/components/integrations/ManualSourceUrls'
 import { HomeControlSettings } from '@/components/integrations/HomeControlSettings'
+import { useHousehold, useMembers, useChildren } from '@/hooks/data'
 import {
   ChildrenSection,
   MembersSection,
@@ -28,6 +29,14 @@ import {
 import { CollapsibleSection, SectionGroupLabel } from '@/app/innstillinger/components'
 
 export function SettingsPageContent() {
+  // Demo mode detection
+  const searchParams = useSearchParams()
+  const isDemo = searchParams.get('demo') === 'true'
+
+  // Demo mode hooks
+  const demoHousehold = useHousehold()
+  const demoMembers = useMembers()
+  const demoChildren = useChildren()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -105,12 +114,48 @@ export function SettingsPageContent() {
   const hasShownCacheRef = useRef(false)
   const householdIdRef = useRef<string | null>(null)
 
+  // Initialize demo data when demo mode is active
   useEffect(() => {
+    if (isDemo) {
+      // In demo mode, use data from demo hooks
+      if (!demoHousehold.loading && demoHousehold.household) {
+        setHousehold(demoHousehold.household as Household)
+        setAiMealContext(demoHousehold.household.ai_meal_context || '')
+        setShareNamesWithAi(demoHousehold.household.share_names_with_ai ?? true)
+      }
+      if (!demoMembers.loading) {
+        setMembers(demoMembers.members)
+        // Create demo profile from first member
+        const demoProfile = demoMembers.members[0] || null
+        if (demoProfile) {
+          setMyProfile({ ...demoProfile, is_household_admin: true } as HouseholdMember)
+          setProfileForm({
+            name: demoProfile.name,
+            short_name: demoProfile.short_name || '',
+            birth_date: demoProfile.birth_date || '',
+            work_email: demoProfile.work_email || '',
+            allergies: demoProfile.allergies || [],
+            ics_calendar_url: '',
+          })
+        }
+      }
+      if (!demoChildren.loading) {
+        setChildren(demoChildren.children)
+      }
+      // Demo mode is loaded when all hooks are done
+      if (!demoHousehold.loading && !demoMembers.loading && !demoChildren.loading) {
+        setLoading(false)
+      }
+      return
+    }
     loadData()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only effect to load initial data
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only effect or when demo data changes
+  }, [isDemo, demoHousehold.loading, demoMembers.loading, demoChildren.loading])
 
   const loadData = async () => {
+    // Skip loading from Supabase in demo mode
+    if (isDemo) return
+
     // Only show skeleton if we haven't shown cached data yet
     if (!hasShownCacheRef.current) {
       setLoading(true)
@@ -296,9 +341,16 @@ export function SettingsPageContent() {
     setTimeout(() => setMessage(null), 3000)
   }
 
+  // Demo mode helper - shows view-only message for mutations
+  const showDemoMessage = () => {
+    showMessage('error', t.common.viewOnly || 'View only in demo mode')
+    return true
+  }
+
   // Profile editing (optimistic update)
   const saveProfile = async () => {
     if (!myProfile) return
+    if (isDemo) { showDemoMessage(); return }
 
     const previousProfile = myProfile
     const previousMembers = members
@@ -368,6 +420,7 @@ export function SettingsPageContent() {
   // Sync ICS calendar
   const syncICSCalendar = async () => {
     if (!myProfile?.ics_calendar_url) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSyncingICS(true)
     try {
@@ -427,6 +480,7 @@ export function SettingsPageContent() {
   // Save family calendar URL
   const saveFamilyCalendar = async () => {
     if (!household) return
+    if (isDemo) { showDemoMessage(); return }
 
     const trimmedUrl = familyCalendarUrl.trim()
 
@@ -465,6 +519,7 @@ export function SettingsPageContent() {
   // Sync family calendar
   const syncFamilyCalendar = async () => {
     if (!household?.id || !familyCalendarUrl) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSyncingFamilyCalendar(true)
     setFamilyCalendarError(null)
@@ -509,6 +564,7 @@ export function SettingsPageContent() {
   // Delete household
   const deleteHousehold = async () => {
     if (!household || deleteConfirmText !== household.name) return
+    if (isDemo) { showDemoMessage(); return }
 
     const { error } = await supabase
       .from('households')
@@ -527,6 +583,7 @@ export function SettingsPageContent() {
   const deleteMyAccount = async () => {
     const confirmWord = language === 'nb' ? 'SLETT' : language === 'sv' ? 'RADERA' : 'DELETE'
     if (deleteAccountConfirmText !== confirmWord) return
+    if (isDemo) { showDemoMessage(); return }
 
     setDeletingAccount(true)
     try {
@@ -552,6 +609,7 @@ export function SettingsPageContent() {
   const addMember = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newMember.name || !household) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSaving(true)
     const emailToAdd = newMember.email?.toLowerCase().trim() || null
@@ -599,6 +657,7 @@ export function SettingsPageContent() {
   }
 
   const deleteMember = async (id: string) => {
+    if (isDemo) { showDemoMessage(); return }
     if (!confirm(t.common.confirmDelete)) return
 
     const previousMembers = members
@@ -614,6 +673,7 @@ export function SettingsPageContent() {
   const addChild = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newChild.name || !household) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSaving(true)
     const { data, error } = await supabase.from('children').insert({
@@ -637,6 +697,7 @@ export function SettingsPageContent() {
   }
 
   const updateChildColor = async (childId: string, color: ChildColor) => {
+    if (isDemo) { showDemoMessage(); return }
     const previousChildren = children
     setChildren(children.map(c => c.id === childId ? { ...c, color } : c))
 
@@ -671,6 +732,7 @@ export function SettingsPageContent() {
 
   const saveEditingChild = async () => {
     if (!editingChildId || !editingChildForm.name) return
+    if (isDemo) { showDemoMessage(); return }
 
     const previousChildren = children
     const updatedChild = children.find(c => c.id === editingChildId)
@@ -735,6 +797,7 @@ export function SettingsPageContent() {
 
   const saveAiContext = async () => {
     if (!household) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSavingAiContext(true)
     const { error } = await supabase
@@ -752,6 +815,7 @@ export function SettingsPageContent() {
 
   const toggleShareNamesWithAi = async () => {
     if (!household) return
+    if (isDemo) { showDemoMessage(); return }
 
     const newValue = !shareNamesWithAi
     // Optimistic update
@@ -774,6 +838,7 @@ export function SettingsPageContent() {
   }
 
   const deleteChild = async (id: string) => {
+    if (isDemo) { showDemoMessage(); return }
     if (!confirm(t.common.confirmDelete)) return
 
     const previousChildren = children
@@ -1126,7 +1191,7 @@ export function SettingsPageContent() {
               key={lang.code}
               onClick={async () => {
                 setLanguage(lang.code)
-                if (myProfile?.id) {
+                if (!isDemo && myProfile?.id) {
                   await supabase
                     .from('household_members')
                     .update({ language_preference: lang.code })

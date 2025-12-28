@@ -120,6 +120,7 @@ export const en: TranslationStrings = {
     headsUpSourceClosure: 'School calendar',
     headsUpSourceTask: 'Tasks',
     headsUpSourceMemberEvent: 'Calendar',
+    askAI: 'Ask AI for help...',
   },
 
   // Login page

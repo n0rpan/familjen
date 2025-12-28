@@ -128,6 +128,7 @@ export interface TranslationStrings {
     headsUpSourceClosure: string // "School calendar"
     headsUpSourceTask: string // "Tasks"
     headsUpSourceMemberEvent: string // "Calendar"
+    askAI: string // "Ask AI for help..."
   }
 
   // Login page

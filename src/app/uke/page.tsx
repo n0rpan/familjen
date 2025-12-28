@@ -20,7 +20,7 @@ import { getCachedWeekData, getWeekCacheKey, prefetchWeekData } from '@/lib/pref
 import { setCache } from '@/lib/cache'
 import { MemberEventModal, HouseholdEventModal, ChildTaskModal, ExternalEventModal } from './components'
 import type { ExternalEventLocalOverrides } from '@/lib/types'
-import { DemoWeekPage } from '@/components/demo/DemoWeekPage'
+import { useWeekData } from '@/hooks/data'
 
 // Dynamic imports for code splitting
 const DayPicker = dynamic(
@@ -126,6 +126,15 @@ export default function WeekEditPage() {
   const supabase = useMemo(() => createClient(), [])
   const realtime = useRealtimeOptional()
 
+  // Demo mode data hook - only used when isDemo is true
+  const demoData = useWeekData({ weekOffset })
+
+  // Demo mode helper
+  const showDemoMessage = useCallback(() => {
+    showMessage('error', t.common.viewOnly || 'View only in demo mode')
+    return true
+  }, [t.common.viewOnly])
+
   // Track pending changes to prevent duplicate handling
   const pendingChanges = useRef<Set<string>>(new Set())
 
@@ -167,7 +176,35 @@ export default function WeekEditPage() {
   // Track if we've shown cached data to prevent re-showing skeleton
   const hasShownCacheRef = useRef(false)
 
+  // Demo mode: populate state from hook data
   useEffect(() => {
+    if (!isDemo) return
+
+    // Update state from demo data hook
+    if (!demoData.loading) {
+      if (demoData.household) {
+        setHousehold(demoData.household as Household)
+      }
+      setChildren(demoData.children)
+      setMembers(demoData.members)
+      setPickups(demoData.pickups)
+      setMeals(demoData.meals)
+      setRecipes(demoData.recipes)
+      setChildTasks(demoData.tasks)
+      setMemberEvents(demoData.memberEvents)
+      setHouseholdEvents(demoData.householdEvents)
+      setExternalEvents(demoData.externalEvents)
+      setHolidays(demoData.holidays)
+      setLoading(false)
+    }
+  }, [isDemo, demoData.loading, demoData.household, demoData.children, demoData.members,
+      demoData.pickups, demoData.meals, demoData.recipes, demoData.tasks,
+      demoData.memberEvents, demoData.householdEvents, demoData.externalEvents, demoData.holidays])
+
+  useEffect(() => {
+    // Skip data loading in demo mode - data comes from hooks
+    if (isDemo) return
+
     let cancelled = false
 
     const loadData = async () => {
@@ -385,7 +422,7 @@ export default function WeekEditPage() {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- translation strings are stable, only reload on core deps
-  }, [supabase, weekStart, weekEnd, reloadTrigger, weekOffset])
+  }, [supabase, weekStart, weekEnd, reloadTrigger, weekOffset, isDemo])
 
   // Immediate reload for user-initiated actions
   const triggerReload = () => setReloadTrigger(prev => prev + 1)
@@ -667,6 +704,7 @@ export default function WeekEditPage() {
 
   const handlePickupChange = async (childId: string, date: string, pickerId: string | null) => {
     if (!household) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSaving(true)
 
@@ -725,6 +763,7 @@ export default function WeekEditPage() {
   }
 
   const handleWorkCalendarSync = async (pickupId: string, sync: boolean) => {
+    if (isDemo) { showDemoMessage(); return }
     setSyncingPickupId(pickupId)
     try {
       const res = await fetch('/api/calendar/send-invite', {
@@ -750,6 +789,7 @@ export default function WeekEditPage() {
 
   const saveWeekContext = async () => {
     if (!household) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSavingContext(true)
     const weekStartStr = formatDateISO(weekStart)
@@ -955,6 +995,7 @@ export default function WeekEditPage() {
 
   const saveEvent = async () => {
     if (!household || !eventForm.member_id || !eventForm.title || !eventForm.date) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSaving(true)
 
@@ -1070,6 +1111,7 @@ export default function WeekEditPage() {
 
   const saveHouseholdEvent = async () => {
     if (!household || !householdEventForm.title || !householdEventForm.date) return
+    if (isDemo) { showDemoMessage(); return }
 
     // Don't allow editing ICS-synced events
     if (editingHouseholdEvent?.source === 'ics_calendar') {
@@ -1183,6 +1225,7 @@ export default function WeekEditPage() {
 
   const saveTask = async () => {
     if (!household || !taskForm.child_id || !taskForm.title || !taskForm.date) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSaving(true)
 
@@ -1255,6 +1298,7 @@ export default function WeekEditPage() {
   }
 
   const handleTaskToggle = async (taskId: string, done: boolean) => {
+    if (isDemo) { showDemoMessage(); return }
     setSaving(true)
 
     try {
@@ -1299,6 +1343,7 @@ export default function WeekEditPage() {
     is_hidden: boolean
   }) => {
     if (!editingExternalEvent) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSaving(true)
 
@@ -1327,6 +1372,7 @@ export default function WeekEditPage() {
 
   const handleMealChange = async (date: string, mealName: string | null, recipeId?: string) => {
     if (!household) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSaving(true)
 
@@ -1437,6 +1483,7 @@ export default function WeekEditPage() {
 
   const handleAcceptSuggestion = async (suggestion: MealSuggestion, saveAsRecipe: boolean) => {
     if (!household) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSaving(true)
 
@@ -1481,6 +1528,7 @@ export default function WeekEditPage() {
 
   const handleAddToShoppingList = async (ingredients: RecipeIngredient[]) => {
     if (!household || ingredients.length === 0) return
+    if (isDemo) { showDemoMessage(); return }
 
     try {
       // Get or create the default shopping list
@@ -1534,6 +1582,7 @@ export default function WeekEditPage() {
   // Apply all AI suggestions at once
   const handleApplyAll = async () => {
     if (!household || aiSuggestions.length === 0) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSaving(true)
 
@@ -1552,11 +1601,6 @@ export default function WeekEditPage() {
     } finally {
       setSaving(false)
     }
-  }
-
-  // Demo mode: render demo week page (after all hooks)
-  if (isDemo) {
-    return <DemoWeekPage />
   }
 
   // Only show skeleton if loading AND no cached data yet

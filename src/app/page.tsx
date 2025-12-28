@@ -1,16 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
-import { TodaySection } from '@/components/TodaySection'
-import { AIHeadsUpSection } from '@/components/AIHeadsUpSection'
-import { WeekSection } from '@/components/WeekSection'
-import { UniversalAIInput } from '@/components/ai'
-import { SuggestionBanner } from '@/components/integrations/SuggestionReview'
-import { RecentPhotos } from '@/components/RecentPhotos'
-import { HomeRefreshWrapper } from '@/components/HomeRefreshWrapper'
 import { getHomePageData, getTodaySummary, getAttentionStatus } from '@/lib/data/home'
 import { TransitionLink } from '@/components/TransitionLink'
 import Image from 'next/image'
 import { getLanguageFromCookieOrBrowser } from '@/lib/i18n/cookie.server'
 import { getTranslations } from '@/lib/i18n/translations'
+import { HomePageContent } from '@/components/home/HomePageContent'
 import { DemoHomePage } from '@/components/demo/DemoHomePage'
 
 interface HomePageProps {
@@ -273,127 +267,27 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   // Calculate status for today using helper
   const { childrenWithoutPickup, noMeal, isAllReady } = getAttentionStatus(homeData)
 
-  // Build descriptive attention message
-  const getAttentionMessage = () => {
-    const hasPickupIssue = childrenWithoutPickup.length > 0
-    const hasMealIssue = noMeal
-
-    if (hasPickupIssue && hasMealIssue) {
-      // Both missing
-      if (childrenWithoutPickup.length === 1) {
-        return t.home.missingPickupForAndDinner.replace('{name}', childrenWithoutPickup[0].name)
-      }
-      return t.home.missingPickupAndDinner
-    } else if (hasPickupIssue) {
-      // Only pickup missing
-      if (childrenWithoutPickup.length === 1) {
-        return t.home.missingPickupFor.replace('{name}', childrenWithoutPickup[0].name)
-      }
-      return t.home.missingPickup
-    } else if (hasMealIssue) {
-      // Only meal missing
-      return t.home.missingDinner
-    }
-    return ''
-  }
-
   return (
-    <HomeRefreshWrapper>
-      <div className="space-y-8 animate-fade-in">
-        {/* Today's Status Summary */}
-        {isAllReady ? (
-          <div
-            className="flex items-center gap-3 px-4 py-3 rounded-xl"
-            style={{ background: 'rgba(131, 166, 151, 0.15)' }}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-sage)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
-            <span className="text-sm font-medium" style={{ color: 'var(--color-sage-dark, #5A7A57)' }}>
-              {t.home.allReadyForToday}
-            </span>
-          </div>
-        ) : (
-          <TransitionLink
-            href="/uke"
-            className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl transition-opacity hover:opacity-80"
-            style={{ background: 'rgba(229, 185, 94, 0.15)' }}
-          >
-            <div className="flex items-center gap-3">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10"/>
-                <line x1="12" y1="8" x2="12" y2="12"/>
-                <line x1="12" y1="16" x2="12.01" y2="16"/>
-              </svg>
-              <span className="text-sm font-medium" style={{ color: 'var(--color-honey-dark, #A68A3A)' }}>
-                {getAttentionMessage()}
-              </span>
-            </div>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="9 18 15 12 9 6"/>
-            </svg>
-          </TransitionLink>
-        )}
-
-      {/* Universal AI Input - At top on all screen sizes */}
-      <UniversalAIInput
-        householdId={myMembership.household_id}
-        children={children || []}
-        members={members || []}
-        currentUserId={user.id}
-      />
-
-      {/* Suggestion Banner */}
-      <SuggestionBanner
-        householdId={myMembership.household_id}
-        children={children || []}
-        members={members || []}
-      />
-
-      {/* Today's Overview */}
-      <TodaySection
-        summary={todaySummary}
-        holidays={holidays}
-        members={members || []}
-        children={children || []}
-        householdId={myMembership.household_id}
-      />
-
-      {/* AI Heads Up - Week lookahead */}
-      <AIHeadsUpSection items={homeData.aiHeadsUps} />
-
-      {/* Recent Photos */}
-      {recentPhotos.length > 0 && <RecentPhotos photos={recentPhotos} />}
-
-      {/* Week Grid */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
-            {t.common.week}
-          </h2>
-          <TransitionLink
-            href="/uke"
-            className="text-sm font-medium transition-colors hover:opacity-80"
-            style={{ color: 'var(--accent)' }}
-          >
-            {t.common.edit} →
-          </TransitionLink>
-        </div>
-        <WeekSection
-          children={children || []}
-          members={members || []}
-          pickups={pickups || []}
-          meals={meals || []}
-          memberEvents={memberEvents || []}
-          householdEvents={householdEvents || []}
-          externalEvents={externalEvents || []}
-          childTasks={childTasks || []}
-          holidays={holidays}
-          weekStart={weekStart}
-        />
-      </div>
-
-    </div>
-    </HomeRefreshWrapper>
+    <HomePageContent
+      householdId={myMembership.household_id}
+      currentUserId={user.id}
+      children={children || []}
+      members={members || []}
+      todaySummary={todaySummary}
+      pickups={pickups || []}
+      meals={meals || []}
+      memberEvents={memberEvents || []}
+      householdEvents={householdEvents || []}
+      externalEvents={externalEvents || []}
+      childTasks={childTasks || []}
+      holidays={holidays}
+      weekStart={weekStart}
+      aiHeadsUps={homeData.aiHeadsUps}
+      recentPhotos={recentPhotos}
+      childrenWithoutPickup={childrenWithoutPickup}
+      noMeal={noMeal}
+      isAllReady={isAllReady}
+      isDemo={false}
+    />
   )
 }
