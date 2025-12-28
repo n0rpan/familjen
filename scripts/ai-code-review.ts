@@ -154,7 +154,8 @@ const SECURITY_CRITICAL_PATTERNS = [
   /\/auth/i,                    // Auth handlers
   /\/rls/i,                     // RLS policies
   /credential/i,                // Credential handlers
-  /middleware\.ts$/,            // Middleware (auth checks)
+  /middleware\.ts$/,            // Middleware (auth checks) - legacy
+  /proxy\.ts$/,                 // Proxy (auth checks) - Next.js 16+
   /supabase\/migrations\//,     // Database migrations
   /password/i,                  // Password handling
   /encrypt|decrypt/i,           // Encryption

@@ -285,20 +285,14 @@ export function SpondIntegration({ householdId, children, members, onMessage }: 
     )
   }
 
-  // Group selector component for Spond's hierarchical groups
-  const GroupSelector = ({
-    entityId,
-    entityName,
-    entityColor,
-    isChild,
-    selectedGroups,
-  }: {
-    entityId: string
-    entityName: string
-    entityColor?: string
-    isChild: boolean
+  // Render group selector for an entity
+  const renderGroupSelector = (
+    entityId: string,
+    entityName: string,
+    entityColor: string | undefined,
+    isChild: boolean,
     selectedGroups: Set<string>
-  }) => (
+  ) => (
     <div className="border rounded-lg p-3" style={{ borderColor: 'var(--border)' }}>
       <div className="flex items-center gap-2 mb-3">
         <span
@@ -355,8 +349,8 @@ export function SpondIntegration({ householdId, children, members, onMessage }: 
     </div>
   )
 
-  // Entity selection form (for both new connection and edit mode)
-  const EntitySelectionForm = ({ connectedEmail }: { connectedEmail?: string }) => (
+  // Render entity selection form content
+  const renderEntitySelectionFormContent = (connectedEmail?: string) => (
     <>
       <div
         className="p-3 rounded-lg text-sm"
@@ -377,14 +371,15 @@ export function SpondIntegration({ householdId, children, members, onMessage }: 
           )}
           <div className="grid gap-3 sm:grid-cols-2">
             {children.map((child) => (
-              <GroupSelector
-                key={child.id}
-                entityId={child.id}
-                entityName={child.name}
-                entityColor={child.color}
-                isChild={true}
-                selectedGroups={selectedChildGroups.get(child.id) || new Set()}
-              />
+              <div key={child.id}>
+                {renderGroupSelector(
+                  child.id,
+                  child.name,
+                  child.color,
+                  true,
+                  selectedChildGroups.get(child.id) || new Set()
+                )}
+              </div>
             ))}
           </div>
         </div>
@@ -402,14 +397,15 @@ export function SpondIntegration({ householdId, children, members, onMessage }: 
           )}
           <div className="grid gap-3 sm:grid-cols-2">
             {members.map((member) => (
-              <GroupSelector
-                key={member.id}
-                entityId={member.id}
-                entityName={member.name}
-                entityColor={undefined}
-                isChild={false}
-                selectedGroups={selectedMemberGroups.get(member.id) || new Set()}
-              />
+              <div key={member.id}>
+                {renderGroupSelector(
+                  member.id,
+                  member.name,
+                  undefined,
+                  false,
+                  selectedMemberGroups.get(member.id) || new Set()
+                )}
+              </div>
             ))}
           </div>
         </div>
@@ -452,7 +448,7 @@ export function SpondIntegration({ householdId, children, members, onMessage }: 
             Henter grupper fra Spond...
           </div>
         ) : (
-          <EntitySelectionForm connectedEmail={integration?.accountEmail || undefined} />
+          renderEntitySelectionFormContent(integration?.accountEmail || undefined)
         )}
       </div>
     )
@@ -497,7 +493,7 @@ export function SpondIntegration({ householdId, children, members, onMessage }: 
           onCancel={handleResetForm}
           canSave={hasAnySelection()}
         >
-          <EntitySelectionForm />
+          {renderEntitySelectionFormContent()}
         </ConnectionForm>
       )}
     </div>

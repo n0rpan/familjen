@@ -176,74 +176,7 @@ export function useIntegrationState({
     [supabase]
   )
 
-  const saveIntegration = useCallback(
-    async (credentials: Record<string, string>, mappings: MappingInput[]): Promise<boolean> => {
-      setConnecting(true)
-      try {
-        // Save integration credentials
-        const { data: integrationId, error: saveError } = await supabase.rpc(
-          'upsert_external_integration',
-          {
-            p_household_id: householdId,
-            p_service: config.service,
-            p_display_name: config.displayName,
-            p_credentials: credentials,
-            p_account_email: credentials.email || credentials.phone || credentials.username || null,
-          }
-        )
-
-        if (saveError) {
-          console.error('Save integration error:', saveError)
-          if (saveError.message?.includes('not enabled')) {
-            onMessage('error', 'Integrasjoner er ikke aktivert for din husstand')
-          } else if (saveError.message?.includes('Access denied')) {
-            onMessage('error', 'Du har ikke tilgang til denne husstanden')
-          } else {
-            onMessage('error', `Kunne ikke lagre: ${saveError.message || 'Ukjent feil'}`)
-          }
-          return false
-        }
-
-        await saveMappingsToDb(integrationId, mappings)
-        onMessage('success', `${config.displayName}-integrasjon lagret`)
-
-        // Trigger initial sync
-        syncNow(integrationId)
-
-        return true
-      } catch (error) {
-        console.error('Save integration error:', error)
-        onMessage('error', 'Kunne ikke lagre integrasjon')
-        return false
-      } finally {
-        setConnecting(false)
-      }
-    },
-    [config.service, config.displayName, householdId, onMessage, saveMappingsToDb, supabase]
-  )
-
-  const saveEditedMappings = useCallback(
-    async (integrationId: string, mappings: MappingInput[]): Promise<boolean> => {
-      setConnecting(true)
-      try {
-        await saveMappingsToDb(integrationId, mappings)
-        onMessage('success', 'Koblinger oppdatert')
-
-        // Trigger sync
-        syncNow(integrationId)
-
-        return true
-      } catch (error) {
-        console.error('Save mappings error:', error)
-        onMessage('error', 'Kunne ikke lagre koblinger')
-        return false
-      } finally {
-        setConnecting(false)
-      }
-    },
-    [onMessage, saveMappingsToDb]
-  )
-
+  // Define syncNow before callbacks that use it
   const syncNow = useCallback(
     async (integrationId?: string, fullSync?: boolean) => {
       setSyncing(true)
@@ -289,6 +222,74 @@ export function useIntegrationState({
       }
     },
     [config.syncEndpoint, onMessage, loadIntegrations]
+  )
+
+  const saveIntegration = useCallback(
+    async (credentials: Record<string, string>, mappings: MappingInput[]): Promise<boolean> => {
+      setConnecting(true)
+      try {
+        // Save integration credentials
+        const { data: integrationId, error: saveError } = await supabase.rpc(
+          'upsert_external_integration',
+          {
+            p_household_id: householdId,
+            p_service: config.service,
+            p_display_name: config.displayName,
+            p_credentials: credentials,
+            p_account_email: credentials.email || credentials.phone || credentials.username || null,
+          }
+        )
+
+        if (saveError) {
+          console.error('Save integration error:', saveError)
+          if (saveError.message?.includes('not enabled')) {
+            onMessage('error', 'Integrasjoner er ikke aktivert for din husstand')
+          } else if (saveError.message?.includes('Access denied')) {
+            onMessage('error', 'Du har ikke tilgang til denne husstanden')
+          } else {
+            onMessage('error', `Kunne ikke lagre: ${saveError.message || 'Ukjent feil'}`)
+          }
+          return false
+        }
+
+        await saveMappingsToDb(integrationId, mappings)
+        onMessage('success', `${config.displayName}-integrasjon lagret`)
+
+        // Trigger initial sync
+        syncNow(integrationId)
+
+        return true
+      } catch (error) {
+        console.error('Save integration error:', error)
+        onMessage('error', 'Kunne ikke lagre integrasjon')
+        return false
+      } finally {
+        setConnecting(false)
+      }
+    },
+    [config.service, config.displayName, householdId, onMessage, saveMappingsToDb, supabase, syncNow]
+  )
+
+  const saveEditedMappings = useCallback(
+    async (integrationId: string, mappings: MappingInput[]): Promise<boolean> => {
+      setConnecting(true)
+      try {
+        await saveMappingsToDb(integrationId, mappings)
+        onMessage('success', 'Koblinger oppdatert')
+
+        // Trigger sync
+        syncNow(integrationId)
+
+        return true
+      } catch (error) {
+        console.error('Save mappings error:', error)
+        onMessage('error', 'Kunne ikke lagre koblinger')
+        return false
+      } finally {
+        setConnecting(false)
+      }
+    },
+    [onMessage, saveMappingsToDb, syncNow]
   )
 
   const removeIntegration = useCallback(

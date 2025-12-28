@@ -37,10 +37,11 @@ export function useUndoStack<T = unknown>(options: UseUndoStackOptions<T> = {}) 
   // Clean up timers on unmount
   useEffect(() => {
     isMountedRef.current = true
+    const timers = timersRef.current
     return () => {
       isMountedRef.current = false
-      timersRef.current.forEach(timer => clearTimeout(timer))
-      timersRef.current.clear()
+      timers.forEach(timer => clearTimeout(timer))
+      timers.clear()
     }
   }, [])
 
@@ -190,19 +191,21 @@ export function useUndoStack<T = unknown>(options: UseUndoStackOptions<T> = {}) 
 
   // Auto-retry failed actions
   useEffect(() => {
+    // Capture ref at effect setup time
+    const timers = timersRef.current
     // Track timers created in this effect for cleanup
     const effectTimers: string[] = []
 
     failedActions.forEach(action => {
       const timerKey = `retry-${action.id}`
-      if (!timersRef.current.has(timerKey)) {
+      if (!timers.has(timerKey)) {
         const timer = setTimeout(() => {
-          timersRef.current.delete(timerKey)
+          timers.delete(timerKey)
           if (isMountedRef.current) {
             retry(action.id)
           }
         }, retryDelayMs)
-        timersRef.current.set(timerKey, timer)
+        timers.set(timerKey, timer)
         effectTimers.push(timerKey)
       }
     })
@@ -210,10 +213,10 @@ export function useUndoStack<T = unknown>(options: UseUndoStackOptions<T> = {}) 
     // Cleanup: clear timers created in this effect when dependencies change
     return () => {
       effectTimers.forEach(key => {
-        const timer = timersRef.current.get(key)
+        const timer = timers.get(key)
         if (timer) {
           clearTimeout(timer)
-          timersRef.current.delete(key)
+          timers.delete(key)
         }
       })
     }

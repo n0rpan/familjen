@@ -349,6 +349,7 @@ function IntegrationDebug({ householdId }: { householdId: string }) {
     if (expanded) {
       loadIntegrations();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadIntegrations is stable, only re-run on expanded/householdId change
   }, [expanded, householdId]);
 
   return (
@@ -461,6 +462,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     checkAdminAndLoad();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only effect to check admin status
   }, []);
 
   const checkAdminAndLoad = async () => {

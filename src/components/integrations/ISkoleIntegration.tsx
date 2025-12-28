@@ -220,40 +220,8 @@ export function ISkoleIntegration({ householdId, children, onMessage }: Props) {
     </div>
   )
 
-  // iSkole child mapping row
-  const ISkoleChildRow = ({ iskoleChild }: { iskoleChild: ISkoleChild }) => (
-    <div
-      className="p-3 rounded-lg"
-      style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-    >
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <p className="font-medium text-sm" style={{ color: 'var(--foreground)' }}>
-            {iskoleChild.name}
-          </p>
-          <p className="text-xs" style={{ color: 'var(--muted)' }}>
-            {iskoleChild.school} - {iskoleChild.class}
-          </p>
-        </div>
-        <select
-          value={childMappings[iskoleChild.id] || ''}
-          onChange={(e) => setChildMappings({ ...childMappings, [iskoleChild.id]: e.target.value })}
-          className="input text-sm py-1"
-          style={{ minWidth: '150px' }}
-        >
-          <option value="">-- Velg barn --</option>
-          {children.map((child) => (
-            <option key={child.id} value={child.id}>
-              {child.name}
-            </option>
-          ))}
-        </select>
-      </div>
-    </div>
-  )
-
-  // Child mapping form
-  const ChildMappingForm = ({ connectedAs }: { connectedAs?: string }) => (
+  // Render child mapping form content
+  const renderChildMappingFormContent = (connectedAs?: string) => (
     <>
       <div
         className="p-3 rounded-lg"
@@ -273,7 +241,35 @@ export function ISkoleIntegration({ householdId, children, onMessage }: Props) {
         </p>
         <div className="space-y-3">
           {iskoleChildren.map((iskoleChild) => (
-            <ISkoleChildRow key={iskoleChild.id} iskoleChild={iskoleChild} />
+            <div
+              key={iskoleChild.id}
+              className="p-3 rounded-lg"
+              style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+            >
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="font-medium text-sm" style={{ color: 'var(--foreground)' }}>
+                    {iskoleChild.name}
+                  </p>
+                  <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                    {iskoleChild.school} - {iskoleChild.class}
+                  </p>
+                </div>
+                <select
+                  value={childMappings[iskoleChild.id] || ''}
+                  onChange={(e) => setChildMappings({ ...childMappings, [iskoleChild.id]: e.target.value })}
+                  className="input text-sm py-1"
+                  style={{ minWidth: '150px' }}
+                >
+                  <option value="">-- Velg barn --</option>
+                  {children.map((child) => (
+                    <option key={child.id} value={child.id}>
+                      {child.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
           ))}
         </div>
       </div>
@@ -315,7 +311,7 @@ export function ISkoleIntegration({ householdId, children, onMessage }: Props) {
             Henter barn fra iSkole...
           </div>
         ) : (
-          <ChildMappingForm connectedAs={integration?.accountEmail?.substring(0, 6) + '***'} />
+          renderChildMappingFormContent(integration?.accountEmail?.substring(0, 6) + '***')
         )}
       </div>
     )
@@ -404,7 +400,7 @@ export function ISkoleIntegration({ householdId, children, onMessage }: Props) {
               </button>
             </div>
           ) : (
-            <ChildMappingForm />
+            renderChildMappingFormContent()
           )}
         </div>
       )}

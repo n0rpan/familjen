@@ -193,6 +193,7 @@ function SuggestionReviewModal({
     }
 
     fetchSuggestions()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initEditForm uses editForm state that we don't want as dep
   }, [supabase, householdId])
 
   const initEditForm = (suggestion: ExternalSuggestion) => {

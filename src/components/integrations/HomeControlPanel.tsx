@@ -164,6 +164,7 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
   // Cleanup all timeouts on unmount
   useEffect(() => {
     return () => {
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- we intentionally want to clear current timeouts at cleanup
       if (sliderTimeoutRef.current) clearTimeout(sliderTimeoutRef.current)
       if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current)
       if (confirmTimeoutRef.current) clearTimeout(confirmTimeoutRef.current)

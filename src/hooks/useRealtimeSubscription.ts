@@ -208,6 +208,7 @@ export function useRealtimeSubscription<T extends object>({
       }
       setIsConnected(false)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- instanceId from useId() is stable for component lifetime
   }, [table, schema, filter, enabled, isVisible, handleChange])
 
   return {

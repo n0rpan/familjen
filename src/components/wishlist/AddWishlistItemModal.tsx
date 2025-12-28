@@ -321,6 +321,7 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
               </div>
             ) : imagePreview ? (
               <div className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element -- base64 data URL preview from user upload */}
                 <img
                   src={imagePreview}
                   alt="Preview"

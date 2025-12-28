@@ -210,47 +210,8 @@ export function MyKidIntegration({ householdId, children, onMessage }: Props) {
     </div>
   )
 
-  // Child mapping row component
-  const ChildMappingRow = ({ child }: { child: Child }) => {
-    const selectedMykidId = childMappings.get(child.id) || ''
-
-    return (
-      <div className="flex items-center gap-3 p-3 rounded-lg" style={{ background: 'var(--sand)' }}>
-        <div className="flex items-center gap-2 flex-1">
-          <span
-            className="w-8 h-8 rounded-full flex items-center justify-center text-sm text-white flex-shrink-0"
-            style={{ background: `var(--color-${child.color || 'sky'})` }}
-          >
-            {child.name?.charAt(0) || '?'}
-          </span>
-          <span className="font-medium text-sm" style={{ color: 'var(--foreground)' }}>
-            {child.name}
-          </span>
-        </div>
-
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--muted)' }}>
-          <path d="M5 12h14M12 5l7 7-7 7" />
-        </svg>
-
-        <select
-          value={selectedMykidId}
-          onChange={(e) => setChildMapping(child.id, e.target.value)}
-          className="input flex-1"
-          style={{ maxWidth: '200px' }}
-        >
-          <option value="">Ikke koblet</option>
-          {mykidChildren.map((mc) => (
-            <option key={mc.id} value={String(mc.id)}>
-              {mc.name}
-            </option>
-          ))}
-        </select>
-      </div>
-    )
-  }
-
-  // Child mapping form (for both new connection and edit mode)
-  const ChildMappingForm = ({ connectedAs }: { connectedAs?: string }) => (
+  // Render child mapping form content
+  const renderChildMappingFormContent = (connectedAs?: string) => (
     <>
       <div
         className="p-3 rounded-lg text-sm"
@@ -275,9 +236,42 @@ export function MyKidIntegration({ householdId, children, onMessage }: Props) {
           </div>
         ) : (
           <div className="space-y-2">
-            {children.map((child) => (
-              <ChildMappingRow key={child.id} child={child} />
-            ))}
+            {children.map((child) => {
+              const selectedMykidId = childMappings.get(child.id) || ''
+              return (
+                <div key={child.id} className="flex items-center gap-3 p-3 rounded-lg" style={{ background: 'var(--sand)' }}>
+                  <div className="flex items-center gap-2 flex-1">
+                    <span
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-sm text-white flex-shrink-0"
+                      style={{ background: `var(--color-${child.color || 'sky'})` }}
+                    >
+                      {child.name?.charAt(0) || '?'}
+                    </span>
+                    <span className="font-medium text-sm" style={{ color: 'var(--foreground)' }}>
+                      {child.name}
+                    </span>
+                  </div>
+
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--muted)' }}>
+                    <path d="M5 12h14M12 5l7 7-7 7" />
+                  </svg>
+
+                  <select
+                    value={selectedMykidId}
+                    onChange={(e) => setChildMapping(child.id, e.target.value)}
+                    className="input flex-1"
+                    style={{ maxWidth: '200px' }}
+                  >
+                    <option value="">Ikke koblet</option>
+                    {mykidChildren.map((mc) => (
+                      <option key={mc.id} value={String(mc.id)}>
+                        {mc.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
@@ -319,7 +313,7 @@ export function MyKidIntegration({ householdId, children, onMessage }: Props) {
             Henter barn fra MyKid...
           </div>
         ) : (
-          <ChildMappingForm connectedAs={integration?.accountEmail || undefined} />
+          renderChildMappingFormContent(integration?.accountEmail || undefined)
         )}
       </div>
     )
@@ -364,7 +358,7 @@ export function MyKidIntegration({ householdId, children, onMessage }: Props) {
           onCancel={handleResetForm}
           canSave={hasAnyMapping()}
         >
-          <ChildMappingForm />
+          {renderChildMappingFormContent()}
         </ConnectionForm>
       )}
     </div>
