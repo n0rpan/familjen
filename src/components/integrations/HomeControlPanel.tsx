@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import { TransitionLink } from '@/components/TransitionLink'
+import { useRealtimeSubscription, createInFilter } from '@/hooks/useRealtimeSubscription'
+import { useVisiblePolling, formatLastUpdated } from '@/hooks/useVisiblePolling'
 import { getAccountDisplayName } from '@/lib/integrations/somfy/utils'
 import {
   TEMPERATURE,
@@ -270,6 +272,48 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  // Poll for device state updates every 30 seconds when page is visible
+  const { lastUpdated, isPolling: isRefreshing } = useVisiblePolling({
+    intervalMs: 30000,
+    enabled: !loading && devices.length > 0,
+    onPoll: loadData,
+  })
+
+  // Get device IDs for realtime subscriptions
+  const deviceIds = useMemo(() => devices.map(d => d.id), [devices])
+  const toshibaDeviceIds = useMemo(() => toshibaDevicesInGroups.map(d => d.id), [toshibaDevicesInGroups])
+  const melcloudDeviceIds = useMemo(() => melcloudDevicesInGroups.map(d => d.id), [melcloudDevicesInGroups])
+
+  // Realtime subscription for Somfy device state changes
+  useRealtimeSubscription<HomeControlDevice>({
+    table: 'home_control_devices',
+    filter: createInFilter('id', deviceIds),
+    onUpdate: (newRecord) => {
+      setDevices(prev => prev.map(d => d.id === newRecord.id ? { ...d, ...newRecord } : d))
+    },
+    enabled: !loading && deviceIds.length > 0 && !!createInFilter('id', deviceIds),
+  })
+
+  // Realtime subscription for Toshiba AC device state changes
+  useRealtimeSubscription<ToshibaDeviceInGroup>({
+    table: 'toshiba_ac_devices',
+    filter: createInFilter('id', toshibaDeviceIds),
+    onUpdate: (newRecord) => {
+      setToshibaDevicesInGroups(prev => prev.map(d => d.id === newRecord.id ? { ...d, ...newRecord } : d))
+    },
+    enabled: !loading && toshibaDeviceIds.length > 0 && !!createInFilter('id', toshibaDeviceIds),
+  })
+
+  // Realtime subscription for MelCloud AC device state changes
+  useRealtimeSubscription<MelCloudDeviceInGroup>({
+    table: 'melcloud_devices',
+    filter: createInFilter('id', melcloudDeviceIds),
+    onUpdate: (newRecord) => {
+      setMelcloudDevicesInGroups(prev => prev.map(d => d.id === newRecord.id ? { ...d, ...newRecord } : d))
+    },
+    enabled: !loading && melcloudDeviceIds.length > 0 && !!createInFilter('id', melcloudDeviceIds),
+  })
 
   const controlDevice = async (
     accountId: string,
@@ -668,6 +712,15 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
     )
   }
 
+  // Format last updated text
+  const lastUpdatedText = lastUpdated
+    ? formatLastUpdated(lastUpdated, {
+        justNow: t.homeControl?.justNow || 'Akkurat nå',
+        minutesAgo: t.homeControl?.minutesAgo || '{count} min siden',
+        hoursAgo: t.homeControl?.hoursAgo || '{count} timer siden',
+      })
+    : ''
+
   return (
     <div className="space-y-4">
       {/* Error Toast */}
@@ -682,6 +735,16 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
           role="alert"
         >
           {error}
+        </div>
+      )}
+
+      {/* Last Updated Indicator */}
+      {lastUpdatedText && (
+        <div className="flex items-center justify-end gap-2 text-xs" style={{ color: 'var(--muted)' }}>
+          {isRefreshing && (
+            <span className="loading-spinner" style={{ width: 12, height: 12, borderWidth: 1.5 }} />
+          )}
+          <span>{t.homeControl?.lastUpdated || 'Oppdatert'}: {lastUpdatedText}</span>
         </div>
       )}
 

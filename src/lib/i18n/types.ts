@@ -397,6 +397,8 @@ export interface TranslationStrings {
     filterGroceries: string
     filterHome: string
     filterOther: string
+    noItemsInFilter: string
+    tryOtherFilter: string
     // Duplicate prevention
     alreadyOnList: string
     changeQuantity: string
@@ -921,6 +923,10 @@ export interface TranslationStrings {
     connectSomfyToshiba: string
     // Misc
     lastSynced: string
+    lastUpdated: string
+    justNow: string
+    minutesAgo: string
+    hoursAgo: string
     save: string
     saving: string
     update: string
