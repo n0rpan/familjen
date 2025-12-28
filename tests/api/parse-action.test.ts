@@ -550,7 +550,8 @@ describe('/api/openrouter/parse-action', () => {
       const action = data.actions[0]
       // Date should be set and be a Friday
       if (action.data.date) {
-        const date = new Date(action.data.date as string)
+        // Use noon to avoid timezone issues when parsing date string
+        const date = new Date((action.data.date as string) + 'T12:00:00')
         expect(date.getDay()).toBe(5) // Friday
       }
     }, 60000)
