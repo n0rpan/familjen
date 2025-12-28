@@ -38,14 +38,17 @@ export function useVisiblePolling({
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
   const onPollRef = useRef(onPoll)
+  const isPollingRef = useRef(false)
 
   // Keep onPoll ref up to date
   useEffect(() => {
     onPollRef.current = onPoll
   }, [onPoll])
 
+  // Use a stable callback that checks ref instead of state
   const doPoll = useCallback(async () => {
-    if (isPolling) return
+    if (isPollingRef.current) return
+    isPollingRef.current = true
     setIsPolling(true)
     try {
       await onPollRef.current()
@@ -53,9 +56,10 @@ export function useVisiblePolling({
     } catch (error) {
       console.error('Polling error:', error)
     } finally {
+      isPollingRef.current = false
       setIsPolling(false)
     }
-  }, [isPolling])
+  }, [])
 
   // Track visibility changes
   useEffect(() => {
