@@ -56,10 +56,12 @@ export const CORE_FILES = new Set([
   'src/lib/utils.ts',
   'src/lib/supabase/client.ts',
   'src/lib/supabase/server.ts',
+  'src/lib/supabase/middleware.ts',
   'src/lib/i18n/context.tsx',
   'src/lib/i18n/types.ts',
   'src/components/Header.tsx',
   'src/components/AppShell.tsx',
+  'src/proxy.ts', // Next.js 16 auth proxy - changes affect all protected routes
 ])
 
 /**

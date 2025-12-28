@@ -79,6 +79,62 @@ export function recordLLMUsage(usage: LLMUsage): void {
   appendFileSync(usageFile, JSON.stringify(record) + '\n')
 }
 
+// ============================================
+// COST LIMITS
+// ============================================
+
+// Maximum cost per CI run before warning/blocking
+const MAX_COST_WARNING_USD = 0.50   // Warn at $0.50
+const MAX_COST_LIMIT_USD = 2.00     // Block at $2.00
+
+export interface CostLimitResult {
+  allowed: boolean
+  warning: boolean
+  currentCost: number
+  limit: number
+  message: string
+}
+
+/**
+ * Check if we're approaching or exceeding cost limits
+ * Call this before making expensive LLM calls
+ */
+export function checkCostLimit(): CostLimitResult {
+  const summary = getCostSummary()
+  const currentCost = summary.totalCostUSD
+
+  if (currentCost >= MAX_COST_LIMIT_USD) {
+    return {
+      allowed: false,
+      warning: true,
+      currentCost,
+      limit: MAX_COST_LIMIT_USD,
+      message: `Cost limit exceeded: $${currentCost.toFixed(4)} >= $${MAX_COST_LIMIT_USD} limit. ` +
+        'This prevents runaway costs from infinite tool loops. ' +
+        'If this is expected, increase MAX_COST_LIMIT_USD in llm-utils.ts.',
+    }
+  }
+
+  if (currentCost >= MAX_COST_WARNING_USD) {
+    return {
+      allowed: true,
+      warning: true,
+      currentCost,
+      limit: MAX_COST_LIMIT_USD,
+      message: `Cost warning: $${currentCost.toFixed(4)} approaching $${MAX_COST_LIMIT_USD} limit. ` +
+        `${summary.callCount} LLM calls made so far.`,
+    }
+  }
+
+  return {
+    allowed: true,
+    warning: false,
+    currentCost,
+    limit: MAX_COST_LIMIT_USD,
+    message: '',
+  }
+}
+
 /**
  * Get cost summary for current CI run
  */

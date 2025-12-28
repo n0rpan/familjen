@@ -102,11 +102,38 @@ jobs:
         with:
           script: |
             // Check if this push is from a merged PR
+            // Handles: merge commits, squash merges, and rebase merges
             const commitMessage = context.payload.head_commit?.message || '';
-            const prMatch = commitMessage.match(/Merge pull request #(\d+)/);
+            const commitSha = context.payload.head_commit?.id || '';
+
+            // Pattern 1: Standard merge commit
+            let prMatch = commitMessage.match(/Merge pull request #(\d+)/);
+
+            // Pattern 2: Squash merge (PR title + number in parentheses)
+            if (!prMatch) {
+              prMatch = commitMessage.match(/\(#(\d+)\)$/m);
+            }
+
+            // Pattern 3: Check if commit is associated with a PR via GitHub API
+            if (!prMatch && commitSha) {
+              try {
+                const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  commit_sha: commitSha,
+                });
+                if (prs.length > 0 && prs[0].merged) {
+                  prMatch = ['', prs[0].number.toString()];
+                  console.log(`Found associated merged PR #${prs[0].number} via API`);
+                }
+              } catch (e) {
+                console.log('Could not query associated PRs:', e.message);
+              }
+            }
 
             if (!prMatch) {
               console.log('Not a PR merge commit, running full CI');
+              console.log('Commit message:', commitMessage.slice(0, 100));
               core.setOutput('skip_ci', 'false');
               return;
             }
@@ -137,6 +164,7 @@ jobs:
                 core.setOutput('skip_ci', 'true');
               } else {
                 console.log('PR CI did not pass or verdict not found, running full CI');
+                console.log('Verdict check:', JSON.stringify(verdictCheck, null, 2));
                 core.setOutput('skip_ci', 'false');
               }
             } catch (error) {
@@ -790,12 +818,17 @@ jobs:
     name: API Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [unit-tests, smart-selector]
+    needs: [unit-tests]
     # Run if: PR and selector says run, OR push to main (protection)
+    # Note: smart-selector only runs on PRs, so we check its output conditionally
     if: |
-      (github.event_name == 'pull_request' &&
-       (needs.smart-selector.outputs.run_api == 'true' || needs.smart-selector.outputs.run_api == '')) ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      always() &&
+      needs.unit-tests.result == 'success' &&
+      (
+        (github.event_name == 'pull_request' &&
+         needs.smart-selector.outputs.run_api != 'false') ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      )
     continue-on-error: true  # Non-blocking - final verdict decides
 
     steps:

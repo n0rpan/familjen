@@ -43,6 +43,7 @@ import {
   calculateCost,
   generateCostSummaryMarkdown,
   getSelectorAccuracyStats,
+  checkCostLimit,
   type SelectorFeedback,
 } from './lib/llm-utils'
 
@@ -1893,6 +1894,20 @@ FINAL VERDICT: BLOCK`
 
   while (iterations < maxIterations) {
     iterations++
+
+    // Cost limit check - prevent runaway costs from infinite tool loops
+    const costCheck = checkCostLimit()
+    if (!costCheck.allowed) {
+      console.error(`\n❌ ${costCheck.message}`)
+      response = `FINAL VERDICT: BLOCK\n\nReason: CI cost limit exceeded ($${costCheck.currentCost.toFixed(2)}). ` +
+        'This is a safety mechanism to prevent runaway costs. ' +
+        'Please check the tool loop for potential issues.'
+      break
+    }
+    if (costCheck.warning) {
+      console.warn(`⚠️ ${costCheck.message}`)
+    }
+
     const result = await callOpenRouter(systemPrompt, messages)
 
     if (result.toolCalls.length === 0) {
@@ -2831,6 +2846,27 @@ ${JSON.stringify(structuredData, null, 2)}
 \`\`\`
 
 </details>`
+
+  // Check if a selector learning issue was generated
+  const learningIssuePath = 'ci-state/selector-learning-issue.md'
+  if (existsSync(learningIssuePath)) {
+    comment += `
+
+---
+
+### 📝 CI Selector Learning Opportunity
+
+The AI supervisor found that the smart test selector made a suboptimal decision for this PR. A learning issue template has been generated.
+
+<details>
+<summary>📋 View learning issue template</summary>
+
+${readFileSync(learningIssuePath, 'utf-8')}
+
+</details>
+
+> **Maintainers:** Consider creating a GitHub issue from this template to improve the selector's decision-making for similar PRs in the future.`
+  }
 
   comment += `
 
