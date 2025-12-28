@@ -727,7 +727,7 @@ npm run ai:visual-review -- --update   # Update baselines from current
 npm run ai:visual-validate             # Validates screenshots against design system
 
 # Final verdict (aggregates all reviewers, only run after other reviews)
-npm run ai:final-verdict               # Requires .ai-reviews/*.json files
+npm run ai:final-verdict               # Requires ai-reviews/*.json files
 ```
 
 ### Migration Review
@@ -874,7 +874,7 @@ PR Created
                   │   (non-blocking)                 │
                   │                                  │
                   ├─► visual-validation ─────────────┤  All upload to
-                  │   (non-blocking)                 │  .ai-reviews/*.json
+                  │   (non-blocking)                 │  ai-reviews/*.json
                   │                                  │
                   ├─► e2e-preview ───────────────────┤
                   │   (non-blocking)                 │
@@ -891,7 +891,7 @@ PR Created
 
 **Key features:**
 - All reviewers are **non-blocking** (`continue-on-error: true`)
-- Reviewers upload findings to `.ai-reviews/*.json` artifacts
+- Reviewers upload findings to `ai-reviews/*.json` artifacts
 - Final verdict uses **mechanical aggregation**: any FAIL reviewer = BLOCK
 - AI can override with explicit explanation (shown in PR comment)
 - Final verdict has **tools** to fetch more context when needed
