@@ -99,16 +99,19 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
   }, [loadSourceUrls])
 
   // Load event counts for all sources (both total and upcoming) in a single query
+  // Limits to 365 days back to match other integrations and avoid fetching too much data
   const loadEventCounts = useCallback(async (sourceIds: string[]) => {
     if (sourceIds.length === 0) return
 
     const today = formatDateISO(new Date())
+    const oneYearAgo = formatDateISO(new Date(Date.now() - 365 * 24 * 60 * 60 * 1000))
 
-    // Single query to get all events for all sources, then count client-side
-    const { data: events } = await supabase
+    // Single query to get events from last 365 days, then count client-side
+    const { data: events, error } = await supabase
       .from('external_events')
       .select('source_url_id, event_date')
       .in('source_url_id', sourceIds)
+      .gte('event_date', oneYearAgo)
 
     // Initialize counts for all sources
     const counts: Record<string, EventCounts> = {}
@@ -116,8 +119,8 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
       counts[sourceId] = { total: 0, upcoming: 0 }
     }
 
-    // Count events per source
-    if (events) {
+    // Count events per source (skip on error - will show "Laster..." which is acceptable)
+    if (!error && events) {
       for (const event of events) {
         const sourceId = event.source_url_id
         if (sourceId && counts[sourceId]) {
@@ -147,17 +150,23 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
     setShowAllEvents(showAll)
 
     const today = formatDateISO(new Date())
+    const oneYearAgo = formatDateISO(new Date(Date.now() - 365 * 24 * 60 * 60 * 1000))
+
     let query = supabase
       .from('external_events')
       .select('id, title, event_date, end_date, event_time, event_type, description, child_id')
       .eq('source_url_id', source.id)
 
-    if (!showAll) {
+    if (showAll) {
+      // Show last 365 days of events (past shown most recent first)
+      query = query.gte('event_date', oneYearAgo)
+    } else {
+      // Show only upcoming events
       query = query.gte('event_date', today)
     }
 
     const { data } = await query
-      .order('event_date', { ascending: !showAll }) // Show past events most recent first
+      .order('event_date', { ascending: !showAll })
       .order('event_time', { ascending: true })
       .limit(50)
 
