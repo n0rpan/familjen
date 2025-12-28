@@ -120,6 +120,7 @@ export const sv: TranslationStrings = {
     headsUpSourceClosure: 'Skolkalender',
     headsUpSourceTask: 'Uppgifter',
     headsUpSourceMemberEvent: 'Kalender',
+    askAI: 'Fråga AI om hjälp...',
   },
 
   // Login page
@@ -461,6 +462,8 @@ export const sv: TranslationStrings = {
     restoreAnyway: 'Lägg till ändå',
     showAllNotifications: 'Visa alla {count} aviseringar',
     showFewerNotifications: 'Visa färre',
+    integrationsDisabled: 'Integrationer inte aktiverade',
+    contactAdmin: 'Kontakta administratören för att aktivera integrationer för ditt hushåll.',
   },
 
   // Admin page

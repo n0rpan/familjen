@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import type { IntegrationChild } from './FeedPage'
+import type { IntegrationChild } from './FeedPageContent'
 
 // Spond comment structure from raw_data
 interface SpondComment {

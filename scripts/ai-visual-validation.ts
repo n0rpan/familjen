@@ -590,11 +590,17 @@ function convertToFindings(results: ValidationResult[]): Finding[] {
 }
 
 /**
- * Map overall report verdict to reviewer verdict
+ * Map overall report verdict based on finding severities, not just page counts
+ * - FAIL: Only if there are critical severity issues
+ * - WARN: If there are warning severity issues (but no critical)
+ * - PASS: If only info-level issues exist
  */
-function mapVerdict(report: OverallReport): 'PASS' | 'WARN' | 'FAIL' {
-  if (report.failed > 0) return 'FAIL'
-  if (report.warned > 0) return 'WARN'
+function mapVerdict(report: OverallReport, findings: Finding[]): 'PASS' | 'WARN' | 'FAIL' {
+  const hasCritical = findings.some(f => f.severity === 'critical')
+  const hasWarning = findings.some(f => f.severity === 'warning')
+
+  if (hasCritical) return 'FAIL'
+  if (hasWarning) return 'WARN'
   return 'PASS'
 }
 
@@ -667,9 +673,9 @@ async function main() {
     fs.writeFileSync(reportPath, JSON.stringify(report, null, 2))
     console.log(`\n📄 Report saved: ${reportPath}`)
 
-    // Convert to findings
+    // Convert to findings and determine verdict based on severity
     const findings = convertToFindings(report.results)
-    const verdict = mapVerdict(report)
+    const verdict = mapVerdict(report, findings)
 
     // Save in new standardized format
     const output: ReviewerOutput = {

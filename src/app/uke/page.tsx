@@ -20,7 +20,7 @@ import { getCachedWeekData, getWeekCacheKey, prefetchWeekData } from '@/lib/pref
 import { setCache } from '@/lib/cache'
 import { MemberEventModal, HouseholdEventModal, ChildTaskModal, ExternalEventModal } from './components'
 import type { ExternalEventLocalOverrides } from '@/lib/types'
-import { DemoWeekPage } from '@/components/demo/DemoWeekPage'
+import { useWeekData } from '@/hooks/data'
 
 // Dynamic imports for code splitting
 const DayPicker = dynamic(
@@ -126,6 +126,15 @@ export default function WeekEditPage() {
   const supabase = useMemo(() => createClient(), [])
   const realtime = useRealtimeOptional()
 
+  // Demo mode data hook - only used when isDemo is true
+  const demoData = useWeekData({ weekOffset })
+
+  // Demo mode helper - shows info message and returns void
+  // Note: Handlers must check isDemo and return early after calling this
+  const showDemoMessage = useCallback((): void => {
+    showMessage('error', t.common.viewOnly || 'View only in demo mode')
+  }, [t.common.viewOnly])
+
   // Track pending changes to prevent duplicate handling
   const pendingChanges = useRef<Set<string>>(new Set())
 
@@ -167,7 +176,35 @@ export default function WeekEditPage() {
   // Track if we've shown cached data to prevent re-showing skeleton
   const hasShownCacheRef = useRef(false)
 
+  // Demo mode: populate state from hook data
   useEffect(() => {
+    if (!isDemo) return
+
+    // Update state from demo data hook
+    if (!demoData.loading) {
+      if (demoData.household) {
+        setHousehold(demoData.household as Household)
+      }
+      setChildren(demoData.children)
+      setMembers(demoData.members)
+      setPickups(demoData.pickups)
+      setMeals(demoData.meals)
+      setRecipes(demoData.recipes)
+      setChildTasks(demoData.tasks)
+      setMemberEvents(demoData.memberEvents)
+      setHouseholdEvents(demoData.householdEvents)
+      setExternalEvents(demoData.externalEvents)
+      setHolidays(demoData.holidays)
+      setLoading(false)
+    }
+  }, [isDemo, demoData.loading, demoData.household, demoData.children, demoData.members,
+      demoData.pickups, demoData.meals, demoData.recipes, demoData.tasks,
+      demoData.memberEvents, demoData.householdEvents, demoData.externalEvents, demoData.holidays])
+
+  useEffect(() => {
+    // Skip data loading in demo mode - data comes from hooks
+    if (isDemo) return
+
     let cancelled = false
 
     const loadData = async () => {
@@ -385,7 +422,7 @@ export default function WeekEditPage() {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- translation strings are stable, only reload on core deps
-  }, [supabase, weekStart, weekEnd, reloadTrigger, weekOffset])
+  }, [supabase, weekStart, weekEnd, reloadTrigger, weekOffset, isDemo])
 
   // Immediate reload for user-initiated actions
   const triggerReload = () => setReloadTrigger(prev => prev + 1)
@@ -667,6 +704,7 @@ export default function WeekEditPage() {
 
   const handlePickupChange = async (childId: string, date: string, pickerId: string | null) => {
     if (!household) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSaving(true)
 
@@ -725,6 +763,7 @@ export default function WeekEditPage() {
   }
 
   const handleWorkCalendarSync = async (pickupId: string, sync: boolean) => {
+    if (isDemo) { showDemoMessage(); return }
     setSyncingPickupId(pickupId)
     try {
       const res = await fetch('/api/calendar/send-invite', {
@@ -750,6 +789,7 @@ export default function WeekEditPage() {
 
   const saveWeekContext = async () => {
     if (!household) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSavingContext(true)
     const weekStartStr = formatDateISO(weekStart)
@@ -775,6 +815,7 @@ export default function WeekEditPage() {
   // Copy pickups and meals from last week
   const copyLastWeek = async () => {
     if (!household) return
+    if (isDemo) { showDemoMessage(); return }
     if (!confirm(t.week.copyLastWeekConfirm)) return
 
     setSaving(true)
@@ -836,6 +877,7 @@ export default function WeekEditPage() {
   // Clear all pickups and meals for this week
   const clearWeek = async () => {
     if (!household) return
+    if (isDemo) { showDemoMessage(); return }
     if (!confirm(t.week.clearWeekConfirm)) return
 
     setSaving(true)
@@ -871,6 +913,7 @@ export default function WeekEditPage() {
   // Quick set pickup for all children all week
   const quickPickupAllWeek = async (pickerId: string) => {
     if (!household || children.length === 0) return
+    if (isDemo) { showDemoMessage(); return }
 
     const pickerName = members.find(m => m.id === pickerId)?.name || ''
     const confirmMessage = t.week.quickPickupConfirm.replace('{name}', pickerName)
@@ -955,6 +998,7 @@ export default function WeekEditPage() {
 
   const saveEvent = async () => {
     if (!household || !eventForm.member_id || !eventForm.title || !eventForm.date) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSaving(true)
 
@@ -1014,6 +1058,7 @@ export default function WeekEditPage() {
 
   const deleteEvent = async () => {
     if (!editingEvent) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSaving(true)
 
@@ -1070,6 +1115,7 @@ export default function WeekEditPage() {
 
   const saveHouseholdEvent = async () => {
     if (!household || !householdEventForm.title || !householdEventForm.date) return
+    if (isDemo) { showDemoMessage(); return }
 
     // Don't allow editing ICS-synced events
     if (editingHouseholdEvent?.source === 'ics_calendar') {
@@ -1118,6 +1164,7 @@ export default function WeekEditPage() {
 
   const deleteHouseholdEvent = async () => {
     if (!editingHouseholdEvent) return
+    if (isDemo) { showDemoMessage(); return }
 
     // Don't allow deleting ICS-synced events
     if (editingHouseholdEvent.source === 'ics_calendar') {
@@ -1183,6 +1230,7 @@ export default function WeekEditPage() {
 
   const saveTask = async () => {
     if (!household || !taskForm.child_id || !taskForm.title || !taskForm.date) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSaving(true)
 
@@ -1236,6 +1284,7 @@ export default function WeekEditPage() {
 
   const deleteTask = async () => {
     if (!editingTask) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSaving(true)
 
@@ -1255,6 +1304,7 @@ export default function WeekEditPage() {
   }
 
   const handleTaskToggle = async (taskId: string, done: boolean) => {
+    if (isDemo) { showDemoMessage(); return }
     setSaving(true)
 
     try {
@@ -1299,6 +1349,7 @@ export default function WeekEditPage() {
     is_hidden: boolean
   }) => {
     if (!editingExternalEvent) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSaving(true)
 
@@ -1327,6 +1378,7 @@ export default function WeekEditPage() {
 
   const handleMealChange = async (date: string, mealName: string | null, recipeId?: string) => {
     if (!household) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSaving(true)
 
@@ -1388,6 +1440,8 @@ export default function WeekEditPage() {
 
   // AI Suggestion functions
   const fetchAISuggestions = async () => {
+    if (isDemo) { showDemoMessage(); return }
+
     setAiLoading(true)
     setAiError(null)
     setShowSuggestionModal(true)
@@ -1437,6 +1491,7 @@ export default function WeekEditPage() {
 
   const handleAcceptSuggestion = async (suggestion: MealSuggestion, saveAsRecipe: boolean) => {
     if (!household) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSaving(true)
 
@@ -1481,6 +1536,7 @@ export default function WeekEditPage() {
 
   const handleAddToShoppingList = async (ingredients: RecipeIngredient[]) => {
     if (!household || ingredients.length === 0) return
+    if (isDemo) { showDemoMessage(); return }
 
     try {
       // Get or create the default shopping list
@@ -1534,6 +1590,7 @@ export default function WeekEditPage() {
   // Apply all AI suggestions at once
   const handleApplyAll = async () => {
     if (!household || aiSuggestions.length === 0) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSaving(true)
 
@@ -1552,11 +1609,6 @@ export default function WeekEditPage() {
     } finally {
       setSaving(false)
     }
-  }
-
-  // Demo mode: render demo week page (after all hooks)
-  if (isDemo) {
-    return <DemoWeekPage />
   }
 
   // Only show skeleton if loading AND no cached data yet
@@ -1739,7 +1791,7 @@ export default function WeekEditPage() {
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
             </svg>
-            {showWeekContext ? t.common.close : t.common.add} {t.week.weekContext.toLowerCase()}
+            {showWeekContext ? t.common.close : t.common.add} {t.week.weekContext}
             {weekContext && !showWeekContext && (
               <span className="inline-flex items-center justify-center w-2 h-2 rounded-full" style={{ background: 'var(--color-sage)' }} />
             )}

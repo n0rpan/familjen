@@ -165,9 +165,11 @@ export default function RecipesPage() {
           <h1 className="text-3xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
             {t.recipes.title}
           </h1>
-          <p className="mt-1" style={{ color: 'var(--muted)' }}>
-            {t.recipes.noRecipesDesc}
-          </p>
+          {recipes.length === 0 && (
+            <p className="mt-1" style={{ color: 'var(--muted)' }}>
+              {t.recipes.noRecipesDesc}
+            </p>
+          )}
         </div>
         <button
           onClick={() => setShowForm(!showForm)}

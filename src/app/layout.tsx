@@ -76,7 +76,7 @@ export default async function RootLayout({
                   <Header />
                   <div className="app-shell-content pt-mobile-header">
                     <AppShell>
-                      <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-24 md:pb-6 relative z-0" style={{ viewTransitionName: 'page-content' }}>
+                      <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-28 md:pb-6 relative z-0" style={{ viewTransitionName: 'page-content' }}>
                         <PageContent>
                           {children}
                         </PageContent>

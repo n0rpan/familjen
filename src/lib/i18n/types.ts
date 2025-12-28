@@ -128,6 +128,7 @@ export interface TranslationStrings {
     headsUpSourceClosure: string // "School calendar"
     headsUpSourceTask: string // "Tasks"
     headsUpSourceMemberEvent: string // "Calendar"
+    askAI: string // "Ask AI for help..."
   }
 
   // Login page
@@ -469,6 +470,9 @@ export interface TranslationStrings {
     restoreAnyway: string
     showAllNotifications: string
     showFewerNotifications: string
+    // Integrations disabled state
+    integrationsDisabled: string
+    contactAdmin: string
   }
 
   // Admin page

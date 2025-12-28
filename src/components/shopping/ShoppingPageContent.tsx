@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { ShoppingList, ShoppingListItem, Household } from '@/lib/types'
 import { useLanguage } from '@/lib/i18n/context'
@@ -16,6 +17,7 @@ import { ShoppingSuggestions } from '@/components/shopping/ShoppingSuggestions'
 import { ShoppingFilters } from '@/components/shopping/ShoppingFilters'
 import { ShoppingCategoryGroup } from '@/components/shopping/ShoppingCategoryGroup'
 import { WishlistOverview } from '@/components/wishlist'
+import { useShoppingLists, useHousehold } from '@/hooks/data'
 import type { ShoppingCategory, ShoppingFilter, ShoppingViewMode } from '@/lib/constants'
 import { DEFAULT_FILTER_CATEGORIES, DEFAULT_CATEGORY_ORDER } from '@/lib/constants'
 import {
@@ -32,7 +34,20 @@ interface ListWithItems extends ShoppingList {
 
 export function ShoppingPageContent() {
   const { t } = useLanguage()
-  const [loading, setLoading] = useState(true)
+  const searchParams = useSearchParams()
+  const isDemo = searchParams.get('demo') === 'true'
+
+  // Demo mode: use hooks for data
+  const demoHook = useShoppingLists()
+  const { household: demoHousehold } = useHousehold()
+
+  // Get effective data based on mode
+  const effectiveLists = isDemo ? demoHook.lists : null
+  const effectiveHousehold = isDemo ? demoHousehold : null
+  const effectiveLoading = isDemo ? demoHook.loading : true
+  const effectiveError = isDemo ? demoHook.error : null
+
+  const [loading, setLoading] = useState(!isDemo)
   const [error, setError] = useState<string | null>(null)
   const [household, setHousehold] = useState<Household | null>(null)
   const [lists, setLists] = useState<ListWithItems[]>([])
@@ -68,6 +83,17 @@ export function ShoppingPageContent() {
 
   const supabase = useMemo(() => createClient(), [])
   const realtime = useRealtimeOptional()
+
+  // Get final values early (demo mode uses hook data, production uses local state)
+  // Wrapped in useMemo to ensure stable references for downstream useMemos
+  const finalLists = useMemo(
+    () => isDemo ? (effectiveLists || []) : lists,
+    [isDemo, effectiveLists, lists]
+  )
+  const finalHousehold = useMemo(
+    () => isDemo ? effectiveHousehold : household,
+    [isDemo, effectiveHousehold, household]
+  )
 
   // Track items we're currently modifying to prevent double-updates
   const pendingChanges = useRef<Set<string>>(new Set())
@@ -107,6 +133,9 @@ export function ShoppingPageContent() {
   }, [undoStack])
 
   const checkDuplicates = useCallback((listId: string, text: string) => {
+    // Skip duplicate check in demo mode - no real data to check against
+    if (isDemo) return
+
     if (duplicateCheckTimer.current) {
       clearTimeout(duplicateCheckTimer.current)
     }
@@ -136,7 +165,7 @@ export function ShoppingPageContent() {
         setDuplicateWarning(null)
       }
     }, 300)
-  }, [supabase])
+  }, [supabase, isDemo])
 
   const handleItemTextChange = useCallback((listId: string, text: string) => {
     setNewItemText(prev => ({ ...prev, [listId]: text }))
@@ -327,7 +356,7 @@ export function ShoppingPageContent() {
 
   // Compute item counts per filter for the filter buttons
   const itemCounts = useMemo(() => {
-    const allItems = lists.flatMap(l => l.items.filter(i => !i.is_bought))
+    const allItems = finalLists.flatMap(l => l.items.filter(i => !i.is_bought))
     const counts: Record<ShoppingFilter, number> = {
       all: allItems.length,
       dagligvarer: 0,
@@ -347,7 +376,7 @@ export function ShoppingPageContent() {
     })
 
     return counts
-  }, [lists])
+  }, [finalLists])
 
   // Group items by category for category view
   const groupItemsByCategory = useCallback((items: ShoppingListItem[]) => {
@@ -459,6 +488,25 @@ export function ShoppingPageContent() {
     if (!text) return
 
     const quantity = newItemQuantity[listId]?.trim() || null
+
+    // Clear input first
+    setNewItemText(prev => ({ ...prev, [listId]: '' }))
+    setNewItemQuantity(prev => ({ ...prev, [listId]: '' }))
+    setDuplicateWarning(null)
+
+    if (isDemo) {
+      // Use demo hook mutation
+      await demoHook.addItem(listId, {
+        name: text,
+        quantity,
+        category: 'other',
+        is_bought: false,
+        source_recipe_id: null,
+      })
+      return
+    }
+
+    // Production mode with AI categorization
     const cachedCategory = getCachedCategory(text)
     const initialCategory: ShoppingCategory = cachedCategory ?? 'other'
 
@@ -480,10 +528,6 @@ export function ShoppingPageContent() {
         ? { ...list, items: [newItem, ...list.items] }
         : list
     ))
-
-    setNewItemText(prev => ({ ...prev, [listId]: '' }))
-    setNewItemQuantity(prev => ({ ...prev, [listId]: '' }))
-    setDuplicateWarning(null)
 
     const { data, error } = await supabase
       .from('shopping_list_items')
@@ -544,8 +588,16 @@ export function ShoppingPageContent() {
   }
 
   const toggleBought = async (itemId: string, currentValue: boolean) => {
-    pendingChanges.current.add(itemId)
     markChanged(itemId)
+
+    if (isDemo) {
+      // Use demo hook mutation
+      await demoHook.updateItem(itemId, { is_bought: !currentValue })
+      return
+    }
+
+    // Production mode
+    pendingChanges.current.add(itemId)
     setLists(prev =>
       prev.map(list => ({
         ...list,
@@ -561,6 +613,13 @@ export function ShoppingPageContent() {
   }
 
   const deleteItem = useCallback((itemId: string) => {
+    if (isDemo) {
+      // Use demo hook mutation
+      demoHook.deleteItem(itemId)
+      return
+    }
+
+    // Production mode with undo stack
     pendingChanges.current.add(itemId)
     let deletedItem: ShoppingListItem | undefined
     setLists(prev => {
@@ -584,15 +643,24 @@ export function ShoppingPageContent() {
         description: deletedItem.name,
       })
     }
-  }, [undoStack])
+  }, [isDemo, demoHook, undoStack])
 
   const clearBoughtItems = async (listId: string) => {
-    const list = lists.find(l => l.id === listId)
+    const list = finalLists.find(l => l.id === listId)
     if (!list) return
 
     const boughtIds = list.items.filter(i => i.is_bought).map(i => i.id)
     if (boughtIds.length === 0) return
 
+    if (isDemo) {
+      // Use demo hook mutations
+      for (const id of boughtIds) {
+        await demoHook.deleteItem(id)
+      }
+      return
+    }
+
+    // Production mode
     boughtIds.forEach(id => pendingChanges.current.add(id))
 
     setLists(prev => prev.map(l =>
@@ -661,11 +729,15 @@ export function ShoppingPageContent() {
     }
   }, [lists, supabase])
 
-  if (loading && !household) {
+  // Get final loading/error values for conditional rendering
+  const finalLoading = isDemo ? effectiveLoading : loading
+  const finalError = isDemo ? effectiveError : error
+
+  if (finalLoading && !finalHousehold) {
     return <ShoppingPagePartialSkeleton t={t} />
   }
 
-  if (error) {
+  if (finalError) {
     return (
       <div className="space-y-8 animate-fade-in">
         <div
@@ -683,11 +755,13 @@ export function ShoppingPageContent() {
             </svg>
           </div>
           <h2 className="text-2xl font-semibold font-display mb-3" style={{ color: 'var(--foreground)' }}>
-            {error}
+            {finalError}
           </h2>
-          <button onClick={handleRetry} className="btn btn-primary">
-            {t.common.retry}
-          </button>
+          {!isDemo && (
+            <button onClick={handleRetry} className="btn btn-primary">
+              {t.common.retry}
+            </button>
+          )}
         </div>
       </div>
     )
@@ -714,7 +788,7 @@ export function ShoppingPageContent() {
       />
 
       <div className="grid gap-6 md:grid-cols-2">
-        {lists.map(list => {
+        {finalLists.map(list => {
           // Apply filter to items
           const filteredItems = getFilteredItems(list.items)
           const unboughtItems = filteredItems.filter(i => !i.is_bought)
@@ -766,8 +840,8 @@ export function ShoppingPageContent() {
                 {boughtItems.length > 0 && (
                   <button
                     onClick={() => clearBoughtItems(list.id)}
-                    className="text-xs font-medium px-2 py-1 rounded-lg transition-colors hover:bg-[var(--sand)]"
-                    style={{ color: 'var(--muted)' }}
+                    className="text-xs font-medium px-3 py-2.5 min-h-[44px] rounded-lg transition-colors hover:bg-[var(--sand)] touch-feedback"
+                    style={{ color: 'var(--foreground)', opacity: 0.8 }}
                   >
                     {t.shopping.clearChecked}
                   </button>
@@ -944,22 +1018,28 @@ export function ShoppingPageContent() {
         })}
       </div>
 
-      <ShoppingSuggestions
-        onAddItem={addSuggestionItem}
-        refreshTrigger={lists[0]?.items.length}
-      />
-
-      {household && (
-        <WishlistOverview householdId={household.id} />
+      {/* AI Suggestions - only in production */}
+      {!isDemo && (
+        <ShoppingSuggestions
+          onAddItem={addSuggestionItem}
+          refreshTrigger={finalLists[0]?.items.length}
+        />
       )}
 
-      <ShoppingUndoToast
-        action={undoStack.peek()}
-        onUndo={handleUndo}
-        expireMs={5000}
-        failedActions={undoStack.failedActions}
-        onDismissFailed={undoStack.dismissFailed}
-      />
+      {finalHousehold && (
+        <WishlistOverview householdId={finalHousehold.id} />
+      )}
+
+      {/* Undo toast - only in production */}
+      {!isDemo && (
+        <ShoppingUndoToast
+          action={undoStack.peek()}
+          onUndo={handleUndo}
+          expireMs={5000}
+          failedActions={undoStack.failedActions}
+          onDismissFailed={undoStack.dismissFailed}
+        />
+      )}
     </div>
   )
 }

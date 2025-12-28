@@ -31,7 +31,8 @@ export function FeedFilters({ activeFilter, onFilterChange, counts }: Props) {
 
   return (
     <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
-      {filters.map((filter) => {
+      {filters.map((filter, index) => {
+        const isLast = index === filters.length - 1
         const isActive = activeFilter === filter.id
         const count = counts[filter.id]
 
@@ -39,7 +40,7 @@ export function FeedFilters({ activeFilter, onFilterChange, counts }: Props) {
           <button
             key={filter.id}
             onClick={() => onFilterChange(filter.id)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all"
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${isLast ? 'mr-4' : ''}`}
             style={{
               background: isActive ? 'var(--accent)' : 'var(--background)',
               color: isActive ? 'white' : 'var(--foreground)',

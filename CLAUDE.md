@@ -664,7 +664,7 @@ AI analyzes PR diffs to generate **targeted test scenarios** that verify the spe
         { "type": "visible", "target": ".modal" },
         { "type": "text", "target": ".modal-title", "value": "Detaljer" }
       ],
-      "prContext": "PR adds event click handlers to DemoWeekPage"
+      "prContext": "PR adds event click handlers to week page (/uke)"
     }
   ]
 }
@@ -750,6 +750,7 @@ OPENROUTER_TEST_MODEL=google/gemini-2.0-flash-001      # API tests
 **Optional:**
 ```bash
 OPENROUTER_IMAGE_MODEL=stabilityai/stable-diffusion-xl  # Image generation tests
+VERCEL_AUTOMATION_BYPASS_SECRET=xxx                     # Bypass Vercel protection for CI smoke tests
 ```
 
 **Note:** All model env vars are required - no hardcoded defaults. This ensures you're always using your intended models and prevents silent fallbacks to stale model IDs when you update your secrets.
@@ -1306,6 +1307,115 @@ The prompt dynamically calculates the school year (Aug-Jul cycle):
 - "Ferie" = holiday period
 - "Dugnad" = parent volunteer activity
 - "Elevene slutter kl. 11.00" = early dismissal
+
+## Demo Mode Architecture
+
+Demo mode (`?demo=true`) is used for e2e testing and visual validation. It provides a fully functional UI with mock data, without making any real API calls.
+
+### Key Principles
+
+1. **Same component for demo and production** - Every page uses the same React component for both modes. Demo mode is detected internally via `useSearchParams()`.
+
+2. **No Supabase calls in demo mode** - Data hooks (`useWeekData`, `useFeed`, etc.) auto-detect demo mode via `useDataSource()` and return mock data instead of making API calls.
+
+3. **Mutations are blocked in demo mode** - All mutation handlers check for demo mode and return early with a toast message.
+
+### Data Flow
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         Page Component                       │
+│  const isDemo = useSearchParams().get('demo') === 'true'    │
+└─────────────────────────────────────────────────────────────┘
+                              │
+              ┌───────────────┴───────────────┐
+              ▼                               ▼
+┌─────────────────────────┐     ┌─────────────────────────────┐
+│      Demo Mode          │     │     Production Mode         │
+│  - useWeekData() →      │     │  - useWeekData() →          │
+│    returns mock data    │     │    fetches from Supabase    │
+│  - Mutations blocked    │     │  - Mutations allowed        │
+│  - No API calls         │     │  - Real API calls           │
+└─────────────────────────┘     └─────────────────────────────┘
+```
+
+### Demo Data Hooks
+
+Located in `src/hooks/data/`:
+
+| Hook | Purpose |
+|------|---------|
+| `useDataSource()` | Core hook - detects demo mode, returns appropriate data source |
+| `useWeekData()` | Week plan data (pickups, meals, events, tasks) |
+| `useFeed()` | Feed messages and photos |
+| `useChildren()` | Household children |
+| `useMembers()` | Household members |
+| `useTasks()` | Child tasks |
+| `useRecipes()` | Recipe list |
+| `useShoppingLists()` | Shopping lists |
+
+### Demo Context
+
+The `DemoDataProvider` in `src/lib/demo/context.tsx` provides:
+- Mock household, members, and children data
+- State management for demo data mutations
+- Persistence to localStorage (optional)
+
+### Entry Points
+
+- `/demo` - Redirects to `/?demo=true`
+- `?demo=true` - Enables demo mode on any page
+
+### Testing with Demo Mode
+
+```bash
+# Run e2e tests in demo mode
+npx playwright test --project=chromium
+
+# Visual validation uses demo mode by default
+npm run ai:visual-validate
+```
+
+### Adding New Pages (Maintainability Guidelines)
+
+When adding new pages, follow these steps to ensure demo/production consistency:
+
+1. **Create as client component** with `'use client'` directive
+2. **Detect demo mode** using `useSearchParams()`:
+   ```typescript
+   const searchParams = useSearchParams()
+   const isDemo = searchParams.get('demo') === 'true'
+   ```
+3. **Use data hooks** that auto-detect demo mode:
+   ```typescript
+   // These hooks automatically return mock data in demo mode
+   const { children } = useChildren()
+   const { members } = useMembers()
+   const weekData = useWeekData()
+   ```
+4. **Guard all mutations** with demo mode check:
+   ```typescript
+   const handleSave = async () => {
+     if (isDemo) {
+       showMessage('info', t.common.viewOnly)
+       return
+     }
+     // ... actual mutation logic
+   }
+   ```
+5. **Use proper i18n** - never hardcode strings:
+   ```typescript
+   // ✅ Good
+   <h1>{t.nav.settings}</h1>
+
+   // ❌ Bad
+   <h1>Settings</h1>
+   ```
+
+**Why this matters:**
+- Demo mode is used for e2e testing and visual validation
+- If demo and production diverge, tests become unreliable
+- Hardcoded strings break i18n and make the app inconsistent
 
 ## Performance Patterns
 

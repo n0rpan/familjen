@@ -120,6 +120,7 @@ export const en: TranslationStrings = {
     headsUpSourceClosure: 'School calendar',
     headsUpSourceTask: 'Tasks',
     headsUpSourceMemberEvent: 'Calendar',
+    askAI: 'Ask AI for help...',
   },
 
   // Login page
@@ -461,6 +462,8 @@ export const en: TranslationStrings = {
     restoreAnyway: 'Add anyway',
     showAllNotifications: 'Show all {count} notifications',
     showFewerNotifications: 'Show fewer',
+    integrationsDisabled: 'Integrations not enabled',
+    contactAdmin: 'Contact your administrator to enable integrations for your household.',
   },
 
   // Admin page

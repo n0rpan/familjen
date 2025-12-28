@@ -1,38 +1,155 @@
-import { createClient } from '@/lib/supabase/server'
-import { TodaySection } from '@/components/TodaySection'
-import { AIHeadsUpSection } from '@/components/AIHeadsUpSection'
-import { WeekSection } from '@/components/WeekSection'
-import { UniversalAIInput } from '@/components/ai'
-import { SuggestionBanner } from '@/components/integrations/SuggestionReview'
-import { RecentPhotos } from '@/components/RecentPhotos'
-import { HomeRefreshWrapper } from '@/components/HomeRefreshWrapper'
-import { getHomePageData, getTodaySummary, getAttentionStatus } from '@/lib/data/home'
+'use client'
+
+import { useMemo, useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
+import { useWeekData, useHousehold, getTodaySummaryFromWeekData } from '@/hooks/data'
+import { HomePageContent } from '@/components/home/HomePageContent'
 import { TransitionLink } from '@/components/TransitionLink'
+import { useLanguage } from '@/lib/i18n/context'
 import Image from 'next/image'
-import { getLanguageFromCookieOrBrowser } from '@/lib/i18n/cookie.server'
-import { getTranslations } from '@/lib/i18n/translations'
-import { DemoHomePage } from '@/components/demo/DemoHomePage'
+import { formatDateISO, addDays } from '@/lib/utils'
+import type { AIHeadsUp, Child } from '@/lib/types'
 
-interface HomePageProps {
-  searchParams: Promise<{ demo?: string }>
-}
+export default function HomePage() {
+  const searchParams = useSearchParams()
+  const isDemo = searchParams.get('demo') === 'true'
+  const { t } = useLanguage()
 
-export default async function HomePage({ searchParams }: HomePageProps) {
-  // Check for demo mode
-  const params = await searchParams
-  const isDemo = params.demo === 'true'
+  // Use the unified data hooks - they work for both demo and production
+  const weekData = useWeekData()
+  const { household, currentMember, loading: householdLoading } = useHousehold()
 
-  // Demo mode: render client-side demo page
-  if (isDemo) {
-    return <DemoHomePage />
+  // Auth state management for production mode
+  const [authChecked, setAuthChecked] = useState(isDemo)
+  const [isLoggedIn, setIsLoggedIn] = useState(isDemo)
+  const [inviteClaimed, setInviteClaimed] = useState(false)
+
+  // Create supabase client only for auth check and invite claiming
+  const supabase = useMemo(() => isDemo ? null : createClient(), [isDemo])
+
+  // Check auth and try to claim invite (only in production)
+  useEffect(() => {
+    if (isDemo || !supabase) {
+      setAuthChecked(true)
+      return
+    }
+
+    const checkAuthAndClaimInvite = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        setIsLoggedIn(!!user)
+
+        // If user is logged in but has no household, try to claim invite
+        if (user && !household && !householdLoading && !inviteClaimed) {
+          const { data: claimedInvite } = await supabase.rpc('claim_invite_for_current_user')
+          if (claimedInvite && claimedInvite.length > 0) {
+            setInviteClaimed(true)
+            // Force a reload to pick up the new household
+            window.location.reload()
+          }
+        }
+      } catch (error) {
+        console.error('Auth check error:', error)
+      } finally {
+        setAuthChecked(true)
+      }
+    }
+
+    checkAuthAndClaimInvite()
+  }, [isDemo, supabase, household, householdLoading, inviteClaimed])
+
+  // Generate demo AI heads-up data
+  const demoHeadsUps: AIHeadsUp[] = useMemo(() => {
+    if (!isDemo || weekData.children.length === 0) return []
+
+    const today = new Date()
+    const tomorrow = addDays(today, 1)
+    const nextWeek = addDays(today, 5)
+    const firstChildName = weekData.children[0]?.name || 'Emilie'
+
+    return [
+      {
+        id: 'demo-headsup-1',
+        type: 'suggestion',
+        priority: 'normal',
+        title: 'Husk gymtøy',
+        description: `${firstChildName} har gym på torsdag`,
+        date: formatDateISO(tomorrow),
+        endDate: null,
+        time: '08:00',
+        childId: weekData.children[0]?.id || 'demo-child',
+        childName: firstChildName,
+        memberId: null,
+        memberName: null,
+        source: {
+          table: 'external_suggestions',
+          id: 'demo-suggestion-1',
+          sourceType: 'suggestion',
+          displayName: 'Barnehagen',
+        },
+        hasConflict: false,
+        href: '/uke?demo=true',
+      },
+      {
+        id: 'demo-headsup-2',
+        type: 'member_event',
+        priority: 'high',
+        title: 'Pappa på jobb-reise',
+        description: 'Mandag til onsdag',
+        date: formatDateISO(nextWeek),
+        endDate: formatDateISO(addDays(nextWeek, 2)),
+        time: null,
+        childId: null,
+        childName: null,
+        memberId: weekData.members[0]?.id || 'demo-member',
+        memberName: weekData.members[0]?.name || 'Pappa',
+        source: {
+          table: 'member_events',
+          id: 'demo-event-1',
+          sourceType: 'memberEvent',
+        },
+        hasConflict: true,
+        href: '/uke?demo=true',
+      },
+    ]
+  }, [isDemo, weekData.children, weekData.members])
+
+  // Loading state
+  const isLoading = !authChecked || weekData.loading || householdLoading
+
+  if (isLoading) {
+    return (
+      <div className="space-y-8 animate-fade-in">
+        <div
+          className="rounded-2xl p-8 text-center"
+          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+        >
+          <div className="animate-pulse">
+            <div className="h-8 w-48 bg-gray-200 rounded mx-auto mb-4" />
+            <div className="h-4 w-32 bg-gray-200 rounded mx-auto" />
+          </div>
+        </div>
+      </div>
+    )
   }
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const language = await getLanguageFromCookieOrBrowser()
-  const t = getTranslations(language)
 
-  // If not logged in, show welcome page
-  if (!user) {
+  // Error state
+  if (weekData.error) {
+    return (
+      <div className="space-y-8 animate-fade-in">
+        <div
+          className="rounded-2xl p-8 text-center"
+          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+        >
+          <p className="text-red-500">{weekData.error}</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Not logged in (production only)
+  if (!isDemo && !isLoggedIn) {
     return (
       <div className="min-h-[70vh] flex items-center justify-center">
         <div className="text-center max-w-md mx-auto animate-fade-in">
@@ -61,33 +178,11 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     )
   }
 
-  // Check if user has a household
-  let { data: myMembership } = await supabase
-    .from('household_members')
-    .select('id, household_id')
-    .eq('user_id', user.id)
-    .single()
-
-  // If no membership by user_id, try to claim a pending invite via RPC
-  // This uses a SECURITY DEFINER function to bypass RLS for invite claiming
-  if (!myMembership) {
-    const { data: claimedInvite } = await supabase
-      .rpc('claim_invite_for_current_user')
-
-    if (claimedInvite && claimedInvite.length > 0) {
-      myMembership = {
-        id: claimedInvite[0].member_id,
-        household_id: claimedInvite[0].household_id
-      }
-    }
-  }
-
-  // If user doesn't have a household, show choice UI
-  if (!myMembership) {
+  // No household (production only)
+  if (!isDemo && isLoggedIn && !household) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center animate-fade-in">
         <div className="w-full max-w-md mx-auto px-4">
-          {/* Header */}
           <div className="text-center mb-8">
             <div
               className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-6 shadow-lg"
@@ -103,9 +198,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             </h1>
           </div>
 
-          {/* Choice cards */}
           <div className="space-y-4">
-            {/* Was invited option */}
             <TransitionLink
               href="/"
               className="block p-5 rounded-2xl transition-all hover:scale-[1.02] active:scale-[0.98]"
@@ -140,7 +233,6 @@ export default async function HomePage({ searchParams }: HomePageProps) {
               </div>
             </TransitionLink>
 
-            {/* Create new household option */}
             <TransitionLink
               href="/ny-husstand"
               className="block p-5 rounded-2xl transition-all hover:scale-[1.02] active:scale-[0.98]"
@@ -173,7 +265,6 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             </TransitionLink>
           </div>
 
-          {/* Warning message */}
           <div
             className="mt-6 flex items-start gap-3 p-4 rounded-xl"
             style={{ background: 'rgba(229, 185, 94, 0.1)' }}
@@ -192,51 +283,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     )
   }
 
-  // Fetch all household data using dedicated loader
-  const { data: homeData, error: dataError } = await getHomePageData(supabase, myMembership.household_id)
-
-  if (dataError || !homeData) {
-    console.error('Error loading home page data:', dataError)
-    return (
-      <div className="space-y-8 animate-fade-in">
-        <div
-          className="rounded-2xl p-8 md:p-12 text-center"
-          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-        >
-          <div
-            className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-6"
-            style={{ background: 'rgba(232, 120, 109, 0.15)' }}
-          >
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--color-coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10"/>
-              <line x1="12" y1="8" x2="12" y2="12"/>
-              <line x1="12" y1="16" x2="12.01" y2="16"/>
-            </svg>
-          </div>
-          <h2 className="text-2xl font-semibold font-display mb-3" style={{ color: 'var(--foreground)' }}>
-            {t.errors.loadFailed}
-          </h2>
-          <p className="mb-8 max-w-md mx-auto" style={{ color: 'var(--muted)' }}>
-            {t.errors.generic}
-          </p>
-          <TransitionLink
-            href="/"
-            className="btn btn-primary"
-          >
-            {t.common.retry}
-          </TransitionLink>
-        </div>
-      </div>
-    )
-  }
-
-  const { children, members, pickups, meals, memberEvents, householdEvents, externalEvents, childTasks, holidays, recentPhotos, weekStart } = homeData
-  const todaySummary = getTodaySummary(homeData)
-
-  // Check if we have any data set up
-  const hasSetup = children && children.length > 0
-
-  if (!hasSetup) {
+  // No children (needs setup) - production only
+  if (!isDemo && household && weekData.children.length === 0) {
     return (
       <div className="space-y-8 animate-fade-in">
         <div
@@ -270,130 +318,37 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     )
   }
 
-  // Calculate status for today using helper
-  const { childrenWithoutPickup, noMeal, isAllReady } = getAttentionStatus(homeData)
-
-  // Build descriptive attention message
-  const getAttentionMessage = () => {
-    const hasPickupIssue = childrenWithoutPickup.length > 0
-    const hasMealIssue = noMeal
-
-    if (hasPickupIssue && hasMealIssue) {
-      // Both missing
-      if (childrenWithoutPickup.length === 1) {
-        return t.home.missingPickupForAndDinner.replace('{name}', childrenWithoutPickup[0].name)
-      }
-      return t.home.missingPickupAndDinner
-    } else if (hasPickupIssue) {
-      // Only pickup missing
-      if (childrenWithoutPickup.length === 1) {
-        return t.home.missingPickupFor.replace('{name}', childrenWithoutPickup[0].name)
-      }
-      return t.home.missingPickup
-    } else if (hasMealIssue) {
-      // Only meal missing
-      return t.home.missingDinner
-    }
-    return ''
-  }
+  // Ready with data - calculate today's summary
+  const todaySummary = getTodaySummaryFromWeekData(weekData)
+  const todayPickups = weekData.pickups.filter(p => p.date === todaySummary.date)
+  const todayMeal = weekData.meals.find(m => m.date === todaySummary.date)
+  const childrenWithoutPickup = weekData.children.filter(child =>
+    !todayPickups.some(p => p.child_id === child.id && p.picker_id)
+  ) as Child[]
+  const noMeal = !todayMeal || (!todayMeal.recipe_id && !todayMeal.custom_meal)
+  const isAllReady = childrenWithoutPickup.length === 0 && !noMeal
 
   return (
-    <HomeRefreshWrapper>
-      <div className="space-y-8 animate-fade-in">
-        {/* Today's Status Summary */}
-        {isAllReady ? (
-          <div
-            className="flex items-center gap-3 px-4 py-3 rounded-xl"
-            style={{ background: 'rgba(131, 166, 151, 0.15)' }}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-sage)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
-            <span className="text-sm font-medium" style={{ color: 'var(--color-sage-dark, #5A7A57)' }}>
-              {t.home.allReadyForToday}
-            </span>
-          </div>
-        ) : (
-          <TransitionLink
-            href="/uke"
-            className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl transition-opacity hover:opacity-80"
-            style={{ background: 'rgba(229, 185, 94, 0.15)' }}
-          >
-            <div className="flex items-center gap-3">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10"/>
-                <line x1="12" y1="8" x2="12" y2="12"/>
-                <line x1="12" y1="16" x2="12.01" y2="16"/>
-              </svg>
-              <span className="text-sm font-medium" style={{ color: 'var(--color-honey-dark, #A68A3A)' }}>
-                {getAttentionMessage()}
-              </span>
-            </div>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="9 18 15 12 9 6"/>
-            </svg>
-          </TransitionLink>
-        )}
-
-      {/* Universal AI Input - At top on all screen sizes */}
-      <UniversalAIInput
-        householdId={myMembership.household_id}
-        children={children || []}
-        members={members || []}
-        currentUserId={user.id}
-      />
-
-      {/* Suggestion Banner */}
-      <SuggestionBanner
-        householdId={myMembership.household_id}
-        children={children || []}
-        members={members || []}
-      />
-
-      {/* Today's Overview */}
-      <TodaySection
-        summary={todaySummary}
-        holidays={holidays}
-        members={members || []}
-        children={children || []}
-        householdId={myMembership.household_id}
-      />
-
-      {/* AI Heads Up - Week lookahead */}
-      <AIHeadsUpSection items={homeData.aiHeadsUps} />
-
-      {/* Recent Photos */}
-      {recentPhotos.length > 0 && <RecentPhotos photos={recentPhotos} />}
-
-      {/* Week Grid */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
-            {t.common.week}
-          </h2>
-          <TransitionLink
-            href="/uke"
-            className="text-sm font-medium transition-colors hover:opacity-80"
-            style={{ color: 'var(--accent)' }}
-          >
-            {t.common.edit} →
-          </TransitionLink>
-        </div>
-        <WeekSection
-          children={children || []}
-          members={members || []}
-          pickups={pickups || []}
-          meals={meals || []}
-          memberEvents={memberEvents || []}
-          householdEvents={householdEvents || []}
-          externalEvents={externalEvents || []}
-          childTasks={childTasks || []}
-          holidays={holidays}
-          weekStart={weekStart}
-        />
-      </div>
-
-    </div>
-    </HomeRefreshWrapper>
+    <HomePageContent
+      householdId={weekData.household?.id || 'demo'}
+      currentUserId={currentMember?.user_id || undefined}
+      children={weekData.children}
+      members={weekData.members}
+      todaySummary={todaySummary}
+      pickups={weekData.pickups}
+      meals={weekData.meals}
+      memberEvents={weekData.memberEvents}
+      householdEvents={weekData.householdEvents}
+      externalEvents={weekData.externalEvents}
+      childTasks={weekData.tasks}
+      holidays={weekData.holidays}
+      weekStart={weekData.weekStart}
+      aiHeadsUps={isDemo ? demoHeadsUps : []}
+      recentPhotos={[]}
+      childrenWithoutPickup={childrenWithoutPickup}
+      noMeal={noMeal}
+      isAllReady={isAllReady}
+      isDemo={isDemo}
+    />
   )
 }
