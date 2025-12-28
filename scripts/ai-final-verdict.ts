@@ -1419,20 +1419,21 @@ function generateMainComment(
   const prWarnings = prRelevant.filter(f => f.severity === 'warning')
   const prInfo = prRelevant.filter(f => f.severity === 'info')
 
+  // Build reviewer counts
+  const passCount = verdict.reviewerSummary.filter(r => r.verdict === 'PASS').length
+  const warnCount = verdict.reviewerSummary.filter(r => r.verdict === 'WARN').length
+  const failCount = verdict.reviewerSummary.filter(r => r.verdict === 'FAIL').length
+  const totalCount = verdict.reviewerSummary.length
+
   // Start with a VERY CLEAR verdict statement
   let comment = `![CI Status](${badgeUrl})
 
 ## ${emoji} Final AI Verdict: ${status}
 
 **PR:** ${prTitle}
+**Files Changed:** ${changedFiles.length} | **Reviewers:** ${totalCount} (${passCount}✅ ${warnCount}⚠️ ${failCount}❌)
 
 `
-
-  // Build reviewer status line
-  const passCount = verdict.reviewerSummary.filter(r => r.verdict === 'PASS').length
-  const warnCount = verdict.reviewerSummary.filter(r => r.verdict === 'WARN').length
-  const failCount = verdict.reviewerSummary.filter(r => r.verdict === 'FAIL').length
-  const totalCount = verdict.reviewerSummary.length
 
   // BLOCKED - Show exactly what must be fixed
   if (isBlocked) {
@@ -1444,14 +1445,43 @@ function generateMainComment(
 >
 > **Next step:** Fix the issues below, then push a new commit to re-run CI.
 
-### 📊 Reviewer Results: ${passCount} passed, ${warnCount} warnings, ${failCount} failed
+### 📊 Detailed Reviewer Results
 
-| Reviewer | Verdict | Summary |
-|----------|---------|---------|
 ${verdict.reviewerSummary.map(r => {
   const icon = r.verdict === 'PASS' ? '✅' : r.verdict === 'WARN' ? '⚠️' : '❌'
-  const reviewSummary = reviews[r.reviewer]?.summary || 'No summary available'
-  return `| ${r.reviewer} | ${icon} ${r.verdict} | ${reviewSummary.slice(0, 60)}${reviewSummary.length > 60 ? '...' : ''} |`
+  const review = reviews[r.reviewer]
+  const reviewSummary = review?.summary || 'No summary available'
+  const findings = review?.findings || []
+  const criticalFindings = findings.filter(f => f.severity === 'critical')
+  const warningFindings = findings.filter(f => f.severity === 'warning')
+
+  let section = `<details ${r.verdict === 'FAIL' ? 'open' : ''}>
+<summary>${icon} <strong>${r.reviewer}</strong>: ${r.verdict} — ${reviewSummary.slice(0, 80)}${reviewSummary.length > 80 ? '...' : ''}</summary>
+
+`
+  if (criticalFindings.length > 0) {
+    section += `**🔴 Critical Issues (${criticalFindings.length}):**\n`
+    for (const f of criticalFindings.slice(0, 5)) {
+      const loc = f.line ? `${f.file || 'unknown'}:${f.line}` : (f.file || 'unknown')
+      section += `- \`${loc}\`: ${f.message}\n`
+    }
+    if (criticalFindings.length > 5) section += `  _...and ${criticalFindings.length - 5} more critical issues_\n`
+    section += '\n'
+  }
+  if (warningFindings.length > 0) {
+    section += `**🟡 Warnings (${warningFindings.length}):**\n`
+    for (const f of warningFindings.slice(0, 3)) {
+      const loc = f.line ? `${f.file || 'unknown'}:${f.line}` : (f.file || 'unknown')
+      section += `- \`${loc}\`: ${f.message}\n`
+    }
+    if (warningFindings.length > 3) section += `  _...and ${warningFindings.length - 3} more warnings_\n`
+    section += '\n'
+  }
+  if (findings.length === 0) {
+    section += `_No issues found by this reviewer._\n\n`
+  }
+  section += '</details>\n'
+  return section
 }).join('\n')}
 
 ### ❌ Issues That Must Be Fixed
@@ -1539,14 +1569,42 @@ This is not a rubber stamp - the AI used tools (read_file, search_code) to verif
       }
       comment += `
 
-### 📊 Reviewer Results
+### 📊 Detailed Reviewer Results
 
-| Reviewer | Verdict | Summary |
-|----------|---------|---------|
 ${verdict.reviewerSummary.map(r => {
   const icon = r.verdict === 'PASS' ? '✅' : r.verdict === 'WARN' ? '⚠️' : '❌'
-  const reviewSummary = reviews[r.reviewer]?.summary || 'No summary available'
-  return `| ${r.reviewer} | ${icon} ${r.verdict} | ${reviewSummary.slice(0, 50)}${reviewSummary.length > 50 ? '...' : ''} |`
+  const review = reviews[r.reviewer]
+  const reviewSummary = review?.summary || 'No summary available'
+  const findings = review?.findings || []
+  const warningFindings = findings.filter(f => f.severity === 'warning')
+  const infoFindings = findings.filter(f => f.severity === 'info')
+
+  let section = `<details>
+<summary>${icon} <strong>${r.reviewer}</strong>: ${r.verdict} — ${reviewSummary.slice(0, 80)}${reviewSummary.length > 80 ? '...' : ''}</summary>
+
+`
+  if (warningFindings.length > 0) {
+    section += `**🟡 Suggestions (${warningFindings.length}):**\n`
+    for (const f of warningFindings.slice(0, 3)) {
+      const loc = f.line ? `${f.file || 'unknown'}:${f.line}` : (f.file || 'unknown')
+      section += `- \`${loc}\`: ${f.message}\n`
+    }
+    if (warningFindings.length > 3) section += `  _...and ${warningFindings.length - 3} more suggestions_\n`
+    section += '\n'
+  }
+  if (infoFindings.length > 0 && warningFindings.length === 0) {
+    section += `**💡 Notes (${infoFindings.length}):**\n`
+    for (const f of infoFindings.slice(0, 2)) {
+      section += `- ${f.message}\n`
+    }
+    if (infoFindings.length > 2) section += `  _...and ${infoFindings.length - 2} more notes_\n`
+    section += '\n'
+  }
+  if (findings.length === 0) {
+    section += `✨ _Clean review - no issues found._\n\n`
+  }
+  section += '</details>\n'
+  return section
 }).join('\n')}
 
 `
@@ -1588,33 +1646,6 @@ These tests verify the specific changes in this PR (e.g., click handlers, modals
 `
   }
 
-  // Reviewer summary table
-  comment += `### 📊 Reviewer Summary
-
-| Reviewer | Verdict | Key Findings |
-|----------|---------|--------------|
-`
-
-  for (const summary of verdict.reviewerSummary) {
-    const review = reviews[summary.reviewer]
-    // Get most important finding - safely handle missing review data
-    const topFinding = review?.findings?.filter(f => f.severity === 'critical' || f.severity === 'warning')[0]
-    let findingPreview = topFinding?.message
-      ? `${topFinding.severity === 'critical' ? '🔴' : '🟡'} ${topFinding.message.slice(0, 50)}${topFinding.message.length > 50 ? '...' : ''}`
-      : summary.criticalCount > 0
-        ? `🔴 ${summary.criticalCount} critical issue${summary.criticalCount > 1 ? 's' : ''}`
-        : summary.warningCount > 0
-          ? `🟡 ${summary.warningCount} warning${summary.warningCount > 1 ? 's' : ''}`
-          : '🟢 Clean'
-
-    // Add PR-specific test count for e2e-tests
-    if (summary.reviewer === 'e2e-tests' && prTestInfo && prTestInfo.count > 0) {
-      findingPreview = `🤖 ${prTestInfo.count} PR-specific tests. ` + findingPreview
-    }
-
-    comment += `| ${summary.reviewer} | ${verdictEmoji(summary.verdict)} ${summary.verdict} | ${findingPreview} |\n`
-  }
-
   // Warnings and suggestions (only if not blocked, or show briefly if blocked)
   if (!isBlocked && prWarnings.length > 0) {
     comment += `
@@ -1643,16 +1674,21 @@ These tests verify the specific changes in this PR (e.g., click handlers, modals
     }
   }
 
-  // Decision reasoning - generate a clear summary instead of parsing AI output
+  // Decision reasoning - show the AI's actual analysis with more detail
   comment += `
-### 🧠 Why this decision?
+### 🧠 AI Analysis & Decision
 
 `
+  // Extract meaningful reasoning from AI response
+  const reasoningEnd = verdict.reasoning.indexOf('FINAL VERDICT:')
+  const fullReasoning = reasoningEnd > 0 ? verdict.reasoning.slice(0, reasoningEnd).trim() : verdict.reasoning
+
   if (!isBlocked) {
-    // Generate clear reasoning for PASS
+    // For PASS - show a summary plus key verifications
     const cleanReviewers = verdict.reviewerSummary.filter(r => r.criticalCount === 0 && r.warningCount === 0)
     const warnReviewers = verdict.reviewerSummary.filter(r => r.warningCount > 0 && r.criticalCount === 0)
 
+    comment += `**Summary:** `
     if (prRelevant.length === 0) {
       comment += `No issues were found in the files changed by this PR. `
     } else {
@@ -1660,11 +1696,30 @@ These tests verify the specific changes in this PR (e.g., click handlers, modals
     }
 
     if (cleanReviewers.length > 0) {
-      comment += `${cleanReviewers.map(r => r.reviewer).join(', ')} found no issues. `
+      comment += `${cleanReviewers.map(r => r.reviewer).join(', ')} gave clean reviews. `
+    }
+    if (warnReviewers.length > 0) {
+      comment += `${warnReviewers.map(r => r.reviewer).join(', ')} had minor suggestions.`
+    }
+    comment += '\n\n'
+
+    // Show key verifications performed
+    const verificationStatuses = Object.entries(verdict.verifications)
+      .filter(([_, status]) => status !== 'skipped')
+      .map(([name, status]) => `${status === 'pass' ? '✅' : status === 'warn' ? '⚠️' : '❌'} ${name}`)
+    if (verificationStatuses.length > 0) {
+      comment += `**Verifications:** ${verificationStatuses.join(' | ')}\n\n`
     }
 
-    if (warnReviewers.length > 0) {
-      comment += `${warnReviewers.map(r => r.reviewer).join(', ')} had minor warnings that don't require changes.`
+    // Include relevant parts of AI reasoning if it's substantial
+    if (fullReasoning.length > 200) {
+      comment += `<details>
+<summary>📖 Full AI reasoning</summary>
+
+${fullReasoning.slice(0, 1500)}${fullReasoning.length > 1500 ? '\n\n_...truncated_' : ''}
+
+</details>
+`
     }
 
     // Explain any failed verifications that didn't block
@@ -1674,18 +1729,44 @@ These tests verify the specific changes in this PR (e.g., click handlers, modals
 
     if (failedVerifications.length > 0) {
       comment += `
-
 **Note:** ${failedVerifications.join(', ')} showed issues, but these appear to be pre-existing (not introduced by this PR).`
     }
   } else {
-    // For BLOCK, use the AI's reasoning but clean it up
-    const reasoningEnd = verdict.reasoning.indexOf('FINAL VERDICT:')
-    const reasoning = reasoningEnd > 0 ? verdict.reasoning.slice(0, reasoningEnd).trim() : verdict.reasoning
+    // For BLOCK - show more detailed AI reasoning
+    // Get the most relevant paragraphs that explain the issues
+    const paragraphs = fullReasoning.split('\n\n').filter(p => p.trim() && p.length > 30)
 
-    // Get last paragraph that explains the decision
-    const paragraphs = reasoning.split('\n\n').filter(p => p.trim() && p.length > 30)
+    // Look for verification/investigation sections
+    const investigationParagraphs = paragraphs.filter(p =>
+      p.toLowerCase().includes('read') ||
+      p.toLowerCase().includes('verified') ||
+      p.toLowerCase().includes('found') ||
+      p.toLowerCase().includes('issue')
+    )
+
+    if (investigationParagraphs.length > 0) {
+      comment += `**AI Investigation:**\n\n`
+      for (const p of investigationParagraphs.slice(0, 3)) {
+        comment += `> ${p.slice(0, 400)}${p.length > 400 ? '...' : ''}\n>\n`
+      }
+      comment += '\n'
+    }
+
+    // Show the final decision paragraph
     const lastParagraph = paragraphs[paragraphs.length - 1] || 'Critical issues must be addressed before merge.'
-    comment += lastParagraph.slice(0, 500) + (lastParagraph.length > 500 ? '...' : '')
+    comment += `**Conclusion:** ${lastParagraph.slice(0, 500)}${lastParagraph.length > 500 ? '...' : ''}\n`
+
+    // Show full reasoning in collapsible
+    if (fullReasoning.length > 500) {
+      comment += `
+<details>
+<summary>📖 Full AI analysis</summary>
+
+${fullReasoning.slice(0, 2000)}${fullReasoning.length > 2000 ? '\n\n_...truncated_' : ''}
+
+</details>
+`
+    }
   }
 
   // Note about pre-existing issues (if any) - brief mention, details in separate comment

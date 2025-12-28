@@ -289,6 +289,14 @@ export function useFeed(): UseFeedReturn {
     }
   }, [isDemo, household?.id, householdLoading, fetchData])
 
+  // Handle case where household loading finished but no household exists
+  // This prevents infinite loading state for unauthenticated users or users without a household
+  useEffect(() => {
+    if (!isDemo && !householdLoading && !household?.id) {
+      setLoading(false)
+    }
+  }, [isDemo, householdLoading, household?.id])
+
   // Demo mode: return demo data
   if (isDemo && demoState) {
     const demoReminders: FeedReminder[] = tasks
