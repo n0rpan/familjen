@@ -462,6 +462,8 @@ export const nb: TranslationStrings = {
     restoreAnyway: 'Legg til likevel',
     showAllNotifications: 'Vis alle {count} varsler',
     showFewerNotifications: 'Vis færre',
+    integrationsDisabled: 'Integrasjoner ikke aktivert',
+    contactAdmin: 'Kontakt administrator for å aktivere integrasjoner for din husstand.',
   },
 
   // Admin page

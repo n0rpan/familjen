@@ -16,7 +16,14 @@ import { PhotoGallery, type FeedPhoto } from './PhotoGallery'
 import { ReminderCard, type FeedReminder } from './ReminderCard'
 import { EventChangeNotificationList, type EventNotification } from './EventChangeNotification'
 import { SyncStatusBanner, type IntegrationStatus } from './SyncStatusBanner'
-import type { IntegrationChild } from './FeedPage'
+
+// Integration children mapping (which children belong to which integrations)
+export interface IntegrationChild {
+  integrationId: string
+  childId: string
+  childName: string
+  groupName: string | null
+}
 
 export interface FeedPageContentProps {
   // Data

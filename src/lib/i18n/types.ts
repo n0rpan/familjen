@@ -470,6 +470,9 @@ export interface TranslationStrings {
     restoreAnyway: string
     showAllNotifications: string
     showFewerNotifications: string
+    // Integrations disabled state
+    integrationsDisabled: string
+    contactAdmin: string
   }
 
   // Admin page

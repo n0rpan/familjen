@@ -462,6 +462,8 @@ export const en: TranslationStrings = {
     restoreAnyway: 'Add anyway',
     showAllNotifications: 'Show all {count} notifications',
     showFewerNotifications: 'Show fewer',
+    integrationsDisabled: 'Integrations not enabled',
+    contactAdmin: 'Contact your administrator to enable integrations for your household.',
   },
 
   // Admin page
