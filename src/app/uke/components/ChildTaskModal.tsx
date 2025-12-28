@@ -22,6 +22,7 @@ interface ChildTaskModalProps {
   onSave: () => void
   onDelete: () => void
   onClose: () => void
+  onToggleStatus?: () => void
 }
 
 export const ChildTaskModal = memo(function ChildTaskModal({
@@ -35,6 +36,7 @@ export const ChildTaskModal = memo(function ChildTaskModal({
   onSave,
   onDelete,
   onClose,
+  onToggleStatus,
 }: ChildTaskModalProps) {
   // Handle Escape key to close modal
   useEffect(() => {
@@ -73,7 +75,7 @@ export const ChildTaskModal = memo(function ChildTaskModal({
 
       {/* Modal */}
       <div
-        className="relative w-full max-w-md rounded-2xl p-6 space-y-4"
+        className="relative w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl p-6 space-y-4"
         style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -198,6 +200,31 @@ export const ChildTaskModal = memo(function ChildTaskModal({
             />
           </div>
         </div>
+
+        {/* Toggle status button (for editing existing tasks) */}
+        {editingTask && onToggleStatus && (
+          <button
+            onClick={onToggleStatus}
+            disabled={saving}
+            className="w-full flex items-center justify-center gap-2 p-3 rounded-xl text-sm font-medium transition-colors"
+            style={{
+              background: editingTask.status === 'done' ? 'rgba(229, 185, 94, 0.15)' : 'rgba(131, 166, 151, 0.15)',
+              color: editingTask.status === 'done' ? 'var(--color-honey)' : 'var(--color-sage)',
+            }}
+          >
+            {editingTask.status === 'done' ? (
+              <>
+                <span>↩️</span>
+                <span>{t.week.markUndone}</span>
+              </>
+            ) : (
+              <>
+                <span>✓</span>
+                <span>{t.week.markDone}</span>
+              </>
+            )}
+          </button>
+        )}
 
         {/* Actions */}
         <div className="flex items-center justify-between pt-2">

@@ -70,7 +70,7 @@ export const MemberEventModal = memo(function MemberEventModal({
 
       {/* Modal */}
       <div
-        className="relative w-full max-w-md rounded-2xl p-6 space-y-5 animate-fade-in"
+        className="relative w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl p-6 space-y-5 animate-fade-in"
         style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
         onClick={(e) => e.stopPropagation()}
       >

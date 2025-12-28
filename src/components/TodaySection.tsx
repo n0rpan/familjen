@@ -366,6 +366,26 @@ export function TodaySection({ summary, holidays = [], members, children, househ
     }
   }, [editingTask, supabase, closeTaskModal, router, showError, t.errors.deleteFailed])
 
+  const toggleTaskStatus = useCallback(async () => {
+    if (!editingTask) return
+    setSaving(true)
+    try {
+      const newStatus = editingTask.status === 'done' ? 'open' : 'done'
+      const { error: dbError } = await supabase
+        .from('child_tasks')
+        .update({ status: newStatus })
+        .eq('id', editingTask.id)
+      if (dbError) throw dbError
+      closeTaskModal()
+      router.refresh()
+    } catch (err) {
+      console.error('Error toggling task status:', err)
+      showError(t.errors.couldNotSaveTask)
+    } finally {
+      setSaving(false)
+    }
+  }, [editingTask, supabase, closeTaskModal, router, showError, t.errors.couldNotSaveTask])
+
   return (
     <>
       {/* Error Toast */}
@@ -459,6 +479,7 @@ export function TodaySection({ summary, holidays = [], members, children, househ
         onSave={saveTask}
         onDelete={deleteTask}
         onClose={closeTaskModal}
+        onToggleStatus={toggleTaskStatus}
       />
     </>
   )
