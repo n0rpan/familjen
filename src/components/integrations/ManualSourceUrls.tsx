@@ -31,6 +31,11 @@ interface SourceEvent {
   child_id: string | null
 }
 
+interface EventCounts {
+  total: number
+  upcoming: number
+}
+
 interface ManualSourceUrlsProps {
   householdId: string
   children: Child[]
@@ -54,10 +59,11 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
   const [saving, setSaving] = useState(false)
 
   // Event viewing state
-  const [eventCounts, setEventCounts] = useState<Record<string, number>>({})
+  const [eventCounts, setEventCounts] = useState<Record<string, EventCounts>>({})
   const [viewingSource, setViewingSource] = useState<SourceUrl | null>(null)
   const [sourceEvents, setSourceEvents] = useState<SourceEvent[]>([])
   const [loadingEvents, setLoadingEvents] = useState(false)
+  const [showAllEvents, setShowAllEvents] = useState(false)
 
   const supabase = useMemo(() => createClient(), [])
 
@@ -78,23 +84,32 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
     loadSourceUrls()
   }, [loadSourceUrls])
 
-  // Load event counts for all sources
+  // Load event counts for all sources (both total and upcoming)
   const loadEventCounts = useCallback(async (sourceIds: string[]) => {
     if (sourceIds.length === 0) return
 
-    const counts: Record<string, number> = {}
-
-    // Query counts for each source
+    const counts: Record<string, EventCounts> = {}
     const today = formatDateISO(new Date())
-    for (const sourceId of sourceIds) {
-      const { count } = await supabase
-        .from('external_events')
-        .select('id', { count: 'exact', head: true })
-        .eq('source_url_id', sourceId)
-        .gte('event_date', today)
 
-      counts[sourceId] = count || 0
-    }
+    // Query counts for each source in parallel
+    await Promise.all(sourceIds.map(async (sourceId) => {
+      const [totalResult, upcomingResult] = await Promise.all([
+        supabase
+          .from('external_events')
+          .select('id', { count: 'exact', head: true })
+          .eq('source_url_id', sourceId),
+        supabase
+          .from('external_events')
+          .select('id', { count: 'exact', head: true })
+          .eq('source_url_id', sourceId)
+          .gte('event_date', today)
+      ])
+
+      counts[sourceId] = {
+        total: totalResult.count || 0,
+        upcoming: upcomingResult.count || 0
+      }
+    }))
 
     setEventCounts(counts)
   }, [supabase])
@@ -107,25 +122,54 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
   }, [sourceUrls, loadEventCounts])
 
   // Load events for a specific source
-  const loadSourceEvents = async (source: SourceUrl) => {
+  const loadSourceEvents = async (source: SourceUrl, showAll = false) => {
     setViewingSource(source)
     setLoadingEvents(true)
     setSourceEvents([])
+    setShowAllEvents(showAll)
 
     const today = formatDateISO(new Date())
-    const { data, error } = await supabase
+    let query = supabase
       .from('external_events')
       .select('id, title, event_date, end_date, event_time, event_type, description, child_id')
       .eq('source_url_id', source.id)
-      .gte('event_date', today)
-      .order('event_date', { ascending: true })
+
+    if (!showAll) {
+      query = query.gte('event_date', today)
+    }
+
+    const { data } = await query
+      .order('event_date', { ascending: !showAll }) // Show past events most recent first
       .order('event_time', { ascending: true })
       .limit(50)
 
-    if (!error && data) {
+    if (data) {
       setSourceEvents(data)
     }
     setLoadingEvents(false)
+  }
+
+  // Format event count with proper Norwegian grammar
+  const formatEventCount = (counts: EventCounts | undefined) => {
+    if (!counts) return 'Laster...'
+
+    const { total, upcoming } = counts
+
+    if (total === 0) {
+      return 'Ingen hendelser synkronisert'
+    }
+
+    // Norwegian: 1 hendelse, 2+ hendelser
+    const upcomingText = upcoming === 1 ? '1 kommende' : `${upcoming} kommende`
+
+    if (total === upcoming) {
+      // All events are upcoming
+      return upcoming === 1 ? '1 hendelse' : `${upcoming} hendelser`
+    }
+
+    // Show both: "X hendelser (Y kommende)"
+    const totalText = total === 1 ? '1 hendelse' : `${total} hendelser`
+    return `${totalText} (${upcomingText})`
   }
 
   // Format event date for display
@@ -329,7 +373,7 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
           {/* Event count - clickable to view events */}
           {source.last_sync_status === 'ok' && (
             <button
-              onClick={() => loadSourceEvents(source)}
+              onClick={() => loadSourceEvents(source, false)}
               className="w-full flex items-center justify-between p-3 mb-3 rounded-lg transition-colors hover:opacity-80"
               style={{ background: 'var(--sand)' }}
             >
@@ -341,9 +385,7 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
                   <line x1="3" y1="10" x2="21" y2="10"/>
                 </svg>
                 <span className="text-sm" style={{ color: 'var(--foreground)' }}>
-                  {eventCounts[source.id] !== undefined
-                    ? `${eventCounts[source.id]} kommende hendelser`
-                    : 'Laster...'}
+                  {formatEventCount(eventCounts[source.id])}
                 </span>
               </div>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--muted)' }}>
@@ -510,25 +552,45 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
-              <div className="min-w-0 flex-1">
+            <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
+              <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold truncate" style={{ color: 'var(--foreground)' }}>
                   {viewingSource.display_name}
                 </h3>
-                <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                  Kommende hendelser
-                </p>
+                <button
+                  onClick={() => setViewingSource(null)}
+                  className="p-2 rounded-lg hover:opacity-70 shrink-0 -mr-2"
+                  style={{ color: 'var(--muted)' }}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
               </div>
-              <button
-                onClick={() => setViewingSource(null)}
-                className="p-2 rounded-lg hover:opacity-70 shrink-0"
-                style={{ color: 'var(--muted)' }}
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"/>
-                  <line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
+              {/* Toggle between upcoming and all events */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => loadSourceEvents(viewingSource, false)}
+                  className="flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors"
+                  style={{
+                    background: !showAllEvents ? 'var(--foreground)' : 'var(--sand)',
+                    color: !showAllEvents ? 'var(--background)' : 'var(--muted)'
+                  }}
+                >
+                  Kommende
+                </button>
+                <button
+                  onClick={() => loadSourceEvents(viewingSource, true)}
+                  className="flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors"
+                  style={{
+                    background: showAllEvents ? 'var(--foreground)' : 'var(--sand)',
+                    color: showAllEvents ? 'var(--background)' : 'var(--muted)'
+                  }}
+                >
+                  Alle
+                </button>
+              </div>
             </div>
 
             {/* Modal Content */}
@@ -547,8 +609,23 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
                     <line x1="8" y1="2" x2="8" y2="6"/>
                     <line x1="3" y1="10" x2="21" y2="10"/>
                   </svg>
-                  <p className="text-sm">Ingen kommende hendelser</p>
-                  <p className="text-xs mt-1">Prøv å synkronisere på nytt</p>
+                  {showAllEvents ? (
+                    <>
+                      <p className="text-sm">Ingen hendelser synkronisert</p>
+                      <p className="text-xs mt-1">Prøv å synkronisere på nytt</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm">Ingen kommende hendelser</p>
+                      {eventCounts[viewingSource.id]?.total > 0 ? (
+                        <p className="text-xs mt-1">
+                          {eventCounts[viewingSource.id].total} {eventCounts[viewingSource.id].total === 1 ? 'hendelse' : 'hendelser'} i fortiden – trykk &quot;Alle&quot; for å se
+                        </p>
+                      ) : (
+                        <p className="text-xs mt-1">Prøv å synkronisere på nytt</p>
+                      )}
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -556,12 +633,17 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
                     const eventChild = event.child_id
                       ? children.find(c => c.id === event.child_id)
                       : null
+                    const today = formatDateISO(new Date())
+                    const isPast = event.event_date < today
 
                     return (
                       <div
                         key={event.id}
                         className="p-3 rounded-xl"
-                        style={{ background: 'var(--sand)' }}
+                        style={{
+                          background: 'var(--sand)',
+                          opacity: isPast ? 0.6 : 1
+                        }}
                       >
                         <div className="flex items-start justify-between gap-2 mb-1">
                           <p className="font-medium text-sm" style={{ color: 'var(--foreground)' }}>
