@@ -22,6 +22,129 @@ env:
 
 jobs:
   # ============================================
+  # SMART TEST SELECTOR (runs first, decides what to test)
+  # ============================================
+  smart-selector:
+    name: 🧠 Smart Test Selector
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    # Only run selector on PRs (push to main always runs protection tests)
+    if: github.event_name == 'pull_request'
+    outputs:
+      run_visual: ${{ steps.selector.outputs.run_visual_validation }}
+      run_e2e: ${{ steps.selector.outputs.run_e2e_tests }}
+      run_migration: ${{ steps.selector.outputs.run_migration_review }}
+      run_api: ${{ steps.selector.outputs.run_api_tests }}
+      run_code_review: ${{ steps.selector.outputs.run_code_review }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for diff
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Download previous PR state if exists
+      - name: Download PR state artifact
+        uses: dawidd6/action-download-artifact@v3
+        continue-on-error: true
+        with:
+          workflow: ci.yml
+          name: pr-state-${{ github.event.pull_request.number }}
+          path: ci-state/
+          search_artifacts: true
+
+      - name: Run smart test selector
+        id: selector
+        run: npx tsx scripts/ai-test-selector.ts --base origin/${{ github.base_ref }}
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}
+          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+
+      - name: Upload PR state
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-state-${{ github.event.pull_request.number }}
+          path: ci-state/
+          retention-days: 30
+
+      - name: Upload test selection
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-selection
+          path: ci-state/test-selection.json
+          retention-days: 7
+
+  # ============================================
+  # MERGE CHECK - Skip CI if coming from green PR
+  # ============================================
+  merge-check:
+    name: 🔍 Check Merge Status
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    outputs:
+      skip_ci: ${{ steps.check.outputs.skip_ci }}
+      pr_number: ${{ steps.check.outputs.pr_number }}
+
+    steps:
+      - name: Check if from merged PR
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Check if this push is from a merged PR
+            const commitMessage = context.payload.head_commit?.message || '';
+            const prMatch = commitMessage.match(/Merge pull request #(\d+)/);
+
+            if (!prMatch) {
+              console.log('Not a PR merge commit, running full CI');
+              core.setOutput('skip_ci', 'false');
+              return;
+            }
+
+            const prNumber = prMatch[1];
+            core.setOutput('pr_number', prNumber);
+            console.log(`Detected merge from PR #${prNumber}`);
+
+            // Check if PR's CI passed
+            try {
+              const { data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: parseInt(prNumber),
+              });
+
+              // Get the final verdict check
+              const { data: checks } = await github.rest.checks.listForRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: pr.head.sha,
+                check_name: '🎯 Final AI Verdict',
+              });
+
+              const verdictCheck = checks.check_runs[0];
+              if (verdictCheck?.conclusion === 'success') {
+                console.log('PR CI passed, skipping redundant checks');
+                core.setOutput('skip_ci', 'true');
+              } else {
+                console.log('PR CI did not pass or verdict not found, running full CI');
+                core.setOutput('skip_ci', 'false');
+              }
+            } catch (error) {
+              console.log('Could not check PR status:', error.message);
+              core.setOutput('skip_ci', 'false');
+            }
+
+  # ============================================
   # STAGE 1: Fast checks (run in parallel)
   # ============================================
   lint:
@@ -107,13 +230,17 @@ jobs:
   # ============================================
   # AI Migration Review (for PRs with migrations)
   # NON-BLOCKING: Final verdict decides if this blocks
+  # Uses smart selector output to determine if needed
   # ============================================
   migration-review:
     name: AI Migration Review
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [lint]
-    if: github.event_name == 'pull_request'
+    needs: [lint, smart-selector]
+    # Run if: selector says run OR selector didn't run (push to main) AND there are migrations
+    if: |
+      github.event_name == 'pull_request' &&
+      (needs.smart-selector.outputs.run_migration == 'true' || needs.smart-selector.outputs.run_migration == '')
     continue-on-error: true  # Non-blocking - final verdict decides
 
     steps:
@@ -316,8 +443,11 @@ jobs:
     name: AI Visual Validation
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [unit-tests]
-    if: github.event_name == 'pull_request'
+    needs: [unit-tests, smart-selector]
+    # Run if: selector says run OR selector skipped it (let supervisor override)
+    if: |
+      github.event_name == 'pull_request' &&
+      (needs.smart-selector.outputs.run_visual == 'true' || needs.smart-selector.outputs.run_visual == '')
     # Visual validation is advisory, not blocking. Reasons:
     # 1. New features may intentionally change UI (not a regression)
     # 2. AI vision models can have false positives
@@ -478,8 +608,11 @@ jobs:
     name: E2E Tests (Preview)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [unit-tests]
-    if: github.event_name == 'pull_request'
+    needs: [unit-tests, smart-selector]
+    # Run if: selector says run OR let supervisor decide
+    if: |
+      github.event_name == 'pull_request' &&
+      (needs.smart-selector.outputs.run_e2e == 'true' || needs.smart-selector.outputs.run_e2e == '')
     continue-on-error: true  # Non-blocking - final verdict decides
 
     steps:
@@ -657,9 +790,12 @@ jobs:
     name: API Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [unit-tests]
-    # Run on both PRs and main branch
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: [unit-tests, smart-selector]
+    # Run if: PR and selector says run, OR push to main (protection)
+    if: |
+      (github.event_name == 'pull_request' &&
+       (needs.smart-selector.outputs.run_api == 'true' || needs.smart-selector.outputs.run_api == '')) ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     continue-on-error: true  # Non-blocking - final verdict decides
 
     steps:

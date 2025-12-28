@@ -244,6 +244,88 @@ const TOOLS: Tool[] = [
       required: []
     }
   },
+
+  // ============================================
+  // Supervisor Tools - Override Smart Selector
+  // ============================================
+  {
+    name: 'get_test_selection',
+    description: 'Get the smart test selector\'s decisions and reasoning. Use this to understand what tests were skipped and why.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'run_visual_validation',
+    description: 'Run visual validation tests that were skipped. Use when you suspect UI issues not covered by the selector. Returns screenshots and validation results.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        pages: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Specific pages to test: "home", "week", "settings", "wishlist", or "all"'
+        }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'run_e2e_tests',
+    description: 'Run E2E tests that were skipped. Use when you suspect user journey issues. Returns test results.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        specs: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Specific test files to run, or omit for all'
+        }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'run_migration_review',
+    description: 'Run AI migration review that was skipped. Use when you see SQL changes that weren\'t reviewed.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'run_api_tests',
+    description: 'Run API integration tests that were skipped. Use when you suspect API issues.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        tests: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Specific test patterns to run'
+        }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'explain_skip_decision',
+    description: 'Get detailed explanation of why a specific test was skipped by the selector',
+    input_schema: {
+      type: 'object',
+      properties: {
+        test: {
+          type: 'string',
+          enum: ['visual-validation', 'e2e-tests', 'migration-review', 'api-tests', 'code-review'],
+          description: 'Test type to explain'
+        }
+      },
+      required: ['test']
+    }
+  },
 ]
 
 // ============================================
@@ -732,6 +814,241 @@ function executeToolUncached(name: string, input: Record<string, unknown>): stri
       }
     }
 
+    // ============================================
+    // Supervisor Tools - Override Smart Selector
+    // ============================================
+
+    case 'get_test_selection': {
+      const selectionPath = 'ci-state/test-selection.json'
+      if (!existsSync(selectionPath)) {
+        return 'No test selection found. The smart selector may not have run yet.'
+      }
+      try {
+        const selection = JSON.parse(readFileSync(selectionPath, 'utf-8'))
+        const skipped = selection.decisions?.filter((d: { enabled: boolean }) => !d.enabled) || []
+        const running = selection.decisions?.filter((d: { enabled: boolean }) => d.enabled) || []
+
+        return `## Smart Test Selector Results
+
+**Model:** ${selection.model}
+**Timestamp:** ${selection.timestamp}
+
+### Tests Running (${running.length})
+${running.map((d: { testType: string; reason: string }) => `- ${d.testType}: ${d.reason}`).join('\n') || 'None'}
+
+### Tests Skipped (${skipped.length})
+${skipped.map((d: { testType: string; reason: string; overridable: boolean }) => `- ${d.testType}: ${d.reason} ${d.overridable ? '(overridable)' : ''}`).join('\n') || 'None'}
+
+### Reasoning
+${selection.reasoning}
+
+### Files Changed (${selection.changedFiles?.length || 0})
+${(selection.changedFiles || []).slice(0, 20).join('\n')}${(selection.changedFiles?.length || 0) > 20 ? '\n... and more' : ''}`
+      } catch (e) {
+        return `Error reading test selection: ${e}`
+      }
+    }
+
+    case 'run_visual_validation': {
+      if (!previewUrl) return 'Error: VERCEL_PREVIEW_URL not set - cannot run visual validation'
+
+      const pages = (input.pages as string[] | undefined) || ['home', 'week']
+      console.log(`   🎨 Running visual validation for: ${pages.join(', ')}`)
+
+      try {
+        // Run playwright to capture screenshots
+        const pageArg = pages.includes('all') ? '' : `--grep "${pages.join('|')}"`
+        execSync(
+          `PLAYWRIGHT_BASE_URL=${previewUrl} npx playwright test tests/e2e/capture-screenshots.spec.ts --project=chromium ${pageArg}`,
+          { encoding: 'utf-8', timeout: 120000, stdio: 'pipe' }
+        )
+
+        // Run visual validation script
+        const result = execSync(
+          'npx tsx scripts/ai-visual-validation.ts 2>&1',
+          { encoding: 'utf-8', timeout: 180000 }
+        )
+
+        // Check for results file
+        const reportPath = 'visual-validation-report.json'
+        if (existsSync(reportPath)) {
+          const report = JSON.parse(readFileSync(reportPath, 'utf-8'))
+          return `## Visual Validation Results
+
+**Verdict:** ${report.verdict}
+**Pages Tested:** ${pages.join(', ')}
+
+**Summary:** ${report.summary || 'No summary'}
+
+**Issues Found:**
+${report.issues?.slice(0, 5).map((i: string) => `- ${i}`).join('\n') || 'None'}
+
+${result.slice(-500)}`
+        }
+
+        return `Visual validation ran but no report generated.\n\nOutput:\n${result.slice(-1000)}`
+      } catch (e) {
+        const error = e as { stdout?: string; stderr?: string; message?: string }
+        return `Visual validation failed: ${error.message || 'Unknown error'}\n\nOutput:\n${error.stdout?.slice(-500) || ''}\n${error.stderr?.slice(-500) || ''}`
+      }
+    }
+
+    case 'run_e2e_tests': {
+      if (!previewUrl) return 'Error: VERCEL_PREVIEW_URL not set - cannot run E2E tests'
+
+      const specs = (input.specs as string[] | undefined) || []
+      const specArg = specs.length > 0 ? specs.join(' ') : 'tests/e2e/design-system.spec.ts'
+      console.log(`   🧪 Running E2E tests: ${specArg}`)
+
+      try {
+        const result = execSync(
+          `PLAYWRIGHT_BASE_URL=${previewUrl} npx playwright test ${specArg} --project=chromium --reporter=list 2>&1`,
+          { encoding: 'utf-8', timeout: 180000, stdio: 'pipe' }
+        )
+
+        // Count results
+        const passed = (result.match(/✓/g) || []).length
+        const failed = (result.match(/✘/g) || []).length
+
+        return `## E2E Test Results
+
+**Passed:** ${passed}
+**Failed:** ${failed}
+**Specs:** ${specArg}
+
+${result.slice(-2000)}`
+      } catch (e) {
+        const error = e as { stdout?: string; stderr?: string; message?: string }
+        const output = error.stdout || error.stderr || ''
+
+        // Extract failure summary
+        const failures = output.match(/✘.*$/gm) || []
+
+        return `## E2E Tests Failed
+
+**Failures:**
+${failures.slice(0, 10).join('\n') || 'See output below'}
+
+**Output (last 1500 chars):**
+${output.slice(-1500)}`
+      }
+    }
+
+    case 'run_migration_review': {
+      console.log('   🗄️ Running migration review...')
+
+      try {
+        const result = execSync(
+          'npx tsx scripts/migration-ai-review.ts 2>&1',
+          { encoding: 'utf-8', timeout: 120000 }
+        )
+
+        // Check for results
+        const reviewPath = 'ai-reviews/migration-review.json'
+        if (existsSync(reviewPath)) {
+          const review = JSON.parse(readFileSync(reviewPath, 'utf-8'))
+          return `## Migration Review Results
+
+**Verdict:** ${review.verdict}
+**Summary:** ${review.summary}
+
+**Issues:**
+${review.findings?.slice(0, 10).map((f: { severity: string; message: string }) => `- [${f.severity}] ${f.message}`).join('\n') || 'None'}
+
+${result.slice(-500)}`
+        }
+
+        return `Migration review ran.\n\nOutput:\n${result.slice(-1000)}`
+      } catch (e) {
+        const error = e as { stdout?: string; message?: string }
+        return `Migration review failed: ${error.message || 'Unknown error'}\n\n${error.stdout?.slice(-500) || ''}`
+      }
+    }
+
+    case 'run_api_tests': {
+      const tests = (input.tests as string[] | undefined) || []
+      const testArg = tests.length > 0 ? `--grep "${tests.join('|')}"` : ''
+      console.log('   🔌 Running API tests...')
+
+      try {
+        const result = execSync(
+          `npm run test:api -- ${testArg} --reporter=verbose 2>&1`,
+          {
+            encoding: 'utf-8',
+            timeout: 180000,
+            env: {
+              ...process.env,
+              OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+              OPENROUTER_TEST_MODEL: process.env.OPENROUTER_TEST_MODEL || process.env.OPENROUTER_FAST_MODEL,
+            }
+          }
+        )
+
+        return `## API Test Results
+
+${result.slice(-2000)}`
+      } catch (e) {
+        const error = e as { stdout?: string; message?: string }
+        return `API tests failed:\n\n${error.stdout?.slice(-1500) || error.message || 'Unknown error'}`
+      }
+    }
+
+    case 'explain_skip_decision': {
+      const test = input.test as string
+      const selectionPath = 'ci-state/test-selection.json'
+
+      if (!existsSync(selectionPath)) {
+        return `No test selection data found. Cannot explain skip decision for ${test}.`
+      }
+
+      try {
+        const selection = JSON.parse(readFileSync(selectionPath, 'utf-8'))
+        const decision = selection.decisions?.find((d: { testType: string }) => d.testType === test)
+
+        if (!decision) {
+          return `No decision found for test type: ${test}`
+        }
+
+        // Get changed files relevant to this test type
+        const changedFiles = selection.changedFiles || []
+        const relevantPatterns: Record<string, string[]> = {
+          'visual-validation': ['src/components/', 'src/app/', '.css', 'tailwind'],
+          'e2e-tests': ['src/app/', 'src/components/', 'src/lib/'],
+          'migration-review': ['supabase/migrations/'],
+          'api-tests': ['src/app/api/', 'src/lib/integrations/'],
+          'code-review': ['.ts', '.tsx'],
+        }
+
+        const patterns = relevantPatterns[test] || []
+        const relevantFiles = changedFiles.filter((f: string) =>
+          patterns.some(p => f.includes(p))
+        )
+
+        return `## Skip Decision Explanation: ${test}
+
+**Decision:** ${decision.enabled ? 'RUN' : 'SKIP'}
+**Reason:** ${decision.reason}
+**Overridable:** ${decision.overridable ? 'Yes' : 'No'}
+
+**Selector Model:** ${selection.model}
+**Overall Reasoning:** ${selection.reasoning}
+
+**Files Changed (${changedFiles.length} total):**
+${changedFiles.slice(0, 30).join('\n')}
+
+**Files Relevant to ${test} (${relevantFiles.length}):**
+${relevantFiles.slice(0, 20).join('\n') || 'None found'}
+
+**Categories:**
+- Migrations: ${selection.categories?.migrations?.length || 0}
+- Components: ${selection.categories?.components?.length || 0}
+- API: ${selection.categories?.api?.length || 0}
+- Lib: ${selection.categories?.lib?.length || 0}`
+      } catch (e) {
+        return `Error explaining skip decision: ${e}`
+      }
+    }
+
     default:
       return `Unknown tool: ${name}`
   }
@@ -1001,12 +1318,28 @@ async function main() {
 
 YOUR VERDICT DETERMINES THE CI STATUS. If you say BLOCK, the PR cannot be merged. If you say PASS, the PR can merge.
 
-## YOUR ROLE: The "Super AI" Second Opinion
+## YOUR ROLE: The "Wise Supervisor" AI
 
-You see findings from all other reviewers (code review, e2e tests, visual validation, etc.) and make the FINAL call.
-You have tools to investigate deeper when needed. Use them.
+You are the second-tier intelligence in a two-tier CI system:
+1. **Fast Selector** (already ran): A fast AI that decided which tests to run/skip based on file changes
+2. **You (Wise Supervisor)**: Review ALL findings AND the selector's decisions, run additional tests if needed
 
 The PR comment will reflect YOUR decision - so make it count.
+
+## CRITICAL: Review Smart Selector Decisions
+
+A fast AI has already decided which tests to run. Use **get_test_selection** to see:
+- Which tests were run vs skipped
+- The reasoning behind skip decisions
+- Files that were changed
+
+**You can OVERRIDE the selector and run skipped tests if you disagree!**
+
+Example workflow:
+1. Call get_test_selection to see what was skipped
+2. If a test was skipped but you think it should have run, use run_* tools
+3. If you run additional tests and they fail, BLOCK
+4. If you run additional tests and they pass, factor that into your decision
 
 ## CRITICAL: You MUST Verify Before Deciding
 
@@ -1027,6 +1360,7 @@ If you don't verify, default to BLOCK.
 - Runtime errors VERIFIED in THIS PR's changes
 - Authentication/authorization broken (VERIFIED)
 - Critical test failures caused by THIS PR's changes
+- You ran additional tests (overriding selector) and they FAILED
 - **ANY unverified blocking issue** - when in doubt, BLOCK
 
 **PASS (CI will succeed, PR can merge) when:**
@@ -1034,6 +1368,7 @@ If you don't verify, default to BLOCK.
 - All blocking issues are in files NOT changed by this PR (pre-existing)
 - Only minor suggestions/warnings remain
 - You used tools to verify and found no real problems
+- You ran additional tests (overriding selector) and they PASSED
 
 ## IMPORTANT: Pre-existing vs New Issues
 
@@ -1044,18 +1379,37 @@ Look at the "Files Changed" list. If an issue is reported in a file NOT in that 
 
 ## Available Tools - USE THEM!
 
+### Investigation Tools
 - **read_file**: Read code to verify issues exist (ALWAYS use this before dismissing an issue)
 - **search_code**: Find patterns across the codebase
 - **read_diff**: See exactly what changed in this PR
 - **check_typescript**: Verify no type errors in changed files
 - **verify_imports**: Check for hallucinated package imports
 
+### Supervisor Tools (Override Fast Selector)
+- **get_test_selection**: See what the fast selector decided and why
+- **explain_skip_decision**: Get detailed explanation for why a specific test was skipped
+- **run_visual_validation**: Run visual tests that were skipped (if you suspect UI issues)
+- **run_e2e_tests**: Run E2E tests that were skipped (if you suspect user journey issues)
+- **run_migration_review**: Run migration review that was skipped (if you see SQL changes)
+- **run_api_tests**: Run API tests that were skipped (if you suspect API issues)
+
+## Conservative Principle
+
+When in doubt, RUN THE TEST. It's better to run one extra check than miss a bug.
+
+If the fast selector skipped a test but you're uncertain if that was correct:
+1. Use explain_skip_decision to understand why
+2. If still uncertain, use run_* to run the test
+3. Include the result in your decision
+
 ## Response Format
 
 1. **PR Summary**: What does this PR do?
-2. **Verification**: For each blocking issue, what did you find when you investigated?
-3. **Decision**: Clear reasoning for PASS or BLOCK
-4. **Final Line**: Your verdict (exactly as shown below)
+2. **Selector Review**: Did you agree with the fast selector's decisions? Did you run any additional tests?
+3. **Verification**: For each blocking issue, what did you find when you investigated?
+4. **Decision**: Clear reasoning for PASS or BLOCK
+5. **Final Line**: Your verdict (exactly as shown below)
 
 End your response with EXACTLY one of these lines:
 FINAL VERDICT: PASS

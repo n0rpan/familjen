@@ -709,16 +709,66 @@ Tests run on every PR via GitHub Actions:
 
 The CI pipeline uses AI to review code changes, following our philosophy: *"We don't test to make tests pass. We test to be confident busy parents won't have headaches."*
 
-### Architecture: Non-Blocking Reviewers + Final Verdict
+### Architecture: Two-Tier Intelligence
 
-The CI uses a **two-tier architecture**:
-1. **Individual Reviewers** - Run in parallel, inform but don't block (exit 0)
-2. **Final Verdict** - The "super AI" that aggregates all findings and makes the sole PASS/BLOCK decision
+The CI uses a **two-tier AI architecture** for smart test optimization:
 
-This design allows:
-- Fast feedback from multiple reviewers
-- Intelligent decision-making that considers context
-- No false positives blocking PRs unnecessarily
+```
+┌─────────────────────────────────────────────────────────────┐
+│  🚀 Fast Selector (Tier 1)                                   │
+│  - Runs FIRST, analyzes PR diff                              │
+│  - Decides which tests to run/skip based on file changes     │
+│  - Uses fast model (Gemini Flash) for quick decisions        │
+│  - Conservative: when in doubt, runs the test                │
+└─────────────────────────────────────────────────────────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+        [Tests run based on selector decisions]
+              │               │               │
+              └───────────────┴───────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  🧠 Wise Supervisor (Tier 2)                                 │
+│  - Reviews ALL findings AND selector's decisions             │
+│  - Can OVERRIDE selector and run skipped tests               │
+│  - Uses most capable model (Claude Opus) for final decision  │
+│  - Has tools to run visual/e2e/api tests if needed           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Benefits:**
+- Fast feedback (skip irrelevant tests)
+- Conservative safety (supervisor can override)
+- Cost-effective (only runs extra tests when needed)
+- Self-documenting (explains all decisions)
+
+### Smart Test Selection
+
+The fast selector categorizes changes and decides what tests to run:
+
+| Change Type | Tests Run | Tests Skipped |
+|-------------|-----------|---------------|
+| Migration-only | lint, typecheck, unit, migration-review | visual, e2e, api |
+| Docs-only | lint | everything else |
+| UI changes | lint, typecheck, unit, visual, e2e | migration, api |
+| API changes | lint, typecheck, unit, e2e, api | visual, migration |
+| Core file changed | ALL tests | none |
+
+**Core files** (always trigger full suite):
+- `src/lib/types.ts`, `src/lib/utils.ts`
+- `src/lib/supabase/*.ts`
+- `src/lib/i18n/context.tsx`, `src/lib/i18n/types.ts`
+- `src/components/Header.tsx`, `src/components/AppShell.tsx`
+
+### Supervisor Override
+
+The final verdict AI can override selector decisions:
+1. Calls `get_test_selection` to see what was skipped
+2. Uses `explain_skip_decision` to understand reasoning
+3. If disagreement, uses `run_visual_validation`, `run_e2e_tests`, etc.
+4. Factors additional test results into final PASS/BLOCK decision
 
 ### AI Review Scripts
 
@@ -726,13 +776,17 @@ This design allows:
 scripts/
 ├── ai-config.ts              # Model config + OpenRouter structured outputs
 ├── ai-review-types.ts        # Shared types for all reviewers (ReviewerOutput)
+├── ai-test-selector.ts       # 🆕 Smart test selection (Tier 1)
 ├── migration-ai-review.ts    # Reviews database migrations (non-blocking)
 ├── ai-code-review.ts         # Reviews PR code changes (non-blocking)
 ├── ai-visual-validation.ts   # Evaluates screenshots (non-blocking)
 ├── ai-pr-test-generator.ts   # Generates PR-specific E2E test scenarios
 ├── api-test-reporter.ts      # Converts Vitest results to ReviewerOutput
 ├── e2e-test-reporter.ts      # Converts Playwright results to ReviewerOutput
-└── ai-final-verdict.ts       # The "super AI" decision maker (BLOCKING)
+├── ai-final-verdict.ts       # The "super AI" supervisor (BLOCKING)
+└── lib/
+    ├── pr-state.ts           # 🆕 Tracks test results across PR commits
+    └── dependency-graph.ts   # 🆕 Analyzes file dependencies
 ```
 
 ### Environment Variables
@@ -758,6 +812,10 @@ VERCEL_AUTOMATION_BYPASS_SECRET=xxx                     # Bypass Vercel protecti
 ### Running Locally
 
 ```bash
+# Smart test selector (see what tests would run)
+npx tsx scripts/ai-test-selector.ts --base main
+npx tsx scripts/ai-test-selector.ts --base origin/main  # Against remote
+
 # Review new migrations
 npm run ai:migration-review
 npm run ai:migration-review -- --all  # Review all migrations
@@ -909,41 +967,48 @@ const PAGE_EXPECTATIONS = [
 ```
 PR Created
     │
-    ├─► lint ─────────────────────┐
-    ├─► typecheck ────────────────┤
-    │                             │
-    ├─► migration-review ◄────────┘ (if migrations changed)
-    │       │ (non-blocking)
-    └─► unit-tests ◄──────────────┘
+    └─► 🧠 SMART SELECTOR ◄──────── Analyzes diff, decides what to test
             │
-            └─► build
-                  │
-                  ├─► ai-code-review ───────────────┐
-                  │   (non-blocking)                 │
-                  │                                  │
-                  ├─► visual-validation ─────────────┤  All upload to
-                  │   (non-blocking)                 │  ai-reviews/*.json
-                  │                                  │
-                  ├─► e2e-preview ───────────────────┤
-                  │   (non-blocking)                 │
-                  │                                  │
-                  └─► api-tests ─────────────────────┘
-                            │
-                            └─► 🎯 FINAL VERDICT ◄── Downloads all artifacts
-                                    │                 Has tools to fetch context
-                                    │                 Makes PASS/BLOCK decision
-                                    ▼
-                               ✅ PASS → Merge allowed
-                               ❌ BLOCK → CI fails, PR blocked
+            │  Outputs: run_visual, run_e2e, run_migration, run_api
+            │
+    ┌───────┴───────┐
+    │               │
+    ├─► lint ───────┤ (always run)
+    ├─► typecheck ──┤ (always run)
+    │               │
+    └─► unit-tests ◄┘
+            │
+    ┌───────┴───────────────────────────────┐
+    │  Conditional jobs (based on selector)  │
+    │                                        │
+    ├─► migration-review (if run_migration)  │
+    ├─► visual-validation (if run_visual) ──┼──► ai-reviews/*.json
+    ├─► e2e-preview (if run_e2e) ───────────┤
+    └─► api-tests (if run_api) ─────────────┘
+                      │
+                      └─► 🎯 WISE SUPERVISOR ◄── Downloads all artifacts
+                                │                 Reviews selector decisions
+                                │                 Can run skipped tests!
+                                │                 Makes final PASS/BLOCK
+                                ▼
+                           ✅ PASS → Merge allowed
+                           ❌ BLOCK → CI fails
+
+
+Push to Main (from merged PR)
+    │
+    └─► 🔍 MERGE CHECK ◄──────── Was PR CI green?
+            │
+            ├─► Yes → Skip redundant tests (only smoke test)
+            └─► No/Direct push → Run full protection suite
 ```
 
 **Key features:**
+- **Smart selector** runs first, skips irrelevant tests
 - All reviewers are **non-blocking** (`continue-on-error: true`)
-- Reviewers upload findings to `ai-reviews/*.json` artifacts
-- Final verdict uses **mechanical aggregation**: any FAIL reviewer = BLOCK
-- AI can override with explicit explanation (shown in PR comment)
-- Final verdict has **tools** to fetch more context when needed
-- Smart truncation: reviewers get truncated context, can request full docs
+- **Wise supervisor** can override selector and run skipped tests
+- Merge to main skips tests if PR already passed
+- Conservative approach: when in doubt, run the test
 
 ### Verdict Aggregation
 
