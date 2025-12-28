@@ -103,6 +103,19 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000)
 
+## Demo Mode
+
+Try the app without authentication at [/demo](http://localhost:3000/demo) or by adding `?demo=true` to any page URL.
+
+Demo mode provides:
+- Full UI experience with mock Norwegian family data
+- No database or API calls required
+- Used for e2e testing and visual validation
+
+**Entry points:**
+- `/demo` - Redirects to home page in demo mode
+- `/?demo=true` - Any page with demo parameter
+
 ## Environment Variables
 
 | Variable | Required | Description |
