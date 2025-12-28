@@ -4,6 +4,7 @@ import { memo, useState, useEffect, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Child } from '@/lib/types'
 import { formatDateISO } from '@/lib/utils'
+import { useLanguage } from '@/lib/i18n/context'
 
 type UrlType = 'calendar_page' | 'pdf' | 'ics'
 
@@ -47,6 +48,7 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
   children,
   onMessage,
 }: ManualSourceUrlsProps) {
+  const { t, language } = useLanguage()
   const [sourceUrls, setSourceUrls] = useState<SourceUrl[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState<string | null>(null)
@@ -143,7 +145,7 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
   }, [sourceUrls, loadEventCounts])
 
   // Load events for a specific source
-  const loadSourceEvents = async (source: SourceUrl, showAll = false) => {
+  const loadSourceEvents = useCallback(async (source: SourceUrl, showAll = false) => {
     setViewingSource(source)
     setLoadingEvents(true)
     setSourceEvents([])
@@ -174,49 +176,54 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
       setSourceEvents(data)
     }
     setLoadingEvents(false)
-  }
+  }, [supabase])
 
-  // Format event count with proper Norwegian grammar
-  const formatEventCount = (counts: EventCounts | undefined) => {
-    if (!counts) return 'Laster...'
+  // Format event count with proper grammar
+  const formatEventCount = useCallback((counts: EventCounts | undefined) => {
+    if (!counts) return t.sourceUrls.loading
 
     const { total, upcoming } = counts
 
     if (total === 0) {
-      return 'Ingen hendelser synkronisert'
+      return t.sourceUrls.noEventsSynced
     }
 
-    // Norwegian: 1 hendelse, 2+ hendelser
-    const upcomingText = upcoming === 1 ? '1 kommende' : `${upcoming} kommende`
+    const upcomingText = t.sourceUrls.upcomingCount.replace('{count}', String(upcoming))
 
     if (total === upcoming) {
       // All events are upcoming
-      return upcoming === 1 ? '1 hendelse' : `${upcoming} hendelser`
+      return total === 1
+        ? t.sourceUrls.eventCount.replace('{count}', '1')
+        : t.sourceUrls.eventsCount.replace('{count}', String(total))
     }
 
-    // Show both: "X hendelser (Y kommende)"
-    const totalText = total === 1 ? '1 hendelse' : `${total} hendelser`
+    // Show both: "X events (Y upcoming)"
+    const totalText = total === 1
+      ? t.sourceUrls.eventCount.replace('{count}', '1')
+      : t.sourceUrls.eventsCount.replace('{count}', String(total))
     return `${totalText} (${upcomingText})`
-  }
+  }, [t])
 
   // Format event date for display
-  const formatEventDate = (dateStr: string, endDateStr: string | null) => {
+  const formatEventDate = useCallback((dateStr: string, endDateStr: string | null) => {
+    const localeMap = { nb: 'nb-NO', sv: 'sv-SE', en: 'en-GB' }
+    const locale = localeMap[language] || 'nb-NO'
     const date = new Date(dateStr + 'T00:00:00')
     const options: Intl.DateTimeFormatOptions = {
       weekday: 'short',
       day: 'numeric',
       month: 'short'
     }
-    const formatted = date.toLocaleDateString('nb-NO', options)
+    const formatted = date.toLocaleDateString(locale, options)
 
     if (endDateStr && endDateStr !== dateStr) {
       const endDate = new Date(endDateStr + 'T00:00:00')
-      const endFormatted = endDate.toLocaleDateString('nb-NO', options)
+      const endFormatted = endDate.toLocaleDateString(locale, options)
       return `${formatted} - ${endFormatted}`
     }
 
     return formatted
-  }
+  }, [language])
 
   const addSourceUrl = async () => {
     if (!newUrl || !newName) return
@@ -225,7 +232,7 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
     try {
       new URL(newUrl)
     } catch {
-      onMessage('error', 'Ugyldig URL')
+      onMessage('error', t.sourceUrls.invalidUrl)
       return
     }
 
@@ -245,12 +252,12 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
 
     if (error) {
       if (error.code === '23505') {
-        onMessage('error', 'Denne URL-en er allerede lagt til')
+        onMessage('error', t.sourceUrls.urlExists)
       } else {
-        onMessage('error', 'Kunne ikke legge til kilde')
+        onMessage('error', t.sourceUrls.couldNotAdd)
       }
     } else {
-      onMessage('success', 'Kilde lagt til')
+      onMessage('success', t.sourceUrls.sourceAdded)
       setNewUrl('')
       setNewName('')
       setNewType('calendar_page')
@@ -276,21 +283,21 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
 
       if (response.ok) {
         onMessage('success', data.eventsFound
-          ? `${data.eventsFound} hendelser funnet`
-          : 'Synkronisert')
+          ? t.sourceUrls.eventsFound.replace('{count}', String(data.eventsFound))
+          : t.sourceUrls.syncSuccess)
         loadSourceUrls()
       } else {
-        onMessage('error', data.error || 'Synkronisering feilet')
+        onMessage('error', data.error || t.integrations.syncFailed)
       }
     } catch {
-      onMessage('error', 'Synkronisering feilet')
+      onMessage('error', t.integrations.syncFailed)
     }
 
     setSyncing(null)
   }
 
   const deleteSourceUrl = async (id: string) => {
-    if (!confirm('Er du sikker på at du vil fjerne denne kilden?')) return
+    if (!confirm(t.sourceUrls.removeConfirm)) return
     if (deleting) return // Prevent double-clicks
 
     setDeleting(id)
@@ -301,37 +308,37 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
       .eq('id', id)
 
     if (error) {
-      onMessage('error', 'Kunne ikke fjerne kilde')
+      onMessage('error', t.sourceUrls.couldNotRemove)
     } else {
-      onMessage('success', 'Kilde fjernet')
+      onMessage('success', t.sourceUrls.sourceRemoved)
       loadSourceUrls()
     }
 
     setDeleting(null)
   }
 
-  const formatSyncTime = (time: string | null) => {
-    if (!time) return 'Aldri'
+  const formatSyncTime = useCallback((time: string | null) => {
+    if (!time) return t.sourceUrls.neverSynced
     const date = new Date(time)
     const now = new Date()
     const diff = now.getTime() - date.getTime()
 
-    if (diff < 60000) return 'Nettopp'
-    if (diff < 3600000) return `${Math.floor(diff / 60000)} min siden`
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)} t siden`
-    return `${Math.floor(diff / 86400000)} d siden`
-  }
+    if (diff < 60000) return t.sourceUrls.justNow
+    if (diff < 3600000) return t.sourceUrls.minutesAgo.replace('{count}', String(Math.floor(diff / 60000)))
+    if (diff < 86400000) return t.sourceUrls.hoursAgo.replace('{count}', String(Math.floor(diff / 3600000)))
+    return t.sourceUrls.daysAgo.replace('{count}', String(Math.floor(diff / 86400000)))
+  }, [t])
 
-  const getTypeLabel = (type: UrlType) => {
+  const getTypeLabel = useCallback((type: UrlType) => {
     switch (type) {
       case 'calendar_page':
-        return 'Kalenderside'
+        return t.sourceUrls.typeCalendarPage
       case 'pdf':
-        return 'PDF'
+        return t.sourceUrls.typePdf
       case 'ics':
-        return 'ICS-kalender'
+        return t.sourceUrls.typeIcs
     }
-  }
+  }, [t])
 
   if (loading) {
     return (
@@ -376,7 +383,7 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
                       : 'var(--muted)',
                 }}
               >
-                {source.last_sync_status === 'ok' ? 'OK' : source.last_sync_status === 'error' ? 'Feil' : 'Venter'}
+                {source.last_sync_status === 'ok' ? t.sourceUrls.statusOk : source.last_sync_status === 'error' ? t.sourceUrls.statusError : t.sourceUrls.statusPending}
               </span>
               {source.last_sync_at && (
                 <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
@@ -432,10 +439,10 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
                   <svg width="14" height="14" className="animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
                   </svg>
-                  Synkroniserer...
+                  {t.sourceUrls.syncing}
                 </>
               ) : (
-                'Synkroniser'
+                t.sourceUrls.syncNow
               )}
             </button>
             <button
@@ -449,10 +456,10 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
                   <svg width="14" height="14" className="animate-spin inline mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
                   </svg>
-                  Fjerner...
+                  {t.sourceUrls.removing}
                 </>
               ) : (
-                'Fjern'
+                t.sourceUrls.remove
               )}
             </button>
           </div>
@@ -467,7 +474,7 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
         >
           <div>
             <label className="block text-sm font-medium mb-1" style={{ color: 'var(--foreground)' }}>
-              URL
+              {t.sourceUrls.urlLabel}
             </label>
             <input
               type="url"
@@ -480,7 +487,7 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
 
           <div>
             <label className="block text-sm font-medium mb-1" style={{ color: 'var(--foreground)' }}>
-              Navn
+              {t.sourceUrls.nameLabel}
             </label>
             <input
               type="text"
@@ -494,29 +501,29 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1" style={{ color: 'var(--foreground)' }}>
-                Type
+                {t.sourceUrls.typeLabel}
               </label>
               <select
                 value={newType}
                 onChange={(e) => setNewType(e.target.value as UrlType)}
                 className="input w-full"
               >
-                <option value="calendar_page">Kalenderside</option>
-                <option value="pdf">PDF-dokument</option>
-                <option value="ics">ICS-kalender</option>
+                <option value="calendar_page">{t.sourceUrls.typeCalendarPage}</option>
+                <option value="pdf">{t.sourceUrls.typePdf}</option>
+                <option value="ics">{t.sourceUrls.typeIcs}</option>
               </select>
             </div>
 
             <div>
               <label className="block text-sm font-medium mb-1" style={{ color: 'var(--foreground)' }}>
-                Barn (valgfritt)
+                {t.sourceUrls.childLabel}
               </label>
               <select
                 value={newChildId || ''}
                 onChange={(e) => setNewChildId(e.target.value || null)}
                 className="input w-full"
               >
-                <option value="">Velg barn</option>
+                <option value="">{t.sourceUrls.childPlaceholder}</option>
                 {children.map((child) => (
                   <option key={child.id} value={child.id}>
                     {child.name}
@@ -532,7 +539,7 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
               disabled={saving || !newUrl || !newName}
               className="btn btn-primary text-sm"
             >
-              {saving ? 'Lagrer...' : 'Legg til'}
+              {saving ? t.common.saving : t.sourceUrls.addButton}
             </button>
             <button
               onClick={() => {
@@ -544,7 +551,7 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
               }}
               className="btn btn-secondary text-sm"
             >
-              Avbryt
+              {t.sourceUrls.cancel}
             </button>
           </div>
         </div>
@@ -562,7 +569,7 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
             <line x1="12" y1="5" x2="12" y2="19"/>
             <line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
-          Legg til kalenderkilde
+          {t.sourceUrls.addNew}
         </button>
       )}
 
@@ -605,7 +612,7 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
                     color: !showAllEvents ? 'var(--background)' : 'var(--muted)'
                   }}
                 >
-                  Kommende
+                  {t.sourceUrls.upcoming}
                 </button>
                 <button
                   onClick={() => loadSourceEvents(viewingSource, true)}
@@ -615,7 +622,7 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
                     color: showAllEvents ? 'var(--background)' : 'var(--muted)'
                   }}
                 >
-                  Alle
+                  {t.sourceUrls.all}
                 </button>
               </div>
             </div>
@@ -638,18 +645,18 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
                   </svg>
                   {showAllEvents ? (
                     <>
-                      <p className="text-sm">Ingen hendelser synkronisert</p>
-                      <p className="text-xs mt-1">Prøv å synkronisere på nytt</p>
+                      <p className="text-sm">{t.sourceUrls.noEventsSynced}</p>
+                      <p className="text-xs mt-1">{t.sourceUrls.trySyncAgain}</p>
                     </>
                   ) : (
                     <>
-                      <p className="text-sm">Ingen kommende hendelser</p>
+                      <p className="text-sm">{t.sourceUrls.noUpcomingEvents}</p>
                       {eventCounts[viewingSource.id]?.total > 0 ? (
                         <p className="text-xs mt-1">
-                          {eventCounts[viewingSource.id].total} {eventCounts[viewingSource.id].total === 1 ? 'hendelse' : 'hendelser'} i fortiden – trykk &quot;Alle&quot; for å se
+                          {t.sourceUrls.pastEventsHint.replace('{count}', String(eventCounts[viewingSource.id].total))}
                         </p>
                       ) : (
-                        <p className="text-xs mt-1">Prøv å synkronisere på nytt</p>
+                        <p className="text-xs mt-1">{t.sourceUrls.trySyncAgain}</p>
                       )}
                     </>
                   )}
@@ -721,7 +728,7 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
                 onClick={() => setViewingSource(null)}
                 className="w-full btn btn-secondary"
               >
-                Lukk
+                {t.sourceUrls.close}
               </button>
             </div>
           </div>

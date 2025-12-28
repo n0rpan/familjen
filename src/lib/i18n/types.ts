@@ -1134,15 +1134,88 @@ export interface TranslationStrings {
     typePdf: string
     typeIcs: string
     childLabel: string
+    childPlaceholder: string
     addButton: string
     syncing: string
+    removing: string
     lastSync: string
     syncNow: string
     syncSuccess: string
     eventsFound: string
     invalidUrl: string
     urlExists: string
+    couldNotAdd: string
+    couldNotRemove: string
+    sourceAdded: string
+    sourceRemoved: string
     remove: string
     removeConfirm: string
+    cancel: string
+    // Event viewing
+    loading: string
+    noEventsSynced: string
+    eventsCount: string
+    eventCount: string
+    upcomingCount: string
+    upcoming: string
+    all: string
+    noUpcomingEvents: string
+    pastEventsHint: string
+    trySyncAgain: string
+    close: string
+    // Status
+    statusOk: string
+    statusError: string
+    statusPending: string
+    neverSynced: string
+    minutesAgo: string
+    hoursAgo: string
+    daysAgo: string
+    justNow: string
+  }
+
+  // Integrations (common strings for all integration components)
+  integrations: {
+    title: string
+    description: string
+    noIntegration: string
+    addIntegration: string
+    connected: string
+    notConnected: string
+    lastSync: string
+    neverSynced: string
+    syncing: string
+    syncNow: string
+    fullSync: string
+    syncSuccess: string
+    syncFailed: string
+    remove: string
+    removeConfirm: string
+    edit: string
+    save: string
+    cancel: string
+    testConnection: string
+    testing: string
+    connectionFailed: string
+    // Common labels
+    email: string
+    password: string
+    phone: string
+    username: string
+    selectChildren: string
+    mapChildren: string
+    childMapping: string
+    // Spond
+    spondTitle: string
+    spondDescription: string
+    // Kidplan
+    kidplanTitle: string
+    kidplanDescription: string
+    // MyKid
+    mykidTitle: string
+    mykidDescription: string
+    // iSkole
+    iskoleTitle: string
+    iskoleDescription: string
   }
 }
