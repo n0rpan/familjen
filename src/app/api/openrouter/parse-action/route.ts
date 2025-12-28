@@ -49,6 +49,73 @@ function getDayName(dateStr: string): string {
   return days[date.getDay()]
 }
 
+// Helper to get tomorrow's date
+function getTomorrow(todayStr: string): string {
+  const today = new Date(todayStr + 'T12:00:00')
+  today.setDate(today.getDate() + 1)
+  return today.toISOString().split('T')[0]
+}
+
+// Helper to get the next occurrence of a weekday (0=Sunday, 5=Friday, 6=Saturday)
+function getNextWeekday(todayStr: string, targetDay: number): string {
+  const today = new Date(todayStr + 'T12:00:00')
+  const todayDay = today.getDay()
+  let daysToAdd = targetDay - todayDay
+  if (daysToAdd < 0) daysToAdd += 7
+  if (daysToAdd === 0) daysToAdd = 0 // Same day = today
+  const target = new Date(today)
+  target.setDate(today.getDate() + daysToAdd)
+  return target.toISOString().split('T')[0]
+}
+
+// Helper to generate a date lookup table for the LLM
+// This gives concrete dates so the LLM doesn't need to calculate them
+function getWeekdayDates(todayStr: string): string {
+  const days = ['søndag', 'mandag', 'tirsdag', 'onsdag', 'torsdag', 'fredag', 'lørdag']
+  const today = new Date(todayStr + 'T12:00:00')
+  const todayDay = today.getDay()
+
+  const result: string[] = []
+
+  // Calculate dates for each weekday (this week and next week)
+  for (let i = 0; i < 7; i++) {
+    // Days from today to this weekday (can be 0 to 6, or negative if already passed)
+    let daysFromToday = i - todayDay
+
+    // If the day has already passed this week, use next week
+    if (daysFromToday < 0) {
+      daysFromToday += 7
+    }
+
+    const targetDate = new Date(today)
+    targetDate.setDate(today.getDate() + daysFromToday)
+    const dateStr = targetDate.toISOString().split('T')[0]
+
+    if (daysFromToday === 0) {
+      result.push(`- "${days[i]}" = ${dateStr} (i dag)`)
+    } else if (daysFromToday === 1) {
+      result.push(`- "${days[i]}" = ${dateStr} (i morgen)`)
+    } else {
+      result.push(`- "${days[i]}" = ${dateStr}`)
+    }
+  }
+
+  // Also add "neste [weekday]" for clarity
+  result.push('')
+  result.push('For "neste [ukedag]" (alltid minst 7 dager frem):')
+  for (let i = 1; i <= 5; i++) { // Mon-Fri only for "neste"
+    const targetDate = new Date(today)
+    let daysFromToday = i - todayDay
+    if (daysFromToday <= 0) daysFromToday += 7
+    daysFromToday += 7 // Add another week for "neste"
+    targetDate.setDate(today.getDate() + daysFromToday)
+    const dateStr = targetDate.toISOString().split('T')[0]
+    result.push(`- "neste ${days[i]}" = ${dateStr}`)
+  }
+
+  return result.join('\n')
+}
+
 function detectMode(input: string, hasImage: boolean): RequestMode {
   // Image analysis defaults to action mode
   if (hasImage) return 'action'
@@ -455,10 +522,16 @@ VIKTIG FOR EDIT:
 REGLER:
 
 1. I dag er ${context.today} (${getDayName(context.today)})
-2. "i morgen" = dagen etter i dag
-3. "på mandag/tirsdag/..." = neste forekomst av den ukedagen (fra og med i dag)
-4. Hvis "jeg" brukes, referer til nåværende bruker
-5. Hvis barn/person ikke kan identifiseres sikkert, sett needs_clarification
+2. Hvis "jeg" brukes, referer til nåværende bruker
+3. Hvis barn/person ikke kan identifiseres sikkert, sett needs_clarification
+
+DATOER FOR UKEDAGER (BRUK DISSE - IKKE REGN SELV):
+${getWeekdayDates(context.today)}
+
+EKSEMPLER PÅ DATO-TOLKNING:
+- "taco fredag" → date="${getNextWeekday(context.today, 5)}"
+- "pizza lørdag" → date="${getNextWeekday(context.today, 6)}"
+- "i morgen" → date="${getTomorrow(context.today)}"
 
 BARN I FAMILIEN:
 ${context.children.map(c => `- ${c.name} (id: ${c.id})`).join('\n')}
