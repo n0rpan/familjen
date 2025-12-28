@@ -584,8 +584,7 @@ function executeToolUncached(name: string, input: Record<string, unknown>): stri
           if (!existsSync(file)) continue
           const content = readFileSync(file, 'utf-8')
 
-          // Match both regular and scoped package imports
-          // from 'package' or from '@scope/package'
+          // Match both regular and scoped package imports (e.g. lodash, @scope/pkg)
           const imports = content.matchAll(/from\s+['"](@?[^./][^'"]*)['"]/g)
           for (const match of imports) {
             const fullImport = match[1]
