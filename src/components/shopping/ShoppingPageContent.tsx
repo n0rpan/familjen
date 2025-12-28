@@ -840,7 +840,7 @@ export function ShoppingPageContent() {
                 {boughtItems.length > 0 && (
                   <button
                     onClick={() => clearBoughtItems(list.id)}
-                    className="text-xs font-medium px-2 py-1 rounded-lg transition-colors hover:bg-[var(--sand)]"
+                    className="text-xs font-medium px-3 py-2.5 min-h-[44px] rounded-lg transition-colors hover:bg-[var(--sand)] touch-feedback"
                     style={{ color: 'var(--foreground)', opacity: 0.8 }}
                   >
                     {t.shopping.clearChecked}

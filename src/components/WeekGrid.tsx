@@ -233,9 +233,15 @@ export const WeekGrid = memo(function WeekGrid({
       className="rounded-2xl overflow-hidden"
       style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
     >
-      {/* Grid */}
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[600px]">
+      {/* Grid - ensure full width with proper column distribution */}
+      <div className="overflow-x-auto -mx-px">
+        <table className="w-full min-w-[700px] table-fixed">
+          <colgroup>
+            <col className="w-24" />
+            {weekDates.map((_, i) => (
+              <col key={i} />
+            ))}
+          </colgroup>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
               <th
