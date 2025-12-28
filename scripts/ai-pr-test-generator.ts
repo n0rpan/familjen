@@ -91,24 +91,24 @@ function ensureBaseBranchFetched(baseBranch: string): string {
     console.log(`   CI detected, fetching base branch: ${baseRef}`)
 
     try {
-      // Fetch the base branch
-      execSync(`git fetch origin ${baseRef}:refs/remotes/origin/${baseRef}`, {
-        encoding: 'utf-8',
-        stdio: 'pipe'
-      })
-      return `origin/${baseRef}`
-    } catch (error) {
-      console.warn(`   Warning: Could not fetch ${baseRef}, trying shallow fetch...`)
+      // First, try to unshallow if we have a shallow clone
+      // This ensures git merge-base can find the common ancestor
       try {
-        execSync(`git fetch --depth=1 origin ${baseRef}`, {
+        execSync(`git fetch --unshallow origin ${baseRef}`, {
           encoding: 'utf-8',
           stdio: 'pipe'
         })
-        return `origin/${baseRef}`
       } catch {
-        console.warn(`   Warning: Could not fetch base branch, will use HEAD~10`)
-        return 'HEAD~10'
+        // Already unshallowed or not shallow, do regular fetch
+        execSync(`git fetch origin ${baseRef}:refs/remotes/origin/${baseRef}`, {
+          encoding: 'utf-8',
+          stdio: 'pipe'
+        })
       }
+      return `origin/${baseRef}`
+    } catch {
+      console.warn(`   Warning: Could not fetch base branch, will use HEAD~10`)
+      return 'HEAD~10'
     }
   }
 
