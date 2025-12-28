@@ -1548,9 +1548,9 @@ These tests verify the specific changes in this PR (e.g., click handlers, modals
 
   for (const summary of verdict.reviewerSummary) {
     const review = reviews[summary.reviewer]
-    // Get most important finding
-    const topFinding = review?.findings.filter(f => f.severity === 'critical' || f.severity === 'warning')[0]
-    let findingPreview = topFinding
+    // Get most important finding - safely handle missing review data
+    const topFinding = review?.findings?.filter(f => f.severity === 'critical' || f.severity === 'warning')[0]
+    let findingPreview = topFinding?.message
       ? `${topFinding.severity === 'critical' ? '🔴' : '🟡'} ${topFinding.message.slice(0, 50)}${topFinding.message.length > 50 ? '...' : ''}`
       : summary.criticalCount > 0
         ? `🔴 ${summary.criticalCount} critical issue${summary.criticalCount > 1 ? 's' : ''}`
