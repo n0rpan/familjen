@@ -54,6 +54,7 @@ export default function CreateHouseholdPage() {
 
   useEffect(() => {
     checkPermission()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only effect to check permissions
   }, [])
 
   const checkPermission = async () => {

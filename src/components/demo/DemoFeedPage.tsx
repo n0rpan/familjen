@@ -229,6 +229,7 @@ export function DemoFeedPage() {
               className="aspect-square rounded-xl overflow-hidden bg-gray-200"
             >
               {photo.storage_path ? (
+                // eslint-disable-next-line @next/next/no-img-element -- demo data with placeholder URLs
                 <img
                   src={photo.storage_path}
                   alt={photo.title || 'Foto'}

@@ -123,7 +123,7 @@ export function TransitionLink({
       pushToNavStack(targetPath)
       clearTransitionDirection()
     },
-    [router, href, viewTransition, onClick, navigation]
+    [router, href, onClick, navigation]
   )
 
   return (

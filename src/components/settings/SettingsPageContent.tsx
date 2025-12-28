@@ -107,6 +107,7 @@ export function SettingsPageContent() {
 
   useEffect(() => {
     loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only effect to load initial data
   }, [])
 
   const loadData = async () => {

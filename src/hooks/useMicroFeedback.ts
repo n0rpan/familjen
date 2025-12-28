@@ -20,6 +20,7 @@ export function useMicroFeedback(duration = 1000) {
   // Clean up timeouts on unmount
   useEffect(() => {
     return () => {
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- we intentionally want to clear current timeouts at cleanup
       timeoutsRef.current.forEach(timeout => clearTimeout(timeout))
     }
   }, [])

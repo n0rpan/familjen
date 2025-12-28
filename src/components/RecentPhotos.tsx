@@ -60,6 +60,7 @@ export function RecentPhotos({ photos }: Props) {
             >
               {/* Photo or placeholder */}
               {photo.image_url ? (
+                // eslint-disable-next-line @next/next/no-img-element -- external dynamic URLs from Supabase storage
                 <img
                   src={photo.image_url}
                   alt={photo.title || 'Bilde'}

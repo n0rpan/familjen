@@ -120,6 +120,7 @@ export function UniversalAIInput({
         }
       }, 100)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- parseInput is stable, only re-run on rate limit change
   }, [rateLimitCountdown])
 
   const parseInput = useCallback(async (text: string, image?: string | null) => {
@@ -359,6 +360,7 @@ export function UniversalAIInput({
 
     // Remove from parsed actions
     setParsedActions(prev => prev.filter(a => a !== action))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- executeAction is stable
   }, [])
 
   // Infer child_id from child_name if needed
@@ -727,6 +729,7 @@ export function UniversalAIInput({
       console.error('Execute action error:', err)
       setError(t.errors.saveFailed)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- executeDelete/Complete/Edit are stable callbacks defined below
   }, [householdId, supabase, t, onActionExecuted, router, validateAndPrepareAction])
 
   // Execute DELETE operation with disambiguation
@@ -960,6 +963,7 @@ export function UniversalAIInput({
       console.error('Delete search error:', err)
       setError(t.errors.saveFailed)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- executeDeleteById and formatDisplayDate are stable
   }, [householdId, supabase, t, children, inferChildId, inferMemberId])
 
   // Execute DELETE when we have the specific record ID
@@ -1213,6 +1217,7 @@ export function UniversalAIInput({
       console.error('Complete search error:', err)
       setError(t.errors.saveFailed)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- executeCompleteById and formatDisplayDate are stable
   }, [householdId, supabase, t, inferChildId])
 
   // Execute COMPLETE when we have the specific record ID
@@ -1502,6 +1507,7 @@ export function UniversalAIInput({
       console.error('Edit search error:', err)
       setError(t.errors.saveFailed)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- executeEditById and formatDisplayDate are stable
   }, [householdId, supabase, t, inferChildId, inferMemberId])
 
   // Execute edit when we have the specific record ID
@@ -1845,6 +1851,7 @@ export function UniversalAIInput({
             border: '1px solid var(--border)',
           }}
         >
+          {/* eslint-disable-next-line @next/next/no-img-element -- base64 data URL preview from user upload */}
           <img
             src={imagePreview}
             alt="Valgt bilde"

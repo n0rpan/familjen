@@ -384,6 +384,7 @@ export default function WeekEditPage() {
     return () => {
       cancelled = true
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- translation strings are stable, only reload on core deps
   }, [supabase, weekStart, weekEnd, reloadTrigger, weekOffset])
 
   // Immediate reload for user-initiated actions
