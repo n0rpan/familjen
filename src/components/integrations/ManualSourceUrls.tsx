@@ -67,6 +67,20 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
 
   const supabase = useMemo(() => createClient(), [])
 
+  // Close modal on Escape key
+  useEffect(() => {
+    if (!viewingSource) return
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setViewingSource(null)
+      }
+    }
+
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [viewingSource])
+
   const loadSourceUrls = useCallback(async () => {
     const { data, error } = await supabase
       .from('external_source_urls')
@@ -84,32 +98,36 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
     loadSourceUrls()
   }, [loadSourceUrls])
 
-  // Load event counts for all sources (both total and upcoming)
+  // Load event counts for all sources (both total and upcoming) in a single query
   const loadEventCounts = useCallback(async (sourceIds: string[]) => {
     if (sourceIds.length === 0) return
 
-    const counts: Record<string, EventCounts> = {}
     const today = formatDateISO(new Date())
 
-    // Query counts for each source in parallel
-    await Promise.all(sourceIds.map(async (sourceId) => {
-      const [totalResult, upcomingResult] = await Promise.all([
-        supabase
-          .from('external_events')
-          .select('id', { count: 'exact', head: true })
-          .eq('source_url_id', sourceId),
-        supabase
-          .from('external_events')
-          .select('id', { count: 'exact', head: true })
-          .eq('source_url_id', sourceId)
-          .gte('event_date', today)
-      ])
+    // Single query to get all events for all sources, then count client-side
+    const { data: events } = await supabase
+      .from('external_events')
+      .select('source_url_id, event_date')
+      .in('source_url_id', sourceIds)
 
-      counts[sourceId] = {
-        total: totalResult.count || 0,
-        upcoming: upcomingResult.count || 0
+    // Initialize counts for all sources
+    const counts: Record<string, EventCounts> = {}
+    for (const sourceId of sourceIds) {
+      counts[sourceId] = { total: 0, upcoming: 0 }
+    }
+
+    // Count events per source
+    if (events) {
+      for (const event of events) {
+        const sourceId = event.source_url_id
+        if (sourceId && counts[sourceId]) {
+          counts[sourceId].total++
+          if (event.event_date >= today) {
+            counts[sourceId].upcoming++
+          }
+        }
       }
-    }))
+    }
 
     setEventCounts(counts)
   }, [supabase])
