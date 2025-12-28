@@ -43,6 +43,7 @@ BEGIN
 END $$;
 
 -- Create triggers to auto-set updated_by
+-- Note: set_updated_by() function is defined in 20251217212452_enable_realtime.sql
 DROP TRIGGER IF EXISTS set_home_control_devices_updated_by ON home_control_devices;
 CREATE TRIGGER set_home_control_devices_updated_by
   BEFORE INSERT OR UPDATE ON home_control_devices
