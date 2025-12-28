@@ -139,6 +139,22 @@ function smartTruncate(content: string, maxChars: number, label: string): { text
   }
 }
 
+// Security-critical file patterns - these should never be truncated
+const SECURITY_CRITICAL_PATTERNS = [
+  /\/auth/i,                    // Auth handlers
+  /\/rls/i,                     // RLS policies
+  /credential/i,                // Credential handlers
+  /middleware\.ts$/,            // Middleware (auth checks)
+  /supabase\/migrations\//,     // Database migrations
+  /password/i,                  // Password handling
+  /encrypt|decrypt/i,           // Encryption
+  /api-key|apikey|secret/i,     // API keys/secrets
+]
+
+function isSecurityCriticalFile(file: string): boolean {
+  return SECURITY_CRITICAL_PATTERNS.some(pattern => pattern.test(file))
+}
+
 function buildReviewPrompt(diff: string, changedFiles: string[], docs: { claudeMd: string; readmeMd: string }): string {
   // Smart truncation limits (balance cost vs context)
   const MAX_DIFF_CHARS = 100000      // ~100KB diff - most PRs fit
@@ -147,11 +163,23 @@ function buildReviewPrompt(diff: string, changedFiles: string[], docs: { claudeM
 
   // Track what was truncated for AI awareness
   const truncationInfo: string[] = []
+  const securityWarnings: string[] = []
 
-  // Truncate diff if very large
+  // Identify security-critical files in this PR
+  const securityFiles = changedFiles.filter(isSecurityCriticalFile)
+  if (securityFiles.length > 0) {
+    console.log(`🔒 Security-critical files detected: ${securityFiles.join(', ')}`)
+  }
+
+  // Truncate diff if very large, but WARN about security files
   const diffResult = smartTruncate(diff, MAX_DIFF_CHARS, 'diff')
   if (diffResult.wasTruncated) {
     truncationInfo.push(`Diff was truncated from ${Math.round(diffResult.totalChars / 1024)}KB to ${Math.round(MAX_DIFF_CHARS / 1024)}KB`)
+
+    // Check if security-critical files might have been cut
+    if (securityFiles.length > 0) {
+      securityWarnings.push(`⚠️ SECURITY WARNING: This PR contains security-critical files (${securityFiles.join(', ')}) but the diff was truncated. These files may not be fully visible. Use the 'get_file_section' tool in final verdict to review them in full.`)
+    }
   }
 
   // Truncate docs
@@ -186,10 +214,20 @@ function buildReviewPrompt(diff: string, changedFiles: string[], docs: { claudeM
   const claudeMdContext = claudeMdResult.text
   const readmeMdContext = readmeMdResult.text
 
-  // Truncation notice for AI
-  const truncationNotice = truncationInfo.length > 0
-    ? `\n## ⚠️ Context Truncation\n${truncationInfo.map(t => `- ${t}`).join('\n')}\n\nIf you need more context for a specific file or section, note it in your review and the final verdict will investigate.\n`
-    : ''
+  // Truncation notice for AI (including security warnings)
+  let truncationNotice = ''
+  if (truncationInfo.length > 0 || securityWarnings.length > 0) {
+    truncationNotice = '\n## ⚠️ Context Truncation\n'
+    if (truncationInfo.length > 0) {
+      truncationNotice += truncationInfo.map(t => `- ${t}`).join('\n') + '\n'
+    }
+    if (securityWarnings.length > 0) {
+      truncationNotice += '\n### 🔒 Security Files Note\n'
+      truncationNotice += securityWarnings.join('\n') + '\n'
+      truncationNotice += '\n**IMPORTANT:** Flag any security-critical file changes for full review by the final verdict.\n'
+    }
+    truncationNotice += '\nIf you need more context for a specific file or section, note it in your review and the final verdict will investigate.\n'
+  }
 
   return `You are a senior developer reviewing a PR for Familjen, a Norwegian family planning app.
 

@@ -1059,11 +1059,14 @@ FINAL VERDICT: BLOCK`
   console.log(`\n🧠 Using model: ${VERDICT_MODEL}\n`)
 
   // Run conversation with tool use loop
+  // Track which tools AI used - important for verifying AI override legitimacy
+  const toolsUsed = new Set<string>()
+  const VERIFICATION_TOOLS = ['read_file', 'search_code', 'read_diff', 'check_typescript', 'verify_imports']
+
   let messages: Message[] = [{ role: 'user', content: userPrompt }]
   let response = ''
   let iterations = 0
   const maxIterations = 20 // Increased for thorough verification
-  let exhaustedIterations = false
 
   while (iterations < maxIterations) {
     iterations++
@@ -1085,6 +1088,9 @@ FINAL VERDICT: BLOCK`
     const toolResults: ContentBlock[] = []
 
     for (const toolCall of result.toolCalls) {
+      // Track tool usage for verification
+      toolsUsed.add(toolCall.name)
+
       console.log(`   ${toolCall.name}(${JSON.stringify(toolCall.input).slice(0, 50)}...)`)
       const toolResult = executeTool(toolCall.name, toolCall.input)
       console.log(`   → ${toolResult.slice(0, 60)}${toolResult.length > 60 ? '...' : ''}`)
@@ -1112,25 +1118,37 @@ FINAL VERDICT: BLOCK`
   }
 
   // Check if we exhausted iterations without getting a final response
+  // CRITICAL: Exit immediately with failure - don't continue execution
   if (iterations >= maxIterations && !response) {
-    exhaustedIterations = true
     console.error(`❌ Exhausted ${maxIterations} iterations without final verdict`)
-    // Include partial context in error message for debugging
-    const toolCallsSummary = messages
-      .filter(m => m.role === 'assistant' && m.content.includes('<tool_use'))
-      .map(m => m.content.match(/name="(\w+)"/g)?.join(', ') || 'unknown')
-      .join('; ')
-    response = `FINAL VERDICT: BLOCK
+    const toolCallsSummary = [...toolsUsed].join(', ') || 'none'
 
-Reason: Tool loop exhausted after ${maxIterations} iterations without reaching a conclusion.
+    // Write error comment for user visibility
+    const errorComment = `## ❌ Final AI Verdict: BLOCKED
 
-**Debug info for manual review:**
+**Error:** AI analysis exceeded iteration limit without reaching a conclusion.
+
+**Debug info:**
 - Reviewers loaded: ${reviewerNames.join(', ')}
-- Tool calls made: ${toolCallsSummary || 'none captured'}
+- Tools used: ${toolCallsSummary}
 - Mechanical verdict was: ${mechanicalVerdict}
 
-Please check the CI logs for more details or re-run the workflow.`
+**What this means:**
+- CI has failed (this is intentional)
+- Re-run the workflow or check CI logs for details
+
+---
+*Failed at ${new Date().toISOString()}*`
+
+    writeFileSync('final-verdict-comment.md', errorComment)
+    console.log('\n❌ BLOCKED - Iteration limit exhausted')
+    process.exit(1) // CRITICAL: Exit immediately, don't continue
   }
+
+  // Log tool usage summary
+  console.log(`\n📊 Tools used during analysis: ${[...toolsUsed].join(', ') || 'none'}`)
+  const usedVerificationTools = VERIFICATION_TOOLS.filter(t => toolsUsed.has(t))
+  console.log(`   Verification tools: ${usedVerificationTools.join(', ') || 'none'}`)
 
   console.log('\n' + '='.repeat(60))
   console.log('AI ANALYSIS (for context, not verdict):')
@@ -1156,17 +1174,30 @@ Please check the CI logs for more details or re-run the workflow.`
     blocked = mechanicalVerdict === 'BLOCK'
   } else if (aiSaidPass && mechanicalVerdict === 'BLOCK') {
     // AI is overriding BLOCK → PASS
-    // Extract reason from AI response
-    const reasonMatch = response.match(/(?:pre-existing|not.*this PR|already existed|unrelated to|false positive)/i)
-    const reason = reasonMatch
-      ? 'Issues are pre-existing or unrelated to this PR'
-      : 'AI determined issues are not blocking'
+    // CRITICAL: Verify AI actually used tools to verify before allowing override
+    const usedVerificationTools = VERIFICATION_TOOLS.filter(t => toolsUsed.has(t))
 
-    aiOverride = { from: 'BLOCK', to: 'PASS', reason }
-    blocked = false
-    console.log(`\n🔄 AI OVERRIDE: BLOCK → PASS`)
-    console.log(`   Reason: ${reason}`)
-    console.log(`   Failing reviewers: ${failingReviewers.join(', ')}`)
+    if (usedVerificationTools.length === 0) {
+      // AI said PASS but didn't use any verification tools - reject the override
+      console.warn('\n⚠️ AI attempted to override BLOCK → PASS without using verification tools!')
+      console.warn('   AI must use read_file, search_code, or similar to verify issues')
+      console.warn('   Defaulting to BLOCK to be safe')
+      blocked = true
+      aiOverride = null
+    } else {
+      // AI used tools - allow the override
+      const reasonMatch = response.match(/(?:pre-existing|not.*this PR|already existed|unrelated to|false positive)/i)
+      const reason = reasonMatch
+        ? 'Issues are pre-existing or unrelated to this PR'
+        : 'AI determined issues are not blocking'
+
+      aiOverride = { from: 'BLOCK', to: 'PASS', reason }
+      blocked = false
+      console.log(`\n🔄 AI OVERRIDE: BLOCK → PASS (verified with ${usedVerificationTools.length} tools)`)
+      console.log(`   Tools used: ${usedVerificationTools.join(', ')}`)
+      console.log(`   Reason: ${reason}`)
+      console.log(`   Failing reviewers: ${failingReviewers.join(', ')}`)
+    }
   } else if (aiSaidBlock && mechanicalVerdict === 'PASS') {
     // AI is overriding PASS → BLOCK (found issues reviewers missed)
     aiOverride = { from: 'PASS', to: 'BLOCK', reason: 'AI found additional issues' }
