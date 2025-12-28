@@ -770,6 +770,31 @@ The final verdict AI can override selector decisions:
 3. If disagreement, uses `run_visual_validation`, `run_e2e_tests`, etc.
 4. Factors additional test results into final PASS/BLOCK decision
 
+### Extended Checks
+
+The smart selector can recommend additional checks based on PR context:
+
+| Check Type | When Recommended | What It Does |
+|------------|-----------------|--------------|
+| `dead-code-analysis` | Refactoring PRs, file deletions | Finds unused exports and functions |
+| `mobile-ux-validation` | Touch handlers, mobile components | Validates mobile user experience |
+| `accessibility-audit` | UI changes, color/contrast changes | Checks ARIA labels, keyboard nav |
+| `performance-check` | Data fetching, large components | Analyzes render performance |
+| `security-audit` | Auth changes, API routes | Reviews credential handling |
+| `bundle-size-check` | New dependencies added | Checks bundle impact |
+| `i18n-completeness` | Translation file changes | Verifies all languages have keys |
+
+**How it works:**
+1. Fast selector analyzes PR and recommends checks in `ci-state/test-selection.json`
+2. Final verdict AI can view recommendations with `get_extended_checks`
+3. AI can run high-priority checks with `run_dead_code_analysis`, `run_accessibility_audit`, etc.
+4. Results factor into PASS/BLOCK decision
+
+**Priority levels:**
+- **High**: Should be run for this PR (e.g., refactoring PR → dead code check)
+- **Medium**: Recommended based on changes
+- **Low**: Nice to have, not critical
+
 ### AI Review Scripts
 
 ```

@@ -6,9 +6,17 @@
  * Uses a fast LLM model for quick decisions at the start of CI.
  *
  * Key principles:
+ * - LLM Required: No fallback - if LLM fails, CI fails (blocks PR until fixed)
  * - Conservative: When in doubt, run the test (one extra check > one missed bug)
  * - Incremental: Skip tests if files haven't changed since last green run
- * - Context-aware: Understand semantic impact, not just file patterns
+ * - Context-aware: Recommend extended checks based on PR content
+ *
+ * Extended Checks (recommended by LLM based on context):
+ * - dead-code-analysis: For refactoring PRs
+ * - mobile-ux-validation: For mobile-critical component changes
+ * - accessibility-audit: For UI changes affecting a11y
+ * - performance-check: For changes affecting load times
+ * - security-audit: For auth/API changes
  *
  * Usage:
  *   npx tsx scripts/ai-test-selector.ts [--base <branch>]
@@ -24,7 +32,7 @@
  */
 
 import { execSync } from 'child_process'
-import { writeFileSync, existsSync, mkdirSync, readFileSync } from 'fs'
+import { writeFileSync, existsSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import {
   loadPRState,
@@ -33,7 +41,6 @@ import {
   recordSelectorDecision,
   canSkipTest,
   getRelevantFiles,
-  hasRelevantChanges,
   getCurrentCommitSha,
   getPRChangedFiles,
   type TestType,
@@ -41,7 +48,6 @@ import {
   type PRState,
 } from './lib/pr-state'
 import { quickImpactCheck, categorizeChanges, CORE_FILES } from './lib/dependency-graph'
-import { getOpenRouterKey } from './ai-config'
 
 // ============================================
 // Configuration
@@ -52,12 +58,29 @@ const API_KEY = process.env.OPENROUTER_API_KEY
 const STATE_DIR = 'ci-state'
 const OUTPUT_FILE = join(STATE_DIR, 'test-selection.json')
 
-// Timeout for selector (should be fast - 30 seconds)
+// Timeout for selector (30 seconds - should be fast)
 const SELECTOR_TIMEOUT_MS = 30_000
 
 // ============================================
 // Types
 // ============================================
+
+// Extended check types that LLM can recommend
+type ExtendedCheckType =
+  | 'dead-code-analysis'
+  | 'mobile-ux-validation'
+  | 'accessibility-audit'
+  | 'performance-check'
+  | 'security-audit'
+  | 'bundle-size-check'
+  | 'i18n-completeness'
+
+interface ExtendedCheck {
+  type: ExtendedCheckType
+  reason: string
+  priority: 'high' | 'medium' | 'low'
+  scope?: string[] // Specific files/components to check
+}
 
 interface TestSelectionOutput {
   // Metadata
@@ -67,14 +90,18 @@ interface TestSelectionOutput {
   timestamp: string
   model: string
 
-  // Decisions
+  // Core test decisions
   decisions: TestDecisionOutput[]
+
+  // Extended checks recommended by LLM
+  extendedChecks: ExtendedCheck[]
 
   // Summary for logging
   summary: {
     totalTests: number
     testsToRun: number
     testsToSkip: number
+    extendedChecksCount: number
     estimatedSavingsMinutes: number
   }
 
@@ -87,7 +114,6 @@ interface TestSelectionOutput {
 }
 
 interface TestDecisionOutput extends TestDecision {
-  // GitHub Actions output format
   ghOutput: string
 }
 
@@ -108,7 +134,6 @@ const TEST_DURATIONS_MINUTES: Record<TestType, number> = {
 // ============================================
 
 function ensureGitHistory(baseBranch: string): void {
-  // Strip 'origin/' prefix if present
   const branch = baseBranch.replace(/^origin\//, '')
 
   try {
@@ -134,7 +159,7 @@ function getChangedFiles(baseBranch: string): string[] {
 
 function getDeltaSinceLastRun(state: PRState | null): string[] {
   if (!state || state.runs.length === 0) {
-    return [] // No previous runs, can't compute delta
+    return []
   }
 
   const lastRun = state.runs[state.runs.length - 1]
@@ -162,6 +187,7 @@ interface LLMDecision {
 
 interface LLMResponse {
   decisions: LLMDecision[]
+  extendedChecks: ExtendedCheck[]
   reasoning: string
 }
 
@@ -171,8 +197,11 @@ async function callLLMForDecision(
   prState: PRState | null,
   deltaFiles: string[]
 ): Promise<LLMResponse> {
-  if (!API_KEY || !FAST_MODEL) {
-    throw new Error('OPENROUTER_API_KEY and OPENROUTER_FAST_MODEL are required')
+  if (!API_KEY) {
+    throw new Error('OPENROUTER_API_KEY is required - CI cannot proceed without LLM')
+  }
+  if (!FAST_MODEL) {
+    throw new Error('OPENROUTER_FAST_MODEL is required - CI cannot proceed without LLM')
   }
 
   // Build context about previous runs
@@ -191,27 +220,42 @@ Files changed since last run: ${deltaFiles.length > 0 ? deltaFiles.join(', ') : 
     }
   }
 
-  const systemPrompt = `You are a smart CI test selector for Familjen, a Norwegian family planning app.
+  const systemPrompt = `You are a smart CI test selector for Familjen, a Norwegian family planning app used by busy parents.
 
-Your job is to decide which tests need to run based on the files changed in a PR.
+Your job is to:
+1. Decide which core tests need to run based on the PR changes
+2. Recommend extended checks based on the PR context (refactoring, mobile changes, etc.)
 
 ## CRITICAL: Conservative Approach
 - When in doubt, RUN the test (run: true)
 - It's better to run one extra test than miss a bug
 - Only skip tests when you're CERTAIN they're not needed
+- Parents depend on this app - quality is paramount
 
-## Test Types and When to Run
+## Core Test Types
 
 | Test | Run When | Skip When |
 |------|----------|-----------|
-| lint | Always | Never (always run) |
-| typecheck | Always | Never (always run) |
+| lint | Always | Never |
+| typecheck | Always | Never |
 | unit-tests | Any .ts/.tsx changes | Only docs/config changes |
 | migration-review | supabase/migrations/* changes | No migration changes |
 | code-review | Any code changes | Only docs changes |
 | visual-validation | Component/page/style changes | Only backend/API changes |
 | e2e-tests | User-facing code changes | Only backend-only changes |
 | api-tests | API route or integration changes | Only frontend-only changes |
+
+## Extended Checks (Recommend based on context)
+
+| Check | When to Recommend |
+|-------|-------------------|
+| dead-code-analysis | Refactoring PRs, file deletions, major restructuring |
+| mobile-ux-validation | Changes to touch handlers, mobile components, responsive styles |
+| accessibility-audit | UI changes affecting navigation, colors, focus states |
+| performance-check | Changes to data fetching, large components, images |
+| security-audit | Auth changes, API routes, credential handling |
+| bundle-size-check | Adding new dependencies, large component additions |
+| i18n-completeness | Changes to translation files, new UI text |
 
 ## Core Files (always run full suite if changed)
 ${[...CORE_FILES].join(', ')}
@@ -226,35 +270,48 @@ Respond with valid JSON only:
       "run": true,
       "reason": "Always run lint checks",
       "confidence": 100
-    },
-    ...
+    }
+  ],
+  "extendedChecks": [
+    {
+      "type": "dead-code-analysis",
+      "reason": "PR removes 5 files, should check for orphaned imports",
+      "priority": "high",
+      "scope": ["src/components/old/"]
+    }
   ],
   "reasoning": "Brief explanation of overall decision logic"
 }
 
 Important:
-- Include ALL test types in decisions
+- Include ALL 8 core test types in decisions
 - Set "run: true" when uncertain (conservative)
-- Scope can specify specific files/pages to test (optional optimization)`
+- Recommend extended checks when relevant (empty array if none needed)
+- Priority: high (blocking), medium (should run), low (nice to have)`
 
   const userPrompt = `## PR Changes
 
 ### Categories
 - Migrations: ${categories.migrations.length} files
 - Components: ${categories.components.length} files
+- Pages: ${categories.pages.length} files
 - API: ${categories.api.length} files
 - Lib: ${categories.lib.length} files
+- Hooks: ${categories.hooks.length} files
 - Tests: ${categories.tests.length} files
+- Scripts: ${categories.scripts.length} files
 - Config: ${categories.config.length} files
 - Docs: ${categories.docs.length} files
-- Other: ${categories.other.length} files
 
 ### Changed Files (${changedFiles.length} total)
-${changedFiles.slice(0, 50).join('\n')}
-${changedFiles.length > 50 ? `\n... and ${changedFiles.length - 50} more files` : ''}
+${changedFiles.slice(0, 100).join('\n')}
+${changedFiles.length > 100 ? `\n... and ${changedFiles.length - 100} more files` : ''}
 ${previousRunsContext}
 
-Decide which tests to run. Remember: when in doubt, run the test.`
+### Quick Impact Analysis
+${JSON.stringify(quickImpactCheck(changedFiles), null, 2)}
+
+Decide which tests to run and recommend any extended checks. Remember: when in doubt, run the test.`
 
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), SELECTOR_TIMEOUT_MS)
@@ -273,7 +330,7 @@ Decide which tests to run. Remember: when in doubt, run the test.`
           { role: 'user', content: userPrompt },
         ],
         temperature: 0,
-        max_tokens: 2000,
+        max_tokens: 3000,
         response_format: { type: 'json_object' },
       }),
       signal: controller.signal,
@@ -282,144 +339,35 @@ Decide which tests to run. Remember: when in doubt, run the test.`
     clearTimeout(timeout)
 
     if (!response.ok) {
-      throw new Error(`API error: ${response.status}`)
+      const error = await response.text()
+      throw new Error(`LLM API error: ${response.status} - ${error}`)
     }
 
     const data = await response.json()
     const content = data.choices?.[0]?.message?.content || ''
 
     try {
-      return JSON.parse(content) as LLMResponse
+      const parsed = JSON.parse(content) as LLMResponse
+      // Ensure extendedChecks is an array
+      if (!Array.isArray(parsed.extendedChecks)) {
+        parsed.extendedChecks = []
+      }
+      return parsed
     } catch {
       // Try to extract JSON from response
       const jsonMatch = content.match(/\{[\s\S]*\}/)
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]) as LLMResponse
+        const parsed = JSON.parse(jsonMatch[0]) as LLMResponse
+        if (!Array.isArray(parsed.extendedChecks)) {
+          parsed.extendedChecks = []
+        }
+        return parsed
       }
       throw new Error('Failed to parse LLM response as JSON')
     }
   } catch (error) {
     clearTimeout(timeout)
     throw error
-  }
-}
-
-// ============================================
-// Fallback Heuristic Selection
-// ============================================
-
-function heuristicSelection(
-  changedFiles: string[],
-  categories: ReturnType<typeof categorizeChanges>
-): LLMResponse {
-  console.log('⚠️ Using heuristic fallback for test selection')
-
-  const impact = quickImpactCheck(changedFiles)
-  const decisions: LLMDecision[] = []
-
-  // Calculate what was changed
-  const hasCodeChanges = categories.components.length > 0 ||
-    categories.pages.length > 0 ||
-    categories.api.length > 0 ||
-    categories.lib.length > 0 ||
-    categories.hooks.length > 0
-
-  const hasUiChanges = categories.components.length > 0 ||
-    categories.pages.length > 0 ||
-    categories.hooks.length > 0
-
-  const onlyDocsOrScripts = changedFiles.every(f =>
-    f.endsWith('.md') ||
-    f.startsWith('scripts/') ||
-    f.startsWith('.github/')
-  )
-
-  // Always run lint and typecheck
-  decisions.push({
-    test: 'lint',
-    run: true,
-    reason: 'Always run',
-    confidence: 100,
-  })
-
-  decisions.push({
-    test: 'typecheck',
-    run: true,
-    reason: 'Always run',
-    confidence: 100,
-  })
-
-  // Unit tests: run unless only docs/scripts/config
-  decisions.push({
-    test: 'unit-tests',
-    run: !onlyDocsOrScripts,
-    reason: onlyDocsOrScripts ? 'Only docs/scripts/config changes' : 'Code changes detected',
-    confidence: onlyDocsOrScripts ? 90 : 100,
-  })
-
-  // Migration review: only if migrations changed
-  decisions.push({
-    test: 'migration-review',
-    run: categories.migrations.length > 0,
-    reason: categories.migrations.length > 0 ? 'Migration files changed' : 'No migrations changed',
-    confidence: 100,
-  })
-
-  // Code review: run unless only docs
-  const onlyDocs = categories.docs.length === changedFiles.length
-  decisions.push({
-    test: 'code-review',
-    run: !onlyDocs,
-    reason: onlyDocs ? 'Only docs changed' : 'Code changes detected',
-    confidence: 95,
-  })
-
-  // Visual validation: run if components/pages/styles changed
-  decisions.push({
-    test: 'visual-validation',
-    run: hasUiChanges,
-    reason: hasUiChanges ? 'UI components/pages changed' : 'No UI changes',
-    confidence: hasUiChanges ? 100 : 85,
-  })
-
-  // E2E tests: run if user-facing code changed
-  const needsE2E = hasUiChanges || categories.api.length > 0
-  decisions.push({
-    test: 'e2e-tests',
-    run: needsE2E,
-    reason: needsE2E ? 'User-facing code changed' : 'No user-facing changes',
-    confidence: needsE2E ? 100 : 80,
-  })
-
-  // API tests: run if API or lib changed (lib might contain integrations)
-  const needsApiTests = categories.api.length > 0 ||
-    categories.lib.some(f => f.includes('integrations'))
-  decisions.push({
-    test: 'api-tests',
-    run: needsApiTests,
-    reason: needsApiTests ? 'API/integration code changed' : 'No API changes',
-    confidence: needsApiTests ? 100 : 85,
-  })
-
-  // If core files changed, run everything (conservative approach)
-  if (impact.coreFileChanged) {
-    for (const decision of decisions) {
-      decision.run = true
-      decision.reason = 'Core file changed - running all tests'
-      decision.confidence = 100
-    }
-  }
-
-  // Build reasoning
-  const parts: string[] = ['Heuristic selection based on file patterns.']
-  if (impact.coreFileChanged) parts.push('Core file changed - running full suite.')
-  if (onlyDocsOrScripts) parts.push('Only docs/scripts changed.')
-  if (categories.migrations.length > 0) parts.push(`${categories.migrations.length} migration(s).`)
-  if (hasUiChanges) parts.push('UI changes detected.')
-
-  return {
-    decisions,
-    reasoning: parts.join(' '),
   }
 }
 
@@ -439,6 +387,21 @@ async function main() {
 
   console.log(`📌 Base branch: ${baseBranch}`)
   console.log(`📌 PR number: ${prNumber || 'N/A'}`)
+
+  // Validate required environment variables
+  if (!API_KEY) {
+    console.error('❌ OPENROUTER_API_KEY is required')
+    console.error('   The smart selector requires LLM to make decisions.')
+    console.error('   Set OPENROUTER_API_KEY in GitHub Secrets.')
+    process.exit(1)
+  }
+
+  if (!FAST_MODEL) {
+    console.error('❌ OPENROUTER_FAST_MODEL is required')
+    console.error('   The smart selector requires a model to make decisions.')
+    console.error('   Set OPENROUTER_FAST_MODEL in GitHub Secrets.')
+    process.exit(1)
+  }
 
   // Ensure we have git history
   ensureGitHistory(baseBranch)
@@ -480,26 +443,18 @@ async function main() {
     console.log(`\n📝 Files changed since last CI run: ${deltaFiles.length}`)
   }
 
-  // Get LLM decision (with fallback to heuristics)
-  let llmResponse: LLMResponse
-  let modelUsed: string
+  // Get LLM decision - NO FALLBACK, will fail if LLM fails
+  console.log(`\n🤖 Consulting ${FAST_MODEL}...`)
 
-  if (API_KEY && FAST_MODEL) {
-    try {
-      console.log(`\n🤖 Consulting ${FAST_MODEL}...`)
-      llmResponse = await callLLMForDecision(changedFiles, categories, prState, deltaFiles)
-      modelUsed = FAST_MODEL
-      console.log('   ✓ LLM decision received')
-    } catch (error) {
-      console.error(`\n❌ LLM call failed: ${error}`)
-      console.log('   Falling back to heuristic selection')
-      llmResponse = heuristicSelection(changedFiles, categories)
-      modelUsed = 'heuristic-fallback'
-    }
-  } else {
-    console.log('\n⚠️ No API key or model configured, using heuristics')
-    llmResponse = heuristicSelection(changedFiles, categories)
-    modelUsed = 'heuristic-fallback'
+  let llmResponse: LLMResponse
+  try {
+    llmResponse = await callLLMForDecision(changedFiles, categories, prState, deltaFiles)
+    console.log('   ✓ LLM decision received')
+  } catch (error) {
+    console.error(`\n❌ LLM call failed: ${error}`)
+    console.error('   CI cannot proceed without LLM decision.')
+    console.error('   Check OPENROUTER_API_KEY and OPENROUTER_FAST_MODEL.')
+    process.exit(1)
   }
 
   // Apply incremental skip logic (check if files changed since last green)
@@ -517,10 +472,8 @@ async function main() {
       const skipCheck = canSkipTest(prState, decision.test, relevantFiles)
 
       if (skipCheck.canSkip) {
-        // LLM said run, but files haven't changed since last green
         // Only skip if confidence is high
         if (decision.confidence < 90) {
-          // Low confidence - run anyway (conservative)
           console.log(
             `   ⚠️ ${decision.test}: Could skip but confidence is low (${decision.confidence}%), running anyway`
           )
@@ -542,7 +495,6 @@ async function main() {
       estimatedSavings += TEST_DURATIONS_MINUTES[decision.test] || 0
     }
 
-    // Format for GitHub Actions output
     const ghOutput = `run_${decision.test.replace(/-/g, '_')}=${finalDecision.run}`
 
     decisions.push({
@@ -550,9 +502,18 @@ async function main() {
       enabled: finalDecision.run,
       scope: decision.scope,
       reason: finalDecision.reason,
-      overridable: !finalDecision.run, // Skipped tests can be overridden by supervisor
+      overridable: !finalDecision.run,
       ghOutput,
     })
+  }
+
+  // Process extended checks
+  const extendedChecks = llmResponse.extendedChecks || []
+  if (extendedChecks.length > 0) {
+    console.log(`\n🔍 Extended checks recommended: ${extendedChecks.length}`)
+    for (const check of extendedChecks) {
+      console.log(`   ${check.priority === 'high' ? '🔴' : check.priority === 'medium' ? '🟡' : '🟢'} ${check.type}: ${check.reason}`)
+    }
   }
 
   // Build output
@@ -561,12 +522,14 @@ async function main() {
     prNumber,
     baseBranch,
     timestamp: new Date().toISOString(),
-    model: modelUsed,
+    model: FAST_MODEL,
     decisions,
+    extendedChecks,
     summary: {
       totalTests: decisions.length,
       testsToRun,
       testsToSkip,
+      extendedChecksCount: extendedChecks.length,
       estimatedSavingsMinutes: estimatedSavings,
     },
     reasoning: llmResponse.reasoning,
@@ -587,7 +550,7 @@ async function main() {
       prState,
       output.commitSha,
       decisions,
-      modelUsed,
+      FAST_MODEL,
       llmResponse.reasoning
     )
     savePRState(prState)
@@ -596,8 +559,12 @@ async function main() {
   // Output for GitHub Actions
   const ghOutputFile = process.env.GITHUB_OUTPUT
   if (ghOutputFile) {
-    const ghOutputs = decisions.map(d => d.ghOutput).join('\n')
-    writeFileSync(ghOutputFile, ghOutputs + '\n', { flag: 'a' })
+    const ghOutputs = [
+      ...decisions.map(d => d.ghOutput),
+      `extended_checks=${JSON.stringify(extendedChecks.map(c => c.type))}`,
+      `has_high_priority_checks=${extendedChecks.some(c => c.priority === 'high')}`,
+    ]
+    writeFileSync(ghOutputFile, ghOutputs.join('\n') + '\n', { flag: 'a' })
     console.log('\n📤 GitHub Actions outputs written')
   }
 
@@ -607,6 +574,7 @@ async function main() {
   console.log('='.repeat(50))
   console.log(`   Tests to run: ${testsToRun}`)
   console.log(`   Tests to skip: ${testsToSkip}`)
+  console.log(`   Extended checks: ${extendedChecks.length}`)
   console.log(`   Estimated savings: ~${estimatedSavings} minutes`)
   console.log('')
 
@@ -614,6 +582,13 @@ async function main() {
     const icon = decision.enabled ? '✅' : '⏭️'
     console.log(`   ${icon} ${decision.testType}: ${decision.enabled ? 'RUN' : 'SKIP'}`)
     console.log(`      ${decision.reason}`)
+  }
+
+  if (extendedChecks.length > 0) {
+    console.log('\n   📋 Extended Checks:')
+    for (const check of extendedChecks) {
+      console.log(`      ${check.type} (${check.priority}): ${check.reason}`)
+    }
   }
 
   console.log('')
@@ -651,10 +626,12 @@ function writeDefaultOutput(baseBranch: string, prNumber: number | null): void {
     timestamp: new Date().toISOString(),
     model: 'default',
     decisions,
+    extendedChecks: [],
     summary: {
       totalTests: decisions.length,
       testsToRun: decisions.length,
       testsToSkip: 0,
+      extendedChecksCount: 0,
       estimatedSavingsMinutes: 0,
     },
     reasoning: 'No changes detected, running all tests as default',
@@ -662,11 +639,14 @@ function writeDefaultOutput(baseBranch: string, prNumber: number | null): void {
     categories: {
       migrations: [],
       components: [],
+      pages: [],
       api: [],
       lib: [],
+      hooks: [],
       tests: [],
       config: [],
       docs: [],
+      scripts: [],
       other: [],
     },
   }
@@ -679,9 +659,7 @@ function writeDefaultOutput(baseBranch: string, prNumber: number | null): void {
 }
 
 main().catch(error => {
-  console.error('Smart selector failed:', error)
-  // On failure, write output with all tests enabled (conservative)
-  console.log('⚠️ Writing conservative default (all tests enabled)')
-  writeDefaultOutput(process.env.GITHUB_BASE_REF || 'main', null)
-  process.exit(0) // Don't fail CI on selector failure - just run all tests
+  console.error('❌ Smart selector failed:', error)
+  console.error('   CI cannot proceed without LLM decision.')
+  process.exit(1)
 })

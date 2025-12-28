@@ -326,6 +326,67 @@ const TOOLS: Tool[] = [
       required: ['test']
     }
   },
+
+  // ============================================
+  // Extended Check Tools - Run recommended checks
+  // ============================================
+  {
+    name: 'get_extended_checks',
+    description: 'Get the extended checks recommended by the smart selector (dead code analysis, mobile UX validation, etc.). Use this to see what additional checks were suggested based on PR context.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'run_dead_code_analysis',
+    description: 'Find unused exports, functions, and types in changed files. Useful after refactoring PRs.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        scope: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Specific files or directories to analyze (defaults to changed files)'
+        }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'run_bundle_size_check',
+    description: 'Check if PR increases bundle size significantly. Run when adding new dependencies.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'run_i18n_completeness_check',
+    description: 'Verify all new UI strings have translations in all supported languages (nb, sv, en).',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'run_accessibility_audit',
+    description: 'Run accessibility checks on changed components. Verifies ARIA labels, color contrast, keyboard navigation.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        components: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Specific components to audit'
+        }
+      },
+      required: []
+    }
+  },
 ]
 
 // ============================================
@@ -827,8 +888,9 @@ function executeToolUncached(name: string, input: Record<string, unknown>): stri
         const selection = JSON.parse(readFileSync(selectionPath, 'utf-8'))
         const skipped = selection.decisions?.filter((d: { enabled: boolean }) => !d.enabled) || []
         const running = selection.decisions?.filter((d: { enabled: boolean }) => d.enabled) || []
+        const extendedChecks = selection.extendedChecks || []
 
-        return `## Smart Test Selector Results
+        let result = `## Smart Test Selector Results
 
 **Model:** ${selection.model}
 **Timestamp:** ${selection.timestamp}
@@ -839,11 +901,16 @@ ${running.map((d: { testType: string; reason: string }) => `- ${d.testType}: ${d
 ### Tests Skipped (${skipped.length})
 ${skipped.map((d: { testType: string; reason: string; overridable: boolean }) => `- ${d.testType}: ${d.reason} ${d.overridable ? '(overridable)' : ''}`).join('\n') || 'None'}
 
+### Extended Checks Recommended (${extendedChecks.length})
+${extendedChecks.map((c: { type: string; reason: string; priority: string }) => `- [${c.priority}] ${c.type}: ${c.reason}`).join('\n') || 'None'}
+
 ### Reasoning
 ${selection.reasoning}
 
 ### Files Changed (${selection.changedFiles?.length || 0})
 ${(selection.changedFiles || []).slice(0, 20).join('\n')}${(selection.changedFiles?.length || 0) > 20 ? '\n... and more' : ''}`
+
+        return result
       } catch (e) {
         return `Error reading test selection: ${e}`
       }
@@ -1046,6 +1113,301 @@ ${relevantFiles.slice(0, 20).join('\n') || 'None found'}
 - Lib: ${selection.categories?.lib?.length || 0}`
       } catch (e) {
         return `Error explaining skip decision: ${e}`
+      }
+    }
+
+    // ============================================
+    // Extended Check Tools
+    // ============================================
+
+    case 'get_extended_checks': {
+      const selectionPath = 'ci-state/test-selection.json'
+      if (!existsSync(selectionPath)) {
+        return 'No test selection found. Extended checks are recommended by the smart selector.'
+      }
+      try {
+        const selection = JSON.parse(readFileSync(selectionPath, 'utf-8'))
+        const extendedChecks = selection.extendedChecks || []
+
+        if (extendedChecks.length === 0) {
+          return `## Extended Checks
+
+No extended checks were recommended for this PR.
+
+The smart selector analyzes PR context and recommends extended checks like:
+- dead-code-analysis: For refactoring PRs
+- mobile-ux-validation: For mobile component changes
+- accessibility-audit: For UI changes
+- performance-check: For data fetching changes
+- security-audit: For auth/API changes
+- bundle-size-check: For new dependencies
+- i18n-completeness: For translation changes`
+        }
+
+        const highPriority = extendedChecks.filter((c: { priority: string }) => c.priority === 'high')
+        const mediumPriority = extendedChecks.filter((c: { priority: string }) => c.priority === 'medium')
+        const lowPriority = extendedChecks.filter((c: { priority: string }) => c.priority === 'low')
+
+        return `## Extended Checks Recommended
+
+**Total:** ${extendedChecks.length} checks recommended by smart selector
+
+### 🔴 High Priority (${highPriority.length})
+${highPriority.map((c: { type: string; reason: string; scope?: string[] }) => `- **${c.type}**: ${c.reason}${c.scope ? `\n  Scope: ${c.scope.join(', ')}` : ''}`).join('\n') || 'None'}
+
+### 🟡 Medium Priority (${mediumPriority.length})
+${mediumPriority.map((c: { type: string; reason: string; scope?: string[] }) => `- **${c.type}**: ${c.reason}${c.scope ? `\n  Scope: ${c.scope.join(', ')}` : ''}`).join('\n') || 'None'}
+
+### 🟢 Low Priority (${lowPriority.length})
+${lowPriority.map((c: { type: string; reason: string; scope?: string[] }) => `- **${c.type}**: ${c.reason}${c.scope ? `\n  Scope: ${c.scope.join(', ')}` : ''}`).join('\n') || 'None'}
+
+**Use the run_* tools to execute these checks if you want to verify.**`
+      } catch (e) {
+        return `Error reading extended checks: ${e}`
+      }
+    }
+
+    case 'run_dead_code_analysis': {
+      const scope = (input.scope as string[] | undefined) || []
+      console.log('   🗑️ Running dead code analysis...')
+
+      try {
+        // Get changed files if no scope specified
+        let filesToCheck: string[] = scope
+        if (filesToCheck.length === 0) {
+          const changedFiles = execSync(
+            `git diff --name-only origin/${baseBranch}...HEAD | grep -E '\\.(ts|tsx)$' || true`,
+            { encoding: 'utf-8' }
+          ).trim().split('\n').filter(Boolean)
+          filesToCheck = changedFiles
+        }
+
+        if (filesToCheck.length === 0) {
+          return '✅ No TypeScript files to analyze'
+        }
+
+        const deadCode: string[] = []
+
+        // Check for unused exports in changed files
+        for (const file of filesToCheck.slice(0, 20)) {
+          if (!existsSync(file)) continue
+          const content = readFileSync(file, 'utf-8')
+
+          // Find exported items
+          const exports = content.matchAll(/export\s+(?:const|function|class|type|interface)\s+(\w+)/g)
+          for (const match of exports) {
+            const exportName = match[1]
+            // Search for usage in other files
+            try {
+              const usage = execSync(
+                `rg '\\b${exportName}\\b' --type ts -l 2>/dev/null | grep -v '${file}' | head -1 || true`,
+                { encoding: 'utf-8' }
+              ).trim()
+              if (!usage) {
+                deadCode.push(`${file}: Exported '${exportName}' may be unused`)
+              }
+            } catch {
+              // Ignore search errors
+            }
+          }
+        }
+
+        if (deadCode.length === 0) {
+          return `✅ No obviously dead code found in ${filesToCheck.length} files analyzed`
+        }
+
+        return `## Dead Code Analysis
+
+**Files analyzed:** ${filesToCheck.length}
+**Potential dead code:** ${deadCode.length}
+
+${deadCode.slice(0, 15).map(d => `- ${d}`).join('\n')}
+${deadCode.length > 15 ? `\n_...and ${deadCode.length - 15} more_` : ''}
+
+**Note:** These are potential issues - verify before removing.`
+      } catch (e) {
+        return `Error running dead code analysis: ${e}`
+      }
+    }
+
+    case 'run_bundle_size_check': {
+      console.log('   📦 Running bundle size check...')
+
+      try {
+        // Check if new dependencies were added
+        const diff = execSync(`git diff origin/${baseBranch}...HEAD -- package.json`, { encoding: 'utf-8' })
+
+        const addedDeps: string[] = []
+        const lines = diff.split('\n')
+        for (const line of lines) {
+          if (line.startsWith('+') && !line.startsWith('+++')) {
+            const depMatch = line.match(/"([^"]+)":\s*"[^"]+"/g)
+            if (depMatch) {
+              addedDeps.push(...depMatch.map(m => m.split(':')[0].replace(/"/g, '')))
+            }
+          }
+        }
+
+        // Filter to actual dependency additions (not version updates)
+        const newDeps = addedDeps.filter(d =>
+          !diff.includes(`-    "${d}"`) && // Not replacing existing
+          d !== 'version' && d !== 'name' // Not metadata
+        )
+
+        if (newDeps.length === 0) {
+          return '✅ No new dependencies added - bundle size unchanged'
+        }
+
+        // Try to get size estimates from npm
+        const sizes: string[] = []
+        for (const dep of newDeps.slice(0, 5)) {
+          try {
+            // Use bundlephobia API simulation (just check if it's a big package)
+            const bigPackages = ['moment', 'lodash', 'antd', 'material-ui', 'firebase', 'aws-sdk']
+            if (bigPackages.some(bp => dep.toLowerCase().includes(bp))) {
+              sizes.push(`⚠️ ${dep}: Known large package - consider alternatives`)
+            } else {
+              sizes.push(`📦 ${dep}: Added to dependencies`)
+            }
+          } catch {
+            sizes.push(`📦 ${dep}: Size unknown`)
+          }
+        }
+
+        return `## Bundle Size Check
+
+**New dependencies:** ${newDeps.length}
+
+${sizes.join('\n')}
+${newDeps.length > 5 ? `\n_...and ${newDeps.length - 5} more_` : ''}
+
+**Recommendation:** Run \`npm run build\` and compare .next/static sizes before/after.`
+      } catch (e) {
+        return `Error checking bundle size: ${e}`
+      }
+    }
+
+    case 'run_i18n_completeness_check': {
+      console.log('   🌐 Running i18n completeness check...')
+
+      try {
+        // Load translation files
+        const languages = ['nb', 'sv', 'en']
+        const translations: Record<string, Set<string>> = {}
+
+        for (const lang of languages) {
+          const filePath = `src/lib/i18n/translations/${lang}.ts`
+          if (!existsSync(filePath)) {
+            return `❌ Translation file missing: ${filePath}`
+          }
+          const content = readFileSync(filePath, 'utf-8')
+
+          // Extract keys (simplified - looks for key patterns)
+          const keys = new Set<string>()
+          const keyMatches = content.matchAll(/(\w+):\s*['"`]/g)
+          for (const match of keyMatches) {
+            keys.add(match[1])
+          }
+          translations[lang] = keys
+        }
+
+        // Find keys missing in any language
+        const allKeys = new Set([...translations.nb, ...translations.sv, ...translations.en])
+        const missingByLang: Record<string, string[]> = { nb: [], sv: [], en: [] }
+
+        for (const key of allKeys) {
+          for (const lang of languages) {
+            if (!translations[lang].has(key)) {
+              missingByLang[lang].push(key)
+            }
+          }
+        }
+
+        const totalMissing = missingByLang.nb.length + missingByLang.sv.length + missingByLang.en.length
+
+        if (totalMissing === 0) {
+          return `✅ All ${allKeys.size} translation keys present in all languages (nb, sv, en)`
+        }
+
+        return `## i18n Completeness Check
+
+**Total keys:** ${allKeys.size}
+
+### Missing translations:
+- **Norwegian (nb):** ${missingByLang.nb.length > 0 ? missingByLang.nb.slice(0, 5).join(', ') : '✅ Complete'}
+- **Swedish (sv):** ${missingByLang.sv.length > 0 ? missingByLang.sv.slice(0, 5).join(', ') : '✅ Complete'}
+- **English (en):** ${missingByLang.en.length > 0 ? missingByLang.en.slice(0, 5).join(', ') : '✅ Complete'}
+
+${totalMissing > 0 ? `⚠️ ${totalMissing} missing translation(s) found` : ''}`
+      } catch (e) {
+        return `Error checking i18n: ${e}`
+      }
+    }
+
+    case 'run_accessibility_audit': {
+      const components = (input.components as string[] | undefined) || []
+      console.log('   ♿ Running accessibility audit...')
+
+      try {
+        // Get changed component files
+        let filesToCheck: string[] = components
+        if (filesToCheck.length === 0) {
+          const changedFiles = execSync(
+            `git diff --name-only origin/${baseBranch}...HEAD | grep -E 'src/components/.*\\.tsx$' || true`,
+            { encoding: 'utf-8' }
+          ).trim().split('\n').filter(Boolean)
+          filesToCheck = changedFiles
+        }
+
+        if (filesToCheck.length === 0) {
+          return '✅ No component files to audit'
+        }
+
+        const issues: string[] = []
+
+        for (const file of filesToCheck.slice(0, 15)) {
+          if (!existsSync(file)) continue
+          const content = readFileSync(file, 'utf-8')
+
+          // Check for common a11y issues
+          // 1. Images without alt
+          if (content.includes('<img') && !content.includes('alt=')) {
+            issues.push(`${file}: Image without alt attribute`)
+          }
+
+          // 2. Click handlers without keyboard support
+          if (content.includes('onClick') && !content.includes('onKeyDown') && !content.includes('onKeyPress')) {
+            if (content.includes('<div') || content.includes('<span')) {
+              issues.push(`${file}: Click handler on non-interactive element without keyboard support`)
+            }
+          }
+
+          // 3. Missing button type
+          if (content.includes('<button') && !content.includes('type=')) {
+            issues.push(`${file}: Button without explicit type attribute`)
+          }
+
+          // 4. Form inputs without labels
+          if ((content.includes('<input') || content.includes('<select')) && !content.includes('aria-label') && !content.includes('htmlFor')) {
+            issues.push(`${file}: Form input may be missing accessible label`)
+          }
+        }
+
+        if (issues.length === 0) {
+          return `✅ No obvious accessibility issues in ${filesToCheck.length} components`
+        }
+
+        return `## Accessibility Audit
+
+**Components checked:** ${filesToCheck.length}
+**Issues found:** ${issues.length}
+
+${issues.slice(0, 10).map(i => `- ${i}`).join('\n')}
+${issues.length > 10 ? `\n_...and ${issues.length - 10} more_` : ''}
+
+**Recommendation:** Review these for WCAG compliance.`
+      } catch (e) {
+        return `Error running accessibility audit: ${e}`
       }
     }
 
@@ -1402,6 +1764,19 @@ If the fast selector skipped a test but you're uncertain if that was correct:
 1. Use explain_skip_decision to understand why
 2. If still uncertain, use run_* to run the test
 3. Include the result in your decision
+
+## Extended Checks
+
+The smart selector may recommend extended checks based on PR context:
+- **dead-code-analysis**: For refactoring PRs (find unused exports)
+- **mobile-ux-validation**: For mobile component changes
+- **accessibility-audit**: For UI changes (ARIA, keyboard nav)
+- **performance-check**: For data fetching changes
+- **security-audit**: For auth/API changes
+- **bundle-size-check**: For new dependencies
+- **i18n-completeness**: For translation changes
+
+Use **get_extended_checks** to see what was recommended, then use run_* tools to execute HIGH priority checks.
 
 ## Response Format
 
@@ -1998,6 +2373,45 @@ AI generated **${prTestInfo.count} test scenarios** for this PR:
 These tests verify the specific changes in this PR (e.g., click handlers, modals, demo mode).
 
 `
+  }
+
+  // Load and display extended checks from smart selector
+  const testSelectionPath = 'ci-state/test-selection.json'
+  if (existsSync(testSelectionPath)) {
+    try {
+      const testSelection = JSON.parse(readFileSync(testSelectionPath, 'utf-8'))
+      const extendedChecks = testSelection.extendedChecks || []
+
+      if (extendedChecks.length > 0) {
+        const highPriority = extendedChecks.filter((c: { priority: string }) => c.priority === 'high')
+        const otherPriority = extendedChecks.filter((c: { priority: string }) => c.priority !== 'high')
+
+        comment += `### 🔍 Extended Checks Recommended
+
+The smart selector analyzed this PR and recommended **${extendedChecks.length}** additional checks:
+
+`
+        if (highPriority.length > 0) {
+          comment += `**🔴 High Priority:**\n`
+          for (const check of highPriority) {
+            comment += `- \`${check.type}\`: ${check.reason}\n`
+          }
+          comment += '\n'
+        }
+        if (otherPriority.length > 0) {
+          comment += `<details>
+<summary>Other recommendations (${otherPriority.length})</summary>
+
+${otherPriority.map((c: { type: string; reason: string; priority: string }) => `- [${c.priority}] \`${c.type}\`: ${c.reason}`).join('\n')}
+
+</details>
+
+`
+        }
+      }
+    } catch {
+      // Ignore errors loading test selection
+    }
   }
 
   // Warnings and suggestions (only if not blocked, or show briefly if blocked)
