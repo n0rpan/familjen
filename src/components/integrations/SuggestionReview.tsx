@@ -342,10 +342,10 @@ function SuggestionReviewModal({
 
   if (loading) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
         <div className="absolute inset-0" style={{ background: 'rgba(0, 0, 0, 0.5)' }} />
         <div
-          className="relative w-full max-w-lg rounded-2xl p-6"
+          className="relative w-full max-w-lg rounded-2xl p-6 overflow-hidden"
           style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
         >
           <div className="flex items-center justify-center py-8">
@@ -361,10 +361,10 @@ function SuggestionReviewModal({
 
   if (!currentSuggestion) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
         <div className="absolute inset-0" style={{ background: 'rgba(0, 0, 0, 0.5)' }} onClick={onClose} />
         <div
-          className="relative w-full max-w-lg rounded-2xl p-6 text-center"
+          className="relative w-full max-w-lg rounded-2xl p-6 text-center overflow-hidden"
           style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
         >
           <div className="py-8">
@@ -392,11 +392,11 @@ function SuggestionReviewModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
       <div className="fixed inset-0" style={{ background: 'rgba(0, 0, 0, 0.5)' }} onClick={onClose} />
       <div
-        className="relative w-full max-w-lg rounded-2xl overflow-y-auto overflow-x-hidden animate-fade-in"
-        style={{ background: 'var(--card)', border: '1px solid var(--border)', maxHeight: 'calc(100vh - 2rem)' }}
+        className="relative w-full max-w-lg max-h-[85vh] rounded-2xl flex flex-col overflow-hidden animate-fade-in"
+        style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
       >
         {/* Header */}
         <div
@@ -426,6 +426,8 @@ function SuggestionReviewModal({
           </button>
         </div>
 
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto">
         {/* Source message */}
         {currentSuggestion.source_message && (
           <div className="px-6 py-4" style={{ background: 'var(--background)' }}>
@@ -727,8 +729,9 @@ function SuggestionReviewModal({
             </div>
           )}
         </div>
+        </div>
 
-        {/* Actions */}
+        {/* Actions - sticky footer */}
         <div
           className="flex items-center gap-2 px-6 py-4"
           style={{ borderTop: '1px solid var(--border)' }}

@@ -246,7 +246,7 @@ export function SharedWishlistClient({
       {/* Reserve modal */}
       {reserveModalItem && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden"
           style={{ background: 'rgba(0, 0, 0, 0.5)' }}
           onClick={() => {
             setReserveModalItem(null)
@@ -254,7 +254,7 @@ export function SharedWishlistClient({
           }}
         >
           <div
-            className="w-full max-w-sm rounded-2xl p-6"
+            className="w-full max-w-sm max-h-[85vh] rounded-2xl p-6 overflow-hidden"
             style={{ background: 'var(--card)' }}
             onClick={e => e.stopPropagation()}
           >
