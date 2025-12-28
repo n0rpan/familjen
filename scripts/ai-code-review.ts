@@ -122,23 +122,166 @@ function getDocumentation(): { claudeMd: string; readmeMd: string } {
   return { claudeMd, readmeMd }
 }
 
+// Smart truncation helper - truncate with metadata about what's cut
+function smartTruncate(content: string, maxChars: number, label: string): { text: string; wasTruncated: boolean; totalChars: number } {
+  if (content.length <= maxChars) {
+    return { text: content, wasTruncated: false, totalChars: content.length }
+  }
+  const truncated = content.slice(0, maxChars)
+  // Try to cut at a newline for cleaner truncation
+  const lastNewline = truncated.lastIndexOf('\n')
+  const cutPoint = lastNewline > maxChars * 0.8 ? lastNewline : maxChars
+
+  return {
+    text: truncated.slice(0, cutPoint) + `\n\n... [${label} truncated: ${Math.round((content.length - cutPoint) / 1024)}KB more available]`,
+    wasTruncated: true,
+    totalChars: content.length
+  }
+}
+
+// Security-critical file patterns - these should NEVER be truncated
+const SECURITY_CRITICAL_PATTERNS = [
+  /\/auth/i,                    // Auth handlers
+  /\/rls/i,                     // RLS policies
+  /credential/i,                // Credential handlers
+  /middleware\.ts$/,            // Middleware (auth checks)
+  /supabase\/migrations\//,     // Database migrations
+  /password/i,                  // Password handling
+  /encrypt|decrypt/i,           // Encryption
+  /api-key|apikey|secret/i,     // API keys/secrets
+]
+
+function isSecurityCriticalFile(file: string): boolean {
+  return SECURITY_CRITICAL_PATTERNS.some(pattern => pattern.test(file))
+}
+
+/**
+ * Split a unified diff into per-file chunks
+ * Returns a map of filename -> diff content
+ */
+function splitDiffByFile(diff: string): Map<string, string> {
+  const result = new Map<string, string>()
+  const lines = diff.split('\n')
+  let currentFile = ''
+  let currentChunk: string[] = []
+
+  for (const line of lines) {
+    // Match diff --git a/path/to/file b/path/to/file
+    const fileMatch = line.match(/^diff --git a\/(.+?) b\//)
+    if (fileMatch) {
+      // Save previous file if exists
+      if (currentFile && currentChunk.length > 0) {
+        result.set(currentFile, currentChunk.join('\n'))
+      }
+      currentFile = fileMatch[1]
+      currentChunk = [line]
+    } else {
+      currentChunk.push(line)
+    }
+  }
+
+  // Save last file
+  if (currentFile && currentChunk.length > 0) {
+    result.set(currentFile, currentChunk.join('\n'))
+  }
+
+  return result
+}
+
 function buildReviewPrompt(diff: string, changedFiles: string[], docs: { claudeMd: string; readmeMd: string }): string {
-  // Log size for awareness - no truncation, modern LLMs handle large contexts
+  // Smart truncation limits (balance cost vs context)
+  const MAX_DIFF_CHARS = 100000      // ~100KB diff - most PRs fit
+  const MAX_DOC_CHARS = 15000        // ~15KB per doc - key sections fit
+  const MAX_FILES_SHOWN = 100
+
+  // Track what was truncated for AI awareness
+  const truncationInfo: string[] = []
+
+  // Identify security-critical files in this PR - these are NEVER truncated
+  const securityFiles = changedFiles.filter(isSecurityCriticalFile)
+  if (securityFiles.length > 0) {
+    console.log(`🔒 Security-critical files detected (will NOT be truncated): ${securityFiles.join(', ')}`)
+  }
+
+  // Split diff by file to preserve security-critical files in full
+  const diffByFile = splitDiffByFile(diff)
+
+  // Separate security-critical diffs from regular diffs
+  let securityDiff = ''
+  let regularDiff = ''
+
+  for (const [file, content] of diffByFile) {
+    if (isSecurityCriticalFile(file)) {
+      securityDiff += content + '\n'
+    } else {
+      regularDiff += content + '\n'
+    }
+  }
+
+  // Security files are NEVER truncated - calculate remaining budget for regular files
+  const securityDiffSize = securityDiff.length
+  const remainingBudget = Math.max(0, MAX_DIFF_CHARS - securityDiffSize)
+
+  console.log(`🔒 Security diff size: ${Math.round(securityDiffSize / 1024)}KB (preserved in full)`)
+  console.log(`📄 Regular diff size: ${Math.round(regularDiff.length / 1024)}KB (budget: ${Math.round(remainingBudget / 1024)}KB)`)
+
+  // Truncate only the regular (non-security) diff
+  let finalDiff: string
+  if (regularDiff.length > remainingBudget && remainingBudget > 0) {
+    const truncatedRegular = smartTruncate(regularDiff, remainingBudget, 'non-security diff')
+    truncationInfo.push(`Non-security diff was truncated from ${Math.round(regularDiff.length / 1024)}KB to ${Math.round(remainingBudget / 1024)}KB`)
+    finalDiff = securityDiff + '\n\n--- SECURITY-CRITICAL FILES ABOVE (full) | REGULAR FILES BELOW (may be truncated) ---\n\n' + truncatedRegular.text
+  } else if (remainingBudget === 0 && regularDiff.length > 0) {
+    // Security files used entire budget - include note about skipped files
+    truncationInfo.push(`⚠️ Security files used entire ${Math.round(MAX_DIFF_CHARS / 1024)}KB budget. Non-security files (${changedFiles.filter(f => !isSecurityCriticalFile(f)).length} files) not included.`)
+    finalDiff = securityDiff + '\n\n--- SECURITY FILES ONLY (non-security files omitted due to size) ---\n'
+  } else {
+    // Everything fits
+    finalDiff = securityDiff + regularDiff
+  }
+
+  // Truncate docs
+  const claudeMdResult = smartTruncate(docs.claudeMd, MAX_DOC_CHARS, 'CLAUDE.md')
+  const readmeMdResult = smartTruncate(docs.readmeMd, MAX_DOC_CHARS, 'README.md')
+  if (claudeMdResult.wasTruncated) {
+    truncationInfo.push(`CLAUDE.md was truncated from ${Math.round(claudeMdResult.totalChars / 1024)}KB to ${Math.round(MAX_DOC_CHARS / 1024)}KB`)
+  }
+  if (readmeMdResult.wasTruncated) {
+    truncationInfo.push(`README.md was truncated from ${Math.round(readmeMdResult.totalChars / 1024)}KB to ${Math.round(MAX_DOC_CHARS / 1024)}KB`)
+  }
+
   const sizeKB = Math.round(diff.length / 1024)
   console.log(`📦 Diff size: ${sizeKB}KB (${changedFiles.length} files)`)
+  if (truncationInfo.length > 0) {
+    console.log(`📐 Smart truncation applied: ${truncationInfo.join(', ')}`)
+  }
 
   if (sizeKB > 500) {
     console.warn(`⚠️ Large diff (${sizeKB}KB) - consider breaking into smaller PRs`)
   }
 
-  const fileList = changedFiles.slice(0, 100).join('\n')
+  const fileList = changedFiles.slice(0, MAX_FILES_SHOWN).join('\n')
+  const filesNote = changedFiles.length > MAX_FILES_SHOWN
+    ? `\n(showing first ${MAX_FILES_SHOWN} of ${changedFiles.length} files)`
+    : ''
 
   // Check if documentation was modified in this PR
   const docsModified = changedFiles.some(f => f === 'CLAUDE.md' || f === 'README.md')
 
-  // Truncate documentation to key sections for context (first ~4000 chars each)
-  const claudeMdContext = docs.claudeMd.slice(0, 4000) + (docs.claudeMd.length > 4000 ? '\n... (truncated)' : '')
-  const readmeMdContext = docs.readmeMd.slice(0, 4000) + (docs.readmeMd.length > 4000 ? '\n... (truncated)' : '')
+  // Include documentation with smart truncation
+  const claudeMdContext = claudeMdResult.text
+  const readmeMdContext = readmeMdResult.text
+
+  // Truncation notice for AI
+  let truncationNotice = ''
+  if (truncationInfo.length > 0) {
+    truncationNotice = '\n## ⚠️ Context Truncation\n'
+    truncationNotice += truncationInfo.map(t => `- ${t}`).join('\n') + '\n'
+    if (securityFiles.length > 0) {
+      truncationNotice += '\n🔒 **Security files were preserved in full** - auth, RLS, credentials, and migration files are never truncated.\n'
+    }
+    truncationNotice += '\nIf you need more context for a specific file or section, note it in your review and the final verdict will investigate.\n'
+  }
 
   return `You are a senior developer reviewing a PR for Familjen, a Norwegian family planning app.
 
@@ -170,14 +313,14 @@ ${readmeMdContext}
 \`\`\`
 
 ## Changed Files
-${fileList}
+${fileList}${filesNote}
 
 ## Documentation Status
 ${docsModified ? '✅ Documentation was updated in this PR' : '⚠️ Documentation was NOT updated in this PR'}
-
+${truncationNotice}
 ## PR Diff
 \`\`\`diff
-${diff}
+${finalDiff}
 \`\`\`
 
 ## Review Checklist
@@ -195,6 +338,15 @@ ${diff}
 - [ ] Optimistic updates rollback on error
 - [ ] formatDateISO() for dates (not raw toISOString)
 - [ ] Async operations properly awaited
+
+### Error Handling Patterns (Familjen-specific)
+- [ ] API routes use \`handleApiError()\` or \`ApiErrors.*\` from lib/api-errors.ts
+- [ ] API routes return user-friendly Norwegian error messages, not raw errors
+- [ ] Supabase calls check for \`error\` response and handle appropriately
+- [ ] Integration clients (Spond, MyKid) use try/catch with specific error types
+- [ ] Rate limit responses use \`ApiErrors.rateLimit()\` with retry-after
+- [ ] Demo mode requests check \`isDemoRequest()\` early and bypass heavy auth
+- [ ] Credential decryption failures use \`ApiErrors.internal()\` with internal message only
 
 ### Norwegian App Specifics
 - [ ] New strings have translations (nb.ts, sv.ts, en.ts)

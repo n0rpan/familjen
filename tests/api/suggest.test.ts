@@ -45,6 +45,8 @@ vi.mock('@/lib/rate-limit', () => ({
   checkRateLimit: vi.fn().mockResolvedValue({ limited: false }),
   createRateLimitKey: vi.fn().mockReturnValue('test-key'),
   RATE_LIMITS: { aiSuggest: { requests: 10, window: 60 } },
+  checkDemoRateLimit: vi.fn().mockResolvedValue({ limited: false }),
+  isDemoRequest: vi.fn().mockReturnValue(false),
 }))
 
 // Mock origin validation to always pass

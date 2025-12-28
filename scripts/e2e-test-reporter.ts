@@ -135,6 +135,77 @@ function loadPRScenarios(): PRTestScenarios | null {
   }
 }
 
+interface PRTestCorrelation {
+  prTestsFailed: number
+  prTestsPassed: number
+  prTestsTotal: number
+  staticTestsFailed: number
+  failedPRScenarios: Array<{
+    scenario: PRTestScenario
+    error: string
+  }>
+}
+
+/**
+ * Correlate test failures with PR-specific scenarios
+ * This helps identify which failures are directly related to PR changes
+ */
+function correlatePRTests(
+  failures: Array<{ title: string; file: string; error: string }>,
+  prScenarios: PRTestScenarios | null,
+  totalPassed: number
+): PRTestCorrelation {
+  if (!prScenarios || prScenarios.scenarios.length === 0) {
+    return {
+      prTestsFailed: 0,
+      prTestsPassed: 0,
+      prTestsTotal: 0,
+      staticTestsFailed: failures.length,
+      failedPRScenarios: []
+    }
+  }
+
+  const failedPRScenarios: PRTestCorrelation['failedPRScenarios'] = []
+  let prTestsFailed = 0
+  let staticTestsFailed = 0
+
+  for (const failure of failures) {
+    // Check if this failure matches a PR scenario
+    const matchingScenario = prScenarios.scenarios.find(scenario => {
+      // Match by scenario name or ID in test title
+      const lowerTitle = failure.title.toLowerCase()
+      const lowerName = scenario.name.toLowerCase()
+      const lowerId = scenario.id.toLowerCase()
+
+      return lowerTitle.includes(lowerName) ||
+             lowerTitle.includes(lowerId) ||
+             lowerTitle.includes(scenario.page) ||
+             failure.file.includes('pr-scenarios')
+    })
+
+    if (matchingScenario) {
+      prTestsFailed++
+      failedPRScenarios.push({
+        scenario: matchingScenario,
+        error: failure.error
+      })
+    } else {
+      staticTestsFailed++
+    }
+  }
+
+  // Estimate passed PR tests (total scenarios minus failed)
+  const prTestsPassed = Math.max(0, prScenarios.scenarios.length - prTestsFailed)
+
+  return {
+    prTestsFailed,
+    prTestsPassed,
+    prTestsTotal: prScenarios.scenarios.length,
+    staticTestsFailed,
+    failedPRScenarios
+  }
+}
+
 // ============================================
 // Parsing Functions
 // ============================================
@@ -164,6 +235,13 @@ function findResultsFile(): string | null {
   return null
 }
 
+interface TestWithDuration {
+  title: string
+  file: string
+  duration: number
+  status: 'passed' | 'failed' | 'skipped'
+}
+
 function parsePlaywrightReport(filePath: string): {
   passed: number
   failed: number
@@ -171,6 +249,8 @@ function parsePlaywrightReport(filePath: string): {
   flaky: number
   duration: number
   failures: Array<{ title: string; file: string; line?: number; error: string }>
+  slowTests: TestWithDuration[]
+  averageTestDuration: number
 } {
   const content = readFileSync(filePath, 'utf-8')
   const data = JSON.parse(content)
@@ -191,6 +271,8 @@ function parsePlaywrightReport(filePath: string): {
       flaky: data.flaky || 0,
       duration: data.duration || 0,
       failures: [],
+      slowTests: [],
+      averageTestDuration: 0,
     }
   }
 }
@@ -202,12 +284,25 @@ function parseFullFormat(report: PlaywrightReport): {
   flaky: number
   duration: number
   failures: Array<{ title: string; file: string; line?: number; error: string }>
+  slowTests: TestWithDuration[]
+  averageTestDuration: number
 } {
   const failures: Array<{ title: string; file: string; line?: number; error: string }> = []
+  const allTests: TestWithDuration[] = []
+  const SLOW_TEST_THRESHOLD_MS = 30000 // 30 seconds
 
   function processSuite(suite: PlaywrightSuite) {
     for (const spec of suite.specs) {
       for (const test of spec.tests) {
+        // Track all test durations
+        allTests.push({
+          title: `${spec.title} > ${test.title}`,
+          file: spec.file,
+          duration: test.duration,
+          status: test.status === 'expected' ? 'passed' :
+                  test.status === 'unexpected' ? 'failed' : 'skipped'
+        })
+
         if (test.status === 'unexpected') {
           const failedResult = test.results.find(r => r.status === 'failed' || r.status === 'timedOut')
           failures.push({
@@ -229,6 +324,15 @@ function parseFullFormat(report: PlaywrightReport): {
     processSuite(suite)
   }
 
+  // Find slow tests
+  const slowTests = allTests
+    .filter(t => t.duration > SLOW_TEST_THRESHOLD_MS)
+    .sort((a, b) => b.duration - a.duration)
+
+  // Calculate average duration
+  const totalDuration = allTests.reduce((sum, t) => sum + t.duration, 0)
+  const averageTestDuration = allTests.length > 0 ? totalDuration / allTests.length : 0
+
   return {
     passed: report.stats.expected,
     failed: report.stats.unexpected,
@@ -236,6 +340,8 @@ function parseFullFormat(report: PlaywrightReport): {
     flaky: report.stats.flaky,
     duration: report.stats.duration,
     failures,
+    slowTests,
+    averageTestDuration,
   }
 }
 
@@ -246,7 +352,13 @@ function parseSimpleFormat(report: SimplePlaywrightReport): {
   flaky: number
   duration: number
   failures: Array<{ title: string; file: string; line?: number; error: string }>
+  slowTests: TestWithDuration[]
+  averageTestDuration: number
 } {
+  // Simple format doesn't have per-test duration, so we estimate
+  const totalTests = report.passed + report.failed + report.skipped
+  const averageTestDuration = totalTests > 0 ? report.duration / totalTests : 0
+
   return {
     passed: report.passed,
     failed: report.failed,
@@ -259,6 +371,8 @@ function parseSimpleFormat(report: SimplePlaywrightReport): {
       line: f.line,
       error: f.error,
     })),
+    slowTests: [], // Simple format doesn't have per-test timing
+    averageTestDuration,
   }
 }
 
@@ -355,16 +469,32 @@ async function main() {
     console.log(`   🔄 Flaky: ${results.flaky}`)
     console.log(`   ⏱️  Duration: ${Math.round(results.duration / 1000)}s`)
 
-    // Convert failures to findings
-    const findings: Finding[] = results.failures.map(f => ({
-      severity: 'critical' as const,
-      category: 'test-failure' as const,
-      message: `${f.title}: ${f.error}`,
-      file: f.file,
-      line: f.line,
-      testName: f.title,
-      error: f.error,
-    }))
+    // Correlate failures with PR-specific scenarios
+    const correlation = correlatePRTests(results.failures, prScenarios, results.passed)
+
+    // Convert failures to findings with PR-specific marking
+    const findings: Finding[] = results.failures.map(f => {
+      const isPRTest = correlation.failedPRScenarios.some(
+        fpr => fpr.scenario.name.toLowerCase().includes(f.title.toLowerCase().slice(0, 20))
+      ) || f.file.includes('pr-scenarios')
+
+      return {
+        severity: isPRTest ? 'critical' as const : 'warning' as const,
+        category: isPRTest ? 'test-failure' as const : 'test-failure' as const,
+        message: `${isPRTest ? '[PR-SPECIFIC] ' : ''}${f.title}: ${f.error}`,
+        file: f.file,
+        line: f.line,
+        testName: f.title,
+        error: f.error,
+      }
+    })
+
+    // Sort PR-specific failures first
+    findings.sort((a, b) => {
+      const aIsPR = a.message.includes('[PR-SPECIFIC]') ? 0 : 1
+      const bIsPR = b.message.includes('[PR-SPECIFIC]') ? 0 : 1
+      return aIsPR - bIsPR
+    })
 
     // Add flaky tests as warnings
     if (results.flaky > 0) {
@@ -375,10 +505,31 @@ async function main() {
       })
     }
 
-    // Determine verdict
+    // Add slow tests as performance warnings
+    if (results.slowTests.length > 0) {
+      for (const slowTest of results.slowTests.slice(0, 3)) {
+        findings.push({
+          severity: 'info',
+          category: 'performance',
+          message: `Slow test (${Math.round(slowTest.duration / 1000)}s): ${slowTest.title}`,
+          file: slowTest.file,
+        })
+      }
+      if (results.slowTests.length > 3) {
+        findings.push({
+          severity: 'info',
+          category: 'performance',
+          message: `${results.slowTests.length - 3} more slow tests (>30s) detected`,
+        })
+      }
+    }
+
+    // Determine verdict - weight PR test failures higher
     let verdict: 'PASS' | 'WARN' | 'FAIL'
-    if (results.failed > 0) {
-      verdict = 'FAIL'
+    if (correlation.prTestsFailed > 0) {
+      verdict = 'FAIL' // PR-specific test failures always FAIL
+    } else if (results.failed > 0) {
+      verdict = 'WARN' // Static test failures are warnings (could be pre-existing)
     } else if (results.flaky > 0) {
       verdict = 'WARN'
     } else {
@@ -389,10 +540,19 @@ async function main() {
     const total = results.passed + results.failed + results.skipped
     const confidence = total > 0 ? Math.round((results.passed / total) * 100) : 0
 
-    // Build summary with PR-specific info
-    let summary = `E2E UAT: ${results.passed}/${total} tests passed (${results.failed} failed, ${results.flaky} flaky, ${results.skipped} skipped).`
-    if (prScenarios) {
-      summary = `🤖 ${prScenarios.scenarios.length} PR-specific tests generated. ${summary}`
+    // Build summary with PR-specific correlation
+    let summary = `E2E UAT: ${results.passed}/${total} tests passed`
+    if (prScenarios && prScenarios.scenarios.length > 0) {
+      summary = `🤖 PR Tests: ${correlation.prTestsPassed}/${correlation.prTestsTotal} passed`
+      if (correlation.prTestsFailed > 0) {
+        summary += ` (${correlation.prTestsFailed} PR-specific failures!)`
+      }
+      summary += `. Static: ${results.passed - correlation.prTestsPassed}/${total - correlation.prTestsTotal}`
+      if (correlation.staticTestsFailed > 0) {
+        summary += ` (${correlation.staticTestsFailed} failed)`
+      }
+    } else {
+      summary += ` (${results.failed} failed, ${results.flaky} flaky, ${results.skipped} skipped)`
     }
 
     // Save in standardized format
@@ -414,18 +574,66 @@ async function main() {
           highCount: prScenarios.scenarios.filter(s => s.priority === 'high').length,
           prTitle: prScenarios.prTitle,
         } : null,
+        correlation: {
+          prTestsFailed: correlation.prTestsFailed,
+          prTestsPassed: correlation.prTestsPassed,
+          prTestsTotal: correlation.prTestsTotal,
+          staticTestsFailed: correlation.staticTestsFailed,
+          failedPRScenarioIds: correlation.failedPRScenarios.map(f => f.scenario.id),
+        },
+        performance: {
+          averageTestDuration: Math.round(results.averageTestDuration),
+          slowTestCount: results.slowTests.length,
+          slowestTests: results.slowTests.slice(0, 5).map(t => ({
+            title: t.title,
+            duration: Math.round(t.duration / 1000),
+          })),
+        },
       },
     }
     saveReviewerOutput(output)
 
-    // Print failures if any
+    // Print failures with PR correlation
     if (results.failures.length > 0) {
-      console.log('\n❌ Failed Tests:')
-      for (const failure of results.failures) {
-        console.log(`   • ${failure.title}`)
-        console.log(`     ${failure.file}${failure.line ? `:${failure.line}` : ''}`)
-        console.log(`     Error: ${failure.error.slice(0, 100)}${failure.error.length > 100 ? '...' : ''}`)
+      // First show PR-specific failures (critical!)
+      if (correlation.failedPRScenarios.length > 0) {
+        console.log('\n🔴 PR-SPECIFIC TEST FAILURES (directly related to your changes):')
+        for (const { scenario, error } of correlation.failedPRScenarios) {
+          console.log(`   • [${scenario.priority.toUpperCase()}] ${scenario.name}`)
+          console.log(`     Page: ${scenario.page}`)
+          console.log(`     Context: ${scenario.prContext}`)
+          console.log(`     Error: ${error.slice(0, 80)}${error.length > 80 ? '...' : ''}`)
+        }
       }
+
+      // Then show static test failures (might be pre-existing)
+      const staticFailures = results.failures.filter(
+        f => !correlation.failedPRScenarios.some(
+          fpr => f.title.toLowerCase().includes(fpr.scenario.name.toLowerCase().slice(0, 20))
+        ) && !f.file.includes('pr-scenarios')
+      )
+      if (staticFailures.length > 0) {
+        console.log('\n🟠 Static Test Failures (may be pre-existing):')
+        for (const failure of staticFailures.slice(0, 5)) {
+          console.log(`   • ${failure.title}`)
+          console.log(`     ${failure.file}${failure.line ? `:${failure.line}` : ''}`)
+        }
+        if (staticFailures.length > 5) {
+          console.log(`   ... and ${staticFailures.length - 5} more`)
+        }
+      }
+    }
+
+    // Print slow tests if any
+    if (results.slowTests.length > 0) {
+      console.log(`\n⏱️ Slow Tests (>${Math.round(30)}s):`)
+      for (const slowTest of results.slowTests.slice(0, 5)) {
+        console.log(`   🐌 ${Math.round(slowTest.duration / 1000)}s - ${slowTest.title}`)
+      }
+      if (results.slowTests.length > 5) {
+        console.log(`   ... and ${results.slowTests.length - 5} more slow tests`)
+      }
+      console.log(`\n📊 Average test duration: ${Math.round(results.averageTestDuration / 1000)}s`)
     }
 
     console.log(`\n📄 Results: ai-reviews/e2e-tests.json`)

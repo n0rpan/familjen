@@ -42,6 +42,7 @@ interface PageExpectation {
   mustShow: string[]
   mustNotShow: string[]
   mobileConsiderations: string[]
+  byDesign?: string[]  // Patterns that may look like issues but are intentional
 }
 
 interface ValidationResult {
@@ -93,7 +94,6 @@ const PAGE_EXPECTATIONS: PageExpectation[] = [
     mustShow: [
       'Today\'s date or "I dag" (Norwegian for "Today")',
       'Children names or pickup assignments',
-      'Navigation (bottom or sidebar)',
       'Some form of meal/dinner info if meals are configured',
     ],
     mustNotShow: [
@@ -104,8 +104,11 @@ const PAGE_EXPECTATIONS: PageExpectation[] = [
     ],
     mobileConsiderations: [
       'Most important info (pickups) should be immediately visible',
-      'No horizontal scrolling',
       'Touch targets easily tappable with thumb',
+    ],
+    byDesign: [
+      'Bottom navigation may not be visible in screenshots if viewport is scrolled - it is fixed at bottom',
+      'Demo banner at top uses high-contrast honey/coral color intentionally for visibility',
     ],
   },
   {
@@ -114,18 +117,20 @@ const PAGE_EXPECTATIONS: PageExpectation[] = [
     mustShow: [
       'Days of the week (Mon-Sun or Norwegian weekday names)',
       'Children rows or columns with distinct colors',
-      'Meal section or dinner planning area',
       'Navigation back to home',
     ],
     mustNotShow: [
       'Overlapping text that\'s unreadable',
-      'Cut-off content requiring horizontal scroll',
       'Broken layout with elements stacked incorrectly',
     ],
     mobileConsiderations: [
       'Week view may condense on mobile - still should be usable',
-      'Swipe gestures should be hinted if available',
       'Current day should be visually highlighted',
+    ],
+    byDesign: [
+      'Week grid uses horizontal scroll on mobile to show all 7 days - this is intentional for readability',
+      'Meal row may be below the fold and require scrolling - this is expected',
+      'Week navigation arrows are at the top to match standard calendar patterns',
     ],
   },
   {
@@ -161,6 +166,73 @@ const PAGE_EXPECTATIONS: PageExpectation[] = [
       'Settings should be easily navigable with thumb',
       'Toggle switches should be large enough to tap',
     ],
+    byDesign: [
+      'Category tabs may scroll horizontally when there are many sections - this provides clean overflow',
+      'Bottom navigation icons use standard 20px size with generous touch padding',
+    ],
+  },
+  {
+    name: 'recipes',
+    description: 'Recipe management page (oppskrifter) for storing and viewing recipes',
+    mustShow: [
+      'Recipe list or cards',
+      'Add recipe button or action',
+      'Navigation elements',
+    ],
+    mustNotShow: [
+      'Error states blocking all content',
+      'Broken images for recipe photos',
+    ],
+    mobileConsiderations: [
+      'Recipe cards should be tappable',
+      'Recipe details should be readable without zooming',
+    ],
+    byDesign: [
+      'Empty state with "Legg til oppskrift" prompt is expected for new users',
+      'Recipe images may use placeholder if no image uploaded',
+    ],
+  },
+  {
+    name: 'shopping',
+    description: 'Shopping list page (handleliste) for managing grocery lists',
+    mustShow: [
+      'Shopping list items or empty state',
+      'Add item functionality',
+      'Category organization or simple list',
+    ],
+    mustNotShow: [
+      'Error states blocking functionality',
+      'Unreadable text or broken layout',
+    ],
+    mobileConsiderations: [
+      'Checkbox/checkmark targets should be easily tappable',
+      'Items should be easy to swipe or delete',
+    ],
+    byDesign: [
+      'Items may be grouped by store category (AI-categorized)',
+      'Completed items may be struck through or moved to bottom',
+    ],
+  },
+  {
+    name: 'admin',
+    description: 'Admin panel for app administrators',
+    mustShow: [
+      'Admin sections or navigation',
+      'User management or settings',
+      'Clear indication this is an admin area',
+    ],
+    mustNotShow: [
+      'Regular user content that should be hidden',
+      'Error states or access denied messages (in demo)',
+    ],
+    mobileConsiderations: [
+      'Admin functions should still work on mobile',
+      'Tables or lists should be scrollable if needed',
+    ],
+    byDesign: [
+      'Admin may have denser UI than user-facing pages - this is acceptable for power users',
+      'Technical information display (model names, API status) is expected',
+    ],
   },
 ]
 
@@ -188,7 +260,6 @@ You are reviewing screenshots of Familjen, a Norwegian family planning app.
 - Mobile-first design
 - Cards and sections with generous padding
 - Bottom navigation in thumb zone on mobile
-- No horizontal scroll on any viewport
 
 ### Content
 - Norwegian language (or Swedish/English based on settings)
@@ -199,6 +270,25 @@ You are reviewing screenshots of Familjen, a Norwegian family planning app.
 - Primary users are busy parents, often checking app while handling kids
 - One-handed mobile use is common
 - Quick glance should convey the day's essentials
+
+## Intentional Design Patterns (DO NOT flag as issues)
+These patterns may look unusual but are BY DESIGN:
+
+1. **Week grid horizontal scroll**: The 7-day week grid intentionally uses horizontal scroll on mobile to ensure all days are readable. This is preferred over squishing text.
+
+2. **Bottom navigation in screenshots**: The bottom navigation is fixed at the viewport bottom. It may not appear in screenshots if the content is scrolled - this is a screenshot artifact, not a missing element.
+
+3. **Demo banner high contrast**: The demo mode banner uses intentionally high-contrast honey/coral colors to be clearly visible and distinguishable from regular content.
+
+4. **Horizontal scrolling tabs**: Category tabs and filters use horizontal scroll for overflow - this is a standard mobile UX pattern.
+
+5. **Content below fold**: Meal sections, tasks, and other content may require scrolling to see - this is expected and not an issue.
+
+When reviewing, focus on ACTUAL issues like:
+- Broken layouts, overlapping text, missing data
+- Incorrect colors or typography
+- Actual functionality problems visible in the UI
+- Content that should be visible but is incorrectly hidden or broken
 `
 
 // ============================================
@@ -292,6 +382,10 @@ async function validateScreenshot(
   const base64Image = imageBuffer.toString('base64')
   const mimeType = 'image/png'
 
+  const byDesignSection = expectation.byDesign?.length
+    ? `\n## By Design (DO NOT flag as issues)\n${expectation.byDesign.map(s => `- ${s}`).join('\n')}\n`
+    : ''
+
   const prompt = `
 ${FAMILJEN_DESIGN_CONTEXT}
 
@@ -307,17 +401,19 @@ ${expectation.mustNotShow.map(s => `- ${s}`).join('\n')}
 
 ## Mobile Considerations
 ${expectation.mobileConsiderations.map(s => `- ${s}`).join('\n')}
-
+${byDesignSection}
 ## Your Task
 Analyze this screenshot and evaluate:
 
 1. **Design System Compliance**: Does it follow Familjen's design system?
 2. **Content Visibility**: Are the expected elements visible?
 3. **Mobile Usability**: Would a busy parent with one hand free be able to use this?
-4. **Issues**: Any problems that need fixing?
+4. **Issues**: Any ACTUAL problems that need fixing (ignore intentional patterns listed in "By Design")?
 
 Be specific about what you see. If something looks broken, describe exactly what's wrong.
 If the page looks good, confirm what's working well.
+
+IMPORTANT: Do NOT flag items listed in "By Design" as issues - these are intentional patterns.
 
 Remember: This is for Norwegian families. Check Norwegian text renders correctly.
 `

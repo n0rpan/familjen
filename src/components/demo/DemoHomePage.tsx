@@ -41,18 +41,20 @@ export function DemoHomePage() {
     const tomorrow = addDays(today, 1)
     const nextWeek = addDays(today, 5)
 
+    const firstChildName = children[0]?.name || 'Emilie'
+
     return [
       {
         id: 'demo-headsup-1',
         type: 'suggestion',
         priority: 'normal',
         title: 'Husk gymtøy',
-        description: 'Emma har gym på torsdag',
+        description: `${firstChildName} har gym på torsdag`,
         date: formatDateISO(tomorrow),
         endDate: null,
         time: '08:00',
         childId: children[0]?.id || 'demo-child',
-        childName: children[0]?.name || 'Emma',
+        childName: firstChildName,
         memberId: null,
         memberName: null,
         source: {

@@ -350,10 +350,28 @@ The AI visual validation system is unique - it doesn't require baseline screensh
 
 **No real user required**: Tests use mock fixtures that generate realistic Norwegian family data (children names, pickups, meals) without needing a real database connection.
 
+### Final Verdict System
+
+All individual reviewers are **non-blocking** - they report findings but don't fail CI. A single "Final Verdict" AI aggregates all results:
+
+1. **Mechanical Aggregation**: If any reviewer fails → default BLOCK
+2. **AI Override**: AI can override BLOCK→PASS if issues are pre-existing/unrelated
+3. **Explicit Explanation**: PR comment clearly shows when AI overrides and why
+4. **Tools for Investigation**: Final verdict can fetch full docs, read files, run TypeScript checks
+
+### Smart Truncation
+
+To balance cost vs context:
+- **Code review**: Truncates large diffs (>100KB) and docs (>15KB)
+- **Context tools**: AI can request full documentation if needed
+- **Transparent**: Truncation is noted so AI knows what's missing
+
 ### AI Review Features
 
 - **Structured Outputs**: Uses JSON schemas for guaranteed response format
-- **PR Comments**: Posts review summary directly to GitHub PRs
+- **PR Comments**: Posts review summary directly to GitHub PRs with clear PASS/BLOCK status
+- **Test Severity**: Categorizes test failures as critical/warning/info
+- **PR Correlation**: Identifies which test failures are specific to PR changes
 - **Familjen-Aware**: AI understands Norwegian context, child safety, RLS patterns
 - **Configurable Models**: Set your preferred OpenRouter models via GitHub Secrets
 

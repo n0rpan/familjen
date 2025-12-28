@@ -120,6 +120,13 @@ export interface FinalVerdictOutput {
 
   // Aggregated reviewer results
   reviewerSummary: ReviewerSummary[]
+
+  // AI override info (when AI disagrees with mechanical aggregation)
+  aiOverride?: {
+    from: string    // Original mechanical verdict
+    to: string      // AI's verdict
+    reason: string  // Why AI overrode
+  }
 }
 
 export interface VerificationResults {
