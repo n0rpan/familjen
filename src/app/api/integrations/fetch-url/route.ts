@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { syncCalendarSource, type CalendarSource } from '@/lib/integrations/calendar-source-sync'
+import { syncCalendarSource, generateEventHash, type CalendarSource } from '@/lib/integrations/calendar-source-sync'
 import { validateOrigin } from '@/lib/config'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 import { isUrlAllowed } from '@/lib/sanitize'
+import { parseICSContent } from '@/lib/ics-parser'
+import { formatDateISO } from '@/lib/utils'
 
 /**
  * POST /api/integrations/fetch-url
@@ -92,7 +94,83 @@ export async function POST(request: Request) {
       if (sourceUrl.url_type === 'ics' || contentType.includes('text/calendar')) {
         // ICS calendar - parse and create events directly
         content = await response.text()
-        // TODO: Parse ICS and create external_events
+
+        // Parse ICS content (1 year back, 1 year forward)
+        const now = new Date()
+        const startDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate())
+        const endDate = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate())
+
+        const icsEvents = parseICSContent(content, startDate, endDate)
+        console.log(`[ICS Sync] Parsed ${icsEvents.length} events from ${sourceUrl.display_name}`)
+
+        // Get existing events for this source
+        const { data: existingEvents } = await supabase
+          .from('external_events')
+          .select('id, source_event_hash')
+          .eq('source_url_id', sourceUrl.id)
+
+        const existingByHash = new Map<string, string>()
+        for (const event of existingEvents || []) {
+          if (event.source_event_hash) {
+            existingByHash.set(event.source_event_hash, event.id)
+          }
+        }
+
+        // Track stats
+        let eventsCreated = 0
+        let eventsUpdated = 0
+        const processedHashes = new Set<string>()
+
+        // Upsert events
+        for (const icsEvent of icsEvents) {
+          const eventDate = formatDateISO(icsEvent.startDate)
+          const hash = generateEventHash(sourceUrl.id, eventDate, icsEvent.summary)
+          processedHashes.add(hash)
+
+          const eventData = {
+            source_url_id: sourceUrl.id,
+            source_event_hash: hash,
+            external_id: icsEvent.uid,
+            title: icsEvent.summary.slice(0, 200),
+            event_date: eventDate,
+            end_date: icsEvent.isAllDay && icsEvent.endDate
+              ? formatDateISO(new Date(icsEvent.endDate.getTime() - 24 * 60 * 60 * 1000)) // All-day end is exclusive
+              : formatDateISO(icsEvent.endDate),
+            event_time: icsEvent.isAllDay ? null : icsEvent.startDate.toTimeString().slice(0, 5),
+            event_type: 'event',
+            description: icsEvent.description?.slice(0, 2000) || null,
+            child_id: sourceUrl.child_id,
+            raw_data: { uid: icsEvent.uid, location: icsEvent.location, busyStatus: icsEvent.busyStatus },
+          }
+
+          const existingId = existingByHash.get(hash)
+          if (existingId) {
+            await supabase.from('external_events').update(eventData).eq('id', existingId)
+            eventsUpdated++
+          } else {
+            await supabase.from('external_events').insert(eventData)
+            eventsCreated++
+          }
+        }
+
+        // Remove events that no longer exist in ICS
+        let eventsRemoved = 0
+        const today = formatDateISO(new Date())
+        for (const [hash, eventId] of existingByHash) {
+          if (!processedHashes.has(hash)) {
+            // Only remove future events
+            const { data: event } = await supabase
+              .from('external_events')
+              .select('event_date')
+              .eq('id', eventId)
+              .single()
+
+            if (event && event.event_date >= today) {
+              await supabase.from('external_events').delete().eq('id', eventId)
+              eventsRemoved++
+            }
+          }
+        }
 
         // Update sync status
         await supabase
@@ -106,7 +184,11 @@ export async function POST(request: Request) {
 
         return NextResponse.json({
           success: true,
-          message: 'ICS synkronisert',
+          eventsFound: icsEvents.length,
+          eventsCreated,
+          eventsUpdated,
+          eventsRemoved,
+          message: `ICS synkronisert: ${icsEvents.length} hendelser funnet`,
         })
       } else if (sourceUrl.url_type === 'pdf' || contentType.includes('application/pdf')) {
         // PDF document - store for AI processing

@@ -1274,6 +1274,39 @@ Filter categories:
 - **Bilder** - Photos from all services
 - **Påminnelser** - AI-extracted reminders
 
+### Calendar Source Extraction (Kalenderkilder)
+
+Users can add external calendar URLs (school calendars, kindergarten schedules) that are synced via AI extraction.
+
+**AI Model:** `google/gemini-2.5-flash-lite` (configurable via `app_settings.openrouter_vision_model`)
+- Context window: 1,048,576 tokens - more than sufficient for large HTML pages
+- Excellent at structured data extraction and Norwegian language understanding
+
+**How it works:**
+1. Fetches HTML from the calendar URL
+2. Converts HTML tables to markdown format (preserves column relationships)
+3. Cleans HTML (removes scripts, styles, nav, footer) - max 50,000 chars
+4. Sends to AI with Norwegian prompt optimized for school calendars
+5. AI extracts events with dates, times, and event types
+6. Events stored in `external_events` with hash-based deduplication
+
+**Key files:**
+- `src/lib/integrations/document-extraction.ts` - AI extraction logic
+- `src/lib/integrations/calendar-source-sync.ts` - Sync orchestration
+- `src/components/integrations/ManualSourceUrls.tsx` - UI component
+
+**School year inference:**
+The prompt dynamically calculates the school year (Aug-Jul cycle):
+- August-December → currentYear-nextYear (e.g., 2025-2026)
+- January-July → previousYear-currentYear (e.g., 2024-2025)
+
+**Supported Norwegian terms:**
+- "Planleggingsdag" / "Planl.dag" = teacher planning day (no school)
+- "Stengt" = closed
+- "Ferie" = holiday period
+- "Dugnad" = parent volunteer activity
+- "Elevene slutter kl. 11.00" = early dismissal
+
 ## Performance Patterns
 
 ### View Transitions
