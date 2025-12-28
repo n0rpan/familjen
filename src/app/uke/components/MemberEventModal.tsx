@@ -56,7 +56,7 @@ export const MemberEventModal = memo(function MemberEventModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden"
       role="dialog"
       aria-modal="true"
       aria-labelledby="member-event-modal-title"
@@ -70,7 +70,7 @@ export const MemberEventModal = memo(function MemberEventModal({
 
       {/* Modal */}
       <div
-        className="relative w-full max-w-md max-h-[85vh] flex flex-col rounded-2xl animate-fade-in"
+        className="relative w-full max-w-md max-h-[85vh] flex flex-col rounded-2xl animate-fade-in overflow-hidden"
         style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
         onClick={(e) => e.stopPropagation()}
       >

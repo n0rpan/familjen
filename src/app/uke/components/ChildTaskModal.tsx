@@ -61,7 +61,7 @@ export const ChildTaskModal = memo(function ChildTaskModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden"
       role="dialog"
       aria-modal="true"
       aria-labelledby="child-task-modal-title"
@@ -75,7 +75,7 @@ export const ChildTaskModal = memo(function ChildTaskModal({
 
       {/* Modal */}
       <div
-        className="relative w-full max-w-md max-h-[85vh] flex flex-col rounded-2xl"
+        className="relative w-full max-w-md max-h-[85vh] flex flex-col rounded-2xl overflow-hidden"
         style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
         onClick={(e) => e.stopPropagation()}
       >

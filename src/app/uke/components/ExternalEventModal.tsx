@@ -137,7 +137,7 @@ export const ExternalEventModal = memo(function ExternalEventModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden"
       role="dialog"
       aria-modal="true"
       aria-labelledby="external-event-modal-title"
@@ -151,12 +151,12 @@ export const ExternalEventModal = memo(function ExternalEventModal({
 
       {/* Modal */}
       <div
-        className="relative w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl p-6 space-y-5 animate-fade-in"
+        className="relative w-full max-w-md max-h-[85vh] flex flex-col rounded-2xl animate-fade-in overflow-hidden"
         style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between">
+        {/* Header - fixed */}
+        <div className="flex items-center justify-between p-6 pb-4">
           <h2
             id="external-event-modal-title"
             className="text-xl font-semibold font-display"
@@ -177,71 +177,70 @@ export const ExternalEventModal = memo(function ExternalEventModal({
           </button>
         </div>
 
-        {/* Source info banner */}
-        <div
-          className="flex items-center gap-3 p-3 rounded-xl"
-          style={{ background: getServiceBackground(serviceName) }}
-        >
-          <span
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold"
-            style={{ background: getServiceColor(serviceName), color: 'white' }}
-          >
-            {getServiceBadge(serviceName)}
-          </span>
-          <div className="flex-1 min-w-0">
-            <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
-              {serviceLabel}
-            </span>
-            {displayName && (
-              <span className="text-sm block truncate" style={{ color: 'var(--muted)' }}>
-                {displayName}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Hidden status toggle */}
-        <div
-          className="flex items-center justify-between p-3 rounded-xl"
-          style={{ background: 'var(--background)' }}
-        >
-          <div className="flex items-center gap-2">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              {isHidden ? (
-                <>
-                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
-                  <line x1="1" y1="1" x2="23" y2="23"/>
-                </>
-              ) : (
-                <>
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                  <circle cx="12" cy="12" r="3"/>
-                </>
-              )}
-            </svg>
-            <span className="text-sm" style={{ color: 'var(--foreground)' }}>
-              {isHidden ? t.week.hiddenFromCalendar : t.week.visibleInCalendar}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsHidden(!isHidden)}
-            className="relative w-12 h-7 rounded-full transition-colors"
-            style={{
-              background: isHidden ? 'var(--muted)' : 'var(--accent)',
-            }}
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto px-6 space-y-4">
+          {/* Source info banner */}
+          <div
+            className="flex items-center gap-3 p-3 rounded-xl"
+            style={{ background: getServiceBackground(serviceName) }}
           >
             <span
-              className="absolute top-1 w-5 h-5 rounded-full bg-white transition-transform"
-              style={{
-                left: isHidden ? '4px' : 'calc(100% - 24px)',
-              }}
-            />
-          </button>
-        </div>
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold"
+              style={{ background: getServiceColor(serviceName), color: 'white' }}
+            >
+              {getServiceBadge(serviceName)}
+            </span>
+            <div className="flex-1 min-w-0">
+              <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                {serviceLabel}
+              </span>
+              {displayName && (
+                <span className="text-sm block truncate" style={{ color: 'var(--muted)' }}>
+                  {displayName}
+                </span>
+              )}
+            </div>
+          </div>
 
-        {/* Form */}
-        <div className="space-y-4">
+          {/* Hidden status toggle */}
+          <div
+            className="flex items-center justify-between p-3 rounded-xl"
+            style={{ background: 'var(--background)' }}
+          >
+            <div className="flex items-center gap-2">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                {isHidden ? (
+                  <>
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                    <line x1="1" y1="1" x2="23" y2="23"/>
+                  </>
+                ) : (
+                  <>
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </>
+                )}
+              </svg>
+              <span className="text-sm" style={{ color: 'var(--foreground)' }}>
+                {isHidden ? t.week.hiddenFromCalendar : t.week.visibleInCalendar}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsHidden(!isHidden)}
+              className="relative w-12 h-7 rounded-full transition-colors"
+              style={{
+                background: isHidden ? 'var(--muted)' : 'var(--accent)',
+              }}
+            >
+              <span
+                className="absolute top-1 w-5 h-5 rounded-full bg-white transition-transform"
+                style={{
+                  left: isHidden ? '4px' : 'calc(100% - 24px)',
+                }}
+              />
+            </button>
+          </div>
           {/* Title */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
@@ -353,7 +352,7 @@ export const ExternalEventModal = memo(function ExternalEventModal({
           )}
 
           {/* Personal notes */}
-          <div>
+          <div className="pb-4">
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
               {t.week.taskNotes} <span style={{ color: 'var(--muted)' }}>({t.common.optional})</span>
             </label>
@@ -364,22 +363,25 @@ export const ExternalEventModal = memo(function ExternalEventModal({
               placeholder={t.week.addPersonalNotes}
             />
           </div>
+
+          {/* Reset button (if there are local edits) */}
+          {hasLocalEdits && (
+            <button
+              type="button"
+              onClick={handleReset}
+              className="w-full p-3 mb-4 rounded-xl text-sm font-medium transition-colors"
+              style={{ background: 'rgba(232, 120, 109, 0.1)', color: 'var(--color-coral)' }}
+            >
+              {t.week.resetToOriginalValues}
+            </button>
+          )}
         </div>
 
-        {/* Reset button (if there are local edits) */}
-        {hasLocalEdits && (
-          <button
-            type="button"
-            onClick={handleReset}
-            className="w-full p-3 rounded-xl text-sm font-medium transition-colors"
-            style={{ background: 'rgba(232, 120, 109, 0.1)', color: 'var(--color-coral)' }}
-          >
-            {t.week.resetToOriginalValues}
-          </button>
-        )}
-
-        {/* Actions */}
-        <div className="flex items-center justify-end gap-2 pt-2">
+        {/* Footer - sticky actions */}
+        <div
+          className="flex items-center justify-end gap-2 p-6 pt-4 border-t"
+          style={{ borderColor: 'var(--border)' }}
+        >
           <button
             onClick={onClose}
             className="btn btn-secondary"

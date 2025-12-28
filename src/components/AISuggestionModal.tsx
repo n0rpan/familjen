@@ -106,12 +106,12 @@ export const AISuggestionModal = memo(function AISuggestionModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden"
       style={{ background: 'rgba(0, 0, 0, 0.5)' }}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-2xl flex flex-col"
+        className="w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-2xl flex flex-col"
         style={{ background: 'var(--card)' }}
         onClick={(e) => e.stopPropagation()}
       >

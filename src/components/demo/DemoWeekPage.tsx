@@ -330,12 +330,12 @@ function DemoDetailModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden"
       style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl p-6 space-y-4 animate-fade-in"
+        className="w-full max-w-md max-h-[85vh] rounded-2xl p-6 space-y-4 animate-fade-in overflow-y-auto overflow-x-hidden"
         style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
         onClick={e => e.stopPropagation()}
       >

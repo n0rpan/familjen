@@ -177,12 +177,12 @@ export function DemoRecipesPage() {
       {/* Recipe detail modal */}
       {selectedRecipeData && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden"
           style={{ background: 'rgba(0,0,0,0.5)' }}
           onClick={() => setSelectedRecipe(null)}
         >
           <div
-            className="card p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto"
+            className="card p-6 max-w-lg w-full max-h-[85vh] overflow-y-auto overflow-x-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between mb-4">

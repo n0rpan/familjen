@@ -1968,14 +1968,14 @@ export default function WeekEditPage() {
 
       {/* Quick Pickup Modal */}
       {showQuickPickupModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
           <div
             className="absolute inset-0"
             style={{ background: 'rgba(0, 0, 0, 0.5)' }}
             onClick={() => setShowQuickPickupModal(false)}
           />
           <div
-            className="relative w-full max-w-sm rounded-2xl p-6 space-y-4 animate-fade-in"
+            className="relative w-full max-w-sm max-h-[85vh] rounded-2xl p-6 space-y-4 animate-fade-in overflow-hidden"
             style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
           >
             <div className="flex items-center justify-between">
