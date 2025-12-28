@@ -197,4 +197,56 @@ describe('Table to Markdown Conversion', () => {
 
     expect(result).toContain('Line 1 Line 2 Line 3')
   })
+
+  it('handles rowspan/colspan by extracting cell content (limitation: spans not preserved)', () => {
+    // Note: The current regex-based approach extracts cell content but doesn't
+    // preserve rowspan/colspan semantics. This is acceptable because:
+    // 1. School calendars rarely use complex spans
+    // 2. The AI model can infer relationships from context
+    // 3. A full HTML parser would add significant complexity
+    const html = `
+      <table>
+        <tr>
+          <th rowspan="2">Month</th>
+          <th colspan="2">Events</th>
+        </tr>
+        <tr>
+          <th>School</th>
+          <th>SFO</th>
+        </tr>
+        <tr>
+          <td>August</td>
+          <td>Skolestart 18. aug</td>
+          <td>Åpent fra 4. aug</td>
+        </tr>
+      </table>
+    `
+    const result = convertTablesToMarkdown(html)
+
+    // All content is extracted, though layout may differ from visual
+    expect(result).toContain('Month')
+    expect(result).toContain('Events')
+    expect(result).toContain('School')
+    expect(result).toContain('SFO')
+    expect(result).toContain('August')
+    expect(result).toContain('Skolestart 18. aug')
+    expect(result).toContain('Åpent fra 4. aug')
+  })
+
+  it('handles tables with thead and tbody wrappers', () => {
+    const html = `
+      <table>
+        <thead>
+          <tr><th>Header 1</th><th>Header 2</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Data 1</td><td>Data 2</td></tr>
+        </tbody>
+      </table>
+    `
+    const result = convertTablesToMarkdown(html)
+
+    expect(result).toContain('| Header 1 | Header 2 |')
+    expect(result).toContain('| Data 1 | Data 2 |')
+  })
 })

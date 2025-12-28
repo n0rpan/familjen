@@ -38,7 +38,16 @@ export async function extractEventsFromHtml(
     return []
   }
 
-  const today = formatDateISO(new Date())
+  const now = new Date()
+  const today = formatDateISO(now)
+
+  // Derive school year dynamically (Aug-Jul cycle)
+  // August-December = currentYear-nextYear, January-July = prevYear-currentYear
+  const currentYear = now.getFullYear()
+  const currentMonth = now.getMonth() // 0-indexed (0=Jan, 7=Aug)
+  const schoolYearStart = currentMonth >= 7 ? currentYear : currentYear - 1
+  const schoolYearEnd = schoolYearStart + 1
+  const schoolYear = `${schoolYearStart}-${schoolYearEnd}`
 
   // Clean HTML to reduce tokens
   const cleanedHtml = cleanHtml(html)
@@ -56,7 +65,7 @@ Kontekst:
 - Barnets navn: ${context.childName || 'Ukjent'}
 - Skole/barnehage: ${context.schoolName || 'Ukjent'}
 - Dagens dato: ${today}
-- Skoleår: 2025-2026
+- Skoleår: ${schoolYear}
 
 VIKTIG for tabeller:
 - Tabeller viser ofte måned i første kolonne, så datoer som "14. august" tilhører den måneden
@@ -80,7 +89,7 @@ Trekk ut disse hendelsestypene:
 
 Returner en JSON-array. Hvert element skal ha:
 - "title": Tydelig norsk tittel (maks 60 tegn)
-- "date": Dato i YYYY-MM-DD format (bruk år 2025 for aug-des, 2026 for jan-juli)
+- "date": Dato i YYYY-MM-DD format (bruk år ${schoolYearStart} for aug-des, ${schoolYearEnd} for jan-juli)
 - "endDate": Sluttdato i YYYY-MM-DD hvis det er en periode (valgfri)
 - "time": Klokkeslett i HH:MM format hvis nevnt (valgfri)
 - "eventType": "holiday" | "event" | "deadline" | "closure" | "other"
@@ -461,8 +470,8 @@ function cleanHtml(html: string): string {
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 
-  // Limit length
-  return cleaned.slice(0, 20000)
+  // Limit length (gemini-2.5-flash-lite has 1M token context, so 50K chars is safe)
+  return cleaned.slice(0, 50000)
 }
 
 /**
