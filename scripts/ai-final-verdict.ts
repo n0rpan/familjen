@@ -1370,7 +1370,8 @@ function generateMainComment(
 |----------|---------|---------|
 ${verdict.reviewerSummary.map(r => {
   const icon = r.verdict === 'PASS' ? '✅' : r.verdict === 'WARN' ? '⚠️' : '❌'
-  return `| ${r.reviewer} | ${icon} ${r.verdict} | ${r.summary.slice(0, 60)}${r.summary.length > 60 ? '...' : ''} |`
+  const reviewSummary = reviews[r.reviewer]?.summary || 'No summary available'
+  return `| ${r.reviewer} | ${icon} ${r.verdict} | ${reviewSummary.slice(0, 60)}${reviewSummary.length > 60 ? '...' : ''} |`
 }).join('\n')}
 
 ### ❌ Issues That Must Be Fixed
@@ -1435,7 +1436,8 @@ Once you fix these issues, push a new commit and the CI will re-run.
 ${verdict.reviewerSummary.map(r => {
   const icon = r.verdict === 'PASS' ? '✅' : r.verdict === 'WARN' ? '⚠️' : '❌'
   const status = r.verdict === 'FAIL' ? '🔍 Verified non-blocking' : '—'
-  return `| ${r.reviewer} | ${icon} ${r.verdict} | ${status} | ${r.summary.slice(0, 40)}${r.summary.length > 40 ? '...' : ''} |`
+  const reviewSummary = reviews[r.reviewer]?.summary || 'No summary available'
+  return `| ${r.reviewer} | ${icon} ${r.verdict} | ${status} | ${reviewSummary.slice(0, 40)}${reviewSummary.length > 40 ? '...' : ''} |`
 }).join('\n')}
 
 ### 🔍 Why was this approved despite failing reviewers?
@@ -1463,7 +1465,8 @@ This is not a rubber stamp - the AI used tools (read_file, search_code) to verif
 |----------|---------|---------|
 ${verdict.reviewerSummary.map(r => {
   const icon = r.verdict === 'PASS' ? '✅' : r.verdict === 'WARN' ? '⚠️' : '❌'
-  return `| ${r.reviewer} | ${icon} ${r.verdict} | ${r.summary.slice(0, 50)}${r.summary.length > 50 ? '...' : ''} |`
+  const reviewSummary = reviews[r.reviewer]?.summary || 'No summary available'
+  return `| ${r.reviewer} | ${icon} ${r.verdict} | ${reviewSummary.slice(0, 50)}${reviewSummary.length > 50 ? '...' : ''} |`
 }).join('\n')}
 
 `
