@@ -8,7 +8,6 @@ import {
   formatDateISO,
   isToday,
   isWeekend,
-  formatWeekHeaderLocalized,
   cn,
   getHoliday,
   type Holiday,
@@ -234,16 +233,6 @@ export const WeekGrid = memo(function WeekGrid({
       className="rounded-2xl overflow-hidden"
       style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
     >
-      {/* Header */}
-      <div
-        className="flex items-center justify-between px-4 md:px-6 py-4"
-        style={{ borderBottom: '1px solid var(--border)' }}
-      >
-        <h3 className="font-semibold" style={{ color: 'var(--foreground)' }}>
-          {formatWeekHeaderLocalized(weekStart, language)}
-        </h3>
-      </div>
-
       {/* Grid */}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[600px]">
