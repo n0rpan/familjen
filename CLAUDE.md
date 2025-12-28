@@ -750,6 +750,7 @@ OPENROUTER_TEST_MODEL=google/gemini-2.0-flash-001      # API tests
 **Optional:**
 ```bash
 OPENROUTER_IMAGE_MODEL=stabilityai/stable-diffusion-xl  # Image generation tests
+VERCEL_AUTOMATION_BYPASS_SECRET=xxx                     # Bypass Vercel protection for CI smoke tests
 ```
 
 **Note:** All model env vars are required - no hardcoded defaults. This ensures you're always using your intended models and prevents silent fallbacks to stale model IDs when you update your secrets.

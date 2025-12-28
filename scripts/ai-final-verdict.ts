@@ -1778,7 +1778,7 @@ ${fullReasoning.slice(0, 2000)}${fullReasoning.length > 2000 ? '\n\n_...truncate
 📋 **Note:** Found ${preExisting.length} issue${preExisting.length > 1 ? 's' : ''} in files NOT changed by this PR. These are pre-existing and won't block this PR. See the follow-up comment for details.`
   }
 
-  // Collapsed section for AI agents - make it self-contained
+  // Collapsed section for AI agents - make it self-contained with full context
   const structuredData = {
     verdict: verdict.verdict,
     ciStatus: isBlocked ? 'FAILED' : 'PASSED',
@@ -1788,41 +1788,82 @@ ${fullReasoning.slice(0, 2000)}${fullReasoning.length > 2000 ? '\n\n_...truncate
       : verdict.aiOverride
         ? `PR APPROVED: ${failCount} reviewer failures verified as non-blocking (${verdict.aiOverride.reason})`
         : `PR APPROVED: ${prRelevant.length} minor findings (none blocking)`,
+
+    // Files changed in this PR - use to verify if issues are in this PR or pre-existing
+    filesChanged: changedFiles.slice(0, 50), // Limit to 50 files
+
     prChanges: {
-      filesChanged: changedFiles.length,
+      filesChangedCount: changedFiles.length,
       findings: prRelevant.length,
       critical: prCritical.length,
       warnings: prWarnings.length,
       info: prInfo.length,
     },
+
     preExisting: {
       count: preExisting.length,
       note: preExisting.length > 0 ? 'Issues in unchanged files - not blocking' : null,
+      files: preExisting.slice(0, 10).map(f => f.file),
     },
-    reviewers: verdict.reviewerSummary.map(r => ({
-      name: r.reviewer,
-      verdict: r.verdict,
-      critical: r.criticalCount,
-      warnings: r.warningCount,
+
+    // Detailed reviewer info with actual findings
+    reviewers: Object.entries(reviews).map(([name, review]) => ({
+      name,
+      verdict: review.verdict,
+      confidence: review.confidence,
+      summary: review.summary,
+      criticalCount: review.findings.filter(f => f.severity === 'critical').length,
+      warningCount: review.findings.filter(f => f.severity === 'warning').length,
+      // Include top findings for each reviewer
+      topFindings: review.findings
+        .filter(f => f.severity === 'critical' || f.severity === 'warning')
+        .slice(0, 5)
+        .map(f => ({
+          severity: f.severity,
+          category: f.category,
+          file: f.file,
+          line: f.line,
+          message: f.message,
+        })),
     })),
+
     verifications: Object.fromEntries(
       Object.entries(verdict.verifications).map(([k, v]) => [
         k,
         v === 'fail' && preExisting.length > 0 ? `${v} (pre-existing)` : v
       ])
     ),
-    // Include actual findings for AI agents to act on
+
+    // AI's investigation summary - what tools were used, what was verified
+    aiAnalysis: {
+      reasoning: fullReasoning.slice(0, 1000),
+      toolsUsed: verdict.raw?.toolsUsed || [],
+    },
+
+    // All critical issues that must be fixed (full detail)
     mustFix: prCritical.map(f => ({
+      severity: f.severity,
+      category: f.category,
       file: f.file,
       line: f.line,
       issue: f.issue,
+      whyItMatters: f.whyItMatters,
       howToFix: f.fix?.explanation,
+      isInPrFiles: changedFiles.some(cf => f.file?.includes(cf) || cf.includes(f.file || '')),
     })),
-    suggestions: prWarnings.slice(0, 5).map(f => ({
+
+    // All warnings (suggestions)
+    suggestions: prWarnings.map(f => ({
+      severity: f.severity,
+      category: f.category,
       file: f.file,
       line: f.line,
       issue: f.issue,
+      isInPrFiles: changedFiles.some(cf => f.file?.includes(cf) || cf.includes(f.file || '')),
     })),
+
+    // AI override info if applicable
+    aiOverride: verdict.aiOverride || null,
   }
 
   comment += `

@@ -1,5 +1,13 @@
 'use client'
 
+/**
+ * Feed Page - Shows messages, photos, and reminders from integrations
+ *
+ * AUTH: This route is protected by src/proxy.ts (Next.js 16 middleware).
+ * See PROTECTED_PATHS in src/lib/supabase/middleware.ts - includes '/feed'.
+ * Unauthenticated users are redirected to /login at the middleware level.
+ */
+
 import { useSearchParams } from 'next/navigation'
 import { useLanguage } from '@/lib/i18n/context'
 import { useFeed } from '@/hooks/data'
