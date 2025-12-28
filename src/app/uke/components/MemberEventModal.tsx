@@ -70,12 +70,12 @@ export const MemberEventModal = memo(function MemberEventModal({
 
       {/* Modal */}
       <div
-        className="relative w-full max-w-md rounded-2xl p-6 space-y-5 animate-fade-in"
+        className="relative w-full max-w-md max-h-[85vh] flex flex-col rounded-2xl animate-fade-in"
         style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between">
+        {/* Header - fixed */}
+        <div className="flex items-center justify-between p-6 pb-0">
           <h2
             id="member-event-modal-title"
             className="text-xl font-semibold font-display"
@@ -96,8 +96,8 @@ export const MemberEventModal = memo(function MemberEventModal({
           </button>
         </div>
 
-        {/* Form */}
-        <div className="space-y-4">
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           {/* Member select */}
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
@@ -183,8 +183,11 @@ export const MemberEventModal = memo(function MemberEventModal({
           </div>
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center justify-between pt-2">
+        {/* Footer - sticky actions */}
+        <div
+          className="flex items-center justify-between p-6 pt-4 border-t"
+          style={{ borderColor: 'var(--border)' }}
+        >
           <div>
             {editingEvent && (
               <button

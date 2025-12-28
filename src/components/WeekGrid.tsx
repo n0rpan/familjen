@@ -443,7 +443,7 @@ export const WeekGrid = memo(function WeekGrid({
                                 return (
                                   <button
                                     key={task.id}
-                                    onClick={() => editable && onTaskToggle ? onTaskToggle(task.id, !isDone) : onTaskClick?.(task)}
+                                    onClick={() => onTaskClick?.(task)}
                                     className="w-full flex items-center gap-1 text-xs py-0.5 px-1 rounded transition-colors text-left touch-feedback"
                                     style={{
                                       background: isDone ? 'transparent' : 'rgba(229, 185, 94, 0.15)',

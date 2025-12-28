@@ -22,6 +22,7 @@ interface ChildTaskModalProps {
   onSave: () => void
   onDelete: () => void
   onClose: () => void
+  onToggleStatus?: () => void
 }
 
 export const ChildTaskModal = memo(function ChildTaskModal({
@@ -35,6 +36,7 @@ export const ChildTaskModal = memo(function ChildTaskModal({
   onSave,
   onDelete,
   onClose,
+  onToggleStatus,
 }: ChildTaskModalProps) {
   // Handle Escape key to close modal
   useEffect(() => {
@@ -73,11 +75,12 @@ export const ChildTaskModal = memo(function ChildTaskModal({
 
       {/* Modal */}
       <div
-        className="relative w-full max-w-md rounded-2xl p-6 space-y-4"
+        className="relative w-full max-w-md max-h-[85vh] flex flex-col rounded-2xl"
         style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between">
+        {/* Header - fixed */}
+        <div className="flex items-center justify-between p-6 pb-0">
           <h3
             id="child-task-modal-title"
             className="text-lg font-semibold"
@@ -98,7 +101,8 @@ export const ChildTaskModal = memo(function ChildTaskModal({
           </button>
         </div>
 
-        <div className="space-y-4">
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           {/* Child selector */}
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground)' }}>
@@ -197,10 +201,38 @@ export const ChildTaskModal = memo(function ChildTaskModal({
               rows={2}
             />
           </div>
+
+          {/* Toggle status button (for editing existing tasks) */}
+          {editingTask && onToggleStatus && (
+            <button
+              onClick={onToggleStatus}
+              disabled={saving}
+              className="w-full flex items-center justify-center gap-2 p-3 rounded-xl text-sm font-medium transition-colors"
+              style={{
+                background: editingTask.status === 'done' ? 'rgba(229, 185, 94, 0.15)' : 'rgba(131, 166, 151, 0.15)',
+                color: editingTask.status === 'done' ? 'var(--color-honey)' : 'var(--color-sage)',
+              }}
+            >
+              {editingTask.status === 'done' ? (
+                <>
+                  <span>↩️</span>
+                  <span>{t.week.markUndone}</span>
+                </>
+              ) : (
+                <>
+                  <span>✓</span>
+                  <span>{t.week.markDone}</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center justify-between pt-2">
+        {/* Footer - sticky actions */}
+        <div
+          className="flex items-center justify-between p-6 pt-4 border-t"
+          style={{ borderColor: 'var(--border)' }}
+        >
           <div>
             {editingTask && (
               <button
