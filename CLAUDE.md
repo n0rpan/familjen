@@ -58,6 +58,53 @@ const CHILD_COLOR_MAP: Record<ChildColor, { bg: string; text: string }> = {
 }
 ```
 
+### Proxy (Authentication Middleware)
+
+**Important:** This project uses Next.js 16's `proxy.ts` convention (not the deprecated `middleware.ts`).
+
+```
+src/proxy.ts          # Authentication and route protection
+src/lib/supabase/middleware.ts  # Session update logic
+```
+
+The proxy handles:
+- Session refresh for authenticated users
+- Redirect to `/login` for protected routes without auth
+- Admin-only route protection (`/admin`)
+- Demo mode bypass for certain paths
+
+**Note for AI reviewers:** The `middleware.ts` → `proxy.ts` rename is a Next.js 16 requirement, not a bug. See [Next.js docs](https://nextjs.org/docs/app/api-reference/file-conventions/proxy).
+
+### React Hook Patterns
+
+**Timer/Ref Cleanup Pattern:**
+When cleaning up refs in useEffect, capture the ref value at effect setup time:
+
+```typescript
+// ✅ Correct - capture ref at setup
+useEffect(() => {
+  const timers = timersRef.current
+  return () => {
+    timers.forEach(timer => clearTimeout(timer))
+  }
+}, [])
+
+// ❌ Wrong - ref may change by cleanup time
+useEffect(() => {
+  return () => {
+    timersRef.current.forEach(timer => clearTimeout(timer))
+  }
+}, [])
+```
+
+**Domain Props vs React Children:**
+This codebase uses `children` as a prop name for household children (kids), not React children. The ESLint rule `react/no-children-prop` is disabled because of this intentional naming:
+
+```typescript
+// This is valid - 'children' refers to Child[] (household kids)
+<WeekGrid children={householdChildren} members={members} />
+```
+
 ## File Structure
 
 ### Pages (`src/app/`)
