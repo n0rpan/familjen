@@ -1102,7 +1102,7 @@ FINAL VERDICT: BLOCK`
   let messages: Message[] = [{ role: 'user', content: userPrompt }]
   let response = ''
   let iterations = 0
-  const maxIterations = 20 // Increased for thorough verification
+  const maxIterations = 30 // Allow thorough verification while avoiding infinite loops
 
   while (iterations < maxIterations) {
     iterations++
@@ -1114,9 +1114,16 @@ FINAL VERDICT: BLOCK`
       break
     }
 
-    // Safety check: if we're about to exhaust iterations, warn
-    if (iterations === maxIterations - 1) {
+    // Safety check: if approaching limit, add nudge to conclude
+    if (iterations >= maxIterations - 3) {
       console.warn(`⚠️ Approaching iteration limit (${iterations}/${maxIterations})`)
+      // Add a system message to encourage conclusion
+      if (iterations === maxIterations - 2) {
+        messages.push({
+          role: 'user',
+          content: 'You are running low on iterations. Please make your final PASS or BLOCK decision based on the information you have gathered so far. If you cannot find specific information, make a reasonable judgment based on available evidence.',
+        })
+      }
     }
 
     // Execute tool calls
