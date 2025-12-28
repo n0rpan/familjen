@@ -133,6 +133,9 @@ export function ShoppingPageContent() {
   }, [undoStack])
 
   const checkDuplicates = useCallback((listId: string, text: string) => {
+    // Skip duplicate check in demo mode - no real data to check against
+    if (isDemo) return
+
     if (duplicateCheckTimer.current) {
       clearTimeout(duplicateCheckTimer.current)
     }
@@ -162,7 +165,7 @@ export function ShoppingPageContent() {
         setDuplicateWarning(null)
       }
     }, 300)
-  }, [supabase])
+  }, [supabase, isDemo])
 
   const handleItemTextChange = useCallback((listId: string, text: string) => {
     setNewItemText(prev => ({ ...prev, [listId]: text }))

@@ -815,6 +815,7 @@ export default function WeekEditPage() {
   // Copy pickups and meals from last week
   const copyLastWeek = async () => {
     if (!household) return
+    if (isDemo) { showDemoMessage(); return }
     if (!confirm(t.week.copyLastWeekConfirm)) return
 
     setSaving(true)
@@ -876,6 +877,7 @@ export default function WeekEditPage() {
   // Clear all pickups and meals for this week
   const clearWeek = async () => {
     if (!household) return
+    if (isDemo) { showDemoMessage(); return }
     if (!confirm(t.week.clearWeekConfirm)) return
 
     setSaving(true)
@@ -911,6 +913,7 @@ export default function WeekEditPage() {
   // Quick set pickup for all children all week
   const quickPickupAllWeek = async (pickerId: string) => {
     if (!household || children.length === 0) return
+    if (isDemo) { showDemoMessage(); return }
 
     const pickerName = members.find(m => m.id === pickerId)?.name || ''
     const confirmMessage = t.week.quickPickupConfirm.replace('{name}', pickerName)
@@ -1055,6 +1058,7 @@ export default function WeekEditPage() {
 
   const deleteEvent = async () => {
     if (!editingEvent) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSaving(true)
 
@@ -1160,6 +1164,7 @@ export default function WeekEditPage() {
 
   const deleteHouseholdEvent = async () => {
     if (!editingHouseholdEvent) return
+    if (isDemo) { showDemoMessage(); return }
 
     // Don't allow deleting ICS-synced events
     if (editingHouseholdEvent.source === 'ics_calendar') {
@@ -1279,6 +1284,7 @@ export default function WeekEditPage() {
 
   const deleteTask = async () => {
     if (!editingTask) return
+    if (isDemo) { showDemoMessage(); return }
 
     setSaving(true)
 
@@ -1434,6 +1440,8 @@ export default function WeekEditPage() {
 
   // AI Suggestion functions
   const fetchAISuggestions = async () => {
+    if (isDemo) { showDemoMessage(); return }
+
     setAiLoading(true)
     setAiError(null)
     setShowSuggestionModal(true)
