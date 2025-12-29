@@ -1652,22 +1652,21 @@ ${toolList}
 }
 
 // ============================================
-// Message Types (matching Anthropic format)
+// Message Types (OpenAI-compatible format for OpenRouter)
 // ============================================
 
 interface Message {
-  role: 'user' | 'assistant'
-  content: string | ContentBlock[]
-}
-
-interface ContentBlock {
-  type: 'text' | 'tool_use' | 'tool_result'
-  text?: string
-  id?: string
-  name?: string
-  input?: Record<string, unknown>
-  tool_use_id?: string
-  content?: string
+  role: 'user' | 'assistant' | 'tool'
+  content: string | null
+  tool_calls?: Array<{
+    id: string
+    type: 'function'
+    function: {
+      name: string
+      arguments: string
+    }
+  }>
+  tool_call_id?: string  // For tool result messages
 }
 
 interface APIResponse {
@@ -1707,21 +1706,46 @@ async function callOpenRouter(
   systemPrompt: string,
   messages: Message[],
 ): Promise<{ response: string; toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> }> {
+  // Build messages array in OpenAI format
+  const apiMessages: Array<Record<string, unknown>> = [
+    { role: 'system', content: systemPrompt },
+  ]
+
+  for (const m of messages) {
+    if (m.role === 'tool') {
+      // Tool result message
+      apiMessages.push({
+        role: 'tool',
+        tool_call_id: m.tool_call_id,
+        content: m.content,
+      })
+    } else if (m.role === 'assistant' && m.tool_calls) {
+      // Assistant message with tool calls
+      apiMessages.push({
+        role: 'assistant',
+        content: m.content,
+        tool_calls: m.tool_calls,
+      })
+    } else {
+      // Regular user or assistant message
+      apiMessages.push({
+        role: m.role,
+        content: m.content,
+      })
+    }
+  }
+
   const fetchPromise = fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${API_KEY}`,
       'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://github.com/n0rpan/familjen',
+      'X-Title': 'Familjen CI/CD - Final Verdict',
     },
     body: JSON.stringify({
       model: VERDICT_MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...messages.map(m => ({
-          role: m.role,
-          content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
-        }))
-      ],
+      messages: apiMessages,
       tools: TOOLS.map(t => ({
         type: 'function',
         function: {
@@ -2149,7 +2173,9 @@ FINAL VERDICT: BLOCK`
 
     // Execute tool calls
     console.log(`\n🔧 Tool calls (iteration ${iterations}):`)
-    const toolResults: ContentBlock[] = []
+
+    // Build tool results for OpenAI format
+    const toolResultMessages: Message[] = []
 
     for (const toolCall of result.toolCalls) {
       // Track tool usage for verification
@@ -2159,26 +2185,30 @@ FINAL VERDICT: BLOCK`
       const toolResult = executeTool(toolCall.name, toolCall.input)
       console.log(`   → ${toolResult.slice(0, 60)}${toolResult.length > 60 ? '...' : ''}`)
 
-      toolResults.push({
-        type: 'tool_result',
-        tool_use_id: toolCall.id,
+      // Add tool result message in OpenAI format
+      toolResultMessages.push({
+        role: 'tool',
+        tool_call_id: toolCall.id,
         content: toolResult,
       })
     }
 
-    // Add assistant message with tool calls and user message with results
+    // Add assistant message with tool calls (OpenAI format)
     messages.push({
       role: 'assistant',
-      content: result.response + '\n' + result.toolCalls.map(tc =>
-        `<tool_use id="${tc.id}" name="${tc.name}">${JSON.stringify(tc.input)}</tool_use>`
-      ).join('\n')
+      content: result.response || null,
+      tool_calls: result.toolCalls.map(tc => ({
+        id: tc.id,
+        type: 'function' as const,
+        function: {
+          name: tc.name,
+          arguments: JSON.stringify(tc.input),
+        },
+      })),
     })
-    messages.push({
-      role: 'user',
-      content: toolResults.map(tr =>
-        `<tool_result tool_use_id="${tr.tool_use_id}">${tr.content}</tool_result>`
-      ).join('\n')
-    })
+
+    // Add all tool result messages
+    messages.push(...toolResultMessages)
   }
 
   // Check if we exhausted iterations without getting a final response
