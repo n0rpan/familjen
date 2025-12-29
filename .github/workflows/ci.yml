@@ -953,6 +953,27 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Install Playwright browsers (needed if supervisor decides to run visual/e2e tests)
+      # Uses cache to avoid re-downloading on every run (~1.5 min savings)
+      - name: Get Playwright version
+        id: playwright-version
+        run: echo "version=$(npm ls @playwright/test --json | jq -r '.dependencies["@playwright/test"].version // empty')" >> $GITHUB_OUTPUT
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install chromium --with-deps
+
+      - name: Install Playwright deps (if cached)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
       # Download test selection from smart-selector (for supervisor tools)
       - name: Download test selection
         uses: actions/download-artifact@v4
@@ -1023,6 +1044,9 @@ jobs:
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_VERDICT_MODEL: ${{ secrets.OPENROUTER_VERDICT_MODEL }}
+          OPENROUTER_VISION_MODEL: ${{ secrets.OPENROUTER_VISION_MODEL }}
+          OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}
+          OPENROUTER_TEST_MODEL: ${{ secrets.OPENROUTER_TEST_MODEL }}
           GITHUB_BASE_REF: ${{ github.base_ref }}
           GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_PR_TITLE: ${{ github.event.pull_request.title }}
