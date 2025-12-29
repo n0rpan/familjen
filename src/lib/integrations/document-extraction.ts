@@ -98,15 +98,6 @@ Returner en JSON-array. Hvert element skal ha:
 
 Returner KUN JSON-arrayen, ingen annen tekst. Hvis ingen hendelser funnet, returner [].`
 
-  // Log cleaned HTML size for debugging
-  console.log(`[EventExtraction] Cleaned HTML size: ${cleanedHtml.length} chars, tables preserved: ${cleanedHtml.includes('| --- |')}`)
-
-  // Log first 500 chars of cleaned content to help debug
-  if (cleanedHtml.length < 100) {
-    console.log(`[EventExtraction] WARNING: Very short content after cleaning. Raw HTML size: ${html.length} chars`)
-  }
-  console.log(`[EventExtraction] Content preview: ${cleanedHtml.slice(0, 500)}...`)
-
   try {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -139,20 +130,11 @@ Returner KUN JSON-arrayen, ingen annen tekst. Hvis ingen hendelser funnet, retur
     const content = data.choices?.[0]?.message?.content
 
     if (!content) {
-      console.log('[EventExtraction] No content in AI response. Full response:', JSON.stringify(data).slice(0, 500))
+      console.error('[EventExtraction] No content in AI response')
       return []
     }
 
-    console.log(`[EventExtraction] AI response (first 500 chars): ${content.slice(0, 500)}...`)
-
-    const events = parseExtractedEvents(content)
-    console.log(`[EventExtraction] AI extracted ${events.length} events from ${context.schoolName || 'unknown source'}`)
-
-    if (events.length === 0 && content.length > 10) {
-      console.log(`[EventExtraction] WARNING: AI returned content but 0 events parsed. Check JSON parsing.`)
-    }
-
-    return events
+    return parseExtractedEvents(content)
   } catch (error) {
     console.error('[EventExtraction] Error extracting events from HTML:', error)
     return []
@@ -354,36 +336,18 @@ function parseExtractedEvents(content: string): ExtractedEvent[] {
   const events = extractJSON<ExtractedEvent[]>(content)
 
   if (!Array.isArray(events)) {
-    console.log(`[EventExtraction] JSON parsing failed or not an array. Content type: ${typeof events}`)
     return []
   }
 
-  console.log(`[EventExtraction] Parsed ${events.length} raw events from JSON`)
-
-  // Log first few events for debugging
-  if (events.length > 0) {
-    console.log(`[EventExtraction] First raw event:`, JSON.stringify(events[0]).slice(0, 300))
-  }
-
-  const validEvents = events.filter((event, index) => {
-    if (!event) {
-      console.log(`[EventExtraction] Event ${index}: null/undefined`)
-      return false
-    }
-    if (typeof event.title !== 'string' || event.title.length === 0) {
-      console.log(`[EventExtraction] Event ${index}: invalid title "${event.title}"`)
-      return false
-    }
-    if (!isValidDate(event.date)) {
-      console.log(`[EventExtraction] Event ${index} "${event.title}": invalid date "${event.date}"`)
-      return false
-    }
-    return true
-  })
-
-  console.log(`[EventExtraction] ${validEvents.length}/${events.length} events passed validation`)
-
-  return validEvents.map((event) => ({
+  return events
+    .filter(
+      (event) =>
+        event &&
+        typeof event.title === 'string' &&
+        event.title.length > 0 &&
+        isValidDate(event.date)
+    )
+    .map((event) => ({
     title: event.title.slice(0, 100),
     date: event.date,
     endDate: isValidDate(event.endDate) ? event.endDate : undefined,

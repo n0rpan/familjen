@@ -257,8 +257,6 @@ async function findPotentialDuplicates(
     return []
   }
 
-  console.log(`[Deduplication] Checking ${pairsToCheck.length} event pairs with LLM`)
-
   // Batch pairs for LLM (max 10 per request to avoid token limits)
   const batchSize = 10
   const allResults: LLMDuplicateResult[] = []
@@ -330,8 +328,6 @@ export async function deduplicateEvents(
     return result
   }
 
-  console.log(`[Deduplication] Checking ${newEventIds.length} new events for duplicates`)
-
   // Get AI model from settings
   const model = await getDeduplicationModel(supabase)
 
@@ -389,9 +385,6 @@ export async function deduplicateEvents(
         result.errors.push(`Failed to merge duplicate ${hideEvent.id}: ${mergeError.message}`)
       } else {
         result.autoMerged++
-        console.log(
-          `[Deduplication] Auto-merged: "${hideEvent.title}" (${candidate.confidence.toFixed(2)}) → "${keepEvent.title}"`
-        )
       }
     } else {
       // Medium confidence: Create suggestion for user review
@@ -426,17 +419,10 @@ export async function deduplicateEvents(
           }
         } else {
           result.suggestionsCreated++
-          console.log(
-            `[Deduplication] Suggestion: "${candidate.eventA.title}" ≈ "${candidate.eventB.title}" (${candidate.confidence.toFixed(2)})`
-          )
         }
       }
     }
   }
-
-  console.log(
-    `[Deduplication] Complete: ${result.autoMerged} auto-merged, ${result.suggestionsCreated} suggestions`
-  )
 
   return result
 }

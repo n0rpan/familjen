@@ -131,12 +131,10 @@ export async function syncCalendarSource(
       }
 
       content = await response.text()
-      console.log(`[CalendarSourceSync] Fetched ${content.length} chars from ${source.url}`)
     }
 
     // 2. Extract events using AI
     const model = options.model || 'google/gemini-2.5-flash-lite'
-    console.log(`[CalendarSourceSync] Using model: ${model}`)
 
     // Get child name if linked
     let childName: string | undefined
@@ -154,11 +152,6 @@ export async function syncCalendarSource(
       schoolName: source.display_name,
       model,
     })
-
-    console.log(`[CalendarSourceSync] extractEventsFromHtml returned ${extractedEvents.length} events`)
-    if (extractedEvents.length > 0) {
-      console.log(`[CalendarSourceSync] First event: ${JSON.stringify(extractedEvents[0])}`)
-    }
 
     result.eventsFound = extractedEvents.length
     result.debug = {
@@ -337,7 +330,6 @@ export async function syncCalendarSource(
     }
 
     result.success = true
-    console.log(`[CalendarSourceSync] Sync complete:`, JSON.stringify(result))
     return result
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
@@ -379,22 +371,12 @@ export async function syncAllCalendarSources(
   const results: Array<{ id: string; name: string; result: SyncResult }> = []
 
   for (const source of sources) {
-    console.log(`[CalendarSourceSync] Syncing ${source.display_name}`)
-
     const result = await syncCalendarSource(supabase, source as CalendarSource, options)
-
     results.push({
       id: source.id,
       name: source.display_name,
       result,
     })
-
-    console.log(
-      `[CalendarSourceSync] ${source.display_name}: ` +
-        `${result.eventsFound} found, ${result.eventsCreated} created, ` +
-        `${result.eventsUpdated} updated, ${result.eventsRemoved} removed, ` +
-        `${result.duplicatesAutoMerged} auto-merged, ${result.duplicateSuggestionsCreated} suggestions`
-    )
   }
 
   return { sources: results }
