@@ -109,7 +109,7 @@ jobs:
         if: always()
         continue-on-error: true
         run: |
-          curl -X POST "${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook" \
+          curl -L -X POST "${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook" \
             -H "Content-Type: application/json" \
             -H "x-ci-secret: ${{ secrets.CI_WEBHOOK_SECRET }}" \
             -d '{
@@ -1467,15 +1467,41 @@ jobs:
             }
 
             try {
-              const response = await fetch(webhookUrl + '/api/ci/webhook', {
+              const fullUrl = webhookUrl + '/api/ci/webhook'
+              console.log('Sending webhook to:', fullUrl)
+
+              // First request - check for redirects
+              let response = await fetch(fullUrl, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
                   'x-ci-secret': process.env.CI_WEBHOOK_SECRET || ''
                 },
-                body: JSON.stringify(payload)
+                body: JSON.stringify(payload),
+                redirect: 'manual'
               })
+
+              // Handle redirect (301/302) - follow with POST
+              if (response.status === 301 || response.status === 302) {
+                const redirectUrl = response.headers.get('location')
+                console.log('Following redirect to:', redirectUrl)
+                if (redirectUrl) {
+                  response = await fetch(redirectUrl, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'x-ci-secret': process.env.CI_WEBHOOK_SECRET || ''
+                    },
+                    body: JSON.stringify(payload)
+                  })
+                }
+              }
+
               console.log('Webhook response:', response.status)
+              if (!response.ok) {
+                const text = await response.text()
+                console.log('Webhook response body:', text.substring(0, 200))
+              }
             } catch (e) {
               console.log('Webhook failed:', e.message)
             }
