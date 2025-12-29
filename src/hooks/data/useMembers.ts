@@ -4,6 +4,11 @@
  * useMembers Hook
  *
  * Abstracts household members data fetching for both demo and production modes.
+ *
+ * Loading state is derived from:
+ * - householdLoading: waiting for household to load
+ * - shouldFetch: household loaded with ID, but initial fetch not done yet
+ * - isFetching: actively fetching data
  */
 
 import { useState, useEffect, useCallback } from 'react'
@@ -23,16 +28,17 @@ export interface UseMembersReturn {
  */
 export function useMembers(): UseMembersReturn {
   const { isDemo, supabase, demoState } = useDataSource()
-  const { household } = useHousehold()
+  const { household, loading: householdLoading } = useHousehold()
 
   const [members, setMembers] = useState<HouseholdMember[]>([])
-  const [loading, setLoading] = useState(!isDemo)
+  const [isFetching, setIsFetching] = useState(false)
+  const [initialFetchDone, setInitialFetchDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     if (isDemo || !supabase || !household?.id) return
 
-    setLoading(true)
+    setIsFetching(true)
     setError(null)
 
     try {
@@ -49,21 +55,17 @@ export function useMembers(): UseMembersReturn {
       console.error('Error fetching members:', err)
       setError(err instanceof Error ? err.message : 'Failed to load members')
     } finally {
-      setLoading(false)
+      setIsFetching(false)
+      setInitialFetchDone(true)
     }
   }, [isDemo, supabase, household?.id])
 
-  // Initial fetch for production mode
+  // Fetch when household becomes available
   useEffect(() => {
-    if (isDemo) return
-
-    if (household?.id) {
+    if (!isDemo && household?.id && !initialFetchDone) {
       fetchData()
-    } else {
-      // No household - nothing to fetch, clear loading state
-      setLoading(false)
     }
-  }, [isDemo, household?.id, fetchData])
+  }, [isDemo, household?.id, initialFetchDone, fetchData])
 
   // Demo mode: return demo data
   if (isDemo && demoState) {
@@ -74,6 +76,10 @@ export function useMembers(): UseMembersReturn {
       refetch: () => {}, // No-op in demo
     }
   }
+
+  // Derive loading state
+  const shouldFetch = !!household?.id && !initialFetchDone && !isFetching
+  const loading = householdLoading || shouldFetch || isFetching
 
   return {
     members,

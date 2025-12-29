@@ -5,13 +5,18 @@
  *
  * Abstracts member events data fetching and mutations for both demo and production modes.
  * Member events are personal events for household members (work trips, dinners, etc.)
+ *
+ * Loading state is derived to avoid UI flash:
+ * - householdLoading: waiting for household to load
+ * - needsFetch: household loaded but fetch for current params not done
+ * - isFetching: actively fetching data
  */
 
 import { useState, useEffect, useCallback } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
 import { formatDateISO } from '@/lib/utils'
-import type { MemberEvent, MemberEventType } from '@/lib/types'
+import type { MemberEvent } from '@/lib/types'
 
 export interface UseMemberEventsOptions {
   /** Start date for filtering (inclusive) */
@@ -36,19 +41,23 @@ export interface UseMemberEventsReturn {
 export function useMemberEvents(options: UseMemberEventsOptions = {}): UseMemberEventsReturn {
   const { startDate, endDate } = options
   const { isDemo, supabase, demoState } = useDataSource()
-  const { household } = useHousehold()
+  const { household, loading: householdLoading } = useHousehold()
 
   const [events, setEvents] = useState<MemberEvent[]>([])
-  const [loading, setLoading] = useState(!isDemo)
+  const [isFetching, setIsFetching] = useState(false)
+  const [lastFetchKey, setLastFetchKey] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const startDateStr = startDate ? formatDateISO(startDate) : null
   const endDateStr = endDate ? formatDateISO(endDate) : null
 
+  // Generate a key for the current fetch parameters
+  const currentFetchKey = `${household?.id}-${startDateStr}-${endDateStr}`
+
   const fetchData = useCallback(async () => {
     if (isDemo || !supabase || !household?.id) return
 
-    setLoading(true)
+    setIsFetching(true)
     setError(null)
 
     try {
@@ -71,32 +80,28 @@ export function useMemberEvents(options: UseMemberEventsOptions = {}): UseMember
       if (fetchError) throw fetchError
 
       setEvents(data || [])
+      setLastFetchKey(currentFetchKey)
     } catch (err) {
       console.error('Error fetching member events:', err)
       setError(err instanceof Error ? err.message : 'Failed to load events')
+      setLastFetchKey(currentFetchKey)
     } finally {
-      setLoading(false)
+      setIsFetching(false)
     }
-  }, [isDemo, supabase, household?.id, startDateStr, endDateStr])
+  }, [isDemo, supabase, household?.id, startDateStr, endDateStr, currentFetchKey])
 
-  // Initial fetch for production mode
+  // Fetch when household or date range changes
   useEffect(() => {
-    if (isDemo) return
-
-    if (household?.id) {
+    if (!isDemo && household?.id && lastFetchKey !== currentFetchKey) {
       fetchData()
-    } else {
-      // No household - nothing to fetch, clear loading state
-      setLoading(false)
     }
-  }, [isDemo, household?.id, fetchData])
+  }, [isDemo, household?.id, lastFetchKey, currentFetchKey, fetchData])
 
   // Add event mutation
   const addEvent = useCallback(async (
     event: Omit<MemberEvent, 'id' | 'created_at' | 'updated_at'>
   ) => {
     if (isDemo) {
-      // Demo mode - for now just log, could add to demo state if needed
       console.log('Demo mode: Would add member event', event)
       return
     }
@@ -180,6 +185,10 @@ export function useMemberEvents(options: UseMemberEventsOptions = {}): UseMember
       refetch: () => {}, // No-op in demo
     }
   }
+
+  // Derive loading state
+  const needsFetch = !!household?.id && lastFetchKey !== currentFetchKey && !isFetching
+  const loading = householdLoading || needsFetch || isFetching
 
   return {
     events,

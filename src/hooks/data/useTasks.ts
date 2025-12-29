@@ -5,6 +5,11 @@
  *
  * Abstracts child tasks data fetching and mutations for both demo and production modes.
  * Supports week-based filtering for week planner views.
+ *
+ * Loading state is derived to avoid UI flash:
+ * - householdLoading: waiting for household to load
+ * - needsFetch: household loaded but fetch for current params not done
+ * - isFetching: actively fetching data
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
@@ -38,19 +43,23 @@ export interface UseTasksReturn {
 export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
   const { startDate, endDate, children = [] } = options
   const { isDemo, supabase, demoState, demoMutations } = useDataSource()
-  const { household } = useHousehold()
+  const { household, loading: householdLoading } = useHousehold()
 
   const [tasks, setTasks] = useState<ChildTask[]>([])
-  const [loading, setLoading] = useState(!isDemo)
+  const [isFetching, setIsFetching] = useState(false)
+  const [lastFetchKey, setLastFetchKey] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const startDateStr = startDate ? formatDateISO(startDate) : null
   const endDateStr = endDate ? formatDateISO(endDate) : null
 
+  // Generate a key for the current fetch parameters
+  const currentFetchKey = `${household?.id}-${startDateStr}-${endDateStr}`
+
   const fetchData = useCallback(async () => {
     if (isDemo || !supabase || !household?.id) return
 
-    setLoading(true)
+    setIsFetching(true)
     setError(null)
 
     try {
@@ -73,25 +82,22 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
       if (fetchError) throw fetchError
 
       setTasks(data || [])
+      setLastFetchKey(currentFetchKey)
     } catch (err) {
       console.error('Error fetching tasks:', err)
       setError(err instanceof Error ? err.message : 'Failed to load tasks')
+      setLastFetchKey(currentFetchKey) // Mark as fetched even on error
     } finally {
-      setLoading(false)
+      setIsFetching(false)
     }
-  }, [isDemo, supabase, household?.id, startDateStr, endDateStr])
+  }, [isDemo, supabase, household?.id, startDateStr, endDateStr, currentFetchKey])
 
-  // Initial fetch for production mode
+  // Fetch when household or date range changes
   useEffect(() => {
-    if (isDemo) return
-
-    if (household?.id) {
+    if (!isDemo && household?.id && lastFetchKey !== currentFetchKey) {
       fetchData()
-    } else {
-      // No household - nothing to fetch, clear loading state
-      setLoading(false)
     }
-  }, [isDemo, household?.id, fetchData])
+  }, [isDemo, household?.id, lastFetchKey, currentFetchKey, fetchData])
 
   // Add task mutation
   const addTask = useCallback(async (
@@ -193,6 +199,10 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
       refetch: () => {}, // No-op in demo
     }
   }
+
+  // Derive loading state
+  const needsFetch = !!household?.id && lastFetchKey !== currentFetchKey && !isFetching
+  const loading = householdLoading || needsFetch || isFetching
 
   return {
     tasks: tasksWithChildren,

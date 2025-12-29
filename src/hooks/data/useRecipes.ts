@@ -4,6 +4,11 @@
  * useRecipes Hook
  *
  * Abstracts recipe data fetching and mutations for both demo and production modes.
+ *
+ * Loading state is derived to avoid UI flash:
+ * - householdLoading: waiting for household to load
+ * - shouldFetch: household loaded but initial fetch not done
+ * - isFetching: actively fetching data
  */
 
 import { useState, useEffect, useCallback } from 'react'
@@ -26,16 +31,17 @@ export interface UseRecipesReturn {
  */
 export function useRecipes(): UseRecipesReturn {
   const { isDemo, supabase, demoState, demoMutations } = useDataSource()
-  const { household } = useHousehold()
+  const { household, loading: householdLoading } = useHousehold()
 
   const [recipes, setRecipes] = useState<Recipe[]>([])
-  const [loading, setLoading] = useState(!isDemo)
+  const [isFetching, setIsFetching] = useState(false)
+  const [initialFetchDone, setInitialFetchDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     if (isDemo || !supabase || !household?.id) return
 
-    setLoading(true)
+    setIsFetching(true)
     setError(null)
 
     try {
@@ -52,21 +58,17 @@ export function useRecipes(): UseRecipesReturn {
       console.error('Error fetching recipes:', err)
       setError(err instanceof Error ? err.message : 'Failed to load recipes')
     } finally {
-      setLoading(false)
+      setIsFetching(false)
+      setInitialFetchDone(true)
     }
   }, [isDemo, supabase, household?.id])
 
-  // Initial fetch for production mode
+  // Fetch when household becomes available
   useEffect(() => {
-    if (isDemo) return
-
-    if (household?.id) {
+    if (!isDemo && household?.id && !initialFetchDone) {
       fetchData()
-    } else {
-      // No household - nothing to fetch, clear loading state
-      setLoading(false)
     }
-  }, [isDemo, household?.id, fetchData])
+  }, [isDemo, household?.id, initialFetchDone, fetchData])
 
   // Add recipe mutation
   const addRecipe = useCallback(async (
@@ -153,6 +155,10 @@ export function useRecipes(): UseRecipesReturn {
       refetch: () => {}, // No-op in demo
     }
   }
+
+  // Derive loading state
+  const shouldFetch = !!household?.id && !initialFetchDone && !isFetching
+  const loading = householdLoading || shouldFetch || isFetching
 
   return {
     recipes,
