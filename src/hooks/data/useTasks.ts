@@ -17,6 +17,7 @@ import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
 import { formatDateISO } from '@/lib/utils'
 import { createChildTaskSchema } from '@/lib/schemas'
+import { queueChange } from '@/lib/offline-queue'
 import type { ChildTask, ChildTaskWithChild, Child } from '@/lib/types'
 
 export interface UseTasksOptions {
@@ -152,6 +153,24 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
 
     if (!supabase) return
 
+    // If offline, queue the change for later sync
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      await queueChange({
+        table: 'child_tasks',
+        operation: 'insert',
+        data: task as Record<string, unknown>,
+      })
+      // Optimistically add to local state with temporary ID
+      const tempTask: ChildTask = {
+        ...task,
+        id: `temp-${Date.now()}`,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } as ChildTask
+      setTasks(prev => [...prev, tempTask])
+      return
+    }
+
     try {
       await supabase
         .from('child_tasks')
@@ -176,6 +195,18 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
 
     if (!supabase) return
 
+    // If offline, queue the change for later sync
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      await queueChange({
+        table: 'child_tasks',
+        operation: 'update',
+        data: { id: taskId, ...updates } as Record<string, unknown>,
+      })
+      // Optimistically update local state
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t))
+      return
+    }
+
     try {
       await supabase
         .from('child_tasks')
@@ -197,6 +228,18 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
     }
 
     if (!supabase) return
+
+    // If offline, queue the change for later sync
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      await queueChange({
+        table: 'child_tasks',
+        operation: 'delete',
+        data: { id: taskId },
+      })
+      // Optimistically remove from local state
+      setTasks(prev => prev.filter(t => t.id !== taskId))
+      return
+    }
 
     try {
       await supabase

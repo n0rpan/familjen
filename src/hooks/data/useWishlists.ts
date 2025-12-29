@@ -15,6 +15,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
 import { createWishlistItemSchema, updateWishlistItemSchema } from '@/lib/schemas'
+import { queueChange } from '@/lib/offline-queue'
 import type { WishlistItem } from '@/lib/types'
 
 export interface UseWishlistsReturn {
@@ -99,6 +100,24 @@ export function useWishlists(): UseWishlistsReturn {
 
     if (!supabase) return
 
+    // If offline, queue the change for later sync
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      await queueChange({
+        table: 'wishlist_items',
+        operation: 'insert',
+        data: item as Record<string, unknown>,
+      })
+      // Optimistically add to local state with temporary ID
+      const tempItem: WishlistItem = {
+        ...item,
+        id: `temp-${Date.now()}`,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } as WishlistItem
+      setItems(prev => [tempItem, ...prev])
+      return
+    }
+
     try {
       await supabase
         .from('wishlist_items')
@@ -139,6 +158,18 @@ export function useWishlists(): UseWishlistsReturn {
 
     if (!supabase) return
 
+    // If offline, queue the change for later sync
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      await queueChange({
+        table: 'wishlist_items',
+        operation: 'update',
+        data: { id: itemId, ...updates } as Record<string, unknown>,
+      })
+      // Optimistically update local state
+      setItems(prev => prev.map(i => i.id === itemId ? { ...i, ...updates } : i))
+      return
+    }
+
     try {
       await supabase
         .from('wishlist_items')
@@ -160,6 +191,18 @@ export function useWishlists(): UseWishlistsReturn {
     }
 
     if (!supabase) return
+
+    // If offline, queue the change for later sync
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      await queueChange({
+        table: 'wishlist_items',
+        operation: 'delete',
+        data: { id: itemId },
+      })
+      // Optimistically remove from local state
+      setItems(prev => prev.filter(i => i.id !== itemId))
+      return
+    }
 
     try {
       await supabase
