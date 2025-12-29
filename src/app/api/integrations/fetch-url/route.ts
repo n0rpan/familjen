@@ -1,0 +1,411 @@
+import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { syncCalendarSource, generateEventHash, type CalendarSource } from '@/lib/integrations/calendar-source-sync'
+import { validateOrigin } from '@/lib/config'
+import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
+import { isUrlAllowed } from '@/lib/sanitize'
+import { parseICSContent } from '@/lib/ics-parser'
+import { formatDateISO } from '@/lib/utils'
+
+/**
+ * POST /api/integrations/fetch-url
+ *
+ * Fetch content from a manual source URL and process it.
+ */
+export async function POST(request: Request) {
+  // CSRF protection
+  if (!validateOrigin(request)) {
+    return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+  }
+
+  try {
+    const supabase = await createClient()
+
+    // Check authentication
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
+    }
+
+    // Rate limiting
+    const rateLimitKey = createRateLimitKey(user.id, 'urlFetch')
+    const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.urlFetch)
+    if (rateLimit.limited) {
+      return NextResponse.json(
+        { error: `For mange forespørsler. Prøv igjen om ${rateLimit.retryAfter} sekunder.` },
+        { status: 429 }
+      )
+    }
+
+    // Get user's household
+    const { data: member } = await supabase
+      .from('household_members')
+      .select('household_id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!member) {
+      return NextResponse.json({ error: 'Ingen husstand funnet' }, { status: 404 })
+    }
+
+    const body = await request.json()
+    const { sourceUrlId } = body
+
+    if (!sourceUrlId) {
+      return NextResponse.json({ error: 'sourceUrlId mangler' }, { status: 400 })
+    }
+
+    // Get the source URL record
+    const { data: sourceUrl, error: fetchError } = await supabase
+      .from('external_source_urls')
+      .select('*')
+      .eq('id', sourceUrlId)
+      .eq('household_id', member.household_id)
+      .single()
+
+    if (fetchError || !sourceUrl) {
+      return NextResponse.json({ error: 'Kilde ikke funnet' }, { status: 404 })
+    }
+
+    // SSRF protection - validate URL before fetching
+    if (!isUrlAllowed(sourceUrl.url)) {
+      return NextResponse.json({ error: 'URL ikke tillatt' }, { status: 400 })
+    }
+
+    // Fetch the content based on type
+    let content: string | null = null
+    let mimeType = 'text/html'
+
+    try {
+      const response = await fetch(sourceUrl.url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; FamiljenBot/1.0)',
+          'Accept': 'text/html,application/pdf,text/calendar,*/*',
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      const contentType = response.headers.get('content-type') || ''
+      mimeType = contentType.split(';')[0].trim()
+
+      if (sourceUrl.url_type === 'ics' || contentType.includes('text/calendar')) {
+        // ICS calendar - parse and create events directly
+        content = await response.text()
+
+        // Parse ICS content (1 year back, 1 year forward)
+        const now = new Date()
+        const startDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate())
+        const endDate = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate())
+
+        const icsEvents = parseICSContent(content, startDate, endDate)
+        console.log(`[ICS Sync] Parsed ${icsEvents.length} events from ${sourceUrl.display_name}`)
+
+        // Get existing events for this source
+        const { data: existingEvents } = await supabase
+          .from('external_events')
+          .select('id, source_event_hash')
+          .eq('source_url_id', sourceUrl.id)
+
+        const existingByHash = new Map<string, string>()
+        for (const event of existingEvents || []) {
+          if (event.source_event_hash) {
+            existingByHash.set(event.source_event_hash, event.id)
+          }
+        }
+
+        // Track stats
+        let eventsCreated = 0
+        let eventsUpdated = 0
+        const processedHashes = new Set<string>()
+
+        // Upsert events
+        for (const icsEvent of icsEvents) {
+          const eventDate = formatDateISO(icsEvent.startDate)
+          const hash = generateEventHash(sourceUrl.id, eventDate, icsEvent.summary)
+          processedHashes.add(hash)
+
+          const eventData = {
+            source_url_id: sourceUrl.id,
+            source_event_hash: hash,
+            external_id: icsEvent.uid,
+            title: icsEvent.summary.slice(0, 200),
+            event_date: eventDate,
+            end_date: icsEvent.isAllDay && icsEvent.endDate
+              ? formatDateISO(new Date(icsEvent.endDate.getTime() - 24 * 60 * 60 * 1000)) // All-day end is exclusive
+              : formatDateISO(icsEvent.endDate),
+            event_time: icsEvent.isAllDay ? null : icsEvent.startDate.toTimeString().slice(0, 5),
+            event_type: 'event',
+            description: icsEvent.description?.slice(0, 2000) || null,
+            child_id: sourceUrl.child_id,
+            raw_data: { uid: icsEvent.uid, location: icsEvent.location, busyStatus: icsEvent.busyStatus },
+          }
+
+          const existingId = existingByHash.get(hash)
+          if (existingId) {
+            await supabase.from('external_events').update(eventData).eq('id', existingId)
+            eventsUpdated++
+          } else {
+            await supabase.from('external_events').insert(eventData)
+            eventsCreated++
+          }
+        }
+
+        // Remove events that no longer exist in ICS
+        let eventsRemoved = 0
+        const today = formatDateISO(new Date())
+        for (const [hash, eventId] of existingByHash) {
+          if (!processedHashes.has(hash)) {
+            // Only remove future events
+            const { data: event } = await supabase
+              .from('external_events')
+              .select('event_date')
+              .eq('id', eventId)
+              .single()
+
+            if (event && event.event_date >= today) {
+              await supabase.from('external_events').delete().eq('id', eventId)
+              eventsRemoved++
+            }
+          }
+        }
+
+        // Update sync status
+        await supabase
+          .from('external_source_urls')
+          .update({
+            last_sync_at: new Date().toISOString(),
+            last_sync_status: 'ok',
+            last_sync_error: null,
+          })
+          .eq('id', sourceUrl.id)
+
+        return NextResponse.json({
+          success: true,
+          eventsFound: icsEvents.length,
+          eventsCreated,
+          eventsUpdated,
+          eventsRemoved,
+          message: `ICS synkronisert: ${icsEvents.length} hendelser funnet`,
+        })
+      } else if (sourceUrl.url_type === 'pdf' || contentType.includes('application/pdf')) {
+        // PDF document - store for AI processing
+        const buffer = Buffer.from(await response.arrayBuffer())
+
+        // Generate storage path
+        const filename = `source_${sourceUrl.id}_${Date.now()}.pdf`
+        const storagePath = `${member.household_id}/manual/${filename}`
+
+        // Upload to storage
+        const { error: uploadError } = await supabase.storage
+          .from('external-documents')
+          .upload(storagePath, buffer, {
+            contentType: 'application/pdf',
+            upsert: true,
+          })
+
+        if (uploadError) {
+          throw new Error(`Upload failed: ${uploadError.message}`)
+        }
+
+        // Create document record
+        const { error: docError } = await supabase
+          .from('external_documents')
+          .upsert({
+            household_id: member.household_id,
+            source_url_id: sourceUrl.id,
+            external_id: `manual_${sourceUrl.id}`,
+            source_type: 'manual_url',
+            source_url: sourceUrl.url,
+            title: sourceUrl.display_name,
+            filename,
+            mime_type: 'application/pdf',
+            storage_path: storagePath,
+            file_size: buffer.length,
+            ai_processed: false,
+            child_id: sourceUrl.child_id,
+          }, {
+            onConflict: 'source_url_id',
+          })
+
+        if (docError) {
+          console.error('PDF document record error:', docError)
+          throw new Error(`Document record failed: ${docError.message}`)
+        }
+
+        // Update sync status
+        await supabase
+          .from('external_source_urls')
+          .update({
+            last_sync_at: new Date().toISOString(),
+            last_sync_status: 'ok',
+            last_sync_error: null,
+          })
+          .eq('id', sourceUrl.id)
+
+        return NextResponse.json({
+          success: true,
+          message: 'PDF lastet opp - vil bli behandlet',
+        })
+      }
+      // If we reach here, it's HTML - fall through to calendar source sync
+    } catch (fetchErr) {
+      // For ICS/PDF failures, update status and return error
+      await supabase
+        .from('external_source_urls')
+        .update({
+          last_sync_at: new Date().toISOString(),
+          last_sync_status: 'error',
+          last_sync_error: fetchErr instanceof Error ? fetchErr.message : 'Unknown error',
+        })
+        .eq('id', sourceUrl.id)
+
+      return NextResponse.json({
+        error: 'Kunne ikke hente innhold',
+        details: fetchErr instanceof Error ? fetchErr.message : 'Unknown error',
+      }, { status: 500 })
+    }
+
+    // For HTML/calendar_page: Use the new sync function with proper event tracking
+    // Get AI model setting
+    const { data: modelSetting } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'openrouter_vision_model')
+      .single()
+
+    const model = modelSetting?.value || 'google/gemini-2.0-flash-001'
+
+    // Build the CalendarSource object
+    const calendarSource: CalendarSource = {
+      id: sourceUrl.id,
+      household_id: member.household_id,
+      url: sourceUrl.url,
+      display_name: sourceUrl.display_name,
+      url_type: sourceUrl.url_type,
+      child_id: sourceUrl.child_id,
+      auto_sync: sourceUrl.auto_sync,
+      last_sync_at: sourceUrl.last_sync_at,
+    }
+
+    // Run the sync with proper event tracking
+    const syncResult = await syncCalendarSource(supabase, calendarSource, { model })
+
+    if (!syncResult.success) {
+      return NextResponse.json({
+        error: syncResult.error || 'Synkronisering feilet',
+      }, { status: 500 })
+    }
+
+    // Build response message
+    const parts: string[] = []
+    if (syncResult.eventsFound > 0) {
+      parts.push(`${syncResult.eventsFound} hendelser funnet`)
+    }
+    if (syncResult.eventsCreated > 0) {
+      parts.push(`${syncResult.eventsCreated} nye`)
+    }
+    if (syncResult.eventsUpdated > 0) {
+      parts.push(`${syncResult.eventsUpdated} oppdatert`)
+    }
+    if (syncResult.eventsRemoved > 0) {
+      parts.push(`${syncResult.eventsRemoved} fjernet`)
+    }
+
+    return NextResponse.json({
+      ...syncResult,
+      message: parts.length > 0 ? `Synkronisert: ${parts.join(', ')}` : 'Synkronisert - ingen hendelser funnet',
+    })
+
+  } catch (error) {
+    console.error('Fetch URL error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+/**
+ * GET /api/integrations/fetch-url
+ *
+ * List all source URLs for the user's household.
+ */
+export async function GET() {
+  try {
+    const supabase = await createClient()
+
+    // Check authentication
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
+    }
+
+    // Get user's household
+    const { data: member } = await supabase
+      .from('household_members')
+      .select('household_id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!member) {
+      return NextResponse.json({ error: 'Ingen husstand funnet' }, { status: 404 })
+    }
+
+    // Get all source URLs
+    const { data: sourceUrls, error } = await supabase
+      .from('external_source_urls')
+      .select('*')
+      .eq('household_id', member.household_id)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      return NextResponse.json({ error: 'Kunne ikke hente kilder' }, { status: 500 })
+    }
+
+    return NextResponse.json({ sourceUrls })
+
+  } catch (error) {
+    console.error('Get source URLs error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+/**
+ * DELETE /api/integrations/fetch-url
+ *
+ * Delete a source URL.
+ */
+export async function DELETE(request: Request) {
+  try {
+    const supabase = await createClient()
+
+    // Check authentication
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
+    }
+
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
+
+    if (!id) {
+      return NextResponse.json({ error: 'ID mangler' }, { status: 400 })
+    }
+
+    // Delete is handled by RLS - only household members can delete their own URLs
+    const { error } = await supabase
+      .from('external_source_urls')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      return NextResponse.json({ error: 'Kunne ikke slette kilde' }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true })
+
+  } catch (error) {
+    console.error('Delete source URL error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}

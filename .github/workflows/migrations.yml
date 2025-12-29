@@ -1,0 +1,46 @@
+name: Push Supabase Migrations
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Push migrations to production
+        run: |
+          max_attempts=3
+          attempt=1
+          wait_time=5
+
+          while [ $attempt -le $max_attempts ]; do
+            echo "Attempt $attempt of $max_attempts..."
+
+            if supabase db push --db-url "${{ secrets.SUPABASE_DB_URL }}"; then
+              echo "Migration successful!"
+              exit 0
+            fi
+
+            if [ $attempt -lt $max_attempts ]; then
+              echo "Attempt $attempt failed. Waiting ${wait_time}s before retry..."
+              sleep $wait_time
+              wait_time=$((wait_time * 2))  # Exponential backoff: 5s, 10s, 20s
+            fi
+
+            attempt=$((attempt + 1))
+          done
+
+          echo "All $max_attempts attempts failed"
+          exit 1

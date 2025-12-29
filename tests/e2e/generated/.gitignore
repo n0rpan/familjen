@@ -1,0 +1,5 @@
+# Ignore AI-generated test scenarios (created during CI)
+pr-scenarios.json
+
+# Keep this directory tracked
+!.gitignore

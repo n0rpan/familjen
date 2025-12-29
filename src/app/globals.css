@@ -1,0 +1,812 @@
+/* Familjen Design System - Scandinavian Warmth */
+/* Fonts loaded via next/font in layout.tsx for better performance */
+
+@import "tailwindcss";
+
+:root {
+  /* Warm Scandinavian Palette */
+  --color-cream: #FAF7F2;
+  --color-sand: #F0EBE3;
+  --color-warm-gray: #9C9589;
+  --color-charcoal: #2D2A26;
+  --color-soft-black: #1A1917;
+
+  /* Accent Colors */
+  --color-coral: #E8786D;
+  --color-coral-dark: #D4635A;
+  --color-sage: #8BA888;
+  --color-sky: #7EB6C4;
+  --color-honey: #E5B95E;
+
+  /* Semantic */
+  --background: var(--color-cream);
+  --foreground: var(--color-charcoal);
+  --muted: var(--color-warm-gray);
+  --card: #FFFFFF;
+  --card-hover: #FEFEFE;
+  --border: #E8E3DB;
+  --accent: var(--color-coral);
+  --accent-hover: var(--color-coral-dark);
+
+  /* Typography - uses CSS variables from next/font (defined in layout.tsx) */
+  --font-display: var(--font-fraunces), Georgia, serif;
+  --font-body: var(--font-outfit), system-ui, sans-serif;
+
+  /* Spacing */
+  --radius: 16px;
+  --radius-sm: 10px;
+  --radius-lg: 24px;
+
+  /* Header backgrounds */
+  --header-bg: rgba(250, 247, 242, 0.9);
+  --nav-bg: rgba(255, 255, 255, 0.95);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #1A1917;
+    --foreground: #FAF7F2;
+    --muted: #7A756D;
+    --card: #2D2A26;
+    --card-hover: #363330;
+    --border: #3D3A36;
+    --header-bg: rgba(26, 25, 23, 0.9);
+    --nav-bg: rgba(45, 42, 38, 0.95);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Focus styles for accessibility */
+*:focus {
+  outline: none;
+}
+
+/* Visible focus ring for keyboard navigation (not mouse clicks) */
+*:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Remove tap highlight on mobile */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  scroll-behavior: smooth;
+  height: 100%;
+  background: var(--background);
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--foreground);
+  background: var(--background);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* App shell container for iOS */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.app-shell-content {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Display Typography */
+.font-display {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--sand);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--warm-gray);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--charcoal);
+}
+
+/* Form Elements */
+input, select, textarea {
+  font-family: var(--font-body);
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(232, 120, 109, 0.2);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.5s ease-out forwards;
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+/* Grain texture overlay */
+.grain::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  z-index: 9999;
+}
+
+/* Card hover effect */
+.card-hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+}
+
+/* Button base */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 24px;
+  font-weight: 500;
+  font-size: 15px;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s ease;
+  cursor: pointer;
+  border: none;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background: var(--card);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+  background: var(--card-hover);
+  border-color: var(--muted);
+}
+
+/* Input styling */
+.input {
+  width: 100%;
+  padding: 14px 16px;
+  font-size: 16px;
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(232, 120, 109, 0.15);
+}
+
+.input::placeholder {
+  color: var(--muted);
+}
+
+/* Badge styles */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 20px;
+}
+
+.badge-coral {
+  background: rgba(232, 120, 109, 0.15);
+  color: var(--color-coral-dark);
+}
+
+.badge-sage {
+  background: rgba(139, 168, 136, 0.2);
+  color: #5A7A57;
+}
+
+.badge-sky {
+  background: rgba(126, 182, 196, 0.2);
+  color: #4A8A9A;
+}
+
+.badge-honey {
+  background: rgba(229, 185, 94, 0.2);
+  color: #A68A3A;
+}
+
+/* Skeleton loading animation */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--sand) 25%,
+    var(--border) 50%,
+    var(--sand) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+}
+
+/* Pull to refresh */
+.pull-to-refresh {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-100%);
+  transition: transform 0.3s ease;
+  z-index: 100;
+  background: var(--background);
+}
+
+.pull-to-refresh.pulling {
+  transform: translateY(0);
+}
+
+.pull-to-refresh .spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Instant navigation feedback - applied via DOM before any async work */
+.page-content-wrapper {
+  transition: opacity 50ms ease-out;
+}
+
+.page-content-wrapper.navigating {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* Fast fade-in for page content - speed over smoothness */
+@keyframes page-fade-in {
+  from { opacity: 0.7; }
+  to { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: page-fade-in 80ms ease-out forwards;
+}
+
+/* View transition animations */
+@view-transition {
+  navigation: auto;
+}
+
+/* Disable root transition - prevents flash */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/* Keep header/nav completely stable during transitions */
+::view-transition-old(header),
+::view-transition-new(header),
+::view-transition-old(mobile-header),
+::view-transition-new(mobile-header),
+::view-transition-old(mobile-nav),
+::view-transition-new(mobile-nav) {
+  animation: none;
+}
+
+/* Page content: crossfade for smooth transitions */
+::view-transition-old(page-content) {
+  animation: content-fade-out 0.25s ease-out forwards;
+}
+
+::view-transition-new(page-content) {
+  animation: content-fade-in 0.25s ease-out forwards;
+}
+
+@keyframes content-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes content-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Card alt background for skeleton items */
+:root {
+  --card-alt: rgba(240, 235, 227, 0.5);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --card-alt: rgba(61, 58, 54, 0.5);
+  }
+
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--border) 25%,
+      #4a4745 50%,
+      var(--border) 75%
+    );
+    background-size: 200% 100%;
+  }
+}
+
+/* Contextual micro-feedback - highlight just-saved items */
+@keyframes save-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(139, 168, 136, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(139, 168, 136, 0.2);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(139, 168, 136, 0);
+  }
+}
+
+@keyframes check-pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.just-saved {
+  animation: save-pulse 0.6s ease-out;
+}
+
+.just-checked {
+  animation: check-pulse 0.3s ease-out;
+}
+
+/* Subtle background highlight for saved rows */
+.highlight-save {
+  position: relative;
+}
+
+.highlight-save::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(139, 168, 136, 0.15);
+  border-radius: inherit;
+  pointer-events: none;
+  animation: highlight-fade 1s ease-out forwards;
+}
+
+@keyframes highlight-fade {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Touch feedback for native feel */
+@media (hover: none) {
+  .touch-feedback {
+    transition: transform 0.1s ease, background-color 0.1s ease;
+  }
+
+  .touch-feedback:active {
+    transform: scale(0.98);
+    background-color: var(--card-alt) !important;
+  }
+}
+
+/* Prevent 300ms tap delay on interactive elements */
+a, button, [role="button"], input, select, textarea {
+  touch-action: manipulation;
+}
+
+/* Toast slide-in animation */
+@keyframes toast-slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-toast-in {
+  animation: toast-slide-in 0.3s ease-out forwards;
+}
+
+/* Safe area insets for PWA */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Home Control - Slider styles with improved touch targets */
+.slider-container {
+  position: relative;
+  height: 44px; /* Minimum touch target */
+  display: flex;
+  align-items: center;
+}
+
+.slider-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 8px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.slider-fill {
+  height: 100%;
+  background: var(--color-sky);
+  border-radius: 4px;
+  transition: width 0.1s ease-out;
+}
+
+.slider-input {
+  position: relative;
+  width: 100%;
+  height: 44px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  margin: 0;
+  padding: 0;
+}
+
+/* Slider thumb - Webkit (Chrome, Safari, Edge) */
+.slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  background: var(--card);
+  border: 3px solid var(--color-sky);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.slider-input::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
+}
+
+.slider-input::-webkit-slider-thumb:active {
+  transform: scale(1.15);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+/* Slider thumb - Firefox */
+.slider-input::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  background: var(--card);
+  border: 3px solid var(--color-sky);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.slider-input::-moz-range-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
+}
+
+.slider-input::-moz-range-track {
+  background: transparent;
+  height: 44px;
+}
+
+/* Disabled state */
+.slider-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.slider-input:disabled::-webkit-slider-thumb {
+  cursor: not-allowed;
+}
+
+/* Home Control - Action buttons */
+.control-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px 8px;
+  min-height: 56px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  border: none;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.control-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.control-btn-open {
+  background: rgba(126, 182, 196, 0.15);
+  color: var(--color-sky);
+}
+
+.control-btn-open:hover:not(:disabled) {
+  background: rgba(126, 182, 196, 0.25);
+}
+
+.control-btn-open:active:not(:disabled) {
+  background: rgba(126, 182, 196, 0.35);
+  transform: scale(0.98);
+}
+
+.control-btn-stop {
+  background: rgba(213, 186, 124, 0.15);
+  color: var(--color-honey);
+}
+
+.control-btn-stop:hover:not(:disabled) {
+  background: rgba(213, 186, 124, 0.25);
+}
+
+.control-btn-stop:active:not(:disabled) {
+  background: rgba(213, 186, 124, 0.35);
+  transform: scale(0.98);
+}
+
+.control-btn-close {
+  background: rgba(158, 185, 154, 0.15);
+  color: var(--color-sage);
+}
+
+.control-btn-close:hover:not(:disabled) {
+  background: rgba(158, 185, 154, 0.25);
+}
+
+.control-btn-close:active:not(:disabled) {
+  background: rgba(158, 185, 154, 0.35);
+  transform: scale(0.98);
+}
+
+.control-btn-fav {
+  background: rgba(229, 185, 94, 0.15);
+  color: var(--color-honey);
+}
+
+.control-btn-fav:hover:not(:disabled) {
+  background: rgba(229, 185, 94, 0.25);
+}
+
+.control-btn-fav:active:not(:disabled) {
+  background: rgba(229, 185, 94, 0.35);
+  transform: scale(0.98);
+}
+
+/* Focus visible styles for accessibility */
+.control-btn:focus-visible {
+  outline: 2px solid var(--color-sky);
+  outline-offset: 2px;
+}
+
+.slider-input:focus-visible {
+  outline: none;
+}
+
+.slider-input:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--color-sky);
+  outline-offset: 2px;
+}
+
+/* Touch device optimizations for control buttons */
+@media (hover: none) {
+  .control-btn {
+    min-height: 60px;
+  }
+
+  .control-btn:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+
+  .slider-input::-webkit-slider-thumb {
+    width: 32px;
+    height: 32px;
+  }
+
+  .slider-input::-moz-range-thumb {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+/* Loading spinner for control buttons */
+.loading-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.control-btn .loading-spinner {
+  opacity: 0.8;
+}
+
+/* Reduced motion support for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  /* Disable all animations globally */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  /* But keep view transitions completely disabled (no flicker) */
+  ::view-transition-old(root),
+  ::view-transition-new(root),
+  ::view-transition-old(page-content),
+  ::view-transition-new(page-content) {
+    animation: none !important;
+  }
+
+  /* Disable page animations */
+  .animate-fade-in,
+  .animate-slide-up,
+  .animate-pulse-soft {
+    animation: none;
+    opacity: 1;
+  }
+
+  .control-btn {
+    transition: none;
+  }
+
+  .control-btn:active:not(:disabled) {
+    transform: none;
+  }
+
+  .slider-fill {
+    transition: none;
+  }
+
+  .slider-input::-webkit-slider-thumb {
+    transition: none;
+  }
+
+  .slider-input::-moz-range-thumb {
+    transition: none;
+  }
+
+  .loading-spinner {
+    animation: none;
+    border-top-color: currentColor;
+    opacity: 0.5;
+  }
+
+  /* Skeleton loading - show static placeholder */
+  .animate-pulse {
+    animation: none;
+  }
+}
+
+/* Mobile header spacing - accounts for fixed header + safe area + content spacing */
+.pt-mobile-header {
+  padding-top: calc(4.5rem + env(safe-area-inset-top, 0px));
+}
+
+@media (min-width: 1024px) {
+  .pt-mobile-header {
+    padding-top: 1.5rem;
+  }
+}

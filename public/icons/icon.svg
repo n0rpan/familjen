@@ -1,0 +1,66 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Solid beige background matching app -->
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#F8F4F0;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#F8F4F0;stop-opacity:1" />
+    </linearGradient>
+    <!-- House gradient -->
+    <linearGradient id="houseGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#E8786D;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#D4635A;stop-opacity:1" />
+    </linearGradient>
+    <!-- Roof gradient -->
+    <linearGradient id="roofGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7EB6C4;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#6AA3B0;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Square background to fill corners (prevents white on iOS) -->
+  <rect x="0" y="0" width="512" height="512" fill="#F8F4F0" />
+
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="240" fill="url(#bgGradient)" />
+
+  <!-- House body -->
+  <rect x="120" y="220" width="272" height="200" rx="16" fill="url(#houseGradient)" />
+
+  <!-- Roof -->
+  <path d="M256 100 L420 220 L92 220 Z" fill="url(#roofGradient)" />
+
+  <!-- Chimney -->
+  <rect x="340" y="120" width="40" height="70" rx="4" fill="#8BA888" />
+
+  <!-- Door with F -->
+  <rect x="216" y="300" width="80" height="120" rx="8" fill="#F8F4F0" />
+  <!-- F letter in door -->
+  <text x="256" y="380" font-family="Arial, sans-serif" font-size="60" font-weight="bold" fill="#E8786D" text-anchor="middle">F</text>
+
+  <!-- Window left -->
+  <rect x="140" y="260" width="56" height="56" rx="6" fill="#F8F4F0" />
+  <line x1="168" y1="260" x2="168" y2="316" stroke="#7EB6C4" stroke-width="3" />
+  <line x1="140" y1="288" x2="196" y2="288" stroke="#7EB6C4" stroke-width="3" />
+
+  <!-- Window right -->
+  <rect x="316" y="260" width="56" height="56" rx="6" fill="#F8F4F0" />
+  <line x1="344" y1="260" x2="344" y2="316" stroke="#7EB6C4" stroke-width="3" />
+  <line x1="316" y1="288" x2="372" y2="288" stroke="#7EB6C4" stroke-width="3" />
+
+  <!-- Family silhouettes at bottom -->
+  <!-- Adult 1 (left) -->
+  <ellipse cx="150" cy="450" rx="18" ry="22" fill="#8BA888" />
+  <circle cx="150" cy="420" r="14" fill="#8BA888" />
+
+  <!-- Child 1 -->
+  <ellipse cx="195" cy="455" rx="12" ry="15" fill="#7EB6C4" />
+  <circle cx="195" cy="432" r="10" fill="#7EB6C4" />
+
+  <!-- Child 2 -->
+  <ellipse cx="317" cy="455" rx="12" ry="15" fill="#7EB6C4" />
+  <circle cx="317" cy="432" r="10" fill="#7EB6C4" />
+
+  <!-- Adult 2 (right) -->
+  <ellipse cx="362" cy="450" rx="18" ry="22" fill="#8BA888" />
+  <circle cx="362" cy="420" r="14" fill="#8BA888" />
+</svg>
