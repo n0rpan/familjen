@@ -98,6 +98,7 @@ export type IssueCategory =
   | 'demo-quality'       // Demo data issues
   | 'intent-mismatch'    // PR intent not visible in UI
   | 'intent-verified'    // PR intent confirmed in UI
+  | 'ci-infrastructure'  // CI pipeline issues
 
 // ============================================
 // FINAL VERDICT OUTPUT
