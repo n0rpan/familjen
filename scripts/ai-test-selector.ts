@@ -29,8 +29,9 @@
  * Environment:
  *   OPENROUTER_API_KEY - Required (unless --dry-run)
  *   OPENROUTER_FAST_MODEL - Required (unless --dry-run)
- *   GITHUB_PR_NUMBER - PR number
- *   GITHUB_BASE_REF - Base branch
+ *   GITHUB_PR_NUMBER - PR number (for state tracking)
+ *   GITHUB_BASE_REF - Base branch for diff
+ *   GITHUB_OUTPUT - GitHub Actions output file (auto-set by Actions)
  *
  * Output:
  *   ci-state/test-selection.json - Decisions for CI jobs to consume
