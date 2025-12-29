@@ -67,6 +67,10 @@ export const CORE_FILES = new Set([
 
 /**
  * Map component files to their visual test pages
+ *
+ * MAINTENANCE: When adding new pages to src/app/, update this mapping
+ * to ensure the smart selector can correctly identify which visual tests
+ * to run when those components change.
  */
 export const COMPONENT_TO_PAGE: Record<string, string[]> = {
   'src/components/WeekGrid.tsx': ['week'],

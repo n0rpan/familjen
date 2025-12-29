@@ -75,6 +75,10 @@ const OUTPUT_FILE = join(STATE_DIR, 'test-selection.json')
 // Timeout for selector (30 seconds - should be fast)
 const SELECTOR_TIMEOUT_MS = 30_000
 
+// Minimum confidence to skip a test (conservative: require high confidence to skip)
+// Lower = more aggressive skipping, Higher = more conservative (run more tests)
+const MIN_SKIP_CONFIDENCE = 90
+
 // ============================================
 // Types
 // ============================================
@@ -671,10 +675,10 @@ async function main() {
       const skipCheck = canSkipTest(prState, decision.test, relevantFiles)
 
       if (skipCheck.canSkip) {
-        // Only skip if confidence is high
-        if (decision.confidence < 90) {
+        // Only skip if confidence is high enough
+        if (decision.confidence < MIN_SKIP_CONFIDENCE) {
           console.log(
-            `   ⚠️ ${decision.test}: Could skip but confidence is low (${decision.confidence}%), running anyway`
+            `   ⚠️ ${decision.test}: Could skip but confidence is low (${decision.confidence}% < ${MIN_SKIP_CONFIDENCE}%), running anyway`
           )
         } else {
           finalDecision = {

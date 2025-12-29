@@ -54,8 +54,9 @@ import {
 const VERDICT_MODEL = process.env.OPENROUTER_VERDICT_MODEL
 const API_KEY = process.env.OPENROUTER_API_KEY
 
-// Timeout for API calls (3 minutes - verdict needs more time for tool use loops)
-const API_TIMEOUT_MS = 180_000
+// Timeout for API calls (3.5 minutes - accounts for tool execution + processing overhead)
+// Must be longer than the longest TOOL_TIMEOUT to allow result processing
+const API_TIMEOUT_MS = 210_000
 
 // Timeout per tool (prevent any single tool from blocking)
 const TOOL_TIMEOUTS: Record<string, number> = {
