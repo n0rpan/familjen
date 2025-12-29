@@ -36,6 +36,7 @@ export interface SyncResult {
   debug?: {
     contentLength?: number
     model?: string
+    firstError?: string
   }
 }
 
@@ -209,7 +210,12 @@ export async function syncCalendarSource(
           .update(eventData)
           .eq('id', existing.id)
 
-        if (!error) {
+        if (error) {
+          console.error(`[CalendarSourceSync] Update error:`, error.message)
+          if (!result.debug!.firstError) {
+            result.debug!.firstError = `Update: ${error.message}`
+          }
+        } else {
           result.eventsUpdated++
         }
       } else {
@@ -220,7 +226,12 @@ export async function syncCalendarSource(
           .select('id')
           .single()
 
-        if (!error && insertedEvent) {
+        if (error) {
+          console.error(`[CalendarSourceSync] Insert error:`, error.message)
+          if (!result.debug!.firstError) {
+            result.debug!.firstError = `Insert: ${error.message}`
+          }
+        } else if (insertedEvent) {
           result.eventsCreated++
           newEventIds.push(insertedEvent.id)
         }
