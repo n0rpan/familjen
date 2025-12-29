@@ -388,6 +388,48 @@ To balance cost vs context:
 - **Familjen-Aware**: AI understands Norwegian context, child safety, RLS patterns
 - **Configurable Models**: Set your preferred OpenRouter models via GitHub Secrets
 
+### PR Auto-Labeling
+
+PRs are automatically labeled based on AI analysis and deterministic rules:
+
+| Label Type | Method | Examples |
+|------------|--------|----------|
+| **Type** | AI semantic analysis | `enhancement`, `bug`, `breaking-change`, `refactor`, `docs`, `test`, `chore` |
+| **Size** | Deterministic (lines changed) | `size/xs` (<10), `size/s` (<50), `size/m` (<200), `size/l` (<500), `size/xl` (500+) |
+| **Area** | Deterministic (file paths) | `area/api`, `area/ui`, `area/db`, `area/tests`, `area/ci`, `area/i18n` |
+| **Priority** | AI analysis | `priority/critical`, `priority/high`, `priority/medium`, `priority/low` |
+
+### Cost Tracking & Admin Dashboard
+
+The CI pipeline tracks API costs per PR and provides real-time visibility in the admin dashboard:
+
+**What's tracked:**
+- Token usage per API call (prompt + completion)
+- Cost per model (OpenRouter pricing)
+- Total cost per PR
+- Trend data over time (accuracy, cost per PR)
+
+**Admin Dashboard (`/admin`):**
+- PRs reviewed count
+- Total cost and average cost per PR
+- AI review accuracy rate
+- Cost trend chart
+- Model usage breakdown
+- Recent CI activity feed
+
+**API Endpoints:**
+- `POST /api/ci/webhook` - Receives CI events from GitHub Actions
+- `GET /api/ci/trend` - Returns aggregated metrics for dashboard
+
+**Database Table:**
+```sql
+ci_events (
+  id, type, pr_number, pr_title, data JSONB, created_at
+)
+```
+
+Event types: `pr_opened`, `review_started`, `review_completed`, `verdict`, `labels_applied`
+
 ### Setup
 
 1. Add these GitHub Secrets (all required for AI features):

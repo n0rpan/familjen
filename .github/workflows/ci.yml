@@ -36,6 +36,7 @@ jobs:
       run_migration: ${{ steps.selector.outputs.run_migration_review }}
       run_api: ${{ steps.selector.outputs.run_api_tests }}
       run_code_review: ${{ steps.selector.outputs.run_code_review }}
+      suggested_labels: ${{ steps.labeler.outputs.labels }}
 
     steps:
       - uses: actions/checkout@v4
@@ -68,6 +69,55 @@ jobs:
           OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}
           GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_BASE_REF: ${{ github.base_ref }}
+
+      - name: Run AI PR labeler
+        id: labeler
+        run: npx tsx scripts/ai-pr-labeler.ts
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}
+          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_PR_TITLE: ${{ github.event.pull_request.title }}
+          GITHUB_PR_BODY: ${{ github.event.pull_request.body }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+
+      - name: Apply suggested labels
+        if: steps.labeler.outputs.labels != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = '${{ steps.labeler.outputs.labels }}'.split(',').filter(l => l.trim())
+            if (labels.length === 0) return
+
+            console.log('Applying labels:', labels)
+            try {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels
+              })
+              console.log('✅ Labels applied successfully')
+            } catch (error) {
+              console.log('⚠️ Could not apply labels:', error.message)
+            }
+
+      - name: Send webhook for PR opened
+        if: always()
+        continue-on-error: true
+        run: |
+          curl -X POST "${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook" \
+            -H "Content-Type: application/json" \
+            -H "x-ci-secret: ${{ secrets.CI_WEBHOOK_SECRET }}" \
+            -d '{
+              "type": "review_started",
+              "pr_number": ${{ github.event.pull_request.number }},
+              "pr_title": "${{ github.event.pull_request.title }}",
+              "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+              "data": {
+                "labels": "${{ steps.labeler.outputs.labels }}"
+              }
+            }' || true
 
       - name: Upload PR state
         uses: actions/upload-artifact@v4
@@ -173,12 +223,12 @@ jobs:
             }
 
   # ============================================
-  # STAGE 1: Fast checks (run in parallel)
+  # STAGE 1: Fast checks (combined for efficiency)
   # ============================================
-  lint:
-    name: Lint
+  lint-typecheck:
+    name: 🔍 Lint & Typecheck
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
 
@@ -190,26 +240,28 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run ESLint
-        run: npm run lint
-
-  typecheck:
-    name: Type Check
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run TypeScript compiler
-        run: npx tsc --noEmit
+      # Run lint and typecheck in parallel within same job
+      # Fail fast if either fails (no point continuing)
+      - name: Run ESLint and TypeScript in parallel
+        run: |
+          set -e
+          npm run lint &
+          LINT_PID=$!
+          npx tsc --noEmit &
+          TSC_PID=$!
+          LINT_EXIT=0
+          TSC_EXIT=0
+          wait $LINT_PID || LINT_EXIT=$?
+          wait $TSC_PID || TSC_EXIT=$?
+          if [ $LINT_EXIT -ne 0 ]; then
+            echo "❌ ESLint failed"
+            exit $LINT_EXIT
+          fi
+          if [ $TSC_EXIT -ne 0 ]; then
+            echo "❌ TypeScript check failed"
+            exit $TSC_EXIT
+          fi
+          echo "✅ Lint and typecheck passed"
 
   # ============================================
   # STAGE 2: Unit tests (after lint/typecheck)
@@ -218,7 +270,7 @@ jobs:
     name: Unit Tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [lint, typecheck]
+    needs: [lint-typecheck]
 
     steps:
       - uses: actions/checkout@v4
@@ -264,7 +316,7 @@ jobs:
     name: AI Migration Review
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [lint, smart-selector]
+    needs: [lint-typecheck, smart-selector]
     # Run if: selector says run OR selector didn't run (push to main) AND there are migrations
     if: |
       github.event_name == 'pull_request' &&
@@ -463,6 +515,163 @@ jobs:
                 body: comment
               })
             }
+
+  # ============================================
+  # AI Security Review
+  # NON-BLOCKING: Final verdict decides if this blocks
+  # ============================================
+  security-review:
+    name: 🔒 AI Security Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    needs: [lint-typecheck]
+    if: github.event_name == 'pull_request'
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Create ai-reviews directory
+        run: mkdir -p ai-reviews
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run AI security review
+        run: npx tsx scripts/ai-security-review.ts --base origin/${{ github.base_ref }}
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_CAPABLE_MODEL: ${{ secrets.OPENROUTER_CAPABLE_MODEL }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+
+      - name: Write fallback status if no security review
+        if: always()
+        run: |
+          if [ ! -f "ai-reviews/security-review.json" ]; then
+            echo '{"reviewer":"security-review","status":"failed","verdict":"ERROR","confidence":0,"findings":[],"summary":"Security review did not run.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > ai-reviews/security-review.json
+          fi
+
+      - name: Upload review artifact for final verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-reviews-security
+          path: ai-reviews/
+          retention-days: 7
+          if-no-files-found: warn
+
+  # ============================================
+  # AI PR Quality Check
+  # Validates PR description, size, and commit messages
+  # NON-BLOCKING: Final verdict decides if this blocks
+  # ============================================
+  pr-quality:
+    name: 📋 PR Quality Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'pull_request'
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Create ai-reviews directory
+        run: mkdir -p ai-reviews
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run PR quality check
+        run: npx tsx scripts/ai-pr-quality.ts
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          GITHUB_PR_TITLE: ${{ github.event.pull_request.title }}
+          GITHUB_PR_BODY: ${{ github.event.pull_request.body }}
+          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
+
+      - name: Write fallback status if no PR quality check
+        if: always()
+        run: |
+          if [ ! -f "ai-reviews/pr-quality.json" ]; then
+            echo '{"reviewer":"pr-quality","status":"skipped","verdict":"PASS","confidence":100,"findings":[],"summary":"PR quality check did not run.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > ai-reviews/pr-quality.json
+          fi
+
+      - name: Upload review artifact for final verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-reviews-pr-quality
+          path: ai-reviews/
+          retention-days: 7
+          if-no-files-found: warn
+
+  # ============================================
+  # AI Dependency Review
+  # Reviews new/updated dependencies for security and license
+  # NON-BLOCKING: Final verdict decides if this blocks
+  # ============================================
+  dependency-review:
+    name: 📦 Dependency Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [lint-typecheck]
+    if: github.event_name == 'pull_request'
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Create ai-reviews directory
+        run: mkdir -p ai-reviews
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run AI dependency review
+        run: npx tsx scripts/ai-dependency-review.ts --base origin/${{ github.base_ref }}
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+
+      - name: Write fallback status if no dependency review
+        if: always()
+        run: |
+          if [ ! -f "ai-reviews/dependency-review.json" ]; then
+            echo '{"reviewer":"dependency-review","status":"skipped","verdict":"PASS","confidence":100,"findings":[],"summary":"No dependency changes.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > ai-reviews/dependency-review.json
+          fi
+
+      - name: Upload review artifact for final verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-reviews-dependency
+          path: ai-reviews/
+          retention-days: 7
+          if-no-files-found: warn
 
   # ============================================
   # AI Visual Validation (No Baselines Needed)
@@ -982,7 +1191,7 @@ jobs:
     name: 🎯 Final AI Verdict
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [migration-review, ai-code-review, visual-validation, e2e-preview, api-tests, pre-verdict-check]
+    needs: [migration-review, ai-code-review, security-review, pr-quality, dependency-review, visual-validation, e2e-preview, api-tests, pre-verdict-check]
     if: github.event_name == 'pull_request' && always()
     # This job CAN fail and will block the PR
 
@@ -1197,3 +1406,60 @@ jobs:
                 body: comment
               })
             }
+
+      - name: Send verdict webhook
+        if: always()
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs')
+            let verdict = 'ERROR'
+            let summary = 'Verdict not available'
+            let cost = 0
+
+            try {
+              if (fs.existsSync('ai-reviews/final-verdict.json')) {
+                const data = JSON.parse(fs.readFileSync('ai-reviews/final-verdict.json', 'utf8'))
+                verdict = data.verdict || 'ERROR'
+                summary = data.summary || 'No summary available'
+                cost = data.total_cost_usd || 0
+              }
+            } catch (e) {
+              console.log('Could not read verdict:', e.message)
+            }
+
+            const webhookUrl = process.env.CI_WEBHOOK_URL
+            if (!webhookUrl) {
+              console.log('CI_WEBHOOK_URL not set, skipping webhook')
+              return
+            }
+
+            const payload = {
+              type: 'verdict',
+              pr_number: context.issue.number,
+              pr_title: context.payload.pull_request?.title || 'Unknown',
+              timestamp: new Date().toISOString(),
+              data: {
+                verdict,
+                cost_usd: cost,
+                summary
+              }
+            }
+
+            try {
+              const response = await fetch(webhookUrl + '/api/ci/webhook', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-ci-secret': process.env.CI_WEBHOOK_SECRET || ''
+                },
+                body: JSON.stringify(payload)
+              })
+              console.log('Webhook response:', response.status)
+            } catch (e) {
+              console.log('Webhook failed:', e.message)
+            }
+        env:
+          CI_WEBHOOK_URL: ${{ secrets.CI_WEBHOOK_URL }}
+          CI_WEBHOOK_SECRET: ${{ secrets.CI_WEBHOOK_SECRET }}

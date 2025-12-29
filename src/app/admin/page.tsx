@@ -15,6 +15,7 @@ import { useLanguage } from "@/lib/i18n/context";
 import { UnmatchedCalendarTray } from "@/components/UnmatchedCalendarTray";
 import { AdminPageSkeleton } from "@/components/Skeleton";
 import { SectionHeader } from "@/app/innstillinger/components";
+import { CIDashboard } from "@/components/admin/CIDashboard";
 
 // Extended types for admin view
 interface HouseholdWithDetails extends Household {
@@ -1755,6 +1756,27 @@ export default function AdminPage() {
             {t.admin.calendarAutoMatchDesc}
           </p>
         </div>
+      </section>
+
+      {/* ========== CI DASHBOARD ========== */}
+      <SectionHeader
+        icon={
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 20V10" />
+            <path d="M18 20V4" />
+            <path d="M6 20v-4" />
+          </svg>
+        }
+        title={t.admin.ciDashboardTitle || "CI/CD Dashboard"}
+        description={t.admin.ciDashboardDesc || "AI-powered code review metrics and costs"}
+        color="var(--color-lavender)"
+      />
+
+      <section
+        className="rounded-2xl p-6 md:p-8"
+        style={{ background: "var(--card)", border: "1px solid var(--border)" }}
+      >
+        <CIDashboard t={t} />
       </section>
 
       {/* Info */}

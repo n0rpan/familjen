@@ -831,18 +831,25 @@ The pre-verdict check (`ai-pre-verdict-check.ts`) is a **fast, cheap LLM pass** 
 scripts/
 ├── ai-config.ts              # Model config + OpenRouter structured outputs
 ├── ai-review-types.ts        # Shared types for all reviewers (ReviewerOutput)
-├── ai-test-selector.ts       # 🆕 Smart test selection (Tier 1)
-├── ai-pre-verdict-check.ts   # 🆕 Fast LLM pass before supervisor (Tier 1.5)
+├── ai-metrics.ts             # 🆕 Cost tracking and trend analysis
+├── ai-test-selector.ts       # Smart test selection (Tier 1)
+├── ai-pr-labeler.ts          # 🆕 Auto-labels PRs based on content
+├── ai-pre-verdict-check.ts   # Fast LLM pass before supervisor (Tier 1.5)
 ├── migration-ai-review.ts    # Reviews database migrations (non-blocking)
 ├── ai-code-review.ts         # Reviews PR code changes (non-blocking)
+├── ai-security-review.ts     # 🆕 OWASP Top 10 security scanning
+├── ai-pr-quality.ts          # 🆕 PR description/size/commit quality
+├── ai-dependency-review.ts   # 🆕 Dependency security and license review
+├── ai-bundle-size.ts         # 🆕 Bundle size tracking with AI suggestions
+├── ai-changelog.ts           # 🆕 Auto-generates release notes from commits
 ├── ai-visual-validation.ts   # Evaluates screenshots (non-blocking)
 ├── ai-pr-test-generator.ts   # Generates PR-specific E2E test scenarios
 ├── api-test-reporter.ts      # Converts Vitest results to ReviewerOutput
 ├── e2e-test-reporter.ts      # Converts Playwright results to ReviewerOutput
 ├── ai-final-verdict.ts       # The "super AI" supervisor (BLOCKING)
 └── lib/
-    ├── pr-state.ts           # 🆕 Tracks test results across PR commits
-    └── dependency-graph.ts   # 🆕 Analyzes file dependencies
+    ├── pr-state.ts           # Tracks test results across PR commits
+    └── dependency-graph.ts   # Analyzes file dependencies
 ```
 
 ### Environment Variables
