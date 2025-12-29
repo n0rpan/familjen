@@ -354,26 +354,44 @@ function parseExtractedEvents(content: string): ExtractedEvent[] {
   const events = extractJSON<ExtractedEvent[]>(content)
 
   if (!Array.isArray(events)) {
+    console.log(`[EventExtraction] JSON parsing failed or not an array. Content type: ${typeof events}`)
     return []
   }
 
-  return events
-    .filter(
-      (event) =>
-        event &&
-        typeof event.title === 'string' &&
-        event.title.length > 0 &&
-        isValidDate(event.date)
-    )
-    .map((event) => ({
-      title: event.title.slice(0, 100),
-      date: event.date,
-      endDate: isValidDate(event.endDate) ? event.endDate : undefined,
-      time: isValidTime(event.time) ? event.time : undefined,
-      eventType: isValidEventType(event.eventType) ? event.eventType : 'other',
-      confidence: typeof event.confidence === 'number' ? Math.min(1, Math.max(0, event.confidence)) : 0.5,
-      description: event.description || undefined,
-    }))
+  console.log(`[EventExtraction] Parsed ${events.length} raw events from JSON`)
+
+  // Log first few events for debugging
+  if (events.length > 0) {
+    console.log(`[EventExtraction] First raw event:`, JSON.stringify(events[0]).slice(0, 300))
+  }
+
+  const validEvents = events.filter((event, index) => {
+    if (!event) {
+      console.log(`[EventExtraction] Event ${index}: null/undefined`)
+      return false
+    }
+    if (typeof event.title !== 'string' || event.title.length === 0) {
+      console.log(`[EventExtraction] Event ${index}: invalid title "${event.title}"`)
+      return false
+    }
+    if (!isValidDate(event.date)) {
+      console.log(`[EventExtraction] Event ${index} "${event.title}": invalid date "${event.date}"`)
+      return false
+    }
+    return true
+  })
+
+  console.log(`[EventExtraction] ${validEvents.length}/${events.length} events passed validation`)
+
+  return validEvents.map((event) => ({
+    title: event.title.slice(0, 100),
+    date: event.date,
+    endDate: isValidDate(event.endDate) ? event.endDate : undefined,
+    time: isValidTime(event.time) ? event.time : undefined,
+    eventType: isValidEventType(event.eventType) ? event.eventType : 'other',
+    confidence: typeof event.confidence === 'number' ? Math.min(1, Math.max(0, event.confidence)) : 0.5,
+    description: event.description || undefined,
+  }))
 }
 
 /**

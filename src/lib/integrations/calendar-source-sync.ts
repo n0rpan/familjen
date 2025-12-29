@@ -125,10 +125,12 @@ export async function syncCalendarSource(
       }
 
       content = await response.text()
+      console.log(`[CalendarSourceSync] Fetched ${content.length} chars from ${source.url}`)
     }
 
     // 2. Extract events using AI
     const model = options.model || 'google/gemini-2.5-flash-lite'
+    console.log(`[CalendarSourceSync] Using model: ${model}`)
 
     // Get child name if linked
     let childName: string | undefined
