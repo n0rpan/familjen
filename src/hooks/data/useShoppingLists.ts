@@ -90,8 +90,13 @@ export function useShoppingLists(): UseShoppingListsReturn {
 
   // Initial fetch for production mode
   useEffect(() => {
-    if (!isDemo && household?.id) {
+    if (isDemo) return
+
+    if (household?.id) {
       fetchData()
+    } else {
+      // No household - nothing to fetch, clear loading state
+      setLoading(false)
     }
   }, [isDemo, household?.id, fetchData])
 
