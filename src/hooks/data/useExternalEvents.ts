@@ -6,9 +6,14 @@
  * Abstracts external events data fetching for both demo and production modes.
  * External events are synced from integrations like Spond, MyKid, etc.
  * These are read-only in the app (modifications happen via local overrides).
+ *
+ * Loading state is derived to avoid UI flash:
+ * - householdLoading: waiting for household to load
+ * - needsFetch: household loaded but fetch for current params not done
+ * - isFetching: actively fetching data
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
 import { formatDateISO } from '@/lib/utils'
@@ -34,19 +39,34 @@ export interface UseExternalEventsReturn {
 export function useExternalEvents(options: UseExternalEventsOptions = {}): UseExternalEventsReturn {
   const { startDate, endDate } = options
   const { isDemo, supabase, demoState } = useDataSource()
-  const { household } = useHousehold()
+  const { household, loading: householdLoading } = useHousehold()
 
   const [events, setEvents] = useState<ExternalEvent[]>([])
-  const [loading, setLoading] = useState(!isDemo)
+  const [isFetching, setIsFetching] = useState(false)
+  const [lastFetchKey, setLastFetchKey] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  // Track abort controller for cleanup
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   const startDateStr = startDate ? formatDateISO(startDate) : null
   const endDateStr = endDate ? formatDateISO(endDate) : null
 
+  // Memoize fetch key to prevent unnecessary re-renders
+  const currentFetchKey = useMemo(
+    () => `${household?.id}-${startDateStr}-${endDateStr}`,
+    [household?.id, startDateStr, endDateStr]
+  )
+
   const fetchData = useCallback(async () => {
     if (isDemo || !supabase || !household?.id) return
 
-    setLoading(true)
+    // Abort any pending request
+    abortControllerRef.current?.abort()
+    abortControllerRef.current = new AbortController()
+    const { signal } = abortControllerRef.current
+
+    setIsFetching(true)
     setError(null)
 
     try {
@@ -56,9 +76,13 @@ export function useExternalEvents(options: UseExternalEventsOptions = {}): UseEx
         .select('id')
         .eq('household_id', household.id)
 
+      // Check if request was aborted
+      if (signal.aborted) return
+
       if (!integrations || integrations.length === 0) {
         setEvents([])
-        setLoading(false)
+        setLastFetchKey(currentFetchKey)
+        setIsFetching(false)
         return
       }
 
@@ -81,23 +105,39 @@ export function useExternalEvents(options: UseExternalEventsOptions = {}): UseEx
 
       const { data, error: fetchError } = await query
 
+      // Check if request was aborted
+      if (signal.aborted) return
+
       if (fetchError) throw fetchError
 
       setEvents(data || [])
+      setLastFetchKey(currentFetchKey)
     } catch (err) {
+      // Ignore abort errors
+      if (err instanceof Error && err.name === 'AbortError') return
+
       console.error('Error fetching external events:', err)
       setError(err instanceof Error ? err.message : 'Failed to load events')
+      setLastFetchKey(currentFetchKey)
     } finally {
-      setLoading(false)
+      // Only update if not aborted
+      if (!abortControllerRef.current?.signal.aborted) {
+        setIsFetching(false)
+      }
     }
-  }, [isDemo, supabase, household?.id, startDateStr, endDateStr])
+  }, [isDemo, supabase, household?.id, startDateStr, endDateStr, currentFetchKey])
 
-  // Initial fetch for production mode
+  // Fetch when household or date range changes
   useEffect(() => {
-    if (!isDemo && household?.id) {
+    if (!isDemo && household?.id && lastFetchKey !== currentFetchKey) {
       fetchData()
     }
-  }, [isDemo, household?.id, fetchData])
+
+    // Cleanup on unmount or when dependencies change
+    return () => {
+      abortControllerRef.current?.abort()
+    }
+  }, [isDemo, household?.id, lastFetchKey, currentFetchKey, fetchData])
 
   // Demo mode: return demo data with filtering
   if (isDemo && demoState) {
@@ -114,6 +154,10 @@ export function useExternalEvents(options: UseExternalEventsOptions = {}): UseEx
       refetch: () => {}, // No-op in demo
     }
   }
+
+  // Derive loading state
+  const needsFetch = !!household?.id && lastFetchKey !== currentFetchKey && !isFetching
+  const loading = householdLoading || needsFetch || isFetching
 
   return {
     events,

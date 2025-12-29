@@ -4,6 +4,11 @@
  * useShoppingLists Hook
  *
  * Abstracts shopping list data fetching and mutations for both demo and production modes.
+ *
+ * Loading state is derived to avoid UI flash:
+ * - householdLoading: waiting for household to load
+ * - shouldFetch: household loaded but initial fetch not done
+ * - isFetching: actively fetching data
  */
 
 import { useState, useEffect, useCallback } from 'react'
@@ -34,16 +39,17 @@ export interface UseShoppingListsReturn {
  */
 export function useShoppingLists(): UseShoppingListsReturn {
   const { isDemo, supabase, demoState, demoMutations } = useDataSource()
-  const { household } = useHousehold()
+  const { household, loading: householdLoading } = useHousehold()
 
   const [lists, setLists] = useState<ShoppingListWithItems[]>([])
-  const [loading, setLoading] = useState(!isDemo)
+  const [isFetching, setIsFetching] = useState(false)
+  const [initialFetchDone, setInitialFetchDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     if (isDemo || !supabase || !household?.id) return
 
-    setLoading(true)
+    setIsFetching(true)
     setError(null)
 
     try {
@@ -59,7 +65,8 @@ export function useShoppingLists(): UseShoppingListsReturn {
 
       if (!listsData || listsData.length === 0) {
         setLists([])
-        setLoading(false)
+        setIsFetching(false)
+        setInitialFetchDone(true)
         return
       }
 
@@ -84,16 +91,17 @@ export function useShoppingLists(): UseShoppingListsReturn {
       console.error('Error fetching shopping lists:', err)
       setError(err instanceof Error ? err.message : 'Failed to load shopping lists')
     } finally {
-      setLoading(false)
+      setIsFetching(false)
+      setInitialFetchDone(true)
     }
   }, [isDemo, supabase, household?.id])
 
-  // Initial fetch for production mode
+  // Fetch when household becomes available
   useEffect(() => {
-    if (!isDemo && household?.id) {
+    if (!isDemo && household?.id && !initialFetchDone) {
       fetchData()
     }
-  }, [isDemo, household?.id, fetchData])
+  }, [isDemo, household?.id, initialFetchDone, fetchData])
 
   // Add list mutation
   const addList = useCallback(async (name: string): Promise<ShoppingList | null> => {
@@ -280,6 +288,10 @@ export function useShoppingLists(): UseShoppingListsReturn {
       refetch: () => {}, // No-op in demo
     }
   }
+
+  // Derive loading state
+  const shouldFetch = !!household?.id && !initialFetchDone && !isFetching
+  const loading = householdLoading || shouldFetch || isFetching
 
   return {
     lists,
