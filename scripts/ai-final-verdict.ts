@@ -195,7 +195,7 @@ function validatePageNames(pages: unknown[]): { valid: true; pages: string[] } |
 
 /**
  * Validate URL path for API endpoint testing.
- * Only allows: alphanumeric, dots, dashes, underscores, slashes, query params
+ * Uses URL constructor for proper parsing and validation.
  */
 function validateUrlPath(path: string): { valid: true } | { valid: false; error: string } {
   if (!path || typeof path !== 'string') {
@@ -211,14 +211,38 @@ function validateUrlPath(path: string): { valid: true } | { valid: false; error:
     return { valid: false, error: 'Path must start with /' }
   }
 
-  // Block shell metacharacters and dangerous sequences
+  // Block shell metacharacters (even though we use execFileSync, defense in depth)
   if (SHELL_METACHARACTERS.test(path)) {
     return { valid: false, error: 'Path contains shell metacharacters' }
   }
 
-  // Only allow safe URL characters
-  if (!/^[a-zA-Z0-9._\-/?=&%]+$/.test(path)) {
-    return { valid: false, error: `Invalid characters in path: ${path.slice(0, 50)}` }
+  // Use URL constructor to properly parse and validate the path
+  try {
+    const testUrl = new URL(path, 'https://example.com')
+
+    // Verify the pathname matches what we expect (no URL encoding tricks)
+    // The URL constructor normalizes the path, so we compare against that
+    const normalizedPath = testUrl.pathname + testUrl.search
+
+    // Reject if URL constructor changed the path significantly (potential encoding attack)
+    // Allow minor differences from URL normalization
+    if (decodeURIComponent(normalizedPath) !== decodeURIComponent(path)) {
+      // Path was modified by URL parsing - might be an attack
+      // But allow if it's just trailing slash normalization
+      const pathWithoutTrailing = path.replace(/\/$/, '')
+      const normalizedWithoutTrailing = normalizedPath.replace(/\/$/, '')
+      if (decodeURIComponent(normalizedWithoutTrailing) !== decodeURIComponent(pathWithoutTrailing)) {
+        return { valid: false, error: 'Path contains suspicious URL encoding' }
+      }
+    }
+
+    // Additional check: no protocol/host in the path (prevent SSRF-like attacks)
+    if (path.includes('://') || path.includes('//')) {
+      return { valid: false, error: 'Path cannot contain protocol or double slashes' }
+    }
+
+  } catch {
+    return { valid: false, error: 'Invalid URL path format' }
   }
 
   return { valid: true }
@@ -775,9 +799,24 @@ function executeToolUncached(name: string, input: Record<string, unknown>): stri
       const glob = input.glob as string | undefined
 
       // Security: Validate regex pattern before passing to ripgrep
-      if (!query || query.length > 500) {
-        return 'Error: Invalid query (empty or too long)'
+      if (!query || query.length > 200) {
+        return 'Error: Invalid query (empty or too long, max 200 chars)'
       }
+
+      // Security: Reject patterns that could cause ReDoS (catastrophic backtracking)
+      const redosIndicators = [
+        /(\+|\*)\s*(\+|\*)/, // Nested quantifiers: .++ or .*?*
+        /\([^)]*\+[^)]*\)\+/, // (a+)+ pattern
+        /\([^)]*\*[^)]*\)\*/, // (a*)*  pattern
+        /(\.\*){3,}/, // Excessive .* sequences
+        /(\.\+){3,}/, // Excessive .+ sequences
+      ]
+      for (const indicator of redosIndicators) {
+        if (indicator.test(query)) {
+          return 'Error: Regex pattern rejected (potential ReDoS vulnerability)'
+        }
+      }
+
       try {
         new RegExp(query) // Validate as valid regex
       } catch {
@@ -806,6 +845,7 @@ function executeToolUncached(name: string, input: Record<string, unknown>): stri
           encoding: 'utf-8',
           stdio: ['pipe', 'pipe', 'pipe'],  // Capture stderr too
           maxBuffer: 1024 * 1024,  // 1MB buffer
+          timeout: 15000, // 15s timeout to prevent resource exhaustion
         }).trim()
 
         return result || 'No matches found'
@@ -2389,18 +2429,29 @@ You have ${TOOLS.length} tools available. Call **list_available_tools** if you n
 
 **Call tools directly by name** - NEVER search for tool implementations in code.
 
-NEVER DO THIS (wastes iterations):
-- \`search_code({ query: "case 'run_e2e_tests'" })\` ❌ searching for tool implementation
-- \`search_code({ query: "get_pre_verdict_check" })\` ❌ searching for tool name
-- \`search_code({ query: "execSync" })\` ❌ searching how tools execute internally
+### ⛔ FORBIDDEN PATTERNS - Do NOT search for:
+- Tool names: "run_e2e_tests", "get_pre_verdict_check", "search_code"
+- Tool implementations: "case 'run_e2e_tests'", "case 'search_code'"
+- Internal code: "execSync", "execFileSync", "validateTestPath", "validateUrlPath"
+- Function definitions in scripts/: any query about how CI scripts work internally
 
-ALWAYS DO THIS (correct usage):
-- \`run_e2e_tests({})\` ✅ call the tool directly
-- \`get_pre_verdict_check({})\` ✅ call the tool directly
-- \`read_file({ path: "src/..." })\` ✅ use tools for their intended purpose
+If you catch yourself about to search for ANY tool-related pattern, STOP.
+The tools are ALREADY AVAILABLE to you. Just call them.
 
-Tools are available to you - just call them. Don't search for their implementations.
-If a search returns "No matches found" twice, STOP and move on.
+### ✅ CORRECT USAGE:
+- \`get_pre_verdict_check({})\` - Call it, don't search for it
+- \`run_e2e_tests({})\` - Call it, don't search for it
+- \`read_file({ path: "src/..." })\` - Read app source code, NOT CI scripts
+- \`search_code({ query: "authentication" })\` - Search app code for issues, NOT tool code
+
+### 🎯 EFFICIENCY REQUIREMENT:
+You have a MAXIMUM of 10 tool calls to complete your review. Searching for tool
+implementations wastes your limited calls. Focus on:
+1. get_pre_verdict_check - See what quick checks found
+2. read_file - Read specific files mentioned in findings
+3. DECIDE - Make your PASS/BLOCK decision
+
+Do NOT read scripts/ai-*.ts files - they are CI infrastructure, not the PR code.
 
 ## Workflow
 
@@ -2476,7 +2527,7 @@ FINAL VERDICT: BLOCK`
   let messages: Message[] = [{ role: 'user', content: userPrompt }]
   let response = ''
   let iterations = 0
-  const maxIterations = 30 // Allow thorough verification while avoiding infinite loops
+  const maxIterations = 15 // Reduced from 30 - encourage efficient reviews
 
   while (iterations < maxIterations) {
     iterations++
@@ -2502,14 +2553,22 @@ FINAL VERDICT: BLOCK`
       break
     }
 
-    // Safety check: if approaching limit, add nudge to conclude
+    // Early nudge at iteration 8 to encourage efficiency
+    if (iterations === 8) {
+      console.warn(`⚠️ Iteration ${iterations}/${maxIterations} - please work toward a decision`)
+      messages.push({
+        role: 'user',
+        content: 'REMINDER: You are halfway through your iteration budget. Focus on making a PASS or BLOCK decision. Do NOT search for tool implementations - just call tools directly.',
+      })
+    }
+
+    // Safety check: if approaching limit, add stronger nudge
     if (iterations >= maxIterations - 3) {
       console.warn(`⚠️ Approaching iteration limit (${iterations}/${maxIterations})`)
-      // Add a system message to encourage conclusion
       if (iterations === maxIterations - 2) {
         messages.push({
           role: 'user',
-          content: 'You are running low on iterations. Please make your final PASS or BLOCK decision based on the information you have gathered so far. If you cannot find specific information, make a reasonable judgment based on available evidence.',
+          content: 'FINAL WARNING: You are almost out of iterations. Make your PASS or BLOCK decision NOW based on available evidence.',
         })
       }
     }
