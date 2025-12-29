@@ -322,11 +322,16 @@ export async function syncCalendarSource(
       })
       .eq('id', source.id)
 
-    // 8. Run deduplication on newly created events
+    // 8. Run deduplication on newly created events (non-blocking - don't fail sync if AI fails)
     if (newEventIds.length > 0) {
-      const dedupeResult = await deduplicateEvents(supabase, source.household_id, newEventIds)
-      result.duplicatesAutoMerged = dedupeResult.autoMerged
-      result.duplicateSuggestionsCreated = dedupeResult.suggestionsCreated
+      try {
+        const dedupeResult = await deduplicateEvents(supabase, source.household_id, newEventIds)
+        result.duplicatesAutoMerged = dedupeResult.autoMerged
+        result.duplicateSuggestionsCreated = dedupeResult.suggestionsCreated
+      } catch (dedupeError) {
+        // Log but don't fail the sync - events are already saved
+        console.error('[CalendarSourceSync] Deduplication failed (non-blocking):', dedupeError)
+      }
     }
 
     result.success = true

@@ -56,6 +56,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_event_duplicate_suggestions_pair
   ON event_duplicate_suggestions(event_a_id, event_b_id)
   WHERE status = 'pending';
 
+-- Indexes for individual event lookups (e.g., when an event is deleted)
+CREATE INDEX IF NOT EXISTS idx_event_duplicate_suggestions_event_a
+  ON event_duplicate_suggestions(event_a_id);
+CREATE INDEX IF NOT EXISTS idx_event_duplicate_suggestions_event_b
+  ON event_duplicate_suggestions(event_b_id);
+
 -- Enable RLS
 ALTER TABLE event_duplicate_suggestions ENABLE ROW LEVEL SECURITY;
 
@@ -97,17 +103,16 @@ CREATE OR REPLACE FUNCTION merge_duplicate_events(
   p_keep_event_id UUID,
   p_remove_event_id UUID
 )
-RETURNS BOOLEAN AS $$
+RETURNS BOOLEAN
+SET search_path = public
+AS $$
 DECLARE
   v_household_id UUID;
   v_keep_event external_events;
   v_remove_event external_events;
 BEGIN
-  -- Get user's household
-  SELECT household_id INTO v_household_id
-  FROM household_members
-  WHERE user_id = auth.uid()
-  LIMIT 1;
+  -- Get user's household using the established helper function
+  v_household_id := get_user_household_id();
 
   IF v_household_id IS NULL THEN
     RAISE EXCEPTION 'Not authenticated or no household';
@@ -160,16 +165,15 @@ CREATE OR REPLACE FUNCTION resolve_duplicate_suggestion(
   p_action TEXT,  -- 'merge_keep_a', 'merge_keep_b', 'not_duplicate', 'dismiss'
   p_keep_event_id UUID DEFAULT NULL
 )
-RETURNS BOOLEAN AS $$
+RETURNS BOOLEAN
+SET search_path = public
+AS $$
 DECLARE
   v_suggestion event_duplicate_suggestions;
   v_household_id UUID;
 BEGIN
-  -- Get user's household
-  SELECT household_id INTO v_household_id
-  FROM household_members
-  WHERE user_id = auth.uid()
-  LIMIT 1;
+  -- Get user's household using the established helper function
+  v_household_id := get_user_household_id();
 
   IF v_household_id IS NULL THEN
     RAISE EXCEPTION 'Not authenticated or no household';
