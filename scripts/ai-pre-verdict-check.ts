@@ -56,6 +56,13 @@ interface QuickCheckResult {
   details?: string
 }
 
+interface ExtendedCheckResult {
+  type: string
+  status: 'pass' | 'fail' | 'warn' | 'skipped'
+  summary: string
+  findings: Array<{ severity: string; message: string; file?: string }>
+}
+
 interface PreVerdictOutput {
   selectorReview: {
     verified: boolean
@@ -63,6 +70,7 @@ interface PreVerdictOutput {
     suggestions: string[]
   }
   quickChecks: QuickCheckResult[]
+  extendedChecks: ExtendedCheckResult[]
   additionalContext: Record<string, string>
   recommendation: 'proceed' | 'run_more_tests' | 'needs_investigation'
   reasoning: string
@@ -360,6 +368,325 @@ function gatherAdditionalContext(selection: TestSelection, quickChecks: QuickChe
 }
 
 // ============================================
+// Extended Checks (run what selector recommended)
+// ============================================
+
+async function runExtendedChecks(
+  selection: TestSelection,
+  changedFiles: string[]
+): Promise<ExtendedCheckResult[]> {
+  const results: ExtendedCheckResult[] = []
+  const extendedChecks = selection.extendedChecks || []
+
+  // Only run high priority checks (to save time/cost)
+  const highPriorityChecks = extendedChecks.filter(c => c.priority === 'high')
+
+  for (const check of highPriorityChecks) {
+    console.log(`   Running extended check: ${check.type}...`)
+
+    try {
+      switch (check.type) {
+        case 'dead-code-analysis': {
+          const result = await runDeadCodeAnalysis(changedFiles)
+          results.push(result)
+          break
+        }
+        case 'accessibility-audit': {
+          const result = await runAccessibilityAudit(changedFiles)
+          results.push(result)
+          break
+        }
+        case 'i18n-completeness': {
+          const result = await runI18nCheck(changedFiles)
+          results.push(result)
+          break
+        }
+        case 'security-audit': {
+          const result = await runSecurityAudit(changedFiles)
+          results.push(result)
+          break
+        }
+        case 'bundle-size-check': {
+          const result = await runBundleSizeCheck()
+          results.push(result)
+          break
+        }
+        default: {
+          results.push({
+            type: check.type,
+            status: 'skipped',
+            summary: `Unknown check type: ${check.type}`,
+            findings: []
+          })
+        }
+      }
+    } catch (e) {
+      results.push({
+        type: check.type,
+        status: 'fail',
+        summary: `Check failed: ${e}`,
+        findings: []
+      })
+    }
+  }
+
+  return results
+}
+
+async function runDeadCodeAnalysis(changedFiles: string[]): Promise<ExtendedCheckResult> {
+  const findings: Array<{ severity: string; message: string; file?: string }> = []
+
+  // Check for unused exports in changed files
+  for (const file of changedFiles.slice(0, 20)) {
+    if (!existsSync(file) || !file.match(/\.(ts|tsx)$/)) continue
+
+    try {
+      const content = readFileSync(file, 'utf-8')
+
+      // Find exports
+      const exports = content.match(/export\s+(const|function|class|type|interface)\s+(\w+)/g) || []
+
+      for (const exp of exports) {
+        const name = exp.match(/export\s+\w+\s+(\w+)/)?.[1]
+        if (!name) continue
+
+        // Search for usages in other files (quick grep)
+        try {
+          const grepResult = execSync(
+            `grep -r "${name}" src/ --include="*.ts" --include="*.tsx" -l 2>/dev/null | head -5`,
+            { encoding: 'utf-8', timeout: 5000 }
+          )
+          const usages = grepResult.trim().split('\n').filter(Boolean)
+
+          // If only used in the same file, might be dead code
+          if (usages.length === 1 && usages[0] === file) {
+            findings.push({
+              severity: 'warning',
+              message: `Potentially unused export: ${name}`,
+              file
+            })
+          }
+        } catch {
+          // grep failed, skip
+        }
+      }
+    } catch {
+      // Skip unreadable files
+    }
+  }
+
+  return {
+    type: 'dead-code-analysis',
+    status: findings.length > 0 ? 'warn' : 'pass',
+    summary: findings.length > 0
+      ? `Found ${findings.length} potentially unused exports`
+      : 'No obvious dead code found',
+    findings: findings.slice(0, 10)
+  }
+}
+
+async function runAccessibilityAudit(changedFiles: string[]): Promise<ExtendedCheckResult> {
+  const findings: Array<{ severity: string; message: string; file?: string }> = []
+
+  const a11yPatterns = [
+    { pattern: /<img(?![^>]*alt=)/g, issue: 'Image missing alt attribute' },
+    { pattern: /<button(?![^>]*aria-label)(?![^>]*>[\w\s]+<)/g, issue: 'Button may need aria-label' },
+    { pattern: /onClick=\{[^}]+\}(?![^>]*role=)/g, issue: 'Click handler without role attribute' },
+    { pattern: /<div\s+onClick/g, issue: 'Clickable div - consider using button' },
+  ]
+
+  for (const file of changedFiles.slice(0, 20)) {
+    if (!existsSync(file) || !file.match(/\.(tsx|jsx)$/)) continue
+
+    try {
+      const content = readFileSync(file, 'utf-8')
+
+      for (const { pattern, issue } of a11yPatterns) {
+        const matches = content.match(pattern)
+        if (matches && matches.length > 0) {
+          findings.push({
+            severity: 'warning',
+            message: `${issue} (${matches.length} occurrences)`,
+            file
+          })
+        }
+      }
+    } catch {
+      // Skip unreadable files
+    }
+  }
+
+  return {
+    type: 'accessibility-audit',
+    status: findings.length > 0 ? 'warn' : 'pass',
+    summary: findings.length > 0
+      ? `Found ${findings.length} potential accessibility issues`
+      : 'No obvious accessibility issues',
+    findings: findings.slice(0, 10)
+  }
+}
+
+async function runI18nCheck(changedFiles: string[]): Promise<ExtendedCheckResult> {
+  const findings: Array<{ severity: string; message: string; file?: string }> = []
+
+  // Check if translation files are in sync
+  const translationFiles = ['src/lib/i18n/translations/nb.ts', 'src/lib/i18n/translations/sv.ts', 'src/lib/i18n/translations/en.ts']
+
+  const keysByFile: Record<string, Set<string>> = {}
+
+  for (const file of translationFiles) {
+    if (!existsSync(file)) continue
+
+    try {
+      const content = readFileSync(file, 'utf-8')
+      // Extract translation keys (simplified - looks for key: patterns)
+      const keys = content.match(/^\s{2,4}(\w+):/gm) || []
+      keysByFile[file] = new Set(keys.map(k => k.trim().replace(':', '')))
+    } catch {
+      // Skip
+    }
+  }
+
+  // Compare key sets
+  const allKeys = new Set<string>()
+  for (const keys of Object.values(keysByFile)) {
+    Array.from(keys).forEach(key => allKeys.add(key))
+  }
+
+  for (const [file, keys] of Object.entries(keysByFile)) {
+    const missing = Array.from(allKeys).filter(k => !keys.has(k))
+    if (missing.length > 0) {
+      findings.push({
+        severity: 'warning',
+        message: `Missing ${missing.length} translation keys`,
+        file
+      })
+    }
+  }
+
+  // Check for hardcoded strings in changed components
+  for (const file of changedFiles.slice(0, 10)) {
+    if (!existsSync(file) || !file.match(/\.(tsx)$/)) continue
+    if (file.includes('i18n') || file.includes('translations')) continue
+
+    try {
+      const content = readFileSync(file, 'utf-8')
+      // Look for Norwegian text that should probably be translated
+      const norwegianPatterns = [/>[A-ZÆØÅ][a-zæøå]+\s+[a-zæøå]+</g, />Legg til</g, />Lagre</g, />Avbryt</g]
+
+      for (const pattern of norwegianPatterns) {
+        const matches = content.match(pattern)
+        if (matches && matches.length > 2) {
+          findings.push({
+            severity: 'info',
+            message: `Possible hardcoded Norwegian text (${matches.length} matches)`,
+            file
+          })
+          break
+        }
+      }
+    } catch {
+      // Skip
+    }
+  }
+
+  return {
+    type: 'i18n-completeness',
+    status: findings.some(f => f.severity === 'warning') ? 'warn' : 'pass',
+    summary: findings.length > 0
+      ? `Found ${findings.length} i18n concerns`
+      : 'Translations appear complete',
+    findings: findings.slice(0, 10)
+  }
+}
+
+async function runSecurityAudit(changedFiles: string[]): Promise<ExtendedCheckResult> {
+  const findings: Array<{ severity: string; message: string; file?: string }> = []
+
+  const securityPatterns = [
+    { pattern: /dangerouslySetInnerHTML/g, issue: 'XSS risk: dangerouslySetInnerHTML', severity: 'critical' },
+    { pattern: /eval\s*\(/g, issue: 'Security risk: eval()', severity: 'critical' },
+    { pattern: /innerHTML\s*=/g, issue: 'XSS risk: innerHTML assignment', severity: 'warning' },
+    { pattern: /process\.env\.\w+(?!\s*\|\||\s*\?\?)/g, issue: 'Unchecked env variable', severity: 'info' },
+    { pattern: /password.*=.*['"][^'"]+['"]/gi, issue: 'Possible hardcoded password', severity: 'critical' },
+    { pattern: /api[_-]?key.*=.*['"][^'"]+['"]/gi, issue: 'Possible hardcoded API key', severity: 'critical' },
+  ]
+
+  for (const file of changedFiles.slice(0, 20)) {
+    if (!existsSync(file) || !file.match(/\.(ts|tsx|js|jsx)$/)) continue
+    if (file.includes('.test.') || file.includes('.spec.')) continue
+
+    try {
+      const content = readFileSync(file, 'utf-8')
+
+      for (const { pattern, issue, severity } of securityPatterns) {
+        const matches = content.match(pattern)
+        if (matches && matches.length > 0) {
+          findings.push({
+            severity,
+            message: `${issue} (${matches.length} occurrences)`,
+            file
+          })
+        }
+      }
+    } catch {
+      // Skip
+    }
+  }
+
+  const hasCritical = findings.some(f => f.severity === 'critical')
+  return {
+    type: 'security-audit',
+    status: hasCritical ? 'fail' : findings.length > 0 ? 'warn' : 'pass',
+    summary: hasCritical
+      ? `Found ${findings.filter(f => f.severity === 'critical').length} critical security issues`
+      : findings.length > 0
+        ? `Found ${findings.length} security concerns`
+        : 'No obvious security issues',
+    findings: findings.slice(0, 10)
+  }
+}
+
+async function runBundleSizeCheck(): Promise<ExtendedCheckResult> {
+  try {
+    // Check if package.json has new dependencies
+    const packageJson = JSON.parse(readFileSync('package.json', 'utf-8'))
+    const deps = Object.keys(packageJson.dependencies || {})
+    const devDeps = Object.keys(packageJson.devDependencies || {})
+
+    // Check for known large packages
+    const largePackages = ['moment', 'lodash', 'jquery', '@mui/material', 'antd', 'bootstrap']
+    const foundLarge = deps.filter(d => largePackages.some(lp => d.includes(lp)))
+
+    if (foundLarge.length > 0) {
+      return {
+        type: 'bundle-size-check',
+        status: 'warn',
+        summary: `Found ${foundLarge.length} potentially large dependencies`,
+        findings: foundLarge.map(pkg => ({
+          severity: 'warning',
+          message: `Large package: ${pkg} - consider alternatives or tree-shaking`
+        }))
+      }
+    }
+
+    return {
+      type: 'bundle-size-check',
+      status: 'pass',
+      summary: `${deps.length} dependencies, ${devDeps.length} devDependencies`,
+      findings: []
+    }
+  } catch (e) {
+    return {
+      type: 'bundle-size-check',
+      status: 'skipped',
+      summary: `Could not check bundle size: ${e}`,
+      findings: []
+    }
+  }
+}
+
+// ============================================
 // Main
 // ============================================
 
@@ -382,6 +709,7 @@ async function main() {
         suggestions: []
       },
       quickChecks: [],
+      extendedChecks: [],
       additionalContext: {},
       recommendation: 'proceed',
       reasoning: 'No selector output to review',
@@ -411,30 +739,48 @@ async function main() {
     selectorReview.concerns.forEach(c => console.log(`   - ${c}`))
   }
 
-  // Step 3: Gather additional context
+  // Step 3: Run extended checks recommended by selector
+  console.log('\n🔧 Running extended checks...')
+  const changedFiles = selection.changedFiles || []
+  const extendedChecks = await runExtendedChecks(selection, changedFiles)
+
+  const extPassed = extendedChecks.filter(c => c.status === 'pass').length
+  const extFailed = extendedChecks.filter(c => c.status === 'fail').length
+  const extWarned = extendedChecks.filter(c => c.status === 'warn').length
+  console.log(`   ✅ ${extPassed} passed, ❌ ${extFailed} failed, ⚠️ ${extWarned} warnings`)
+
+  // Step 4: Gather additional context
   console.log('\n📊 Gathering context for supervisor...')
   const additionalContext = gatherAdditionalContext(selection, quickChecks)
   console.log(`   Found ${Object.keys(additionalContext).length} context items`)
 
-  // Step 4: Determine recommendation
+  // Step 5: Determine recommendation
   let recommendation: 'proceed' | 'run_more_tests' | 'needs_investigation' = 'proceed'
   let reasoning = 'All checks passed, selector decisions verified'
 
-  if (failed > 0) {
+  // Check for critical issues
+  const hasCriticalExtended = extendedChecks.some(c => c.status === 'fail')
+
+  if (failed > 0 || hasCriticalExtended) {
     recommendation = 'needs_investigation'
-    reasoning = `${failed} quick checks failed - supervisor should investigate`
+    reasoning = hasCriticalExtended
+      ? `Extended check failed: ${extendedChecks.filter(c => c.status === 'fail').map(c => c.type).join(', ')}`
+      : `${failed} quick checks failed - supervisor should investigate`
   } else if (!selectorReview.verified || selectorReview.concerns.length > 0) {
     recommendation = 'run_more_tests'
     reasoning = `Selector concerns: ${selectorReview.concerns.join(', ')}`
-  } else if (warned > 2) {
+  } else if (warned > 2 || extWarned > 0) {
     recommendation = 'run_more_tests'
-    reasoning = `Multiple warnings (${warned}) - additional testing recommended`
+    reasoning = extWarned > 0
+      ? `Extended check warnings: ${extendedChecks.filter(c => c.status === 'warn').map(c => c.type).join(', ')}`
+      : `Multiple warnings (${warned}) - additional testing recommended`
   }
 
   // Save output
   const output: PreVerdictOutput = {
     selectorReview,
     quickChecks,
+    extendedChecks,
     additionalContext,
     recommendation,
     reasoning,
