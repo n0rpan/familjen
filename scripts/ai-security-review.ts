@@ -69,6 +69,36 @@ const SECURITY_FILE_EXTENSIONS = [
   '.sql', '.env', '.json', '.yml', '.yaml',
 ]
 
+/**
+ * Check if a line is defining a security pattern rather than being vulnerable code.
+ * This prevents the scanner from flagging its own pattern definitions.
+ *
+ * Context indicators:
+ * - Regex literals: /pattern/gi
+ * - RegExp constructor: new RegExp(...)
+ * - Pattern object definitions: pattern: /, patterns: [
+ * - Known scanner variable names
+ */
+function isPatternDefinitionContext(line: string): boolean {
+  const indicators = [
+    // Regex literal as object value: key: /pattern/gi or [/pattern/gi]
+    /^\s*[\w]+:\s*\[?\s*\/.*\/[gimsuy]*,?\s*$/,
+    // Regex literal in array: /pattern/gi,
+    /^\s*\/.*\/[gimsuy]*,?\s*$/,
+    // RegExp constructor
+    /new\s+RegExp\s*\(/,
+    // Pattern definition variables
+    /pattern[s]?\s*[:=]/i,
+    // Known scanner pattern objects
+    /SECURITY_PATTERNS|PATTERNS\s*=/i,
+    // Object with pattern arrays: sqlInjection: [
+    /^\s*\w+:\s*\[\s*$/,
+    // Defining regex for security scanning (the patterns we search FOR)
+    /securityPatterns|insecureAuth|sqlInjection|xss|hardcodedSecrets|exposedEnv/i,
+  ]
+  return indicators.some(p => p.test(line))
+}
+
 // ============================================
 // MAIN
 // ============================================
@@ -260,6 +290,11 @@ function runPatternScan(diff: string): Finding[] {
     lineNumber++
 
     const addedContent = line.slice(1) // Remove the '+' prefix
+
+    // Skip pattern definition contexts (e.g., security scanner defining its own patterns)
+    if (isPatternDefinitionContext(addedContent)) {
+      continue
+    }
 
     // Check each pattern category
     for (const [category, patterns] of Object.entries(SECURITY_PATTERNS)) {

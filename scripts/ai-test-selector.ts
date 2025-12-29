@@ -155,6 +155,9 @@ const TEST_DURATIONS_MINUTES: Record<TestType, number> = {
   'visual-validation': 10,
   'e2e-tests': 10,
   'api-tests': 5,
+  'dependency-review': 1,
+  'security-review': 2,
+  'pr-quality': 1,
 }
 
 /**
@@ -339,6 +342,9 @@ Your job is to:
 | visual-validation | Component/page/style changes | Only backend/API changes |
 | e2e-tests | User-facing code changes | Only backend-only changes |
 | api-tests | API route or integration changes | Only frontend-only changes |
+| dependency-review | package.json or package-lock.json changes | No dependency file changes |
+| security-review | Any .ts/.tsx/.js code changes | Only docs/config changes |
+| pr-quality | Always (minimal cost) | Never |
 
 ## Extended Checks (Recommend based on context)
 
@@ -379,7 +385,7 @@ Respond with valid JSON only:
 }
 
 Important:
-- Include ALL 8 core test types in decisions
+- Include ALL 11 core test types in decisions
 - Set "run: true" when uncertain (conservative)
 - Recommend extended checks when relevant (empty array if none needed)
 - Priority: high (blocking), medium (should run), low (nice to have)`
@@ -620,6 +626,10 @@ async function main() {
     console.log(`   Has API changes: ${impact.affectsApi}`)
     console.log(`   Is docs only: ${isDocsOnly}`)
 
+    const hasDependencyChanges = changedFiles.some(f =>
+      f === 'package.json' || f === 'package-lock.json'
+    )
+
     console.log('\n🔮 Predicted decisions (heuristic):')
     console.log('   lint: RUN (always)')
     console.log('   typecheck: RUN (always)')
@@ -629,6 +639,9 @@ async function main() {
     console.log(`   visual-validation: ${impact.affectsComponents ? 'RUN' : 'SKIP'}`)
     console.log(`   e2e-tests: ${isDocsOnly ? 'SKIP' : 'RUN'}`)
     console.log(`   api-tests: ${impact.affectsApi ? 'RUN' : 'SKIP'}`)
+    console.log(`   dependency-review: ${hasDependencyChanges ? 'RUN' : 'SKIP'}`)
+    console.log(`   security-review: ${isDocsOnly ? 'SKIP' : 'RUN'}`)
+    console.log('   pr-quality: RUN (always)')
 
     console.log('\n💡 Extended checks that might be recommended:')
     if (categories.components.length > 3) {
@@ -911,6 +924,9 @@ function writeDefaultOutput(baseBranch: string, prNumber: number | null): void {
     'visual-validation',
     'e2e-tests',
     'api-tests',
+    'dependency-review',
+    'security-review',
+    'pr-quality',
   ]
 
   const decisions: TestDecisionOutput[] = allTests.map(test => ({

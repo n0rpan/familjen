@@ -36,6 +36,9 @@ jobs:
       run_migration: ${{ steps.selector.outputs.run_migration_review }}
       run_api: ${{ steps.selector.outputs.run_api_tests }}
       run_code_review: ${{ steps.selector.outputs.run_code_review }}
+      run_dependency: ${{ steps.selector.outputs.run_dependency_review }}
+      run_security: ${{ steps.selector.outputs.run_security_review }}
+      run_pr_quality: ${{ steps.selector.outputs.run_pr_quality }}
       suggested_labels: ${{ steps.labeler.outputs.labels }}
 
     steps:
@@ -532,8 +535,11 @@ jobs:
     name: 🔒 AI Security Review
     runs-on: ubuntu-latest
     timeout-minutes: 8
-    needs: [lint-typecheck]
-    if: github.event_name == 'pull_request'
+    needs: [lint-typecheck, smart-selector]
+    # Run if: selector says run OR selector output is empty (fallback to conservative)
+    if: |
+      github.event_name == 'pull_request' &&
+      (needs.smart-selector.outputs.run_security == 'true' || needs.smart-selector.outputs.run_security == '')
     continue-on-error: true
 
     steps:
@@ -579,12 +585,14 @@ jobs:
   # AI PR Quality Check
   # Validates PR description, size, and commit messages
   # NON-BLOCKING: Final verdict decides if this blocks
+  # Always runs (minimal cost, always useful feedback)
   # ============================================
   pr-quality:
     name: 📋 PR Quality Check
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: github.event_name == 'pull_request'
+    # No smart-selector dependency - always runs (minimal cost)
     continue-on-error: true
 
     steps:
@@ -638,8 +646,11 @@ jobs:
     name: 📦 Dependency Review
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [lint-typecheck]
-    if: github.event_name == 'pull_request'
+    needs: [lint-typecheck, smart-selector]
+    # Run if: selector says run OR selector output is empty (fallback to conservative)
+    if: |
+      github.event_name == 'pull_request' &&
+      (needs.smart-selector.outputs.run_dependency == 'true' || needs.smart-selector.outputs.run_dependency == '')
     continue-on-error: true
 
     steps:

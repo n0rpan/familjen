@@ -28,6 +28,9 @@ export type TestType =
   | 'visual-validation'
   | 'e2e-tests'
   | 'api-tests'
+  | 'dependency-review'
+  | 'security-review'
+  | 'pr-quality'
 
 export interface TestRun {
   testType: TestType
@@ -347,6 +350,9 @@ export const TEST_RELEVANT_PATTERNS: Record<TestType, string[]> = {
     'src/lib/integrations/**/*.ts',
     'tests/api/**/*.ts',
   ],
+  'dependency-review': ['package.json', 'package-lock.json'],
+  'security-review': ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'],
+  'pr-quality': ['**/*'], // Always relevant
 }
 
 /**
