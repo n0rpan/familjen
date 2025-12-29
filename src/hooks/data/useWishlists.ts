@@ -14,6 +14,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
+import { createWishlistItemSchema, updateWishlistItemSchema } from '@/lib/schemas'
 import type { WishlistItem } from '@/lib/types'
 
 export interface UseWishlistsReturn {
@@ -74,6 +75,23 @@ export function useWishlists(): UseWishlistsReturn {
   const addItem = useCallback(async (
     item: Omit<WishlistItem, 'id' | 'created_at' | 'updated_at'>
   ) => {
+    // Validate item data (excluding household_id which is added separately)
+    const validation = createWishlistItemSchema.safeParse({
+      child_id: item.child_id,
+      member_id: item.member_id,
+      name: item.name,
+      description: item.description,
+      link: item.link,
+      price: item.price,
+      image_path: item.image_path,
+      occasion: item.occasion,
+      priority: item.priority,
+    })
+    if (!validation.success) {
+      const errors = validation.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+      throw new Error(errors)
+    }
+
     if (isDemo) {
       console.log('Demo mode: Would add wishlist item', item)
       return
@@ -95,6 +113,25 @@ export function useWishlists(): UseWishlistsReturn {
 
   // Update item mutation
   const updateItem = useCallback(async (itemId: string, updates: Partial<WishlistItem>) => {
+    // Validate update data (only validates fields that are being updated)
+    const fieldsToValidate: Record<string, unknown> = {}
+    if (updates.name !== undefined) fieldsToValidate.name = updates.name
+    if (updates.description !== undefined) fieldsToValidate.description = updates.description
+    if (updates.link !== undefined) fieldsToValidate.link = updates.link
+    if (updates.price !== undefined) fieldsToValidate.price = updates.price
+    if (updates.image_path !== undefined) fieldsToValidate.image_path = updates.image_path
+    if (updates.occasion !== undefined) fieldsToValidate.occasion = updates.occasion
+    if (updates.priority !== undefined) fieldsToValidate.priority = updates.priority
+    if (updates.status !== undefined) fieldsToValidate.status = updates.status
+
+    if (Object.keys(fieldsToValidate).length > 0) {
+      const validation = updateWishlistItemSchema.safeParse(fieldsToValidate)
+      if (!validation.success) {
+        const errors = validation.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+        throw new Error(errors)
+      }
+    }
+
     if (isDemo) {
       console.log('Demo mode: Would update wishlist item', itemId, updates)
       return

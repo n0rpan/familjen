@@ -16,6 +16,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
 import { formatDateISO } from '@/lib/utils'
+import { createChildTaskSchema } from '@/lib/schemas'
 import type { ChildTask, ChildTaskWithChild, Child } from '@/lib/types'
 
 export interface UseTasksOptions {
@@ -128,6 +129,22 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
   const addTask = useCallback(async (
     task: Omit<ChildTask, 'id' | 'created_at' | 'updated_at'>
   ) => {
+    // Validate task data (excluding household_id which is added separately)
+    const validation = createChildTaskSchema.safeParse({
+      child_id: task.child_id,
+      date: task.date,
+      time: task.time,
+      task_type: task.task_type,
+      title: task.title,
+      notes: task.notes,
+      source: task.source,
+      recurrence_pattern: task.recurrence_pattern,
+    })
+    if (!validation.success) {
+      const errors = validation.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+      throw new Error(errors)
+    }
+
     if (isDemo) {
       demoMutations.addTask(task)
       return
