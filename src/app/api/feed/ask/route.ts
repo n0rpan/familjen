@@ -155,7 +155,7 @@ export async function POST(request: Request) {
       .eq('key', 'openrouter_model')
       .single()
 
-    const model = modelSetting?.value || 'google/gemini-2.0-flash-001'
+    const model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
 
     // Call AI to answer the question
     const response = await askAI(question, messageContexts, language, model)

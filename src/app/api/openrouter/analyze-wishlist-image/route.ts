@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
       .eq('key', 'openrouter_vision_model')
       .single()
 
-    const model = visionModelSetting?.value || 'google/gemini-2.0-flash-001'
+    const model = visionModelSetting?.value || 'google/gemini-2.5-flash-lite'
 
     // Get image from request
     const { image } = await request.json()

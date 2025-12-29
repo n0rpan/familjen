@@ -265,7 +265,7 @@ export async function POST(request: Request) {
       .eq('key', modelKey)
       .single()
 
-    const defaultModel = hasImage ? 'google/gemini-2.0-flash-001' : 'google/gemini-2.5-flash-lite'
+    const defaultModel = 'google/gemini-2.5-flash-lite'
     const model = modelSetting?.value || defaultModel
 
     const currentMember = context.members.find(m => m.isCurrentUser)

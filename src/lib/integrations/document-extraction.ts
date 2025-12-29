@@ -98,9 +98,6 @@ Returner en JSON-array. Hvert element skal ha:
 
 Returner KUN JSON-arrayen, ingen annen tekst. Hvis ingen hendelser funnet, returner [].`
 
-  // Log cleaned HTML size for debugging
-  console.log(`[EventExtraction] Cleaned HTML size: ${cleanedHtml.length} chars, tables preserved: ${cleanedHtml.includes('| --- |')}`)
-
   try {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -133,14 +130,11 @@ Returner KUN JSON-arrayen, ingen annen tekst. Hvis ingen hendelser funnet, retur
     const content = data.choices?.[0]?.message?.content
 
     if (!content) {
-      console.log('[EventExtraction] No content in AI response')
+      console.error('[EventExtraction] No content in AI response')
       return []
     }
 
-    const events = parseExtractedEvents(content)
-    console.log(`[EventExtraction] AI extracted ${events.length} events from ${context.schoolName || 'unknown source'}`)
-
-    return events
+    return parseExtractedEvents(content)
   } catch (error) {
     console.error('[EventExtraction] Error extracting events from HTML:', error)
     return []
@@ -354,14 +348,14 @@ function parseExtractedEvents(content: string): ExtractedEvent[] {
         isValidDate(event.date)
     )
     .map((event) => ({
-      title: event.title.slice(0, 100),
-      date: event.date,
-      endDate: isValidDate(event.endDate) ? event.endDate : undefined,
-      time: isValidTime(event.time) ? event.time : undefined,
-      eventType: isValidEventType(event.eventType) ? event.eventType : 'other',
-      confidence: typeof event.confidence === 'number' ? Math.min(1, Math.max(0, event.confidence)) : 0.5,
-      description: event.description || undefined,
-    }))
+    title: event.title.slice(0, 100),
+    date: event.date,
+    endDate: isValidDate(event.endDate) ? event.endDate : undefined,
+    time: isValidTime(event.time) ? event.time : undefined,
+    eventType: isValidEventType(event.eventType) ? event.eventType : 'other',
+    confidence: typeof event.confidence === 'number' ? Math.min(1, Math.max(0, event.confidence)) : 0.5,
+    description: event.description || undefined,
+  }))
 }
 
 /**

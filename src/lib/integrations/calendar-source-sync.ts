@@ -10,6 +10,7 @@ import { createHash } from 'crypto'
 import { extractEventsFromHtml } from './document-extraction'
 import type { ExtractedEvent } from './document-extraction'
 import { isUrlAllowed, truncate, sanitizeString, sanitizeTime } from '@/lib/sanitize'
+import { deduplicateEvents } from './event-deduplication'
 
 export interface CalendarSource {
   id: string
@@ -29,7 +30,14 @@ export interface SyncResult {
   eventsUpdated: number
   eventsRemoved: number
   notificationsCreated: number
+  duplicatesAutoMerged: number
+  duplicateSuggestionsCreated: number
   error?: string
+  debug?: {
+    contentLength?: number
+    model?: string
+    firstError?: string
+  }
 }
 
 interface ExternalEvent {
@@ -92,7 +100,12 @@ export async function syncCalendarSource(
     eventsUpdated: 0,
     eventsRemoved: 0,
     notificationsCreated: 0,
+    duplicatesAutoMerged: 0,
+    duplicateSuggestionsCreated: 0,
   }
+
+  // Track newly created event IDs for deduplication
+  const newEventIds: string[] = []
 
   try {
     // 1. Fetch content from source
@@ -107,8 +120,9 @@ export async function syncCalendarSource(
 
       const response = await fetch(source.url, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; FamiljenBot/1.0)',
-          Accept: 'text/html,application/pdf,text/calendar,*/*',
+          'User-Agent': 'FamiljenBot/1.0 (https://familjen.eu)',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'nb-NO,nb;q=0.9,no;q=0.8,en;q=0.7',
         },
       })
 
@@ -120,7 +134,7 @@ export async function syncCalendarSource(
     }
 
     // 2. Extract events using AI
-    const model = options.model || 'google/gemini-2.0-flash-001'
+    const model = options.model || 'google/gemini-2.5-flash-lite'
 
     // Get child name if linked
     let childName: string | undefined
@@ -140,6 +154,10 @@ export async function syncCalendarSource(
     })
 
     result.eventsFound = extractedEvents.length
+    result.debug = {
+      contentLength: content.length,
+      model,
+    }
 
     // 3. Get existing events for this source
     const { data: existingEvents } = await supabase
@@ -185,17 +203,30 @@ export async function syncCalendarSource(
           .update(eventData)
           .eq('id', existing.id)
 
-        if (!error) {
+        if (error) {
+          console.error(`[CalendarSourceSync] Update error:`, error.message)
+          if (!result.debug!.firstError) {
+            result.debug!.firstError = `Update: ${error.message}`
+          }
+        } else {
           result.eventsUpdated++
         }
       } else {
-        // Insert new event
-        const { error } = await supabase
+        // Insert new event and capture the ID for deduplication
+        const { data: insertedEvent, error } = await supabase
           .from('external_events')
           .insert(eventData)
+          .select('id')
+          .single()
 
-        if (!error) {
+        if (error) {
+          console.error(`[CalendarSourceSync] Insert error:`, error.message)
+          if (!result.debug!.firstError) {
+            result.debug!.firstError = `Insert: ${error.message}`
+          }
+        } else if (insertedEvent) {
           result.eventsCreated++
+          newEventIds.push(insertedEvent.id)
         }
       }
     }
@@ -291,6 +322,18 @@ export async function syncCalendarSource(
       })
       .eq('id', source.id)
 
+    // 8. Run deduplication on newly created events (non-blocking - don't fail sync if AI fails)
+    if (newEventIds.length > 0) {
+      try {
+        const dedupeResult = await deduplicateEvents(supabase, source.household_id, newEventIds)
+        result.duplicatesAutoMerged = dedupeResult.autoMerged
+        result.duplicateSuggestionsCreated = dedupeResult.suggestionsCreated
+      } catch (dedupeError) {
+        // Log but don't fail the sync - events are already saved
+        console.error('[CalendarSourceSync] Deduplication failed (non-blocking):', dedupeError)
+      }
+    }
+
     result.success = true
     return result
   } catch (error) {
@@ -333,21 +376,12 @@ export async function syncAllCalendarSources(
   const results: Array<{ id: string; name: string; result: SyncResult }> = []
 
   for (const source of sources) {
-    console.log(`[CalendarSourceSync] Syncing ${source.display_name}`)
-
     const result = await syncCalendarSource(supabase, source as CalendarSource, options)
-
     results.push({
       id: source.id,
       name: source.display_name,
       result,
     })
-
-    console.log(
-      `[CalendarSourceSync] ${source.display_name}: ` +
-        `${result.eventsFound} found, ${result.eventsCreated} created, ` +
-        `${result.eventsUpdated} updated, ${result.eventsRemoved} removed`
-    )
   }
 
   return { sources: results }
