@@ -101,6 +101,12 @@ Returner KUN JSON-arrayen, ingen annen tekst. Hvis ingen hendelser funnet, retur
   // Log cleaned HTML size for debugging
   console.log(`[EventExtraction] Cleaned HTML size: ${cleanedHtml.length} chars, tables preserved: ${cleanedHtml.includes('| --- |')}`)
 
+  // Log first 500 chars of cleaned content to help debug
+  if (cleanedHtml.length < 100) {
+    console.log(`[EventExtraction] WARNING: Very short content after cleaning. Raw HTML size: ${html.length} chars`)
+  }
+  console.log(`[EventExtraction] Content preview: ${cleanedHtml.slice(0, 500)}...`)
+
   try {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -133,12 +139,18 @@ Returner KUN JSON-arrayen, ingen annen tekst. Hvis ingen hendelser funnet, retur
     const content = data.choices?.[0]?.message?.content
 
     if (!content) {
-      console.log('[EventExtraction] No content in AI response')
+      console.log('[EventExtraction] No content in AI response. Full response:', JSON.stringify(data).slice(0, 500))
       return []
     }
 
+    console.log(`[EventExtraction] AI response (first 500 chars): ${content.slice(0, 500)}...`)
+
     const events = parseExtractedEvents(content)
     console.log(`[EventExtraction] AI extracted ${events.length} events from ${context.schoolName || 'unknown source'}`)
+
+    if (events.length === 0 && content.length > 10) {
+      console.log(`[EventExtraction] WARNING: AI returned content but 0 events parsed. Check JSON parsing.`)
+    }
 
     return events
   } catch (error) {

@@ -1,7 +1,7 @@
 /**
  * Event Deduplication Service
  *
- * Detects and handles duplicate events across different sources.
+ * Detects and handles duplicate events across different sources using AI.
  * - High confidence (>0.9): Auto-merge (hide duplicate, keep one)
  * - Medium confidence (0.6-0.9): Create suggestion for user review
  * - Low confidence (<0.6): No action
@@ -35,6 +35,14 @@ interface DuplicateCandidate {
   matchReason: string
 }
 
+interface LLMDuplicateResult {
+  eventAId: string
+  eventBId: string
+  isDuplicate: boolean
+  confidence: number
+  reason: string
+}
+
 export interface DeduplicationResult {
   autoMerged: number
   suggestionsCreated: number
@@ -42,205 +50,141 @@ export interface DeduplicationResult {
 }
 
 /**
- * Calculate Levenshtein distance between two strings.
+ * Use LLM to evaluate if event pairs are duplicates.
+ * Batches multiple pairs in one request for efficiency.
  */
-function levenshteinDistance(str1: string, str2: string): number {
-  const m = str1.length
-  const n = str2.length
+async function evaluateDuplicatesWithLLM(
+  pairs: Array<{ eventA: ExternalEvent; eventB: ExternalEvent }>,
+  model: string
+): Promise<LLMDuplicateResult[]> {
+  if (pairs.length === 0) return []
 
-  // Create a matrix
-  const dp: number[][] = Array(m + 1)
-    .fill(null)
-    .map(() => Array(n + 1).fill(0))
+  const apiKey = process.env.OPENROUTER_API_KEY
+  if (!apiKey) {
+    console.error('[Deduplication] OPENROUTER_API_KEY not set')
+    return []
+  }
 
-  // Initialize first row and column
-  for (let i = 0; i <= m; i++) dp[i][0] = i
-  for (let j = 0; j <= n; j++) dp[0][j] = j
+  // Build the prompt with all event pairs
+  const pairsDescription = pairs.map((pair, index) => {
+    const eventA = pair.eventA
+    const eventB = pair.eventB
+    return `Pair ${index + 1}:
+  Event A (ID: ${eventA.id}):
+    - Title: "${eventA.title}"
+    - Date: ${eventA.event_date}${eventA.end_date ? ` to ${eventA.end_date}` : ''}
+    - Time: ${eventA.event_time || 'All day'}
+    - Type: ${eventA.event_type || 'Unknown'}
 
-  // Fill in the rest
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      if (str1[i - 1] === str2[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1]
-      } else {
-        dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
-      }
+  Event B (ID: ${eventB.id}):
+    - Title: "${eventB.title}"
+    - Date: ${eventB.event_date}${eventB.end_date ? ` to ${eventB.end_date}` : ''}
+    - Time: ${eventB.event_time || 'All day'}
+    - Type: ${eventB.event_type || 'Unknown'}`
+  }).join('\n\n')
+
+  const systemPrompt = `You are an expert at identifying duplicate calendar events from Norwegian family calendars.
+
+These events come from different sources (schools, kindergartens, sports clubs, etc.) and often describe the same event with slightly different wording.
+
+Common patterns:
+- "Vinterferie" and "Ferie uke 8" are the same (winter break)
+- "Planleggingsdag" and "Planl.dag lærerne" are the same (teacher planning day)
+- "Høstferie" and "Høstferie uke 40" are the same
+- "Foreldremøte" and "Foreldremøte 1. klasse" might be the same if same date
+- Events on the same date with similar meaning but different wording
+
+Consider:
+- Semantic similarity (not just string matching)
+- Date proximity (±1 day could be same event)
+- Norwegian language variations
+- Abbreviations and expanded forms
+
+Respond with a JSON array of evaluations.`
+
+  const userPrompt = `Evaluate these event pairs and determine if they are duplicates.
+
+${pairsDescription}
+
+For each pair, respond with:
+- isDuplicate: true/false
+- confidence: 0.0-1.0 (how confident you are)
+- reason: Brief Norwegian explanation for the user
+
+Respond ONLY with a JSON array like:
+[
+  {"eventAId": "...", "eventBId": "...", "isDuplicate": true, "confidence": 0.95, "reason": "Samme vinterferie, ulik formulering"},
+  ...
+]`
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://familjen.eu',
+        'X-Title': 'Familjen Event Deduplication',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.1, // Low temperature for consistent results
+        max_tokens: 2000,
+      }),
+    })
+
+    if (!response.ok) {
+      console.error('[Deduplication] LLM API error:', response.status, await response.text())
+      return []
     }
-  }
 
-  return dp[m][n]
-}
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content
 
-/**
- * Calculate string similarity using Levenshtein distance.
- * Returns a value between 0 (completely different) and 1 (identical).
- */
-function stringSimilarity(str1: string, str2: string): number {
-  if (str1 === str2) return 1
-  if (str1.length === 0 || str2.length === 0) return 0
-
-  const distance = levenshteinDistance(str1, str2)
-  const maxLength = Math.max(str1.length, str2.length)
-
-  return 1 - distance / maxLength
-}
-
-/**
- * Normalize a title for comparison.
- * Handles common Norwegian variations and removes noise.
- */
-function normalizeTitle(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .trim()
-    // Normalize common Norwegian variations
-    .replace(/vinterferie/gi, 'ferie')
-    .replace(/høstferie/gi, 'ferie')
-    .replace(/påskeferie/gi, 'ferie')
-    .replace(/sommerferie/gi, 'ferie')
-    .replace(/planleggingsdag/gi, 'planl.dag')
-    .replace(/planl\.dag/gi, 'planl.dag')
-    // Remove common suffixes that vary
-    .replace(/\s*-\s*(skole|barnehage|sfo)/gi, '')
-    .replace(/\s*\d{4}(-\d{4})?$/g, '') // Remove year suffixes like "2025" or "2025-2026"
-}
-
-/**
- * Calculate date proximity score.
- * Returns 1 for exact match, decreasing for dates further apart.
- */
-function dateProximity(date1: string, date2: string): number {
-  const d1 = new Date(date1)
-  const d2 = new Date(date2)
-  const diffDays = Math.abs((d1.getTime() - d2.getTime()) / (1000 * 60 * 60 * 24))
-
-  if (diffDays === 0) return 1
-  if (diffDays === 1) return 0.9
-  if (diffDays === 2) return 0.7
-  if (diffDays <= 3) return 0.5
-  return 0 // More than 3 days apart - not a match
-}
-
-/**
- * Calculate overall duplicate confidence between two events.
- */
-function calculateDuplicateConfidence(
-  eventA: ExternalEvent,
-  eventB: ExternalEvent
-): { confidence: number; reason: string } {
-  // Must be same date (or very close)
-  const dateScore = dateProximity(eventA.event_date, eventB.event_date)
-  if (dateScore === 0) {
-    return { confidence: 0, reason: 'Dates too far apart' }
-  }
-
-  // Compare normalized titles
-  const titleA = normalizeTitle(eventA.title)
-  const titleB = normalizeTitle(eventB.title)
-  const titleScore = stringSimilarity(titleA, titleB)
-
-  // If titles are very similar (>0.8), high confidence
-  if (titleScore >= 0.95) {
-    return {
-      confidence: dateScore * 0.95,
-      reason: `Nesten identisk tittel: "${eventA.title}" ≈ "${eventB.title}"`,
+    if (!content) {
+      console.error('[Deduplication] No content in LLM response')
+      return []
     }
-  }
 
-  if (titleScore >= 0.8) {
-    return {
-      confidence: dateScore * titleScore * 0.9,
-      reason: `Lignende tittel: "${eventA.title}" ≈ "${eventB.title}"`,
+    // Parse JSON from response (handle markdown code blocks)
+    let jsonStr = content.trim()
+    if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
     }
-  }
 
-  // Check for common event patterns
-  // If both contain the same key terms, might be duplicates
-  const keyTermsA = extractKeyTerms(titleA)
-  const keyTermsB = extractKeyTerms(titleB)
-  const commonTerms = keyTermsA.filter((term) => keyTermsB.includes(term))
+    const results: LLMDuplicateResult[] = JSON.parse(jsonStr)
 
-  if (commonTerms.length >= 2) {
-    const termScore = commonTerms.length / Math.max(keyTermsA.length, keyTermsB.length)
-    return {
-      confidence: dateScore * termScore * 0.8,
-      reason: `Felles nøkkelord: ${commonTerms.join(', ')}`,
-    }
-  }
-
-  // Check if same child and same event type
-  if (eventA.child_id && eventA.child_id === eventB.child_id && titleScore >= 0.5) {
-    return {
-      confidence: dateScore * titleScore * 0.85,
-      reason: `Samme barn, lignende hendelse`,
-    }
-  }
-
-  // Titles are too different
-  if (titleScore < 0.5) {
-    return { confidence: 0, reason: 'Titles too different' }
-  }
-
-  // Medium confidence for moderate title similarity
-  return {
-    confidence: dateScore * titleScore * 0.75,
-    reason: `Delvis lignende: "${eventA.title}" ≈ "${eventB.title}"`,
+    // Validate and map results
+    return results.map((r) => ({
+      eventAId: r.eventAId,
+      eventBId: r.eventBId,
+      isDuplicate: Boolean(r.isDuplicate),
+      confidence: Math.max(0, Math.min(1, Number(r.confidence) || 0)),
+      reason: String(r.reason || ''),
+    }))
+  } catch (error) {
+    console.error('[Deduplication] Error calling LLM:', error)
+    return []
   }
 }
 
 /**
- * Extract key terms from a normalized title.
- */
-function extractKeyTerms(title: string): string[] {
-  // Norwegian stop words
-  const stopWords = new Set([
-    'og',
-    'i',
-    'på',
-    'til',
-    'for',
-    'med',
-    'av',
-    'fra',
-    'er',
-    'en',
-    'et',
-    'de',
-    'den',
-    'det',
-    'som',
-    'har',
-    'om',
-    'kan',
-    'vil',
-    'skal',
-    'alle',
-  ])
-
-  return title
-    .split(/\s+/)
-    .filter((word) => word.length > 2 && !stopWords.has(word))
-}
-
-/**
- * Find potential duplicate events for a given event across all sources.
+ * Find potential duplicate events for new events across all sources.
+ * Uses date proximity as a cheap pre-filter before LLM evaluation.
  */
 async function findPotentialDuplicates(
   supabase: SupabaseClient,
-  event: ExternalEvent,
-  householdId: string
+  newEvents: ExternalEvent[],
+  householdId: string,
+  model: string
 ): Promise<DuplicateCandidate[]> {
-  const candidates: DuplicateCandidate[] = []
+  if (newEvents.length === 0) return []
 
-  // Get date range to search (±3 days)
-  const eventDate = new Date(event.event_date)
-  const startDate = new Date(eventDate)
-  startDate.setDate(startDate.getDate() - 3)
-  const endDate = new Date(eventDate)
-  endDate.setDate(endDate.getDate() + 3)
-
-  // First, get all source_url_ids and integration_ids for this household
+  // Get all source IDs for this household
   const [sourceUrlsResult, integrationsResult] = await Promise.all([
     supabase.from('external_source_urls').select('id').eq('household_id', householdId),
     supabase.from('external_integrations').select('id').eq('household_id', householdId),
@@ -250,8 +194,15 @@ async function findPotentialDuplicates(
   const integrationIds = integrationsResult.data?.map((i) => i.id) || []
 
   if (sourceUrlIds.length === 0 && integrationIds.length === 0) {
-    return candidates
+    return []
   }
+
+  // Find date range to search (covers all new events ±3 days)
+  const dates = newEvents.map((e) => new Date(e.event_date))
+  const minDate = new Date(Math.min(...dates.map((d) => d.getTime())))
+  const maxDate = new Date(Math.max(...dates.map((d) => d.getTime())))
+  minDate.setDate(minDate.getDate() - 3)
+  maxDate.setDate(maxDate.getDate() + 3)
 
   // Build filters for sources
   const filters: string[] = []
@@ -262,47 +213,102 @@ async function findPotentialDuplicates(
     filters.push(`integration_id.in.(${integrationIds.join(',')})`)
   }
 
-  // Query events in the date range from this household's sources
-  const { data: nearbyEvents, error } = await supabase
+  // Query all events in date range from this household
+  const { data: allEvents, error } = await supabase
     .from('external_events')
     .select(
       'id, title, event_date, end_date, event_time, event_type, source_url_id, integration_id, child_id, duplicate_of_id, is_hidden'
     )
     .or(filters.join(','))
-    .gte('event_date', formatDateISO(startDate))
-    .lte('event_date', formatDateISO(endDate))
+    .gte('event_date', formatDateISO(minDate))
+    .lte('event_date', formatDateISO(maxDate))
     .is('duplicate_of_id', null)
     .eq('is_hidden', false)
-    .neq('id', event.id)
 
-  if (error || !nearbyEvents) {
-    console.error('[Deduplication] Error fetching nearby events:', error)
-    return candidates
+  if (error || !allEvents) {
+    console.error('[Deduplication] Error fetching events:', error)
+    return []
   }
 
-  // Filter to events from different sources
-  const eventsFromOtherSources = nearbyEvents.filter((e) => {
-    // Must be from a different source
-    if (event.source_url_id && e.source_url_id === event.source_url_id) return false
-    if (event.integration_id && e.integration_id === event.integration_id) return false
-    return true
-  })
+  // Build pairs to check: new events vs existing events from OTHER sources
+  const newEventIds = new Set(newEvents.map((e) => e.id))
+  const existingEvents = allEvents.filter((e) => !newEventIds.has(e.id)) as ExternalEvent[]
 
-  // Calculate confidence for each potential match
-  for (const otherEvent of eventsFromOtherSources) {
-    const { confidence, reason } = calculateDuplicateConfidence(event, otherEvent as ExternalEvent)
+  const pairsToCheck: Array<{ eventA: ExternalEvent; eventB: ExternalEvent }> = []
 
-    if (confidence >= MEDIUM_CONFIDENCE_THRESHOLD) {
+  for (const newEvent of newEvents) {
+    for (const existingEvent of existingEvents) {
+      // Skip if from same source
+      if (newEvent.source_url_id && newEvent.source_url_id === existingEvent.source_url_id) continue
+      if (newEvent.integration_id && newEvent.integration_id === existingEvent.integration_id) continue
+
+      // Check date proximity (±3 days)
+      const daysDiff = Math.abs(
+        (new Date(newEvent.event_date).getTime() - new Date(existingEvent.event_date).getTime()) /
+          (1000 * 60 * 60 * 24)
+      )
+      if (daysDiff > 3) continue
+
+      pairsToCheck.push({ eventA: newEvent, eventB: existingEvent })
+    }
+  }
+
+  if (pairsToCheck.length === 0) {
+    return []
+  }
+
+  console.log(`[Deduplication] Checking ${pairsToCheck.length} event pairs with LLM`)
+
+  // Batch pairs for LLM (max 10 per request to avoid token limits)
+  const batchSize = 10
+  const allResults: LLMDuplicateResult[] = []
+
+  for (let i = 0; i < pairsToCheck.length; i += batchSize) {
+    const batch = pairsToCheck.slice(i, i + batchSize)
+    const results = await evaluateDuplicatesWithLLM(batch, model)
+    allResults.push(...results)
+  }
+
+  // Convert LLM results to DuplicateCandidate format
+  const candidates: DuplicateCandidate[] = []
+  const pairsMap = new Map(
+    pairsToCheck.map((p) => [`${p.eventA.id}:${p.eventB.id}`, p])
+  )
+
+  for (const result of allResults) {
+    if (!result.isDuplicate || result.confidence < MEDIUM_CONFIDENCE_THRESHOLD) {
+      continue
+    }
+
+    // Find the original pair (could be A:B or B:A)
+    const pair = pairsMap.get(`${result.eventAId}:${result.eventBId}`) ||
+                 pairsMap.get(`${result.eventBId}:${result.eventAId}`)
+
+    if (pair) {
       candidates.push({
-        eventA: event,
-        eventB: otherEvent as ExternalEvent,
-        confidence,
-        matchReason: reason,
+        eventA: pair.eventA,
+        eventB: pair.eventB,
+        confidence: result.confidence,
+        matchReason: result.reason,
       })
     }
   }
 
   return candidates
+}
+
+/**
+ * Get the AI model to use for deduplication from app settings.
+ */
+async function getDeduplicationModel(supabase: SupabaseClient): Promise<string> {
+  const { data } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', 'openrouter_model')
+    .single()
+
+  // Use the configured model, or fall back to a fast/cheap model
+  return data?.value || 'google/gemini-2.5-flash-lite'
 }
 
 /**
@@ -326,6 +332,9 @@ export async function deduplicateEvents(
 
   console.log(`[Deduplication] Checking ${newEventIds.length} new events for duplicates`)
 
+  // Get AI model from settings
+  const model = await getDeduplicationModel(supabase)
+
   // Get the new events
   const { data: newEvents, error: fetchError } = await supabase
     .from('external_events')
@@ -339,106 +348,94 @@ export async function deduplicateEvents(
     return result
   }
 
-  // Track which pairs we've already checked (to avoid A-B and B-A)
-  const checkedPairs = new Set<string>()
+  // Find duplicates using LLM
+  const candidates = await findPotentialDuplicates(
+    supabase,
+    newEvents as ExternalEvent[],
+    householdId,
+    model
+  )
 
-  for (const event of newEvents) {
-    const candidates = await findPotentialDuplicates(
-      supabase,
-      event as ExternalEvent,
-      householdId
-    )
+  // Track which pairs we've already processed
+  const processedPairs = new Set<string>()
 
-    for (const candidate of candidates) {
-      // Create a normalized pair key (smaller ID first)
-      const pairKey =
-        candidate.eventA.id < candidate.eventB.id
-          ? `${candidate.eventA.id}:${candidate.eventB.id}`
-          : `${candidate.eventB.id}:${candidate.eventA.id}`
+  for (const candidate of candidates) {
+    // Normalize pair key (smaller ID first)
+    const pairKey =
+      candidate.eventA.id < candidate.eventB.id
+        ? `${candidate.eventA.id}:${candidate.eventB.id}`
+        : `${candidate.eventB.id}:${candidate.eventA.id}`
 
-      if (checkedPairs.has(pairKey)) continue
-      checkedPairs.add(pairKey)
+    if (processedPairs.has(pairKey)) continue
+    processedPairs.add(pairKey)
 
-      if (candidate.confidence >= HIGH_CONFIDENCE_THRESHOLD) {
-        // Auto-merge: Hide the newer event (the one just synced)
-        const keepEvent = candidate.eventA.id < candidate.eventB.id
-          ? candidate.eventA
-          : candidate.eventB
-        const hideEvent = candidate.eventA.id < candidate.eventB.id
-          ? candidate.eventB
-          : candidate.eventA
+    if (candidate.confidence >= HIGH_CONFIDENCE_THRESHOLD) {
+      // Auto-merge: Hide the newer event (the one just synced)
+      const keepEvent =
+        candidate.eventA.id < candidate.eventB.id ? candidate.eventA : candidate.eventB
+      const hideEvent =
+        candidate.eventA.id < candidate.eventB.id ? candidate.eventB : candidate.eventA
 
-        const { error: mergeError } = await supabase
-          .from('external_events')
-          .update({
-            duplicate_of_id: keepEvent.id,
-            is_hidden: true,
-            duplicate_confidence: candidate.confidence,
-          })
-          .eq('id', hideEvent.id)
+      const { error: mergeError } = await supabase
+        .from('external_events')
+        .update({
+          duplicate_of_id: keepEvent.id,
+          is_hidden: true,
+          duplicate_confidence: candidate.confidence,
+        })
+        .eq('id', hideEvent.id)
 
-        if (mergeError) {
-          result.errors.push(
-            `Failed to merge duplicate ${hideEvent.id}: ${mergeError.message}`
-          )
-        } else {
-          result.autoMerged++
-          console.log(
-            `[Deduplication] Auto-merged: "${hideEvent.title}" (${candidate.confidence.toFixed(2)}) → "${keepEvent.title}"`
-          )
-        }
+      if (mergeError) {
+        result.errors.push(`Failed to merge duplicate ${hideEvent.id}: ${mergeError.message}`)
       } else {
-        // Medium confidence: Create suggestion for user review
-        // Ensure event_a_id < event_b_id for the constraint
-        const eventAId =
-          candidate.eventA.id < candidate.eventB.id
-            ? candidate.eventA.id
-            : candidate.eventB.id
-        const eventBId =
-          candidate.eventA.id < candidate.eventB.id
-            ? candidate.eventB.id
-            : candidate.eventA.id
+        result.autoMerged++
+        console.log(
+          `[Deduplication] Auto-merged: "${hideEvent.title}" (${candidate.confidence.toFixed(2)}) → "${keepEvent.title}"`
+        )
+      }
+    } else {
+      // Medium confidence: Create suggestion for user review
+      const eventAId =
+        candidate.eventA.id < candidate.eventB.id ? candidate.eventA.id : candidate.eventB.id
+      const eventBId =
+        candidate.eventA.id < candidate.eventB.id ? candidate.eventB.id : candidate.eventA.id
 
-        // Check if suggestion already exists
-        const { data: existing } = await supabase
+      // Check if suggestion already exists
+      const { data: existing } = await supabase
+        .from('event_duplicate_suggestions')
+        .select('id')
+        .eq('event_a_id', eventAId)
+        .eq('event_b_id', eventBId)
+        .eq('status', 'pending')
+        .single()
+
+      if (!existing) {
+        const { error: suggestionError } = await supabase
           .from('event_duplicate_suggestions')
-          .select('id')
-          .eq('event_a_id', eventAId)
-          .eq('event_b_id', eventBId)
-          .eq('status', 'pending')
-          .single()
+          .insert({
+            household_id: householdId,
+            event_a_id: eventAId,
+            event_b_id: eventBId,
+            confidence: candidate.confidence,
+            match_reason: candidate.matchReason,
+          })
 
-        if (!existing) {
-          const { error: suggestionError } = await supabase
-            .from('event_duplicate_suggestions')
-            .insert({
-              household_id: householdId,
-              event_a_id: eventAId,
-              event_b_id: eventBId,
-              confidence: candidate.confidence,
-              match_reason: candidate.matchReason,
-            })
-
-          if (suggestionError) {
-            // Ignore duplicate key errors (race condition)
-            if (!suggestionError.message.includes('duplicate key')) {
-              result.errors.push(
-                `Failed to create suggestion: ${suggestionError.message}`
-              )
-            }
-          } else {
-            result.suggestionsCreated++
-            console.log(
-              `[Deduplication] Suggestion created: "${candidate.eventA.title}" ≈ "${candidate.eventB.title}" (${candidate.confidence.toFixed(2)})`
-            )
+        if (suggestionError) {
+          if (!suggestionError.message.includes('duplicate key')) {
+            result.errors.push(`Failed to create suggestion: ${suggestionError.message}`)
           }
+        } else {
+          result.suggestionsCreated++
+          console.log(
+            `[Deduplication] Suggestion: "${candidate.eventA.title}" ≈ "${candidate.eventB.title}" (${candidate.confidence.toFixed(2)})`
+          )
         }
       }
     }
   }
 
   console.log(
-    `[Deduplication] Complete: ${result.autoMerged} auto-merged, ${result.suggestionsCreated} suggestions created`
+    `[Deduplication] Complete: ${result.autoMerged} auto-merged, ${result.suggestionsCreated} suggestions`
   )
 
   return result
