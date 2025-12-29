@@ -10,6 +10,12 @@
  * - householdLoading: waiting for household to load
  * - needsFetch: household loaded but fetch for current params not done
  * - isFetching: actively fetching data
+ *
+ * Offline support:
+ * - Mutations queue to IndexedDB when offline via queueChange()
+ * - useBackgroundSync processes queue when back online
+ * - This hook refetches 2s after online event to sync temp items with server data
+ * - Optimistic updates show immediately with temp IDs (temp-{timestamp})
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
@@ -126,6 +132,21 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
     }
   }, [isDemo, household?.id, lastFetchKey, currentFetchKey, fetchData])
 
+  // Refetch when coming back online (syncs temp items with server data)
+  useEffect(() => {
+    if (isDemo || typeof window === 'undefined') return
+
+    const handleOnline = () => {
+      // Small delay to let useBackgroundSync process queue first
+      setTimeout(() => {
+        if (household?.id) fetchData()
+      }, 2000)
+    }
+
+    window.addEventListener('online', handleOnline)
+    return () => window.removeEventListener('online', handleOnline)
+  }, [isDemo, household?.id, fetchData])
+
   // Add task mutation
   const addTask = useCallback(async (
     task: Omit<ChildTask, 'id' | 'created_at' | 'updated_at'>
@@ -188,6 +209,23 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
     taskId: string,
     updates: Partial<ChildTask>
   ) => {
+    // Validate update data (only validates fields that are being updated)
+    const fieldsToValidate: Record<string, unknown> = {}
+    if (updates.date !== undefined) fieldsToValidate.date = updates.date
+    if (updates.time !== undefined) fieldsToValidate.time = updates.time
+    if (updates.task_type !== undefined) fieldsToValidate.task_type = updates.task_type
+    if (updates.title !== undefined) fieldsToValidate.title = updates.title
+    if (updates.notes !== undefined) fieldsToValidate.notes = updates.notes
+
+    if (Object.keys(fieldsToValidate).length > 0) {
+      // Use partial schema validation
+      const validation = createChildTaskSchema.partial().safeParse(fieldsToValidate)
+      if (!validation.success) {
+        const errors = validation.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+        throw new Error(errors)
+      }
+    }
+
     if (isDemo) {
       demoMutations.updateTask(taskId, updates)
       return

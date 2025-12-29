@@ -9,6 +9,12 @@
  * - householdLoading: waiting for household to load
  * - shouldFetch: household loaded but initial fetch not done
  * - isFetching: actively fetching data
+ *
+ * Offline support:
+ * - Mutations queue to IndexedDB when offline via queueChange()
+ * - useBackgroundSync processes queue when back online
+ * - This hook refetches 2s after online event to sync temp items with server data
+ * - Optimistic updates show immediately with temp IDs (temp-{timestamp})
  */
 
 import { useState, useEffect, useCallback } from 'react'
@@ -71,6 +77,21 @@ export function useWishlists(): UseWishlistsReturn {
       fetchData()
     }
   }, [isDemo, household?.id, initialFetchDone, fetchData])
+
+  // Refetch when coming back online (syncs temp items with server data)
+  useEffect(() => {
+    if (isDemo || typeof window === 'undefined') return
+
+    const handleOnline = () => {
+      // Small delay to let useBackgroundSync process queue first
+      setTimeout(() => {
+        if (household?.id) fetchData()
+      }, 2000)
+    }
+
+    window.addEventListener('online', handleOnline)
+    return () => window.removeEventListener('online', handleOnline)
+  }, [isDemo, household?.id, fetchData])
 
   // Add item mutation
   const addItem = useCallback(async (
