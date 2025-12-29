@@ -71,27 +71,28 @@ export const CORE_FILES = new Set([
  * MAINTENANCE: When adding new pages to src/app/, update this mapping
  * to ensure the smart selector can correctly identify which visual tests
  * to run when those components change.
+ *
+ * Run `npm run test:run -- tests/scripts/dependency-graph.test.ts` to validate.
  */
 export const COMPONENT_TO_PAGE: Record<string, string[]> = {
   'src/components/WeekGrid.tsx': ['week'],
   'src/components/WeekSection.tsx': ['home', 'week'],
   'src/components/TodaySection.tsx': ['home'],
   'src/components/TodayOverview.tsx': ['home'],
-  'src/components/DayView.tsx': ['home', 'week'],
   'src/components/MealSelector.tsx': ['week'],
   'src/components/AISuggestionModal.tsx': ['week'],
-  'src/components/WishlistSection.tsx': ['wishlist', 'settings'],
   'src/components/Header.tsx': ['all'],
   'src/components/AppShell.tsx': ['all'],
 }
 
 /**
  * Map component directories to e2e test files
+ *
+ * MAINTENANCE: Update when adding new e2e test files that target specific areas.
+ * Currently empty - add mappings as e2e tests are created for specific features.
  */
 export const COMPONENT_TO_E2E: Record<string, string[]> = {
-  'src/components/integrations': ['tests/e2e/integrations.spec.ts'],
-  'src/app/api': ['tests/e2e/api.spec.ts'],
-  'src/lib/demo': ['tests/e2e/demo.spec.ts'],
+  // Example: 'src/components/integrations': ['tests/e2e/integrations.spec.ts'],
 }
 
 // ============================================
