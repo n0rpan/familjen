@@ -339,6 +339,7 @@ export async function POST(request: Request) {
       ...syncResult,
       message: parts.length > 0 ? `Synkronisert: ${parts.join(', ')}` : 'Synkronisert - ingen hendelser funnet',
       debug: {
+        ...syncResult.debug,
         sourceUrl: sourceUrl.url,
         urlType: sourceUrl.url_type,
         model,
