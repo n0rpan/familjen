@@ -22,8 +22,9 @@
  *   VERCEL_PREVIEW_URL - Preview deployment URL for testing
  */
 
-import { execSync } from 'child_process'
-import { readFileSync, writeFileSync, readdirSync, existsSync, appendFileSync } from 'fs'
+import { execSync, execFileSync } from 'child_process'
+import { readFileSync, writeFileSync, readdirSync, existsSync, appendFileSync, statSync } from 'fs'
+import { join } from 'path'
 import {
   type ReviewerOutput,
   type FinalVerdictOutput,
@@ -106,6 +107,41 @@ function ensureFullGitHistory(): void {
     console.warn(`   ⚠️ Could not fetch ${baseBranch}: ${error instanceof Error ? error.message : 'Unknown'}`)
     console.warn('   Some git operations may use fallback (HEAD~1)')
   }
+}
+
+/**
+ * Recursively find TypeScript files in a directory (Node.js-based, no shell).
+ * Returns up to maxFiles to prevent excessive processing.
+ */
+function findTsFiles(dir: string, maxFiles = 50): string[] {
+  const files: string[] = []
+
+  function walk(currentDir: string): void {
+    if (files.length >= maxFiles) return
+    if (!existsSync(currentDir)) return
+
+    try {
+      const stat = statSync(currentDir)
+      if (!stat.isDirectory()) {
+        if (currentDir.endsWith('.ts') || currentDir.endsWith('.tsx')) {
+          files.push(currentDir)
+        }
+        return
+      }
+
+      const entries = readdirSync(currentDir)
+      for (const entry of entries) {
+        if (files.length >= maxFiles) break
+        if (entry.startsWith('.') || entry === 'node_modules') continue
+        walk(join(currentDir, entry))
+      }
+    } catch {
+      // Ignore permission errors
+    }
+  }
+
+  walk(dir)
+  return files
 }
 
 // ============================================
@@ -543,17 +579,26 @@ function executeToolUncached(name: string, input: Record<string, unknown>): stri
       const glob = input.glob as string | undefined
       try {
         // Build ripgrep command with proper arguments
+        // Using execFileSync to avoid shell escaping issues with regex patterns
         const args: string[] = ['-n', '--max-count', '20']
         if (glob) args.push('--glob', glob)
         args.push('--', query)
         if (searchPath) args.push(searchPath)
+        else args.push('.')  // Search current directory if no path specified
 
-        const result = execSync(`rg ${args.map(a => `'${a}'`).join(' ')} 2>/dev/null || true`, {
-          encoding: 'utf-8'
+        const result = execFileSync('rg', args, {
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe'],  // Capture stderr too
+          maxBuffer: 1024 * 1024,  // 1MB buffer
         }).trim()
 
         return result || 'No matches found'
-      } catch {
+      } catch (e) {
+        // ripgrep returns exit code 1 when no matches found
+        if (e && typeof e === 'object' && 'stdout' in e) {
+          const stdout = (e as { stdout?: Buffer | string }).stdout
+          if (stdout) return String(stdout).trim() || 'No matches found'
+        }
         return 'No matches found'
       }
     }
@@ -1307,13 +1352,27 @@ ${lowPriority.map((c: { type: string; reason: string; scope?: string[] }) => `- 
 
       try {
         // Get changed files if no scope specified
-        let filesToCheck: string[] = scope
-        if (filesToCheck.length === 0) {
+        let filesToCheck: string[] = []
+
+        if (scope.length === 0) {
+          // No scope - use changed files
           const changedFiles = execSync(
             `git diff --name-only origin/${baseBranch}...HEAD | grep -E '\\.(ts|tsx)$' || true`,
             { encoding: 'utf-8' }
           ).trim().split('\n').filter(Boolean)
           filesToCheck = changedFiles
+        } else {
+          // Expand directories to files using Node.js helper
+          for (const path of scope) {
+            if (!existsSync(path)) continue
+            const stat = statSync(path)
+            if (stat.isDirectory()) {
+              // Use Node.js-based file finder (no shell)
+              filesToCheck.push(...findTsFiles(path, 50))
+            } else if (path.endsWith('.ts') || path.endsWith('.tsx')) {
+              filesToCheck.push(path)
+            }
+          }
         }
 
         if (filesToCheck.length === 0) {
@@ -1325,6 +1384,9 @@ ${lowPriority.map((c: { type: string; reason: string; scope?: string[] }) => `- 
         // Check for unused exports in changed files
         for (const file of filesToCheck.slice(0, 20)) {
           if (!existsSync(file)) continue
+          // Extra safety: skip if somehow still a directory
+          const fileStat = statSync(file)
+          if (fileStat.isDirectory()) continue
           const content = readFileSync(file, 'utf-8')
 
           // Find exported items
@@ -1917,44 +1979,76 @@ Look at the "Files Changed" list. If an issue is reported in a file NOT in that 
 - It should NOT block this PR
 - Note it as pre-existing in your analysis
 
-## Available Tools - USE THEM!
+## Available Tools
 
-### Investigation Tools
-- **read_file**: Read code to verify issues exist (ALWAYS use this before dismissing an issue)
-- **search_code**: Find patterns across the codebase
-- **read_diff**: See exactly what changed in this PR
-- **check_typescript**: Verify no type errors in changed files
-- **verify_imports**: Check for hallucinated package imports
+You have ${TOOLS.length} tools available. Call **list_available_tools** if you need a reminder.
 
-### Supervisor Tools (Override Fast Selector)
-- **get_test_selection**: See what the fast selector decided and why
-- **explain_skip_decision**: Get detailed explanation for why a specific test was skipped
-- **run_visual_validation**: Run visual tests that were skipped (if you suspect UI issues)
-- **run_e2e_tests**: Run E2E tests that were skipped (if you suspect user journey issues)
-- **run_migration_review**: Run migration review that was skipped (if you see SQL changes)
-- **run_api_tests**: Run API tests that were skipped (if you suspect API issues)
+### Context Gathering
+| Tool | Purpose |
+|------|---------|
+| read_file | Read a file to verify issues exist. **ALWAYS use before dismissing an issue.** |
+| read_diff | Get the full PR diff |
+| search_code | Search code with regex patterns (e.g., \`search_code({ query: "useState" })\`) |
+| get_commits | List commits in this PR |
+| get_full_documentation | Get full CLAUDE.md or README.md (use when truncated) |
+| get_file_section | Get specific section of a large file by header |
+
+### Code Verification
+| Tool | Purpose |
+|------|---------|
+| check_typescript | Run TypeScript type checking on changed files |
+| verify_imports | Check for hallucinated package imports |
+| check_env_usage | Find new env vars and verify they're documented |
+| check_migration_patterns | Find dangerous SQL patterns (DROP without IF EXISTS, etc.) |
+| verify_rls_coverage | Check new tables have RLS policies |
+
+### Live Testing (requires VERCEL_PREVIEW_URL)
+| Tool | Purpose |
+|------|---------|
+| test_endpoint | Make HTTP request to preview deployment |
+| verify_auth_required | Test that protected endpoint returns 401/403 |
+| smoke_test_critical_paths | Quick health checks on critical paths |
+
+### Supervisor Override Tools
+| Tool | Purpose |
+|------|---------|
+| get_test_selection | See what the fast selector decided and why |
+| get_pre_verdict_check | Get pre-verdict check results (quick checks, selector review) |
+| explain_skip_decision | Detailed explanation for why a test was skipped |
+| run_visual_validation | Run visual tests that were skipped |
+| run_e2e_tests | Run E2E tests that were skipped |
+| run_migration_review | Run migration review that was skipped |
+| run_api_tests | Run API tests that were skipped |
+
+### Extended Checks (run based on recommendations)
+| Tool | Purpose |
+|------|---------|
+| get_extended_checks | See what checks the selector recommended |
+| run_dead_code_analysis | Find unused exports in changed files |
+| run_bundle_size_check | Check bundle impact of new dependencies |
+| run_i18n_completeness_check | Verify translation keys exist in all languages |
+| run_accessibility_audit | Check ARIA labels, keyboard nav, color contrast |
+
+### Meta Tools
+| Tool | Purpose |
+|------|---------|
+| list_available_tools | List all tools with descriptions |
+| suggest_capability | Suggest a tool/capability you wish you had |
+
+## Workflow
+
+1. **First**: Call **get_pre_verdict_check** to see what quick checks already ran
+2. **Then**: Review findings from reviewers above
+3. **Investigate**: Use read_file/search_code to verify issues are real
+4. **Override if needed**: Use run_* tools to run tests the selector skipped
+5. **Decide**: PASS or BLOCK with clear reasoning
 
 ## Conservative Principle
 
-When in doubt, RUN THE TEST. It's better to run one extra check than miss a bug.
-
-If the fast selector skipped a test but you're uncertain if that was correct:
+When in doubt, RUN THE TEST. If uncertain about a skip decision:
 1. Use explain_skip_decision to understand why
 2. If still uncertain, use run_* to run the test
 3. Include the result in your decision
-
-## Extended Checks
-
-The smart selector may recommend extended checks based on PR context:
-- **dead-code-analysis**: For refactoring PRs (find unused exports)
-- **mobile-ux-validation**: For mobile component changes
-- **accessibility-audit**: For UI changes (ARIA, keyboard nav)
-- **performance-check**: For data fetching changes
-- **security-audit**: For auth/API changes
-- **bundle-size-check**: For new dependencies
-- **i18n-completeness**: For translation changes
-
-Use **get_extended_checks** to see what was recommended, then use run_* tools to execute HIGH priority checks.
 
 ## Response Format
 

@@ -407,4 +407,4 @@ See [CLAUDE.md](./CLAUDE.md) for development guidelines and codebase context.
 
 ## License
 
-Private project.
+MIT License - see [LICENSE](./LICENSE) for details.
