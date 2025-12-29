@@ -1563,7 +1563,7 @@ export default function AdminPage() {
               {t.admin.visionModel || "Visjonmodell"}
             </label>
             <ModelSelector
-              value={settings.openrouter_vision_model || "google/gemini-2.0-flash-001"}
+              value={settings.openrouter_vision_model || "google/gemini-2.5-flash-lite"}
               onChange={(modelId) => updateSetting("openrouter_vision_model", modelId)}
               disabled={saving}
               t={t}

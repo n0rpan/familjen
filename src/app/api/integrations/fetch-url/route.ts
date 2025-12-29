@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { syncCalendarSource, generateEventHash, type CalendarSource } from '@/lib/integrations/calendar-source-sync'
+import { deduplicateEvents } from '@/lib/integrations/event-deduplication'
 import { validateOrigin } from '@/lib/config'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 import { isUrlAllowed } from '@/lib/sanitize'
@@ -120,6 +121,7 @@ export async function POST(request: Request) {
         let eventsCreated = 0
         let eventsUpdated = 0
         const processedHashes = new Set<string>()
+        const newEventIds: string[] = []
 
         // Upsert events
         for (const icsEvent of icsEvents) {
@@ -148,8 +150,15 @@ export async function POST(request: Request) {
             await supabase.from('external_events').update(eventData).eq('id', existingId)
             eventsUpdated++
           } else {
-            await supabase.from('external_events').insert(eventData)
-            eventsCreated++
+            const { data: insertedEvent } = await supabase
+              .from('external_events')
+              .insert(eventData)
+              .select('id')
+              .single()
+            if (insertedEvent) {
+              eventsCreated++
+              newEventIds.push(insertedEvent.id)
+            }
           }
         }
 
@@ -182,12 +191,23 @@ export async function POST(request: Request) {
           })
           .eq('id', sourceUrl.id)
 
+        // Run deduplication on newly created events
+        let duplicatesAutoMerged = 0
+        let duplicateSuggestionsCreated = 0
+        if (newEventIds.length > 0) {
+          const dedupeResult = await deduplicateEvents(supabase, member.household_id, newEventIds)
+          duplicatesAutoMerged = dedupeResult.autoMerged
+          duplicateSuggestionsCreated = dedupeResult.suggestionsCreated
+        }
+
         return NextResponse.json({
           success: true,
           eventsFound: icsEvents.length,
           eventsCreated,
           eventsUpdated,
           eventsRemoved,
+          duplicatesAutoMerged,
+          duplicateSuggestionsCreated,
           message: `ICS synkronisert: ${icsEvents.length} hendelser funnet`,
         })
       } else if (sourceUrl.url_type === 'pdf' || contentType.includes('application/pdf')) {
@@ -276,7 +296,7 @@ export async function POST(request: Request) {
       .eq('key', 'openrouter_vision_model')
       .single()
 
-    const model = modelSetting?.value || 'google/gemini-2.0-flash-001'
+    const model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
 
     // Build the CalendarSource object
     const calendarSource: CalendarSource = {

@@ -283,7 +283,7 @@ export async function GET(request: Request) {
       .eq('key', 'openrouter_vision_model')
       .single()
 
-    const visionModel = visionModelSetting?.value || 'google/gemini-2.0-flash-001'
+    const visionModel = visionModelSetting?.value || 'google/gemini-2.5-flash-lite'
 
     // Process documents where ai_processed = false
     const { data: unprocessedDocuments } = await supabase
