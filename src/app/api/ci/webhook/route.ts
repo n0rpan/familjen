@@ -12,6 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase/server'
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 
 // Create admin client (bypasses RLS)
 function getAdminClient() {
@@ -60,6 +61,21 @@ function validateSecret(request: NextRequest): boolean {
 
 export async function POST(request: NextRequest) {
   try {
+    // Rate limiting - use IP or forwarded IP as identifier
+    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+      || request.headers.get('x-real-ip')
+      || 'unknown'
+    const rateLimitKey = `ciWebhook:${clientIp}`
+    const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.ciWebhook)
+
+    if (rateLimit.limited) {
+      console.warn(`⚠️ CI webhook rate limited for IP: ${clientIp}`)
+      return NextResponse.json(
+        { error: 'Rate limit exceeded. Try again later.' },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
+      )
+    }
+
     // Validate secret - REQUIRED
     if (!validateSecret(request)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

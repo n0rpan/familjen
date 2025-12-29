@@ -16,6 +16,7 @@ tests/.auth/
 
 # AI review artifacts (generated during CI)
 ai-reviews/
+ci-state/
 migration-review.json
 
 # next.js
