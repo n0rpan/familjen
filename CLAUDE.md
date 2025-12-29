@@ -785,15 +785,45 @@ The smart selector can recommend additional checks based on PR context:
 | `i18n-completeness` | Translation file changes | Verifies all languages have keys |
 
 **How it works:**
-1. Fast selector analyzes PR and recommends checks in `ci-state/test-selection.json`
-2. Final verdict AI can view recommendations with `get_extended_checks`
-3. AI can run high-priority checks with `run_dead_code_analysis`, `run_accessibility_audit`, etc.
-4. Results factor into PASS/BLOCK decision
+1. Smart selector analyzes PR and recommends checks in `ci-state/test-selection.json`
+2. Pre-verdict check runs high-priority extended checks automatically
+3. Results saved to `ci-state/pre-verdict-check.json` for supervisor
+4. Supervisor reviews findings via `get_pre_verdict_check` tool
 
 **Priority levels:**
-- **High**: Should be run for this PR (e.g., refactoring PR → dead code check)
-- **Medium**: Recommended based on changes
+- **High**: Automatically run by pre-verdict check
+- **Medium**: Recommended, supervisor can run if needed
 - **Low**: Nice to have, not critical
+
+### Pre-Verdict Check
+
+The pre-verdict check (`ai-pre-verdict-check.ts`) is a **fast, cheap LLM pass** that runs in parallel with test jobs, before the expensive supervisor.
+
+**What it does:**
+1. **Quick checks** (no LLM): TypeScript compilation, preview health, pattern detection
+2. **Selector review**: Fast LLM verifies skip decisions make sense
+3. **Extended checks**: Runs high-priority checks recommended by selector
+4. **Context gathering**: Identifies high-risk changes for supervisor
+
+**Extended checks run:**
+| Check | What it detects |
+|-------|-----------------|
+| `dead-code-analysis` | Unused exports in changed files |
+| `accessibility-audit` | Missing alt text, aria-labels, clickable divs |
+| `i18n-completeness` | Translation files out of sync |
+| `security-audit` | XSS risks, hardcoded credentials |
+| `bundle-size-check` | Large dependency additions |
+
+**Output:** `ci-state/pre-verdict-check.json`
+```json
+{
+  "selectorReview": { "verified": true, "concerns": [] },
+  "quickChecks": [{ "check": "typescript", "status": "pass" }],
+  "extendedChecks": [{ "type": "security-audit", "status": "pass" }],
+  "recommendation": "proceed",  // or "run_more_tests", "needs_investigation"
+  "reasoning": "All checks passed, selector decisions verified"
+}
+```
 
 ### AI Review Scripts
 
@@ -802,6 +832,7 @@ scripts/
 ├── ai-config.ts              # Model config + OpenRouter structured outputs
 ├── ai-review-types.ts        # Shared types for all reviewers (ReviewerOutput)
 ├── ai-test-selector.ts       # 🆕 Smart test selection (Tier 1)
+├── ai-pre-verdict-check.ts   # 🆕 Fast LLM pass before supervisor (Tier 1.5)
 ├── migration-ai-review.ts    # Reviews database migrations (non-blocking)
 ├── ai-code-review.ts         # Reviews PR code changes (non-blocking)
 ├── ai-visual-validation.ts   # Evaluates screenshots (non-blocking)
@@ -1003,21 +1034,25 @@ PR Created
     │               │
     └─► unit-tests ◄┘
             │
-    ┌───────┴───────────────────────────────┐
-    │  Conditional jobs (based on selector)  │
-    │                                        │
-    ├─► migration-review (if run_migration)  │
-    ├─► visual-validation (if run_visual) ──┼──► ai-reviews/*.json
-    ├─► e2e-preview (if run_e2e) ───────────┤
-    └─► api-tests (if run_api) ─────────────┘
-                      │
-                      └─► 🎯 WISE SUPERVISOR ◄── Downloads all artifacts
-                                │                 Reviews selector decisions
-                                │                 Can run skipped tests!
-                                │                 Makes final PASS/BLOCK
-                                ▼
-                           ✅ PASS → Merge allowed
-                           ❌ BLOCK → CI fails
+    ┌───────┴────────────────────────────────┐
+    │  Conditional jobs (based on selector)   │
+    │                                         │
+    ├─► migration-review (if run_migration)   │
+    ├─► visual-validation (if run_visual) ───┼──► ai-reviews/*.json
+    ├─► e2e-preview (if run_e2e) ────────────┤
+    ├─► api-tests (if run_api) ──────────────┤
+    └─► 🔍 PRE-VERDICT CHECK ◄───────────────┘
+               │                    │
+               │  Runs extended checks (dead-code, a11y, i18n, security)
+               │  Reviews selector decisions with fast LLM
+               │
+               └─► 🎯 WISE SUPERVISOR ◄── Downloads all artifacts
+                            │              Reviews pre-verdict findings
+                            │              Can run skipped tests if needed
+                            │              Makes final PASS/BLOCK
+                            ▼
+                       ✅ PASS → Merge allowed
+                       ❌ BLOCK → CI fails
 
 
 Push to Main (from merged PR)
@@ -1030,8 +1065,9 @@ Push to Main (from merged PR)
 
 **Key features:**
 - **Smart selector** runs first, skips irrelevant tests
+- **Pre-verdict check** runs extended checks in parallel with test jobs
 - All reviewers are **non-blocking** (`continue-on-error: true`)
-- **Wise supervisor** can override selector and run skipped tests
+- **Wise supervisor** reviews pre-verdict findings, can run skipped tests
 - Merge to main skips tests if PR already passed
 - Conservative approach: when in doubt, run the test
 
