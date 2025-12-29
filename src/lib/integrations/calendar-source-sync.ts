@@ -150,6 +150,11 @@ export async function syncCalendarSource(
       model,
     })
 
+    console.log(`[CalendarSourceSync] extractEventsFromHtml returned ${extractedEvents.length} events`)
+    if (extractedEvents.length > 0) {
+      console.log(`[CalendarSourceSync] First event: ${JSON.stringify(extractedEvents[0])}`)
+    }
+
     result.eventsFound = extractedEvents.length
 
     // 3. Get existing events for this source
@@ -313,6 +318,7 @@ export async function syncCalendarSource(
     }
 
     result.success = true
+    console.log(`[CalendarSourceSync] Sync complete:`, JSON.stringify(result))
     return result
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
