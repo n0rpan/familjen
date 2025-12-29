@@ -3,10 +3,15 @@
  *
  * Receives events from GitHub Actions to update CI dashboard
  * and send push notifications to admin users.
+ *
+ * Security:
+ * - POST: Requires CI_WEBHOOK_SECRET header
+ * - GET: Requires admin authentication via Supabase
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { createClient as createServerClient } from '@/lib/supabase/server'
 
 // Create admin client (bypasses RLS)
 function getAdminClient() {
@@ -24,6 +29,7 @@ export interface CIEvent {
   pr_number: number
   pr_title: string
   timestamp: string
+  source?: string // 'production' | 'staging' | 'local'
   data: {
     verdict?: 'PASS' | 'BLOCK' | 'ERROR'
     cost_usd?: number
@@ -38,22 +44,25 @@ export interface CIEvent {
   }
 }
 
-// Validate webhook secret
+// Validate webhook secret - REQUIRED, no fallback
 function validateSecret(request: NextRequest): boolean {
   const secret = request.headers.get('x-ci-secret')
   const expectedSecret = process.env.CI_WEBHOOK_SECRET
+
+  // Security: Require secret to be configured
   if (!expectedSecret) {
-    console.warn('CI_WEBHOOK_SECRET not set - accepting all webhooks')
-    return true
+    console.error('CI_WEBHOOK_SECRET not configured - rejecting webhook')
+    return false
   }
+
   return secret === expectedSecret
 }
 
 export async function POST(request: NextRequest) {
   try {
-    // Validate secret
+    // Validate secret - REQUIRED
     if (!validateSecret(request)) {
-      return NextResponse.json({ error: 'Invalid secret' }, { status: 401 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const event = (await request.json()) as CIEvent
@@ -68,6 +77,7 @@ export async function POST(request: NextRequest) {
         type: event.type,
         pr_number: event.pr_number,
         pr_title: event.pr_title,
+        source: event.source || 'production',
         data: event.data,
         created_at: event.timestamp,
       })
@@ -92,13 +102,33 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET endpoint to fetch recent CI events
-export async function GET(request: NextRequest) {
+// GET endpoint to fetch recent CI events - ADMIN ONLY
+export async function GET() {
   try {
-    const supabase = getAdminClient()
+    // Authenticate user
+    const supabase = await createServerClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Check if user is admin
+    const { data: allowedEmail } = await supabase
+      .from('allowed_emails')
+      .select('is_admin')
+      .eq('email', user.email?.toLowerCase())
+      .single()
+
+    if (!allowedEmail?.is_admin) {
+      return NextResponse.json({ error: 'Forbidden - admin access required' }, { status: 403 })
+    }
+
+    // Use admin client to bypass RLS for CI events
+    const adminClient = getAdminClient()
 
     // Get last 50 events
-    const { data, error } = await supabase
+    const { data, error } = await adminClient
       .from('ci_events')
       .select('*')
       .order('created_at', { ascending: false })

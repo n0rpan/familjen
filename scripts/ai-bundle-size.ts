@@ -10,6 +10,7 @@
 import { execFileSync } from 'child_process'
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs'
 import { join } from 'path'
+import { gzipSync } from 'zlib'
 import { AI_MODELS, callOpenRouter, withRetry } from './ai-config'
 import {
   ReviewerOutput,
@@ -235,13 +236,13 @@ function analyzeBuild(): BundleStats {
           const content = readFileSync(filePath)
           const size = content.length
           totalSize += size
-          // Estimate gzip (roughly 30% of original)
-          const estimatedGzip = Math.round(size * 0.3)
-          gzipSize += estimatedGzip
+          // Calculate actual gzip size using zlib
+          const actualGzip = gzipSync(content, { level: 9 }).length
+          gzipSize += actualGzip
           chunks.push({
             name: file.split('/').pop() || file,
             size,
-            gzipSize: estimatedGzip,
+            gzipSize: actualGzip,
           })
         }
       }
@@ -250,7 +251,7 @@ function analyzeBuild(): BundleStats {
     }
   }
 
-  // Fallback: use du to get total size
+  // Fallback: use du to get total size (estimate gzip at 30% when actual data unavailable)
   if (totalSize === 0) {
     try {
       const duOutput = execFileSync('du', ['-sk', join(BUNDLE_DIR, 'static', 'chunks')], {
@@ -259,6 +260,7 @@ function analyzeBuild(): BundleStats {
       const match = duOutput.match(/^(\d+)/)
       if (match) {
         totalSize = parseInt(match[1], 10) * 1024
+        // Estimate gzip only as fallback - typically JS compresses to ~25-35%
         gzipSize = Math.round(totalSize * 0.3)
       }
     } catch {

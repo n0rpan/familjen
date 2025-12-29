@@ -2,10 +2,13 @@
  * CI Trend Data API
  *
  * Returns aggregated metrics for the CI dashboard.
+ *
+ * Security: Requires admin authentication via Supabase
  */
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { createClient as createServerClient } from '@/lib/supabase/server'
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -18,10 +21,30 @@ function getAdminClient() {
 
 export async function GET() {
   try {
-    const supabase = getAdminClient()
+    // Authenticate user
+    const supabase = await createServerClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Check if user is admin
+    const { data: allowedEmail } = await supabase
+      .from('allowed_emails')
+      .select('is_admin')
+      .eq('email', user.email?.toLowerCase())
+      .single()
+
+    if (!allowedEmail?.is_admin) {
+      return NextResponse.json({ error: 'Forbidden - admin access required' }, { status: 403 })
+    }
+
+    // Use admin client to bypass RLS for CI events
+    const adminClient = getAdminClient()
 
     // Get all verdict events
-    const { data: events, error } = await supabase
+    const { data: events, error } = await adminClient
       .from('ci_events')
       .select('*')
       .eq('type', 'verdict')

@@ -75,6 +75,37 @@ const TOOL_TIMEOUTS: Record<string, number> = {
   _default: 30_000,                // 30s default
 }
 
+// Tool configuration from smart selector (adjusted based on PR analysis)
+// These defaults are overridden by values from ci-state/test-selection.json
+let SELECTOR_TOOL_CONFIG = {
+  search_max_count: 20,
+  read_file_max_size: 10000,
+}
+
+/**
+ * Load tool configuration from smart selector output.
+ * The selector analyzes PR characteristics to determine appropriate limits.
+ */
+function loadToolConfigFromSelector(): void {
+  const selectionPath = 'ci-state/test-selection.json'
+  if (existsSync(selectionPath)) {
+    try {
+      const selection = JSON.parse(readFileSync(selectionPath, 'utf-8'))
+      if (selection.toolConfig) {
+        SELECTOR_TOOL_CONFIG = {
+          search_max_count: selection.toolConfig.search_max_count || 20,
+          read_file_max_size: selection.toolConfig.read_file_max_size || 10000,
+        }
+        console.log(`🔧 Loaded tool config from selector:`)
+        console.log(`   search_max_count: ${SELECTOR_TOOL_CONFIG.search_max_count}`)
+        console.log(`   read_file_max_size: ${SELECTOR_TOOL_CONFIG.read_file_max_size}`)
+      }
+    } catch {
+      console.log('⚠️ Could not load tool config from selector, using defaults')
+    }
+  }
+}
+
 // ============================================
 // Git Utilities
 // ============================================
@@ -188,7 +219,8 @@ const TOOLS: Tool[] = [
       properties: {
         query: { type: 'string', description: 'Regex pattern to search for' },
         path: { type: 'string', description: 'Directory or file path to search in (e.g., "scripts/", "src/lib/utils.ts")' },
-        glob: { type: 'string', description: 'File type filter (e.g., "*.ts", "*.tsx")' }
+        glob: { type: 'string', description: 'File type filter (e.g., "*.ts", "*.tsx")' },
+        max_count: { type: 'number', description: 'Maximum matches per file (default: 20, max: 100). Increase for complex refactoring investigations.' }
       },
       required: ['query']
     }
@@ -515,9 +547,14 @@ function executeTool(name: string, input: Record<string, unknown>): string {
   try {
     const result = executeToolWithTimeout(name, input, timeout)
     const duration = Date.now() - startTime
+    const timeoutThreshold80 = timeout * 0.8
 
-    // Log slow tools
-    if (duration > 10_000) {
+    // Warn when approaching timeout (>80% of limit)
+    if (duration > timeoutThreshold80) {
+      console.warn(`   ⚠️ TIMEOUT WARNING: Tool ${name} took ${Math.round(duration / 1000)}s (${Math.round(duration / timeout * 100)}% of ${timeout / 1000}s limit)`)
+      console.warn(`      Consider optimizing this tool or increasing its timeout.`)
+    } else if (duration > 10_000) {
+      // Log slow tools (but not near timeout)
       console.log(`   ⏱️ Tool ${name} took ${Math.round(duration / 1000)}s`)
     }
 
@@ -555,7 +592,9 @@ function executeToolUncached(name: string, input: Record<string, unknown>): stri
       if (!existsSync(path)) return `Error: File not found: ${path}`
       try {
         const content = readFileSync(path, 'utf-8')
-        return content.slice(0, 10000) + (content.length > 10000 ? '\n... (truncated)' : '')
+        // Max size from selector config (adjusted based on PR complexity)
+        const maxSize = SELECTOR_TOOL_CONFIG.read_file_max_size
+        return content.slice(0, maxSize) + (content.length > maxSize ? `\n... (truncated at ${maxSize} chars)` : '')
       } catch (e) {
         return `Error reading file: ${e}`
       }
@@ -577,10 +616,14 @@ function executeToolUncached(name: string, input: Record<string, unknown>): stri
       const query = input.query as string
       const searchPath = input.path as string | undefined
       const glob = input.glob as string | undefined
+      // Configurable max_count: defaults from selector analysis, max 100
+      // Selector adjusts default based on PR complexity (refactoring PRs get higher limits)
+      const defaultMaxCount = SELECTOR_TOOL_CONFIG.search_max_count
+      const maxCount = Math.min(Math.max(1, input.max_count as number || defaultMaxCount), 100)
       try {
         // Build ripgrep command with proper arguments
         // Using execFileSync to avoid shell escaping issues with regex patterns
-        const args: string[] = ['-n', '--max-count', '20']
+        const args: string[] = ['-n', '--max-count', String(maxCount)]
         if (glob) args.push('--glob', glob)
         args.push('--', query)
         if (searchPath) args.push(searchPath)
@@ -1846,6 +1889,9 @@ async function main() {
   // CRITICAL: Write a processing comment to prevent stale comments if script crashes
   // This is written AFTER API key check so we don't leave "Processing..." on config errors
   writeProcessingComment()
+
+  // Load tool configuration from smart selector (adjusts limits based on PR characteristics)
+  loadToolConfigFromSelector()
 
   // Ensure we have full git history for proper diffs
   ensureFullGitHistory()

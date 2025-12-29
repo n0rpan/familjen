@@ -156,6 +156,14 @@ jobs:
             const commitMessage = context.payload.head_commit?.message || '';
             const commitSha = context.payload.head_commit?.id || '';
 
+            // Check for force-run flag: [ci full] or [full ci] in commit message
+            if (/\[(ci full|full ci)\]/i.test(commitMessage)) {
+              console.log('Force-run flag detected: [ci full]');
+              console.log('Running full CI suite regardless of PR status');
+              core.setOutput('skip_ci', 'false');
+              return;
+            }
+
             // Pattern 1: Standard merge commit
             let prMatch = commitMessage.match(/Merge pull request #(\d+)/);
 

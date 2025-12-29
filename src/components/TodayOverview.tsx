@@ -174,43 +174,64 @@ export const TodayOverview = memo(function TodayOverview({
           {summary.pickups.map((pickup) => (
             <div
               key={pickup.id}
-              className="flex items-center gap-4 p-4 rounded-xl transition-colors"
+              className="p-4 rounded-xl transition-colors"
               style={{ background: 'var(--background)' }}
             >
-              <div
-                className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0"
-                style={{
-                  background: getChildColor(pickup.child.color).bg,
-                  color: getChildColor(pickup.child.color).text
-                }}
-                aria-hidden="true"
-                title={pickup.child.name}
-              >
-                {pickup.child.name.charAt(0)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <span className="font-medium block" style={{ color: 'var(--foreground)' }}>
-                  {pickup.child.name}
-                </span>
-                {pickup.child.location_name && (
-                  <span className="text-sm" style={{ color: 'var(--muted)' }}>
-                    {pickup.child.location_name}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M5 12h14"/>
-                  <path d="M12 5l7 7-7 7"/>
-                </svg>
-                <span
-                  className={`font-medium ${pickup.picker ? '' : 'opacity-50'}`}
-                  style={{ color: pickup.picker ? 'var(--accent)' : 'var(--muted)' }}
+              {/* Mobile: stacked layout, Desktop: horizontal layout */}
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0"
+                  style={{
+                    background: getChildColor(pickup.child.color).bg,
+                    color: getChildColor(pickup.child.color).text
+                  }}
+                  aria-hidden="true"
+                  title={pickup.child.name}
                 >
-                  {pickup.picker
-                    ? t.home.picksUp.replace('{name}', pickup.picker.name)
-                    : (isNonWorkingDay ? '—' : t.week.noPickup)}
-                </span>
+                  {pickup.child.name.charAt(0)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium truncate" style={{ color: 'var(--foreground)' }}>
+                      {pickup.child.name}
+                    </span>
+                    {/* Desktop: show picker inline */}
+                    <span
+                      className={`hidden sm:flex items-center gap-2 flex-shrink-0 font-medium ${pickup.picker ? '' : 'opacity-50'}`}
+                      style={{ color: pickup.picker ? 'var(--accent)' : 'var(--muted)' }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M5 12h14"/>
+                        <path d="M12 5l7 7-7 7"/>
+                      </svg>
+                      {pickup.picker
+                        ? t.home.picksUp.replace('{name}', pickup.picker.name)
+                        : (isNonWorkingDay ? '—' : t.week.noPickup)}
+                    </span>
+                  </div>
+                  {pickup.child.location_name && (
+                    <span className="text-sm block truncate" style={{ color: 'var(--muted)' }}>
+                      {pickup.child.location_name}
+                    </span>
+                  )}
+                  {/* Mobile: show picker on second line */}
+                  <div
+                    className="flex sm:hidden items-center gap-2 mt-1"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 12h14"/>
+                      <path d="M12 5l7 7-7 7"/>
+                    </svg>
+                    <span
+                      className={`text-sm font-medium ${pickup.picker ? '' : 'opacity-50'}`}
+                      style={{ color: pickup.picker ? 'var(--accent)' : 'var(--muted)' }}
+                    >
+                      {pickup.picker
+                        ? t.home.picksUp.replace('{name}', pickup.picker.name)
+                        : (isNonWorkingDay ? '—' : t.week.noPickup)}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           ))}

@@ -101,6 +101,12 @@ interface ExtendedCheck {
   scope?: string[] // Specific files/components to check
 }
 
+// Tool configuration for final verdict (adjusts based on PR type)
+interface ToolConfig {
+  search_max_count: number // Higher for refactoring PRs, lower for simple changes
+  read_file_max_size: number // Larger for big file changes
+}
+
 interface TestSelectionOutput {
   // Metadata
   commitSha: string
@@ -114,6 +120,9 @@ interface TestSelectionOutput {
 
   // Extended checks recommended by LLM
   extendedChecks: ExtendedCheck[]
+
+  // Tool configuration for final verdict (based on PR analysis)
+  toolConfig: ToolConfig
 
   // Summary for logging
   summary: {
@@ -146,6 +155,65 @@ const TEST_DURATIONS_MINUTES: Record<TestType, number> = {
   'visual-validation': 10,
   'e2e-tests': 10,
   'api-tests': 5,
+}
+
+/**
+ * Calculate tool configuration for final verdict based on PR characteristics.
+ * This allows the AI supervisor to have appropriate search limits for the PR type.
+ *
+ * Heuristics:
+ * - More changed files → higher search limits (likely refactoring)
+ * - More component/lib changes → higher limits (cross-cutting changes)
+ * - Core file changes → maximum limits (need thorough investigation)
+ * - Simple PRs (few files, docs-only) → keep defaults
+ */
+function calculateToolConfig(
+  changedFiles: string[],
+  categories: ReturnType<typeof categorizeChanges>
+): ToolConfig {
+  const fileCount = changedFiles.length
+  const componentCount = categories.components.length
+  const libCount = categories.lib.length
+  const hooksCount = categories.hooks.length
+  const apiCount = categories.api.length
+
+  // Check if any core files are changed (imports from dependency-graph.ts)
+  const hasCoreFileChanges = changedFiles.some(f => CORE_FILES.has(f))
+
+  // Determine PR complexity
+  const isRefactoringLikely =
+    fileCount > 10 ||
+    (componentCount > 5) ||
+    (libCount > 3) ||
+    hasCoreFileChanges
+
+  const isComplexPR =
+    fileCount > 20 ||
+    (componentCount > 10 && libCount > 5) ||
+    (apiCount > 5 && libCount > 3)
+
+  // Calculate search_max_count
+  let searchMaxCount = 20 // Default
+  if (isComplexPR) {
+    searchMaxCount = 100 // Maximum for complex refactoring
+  } else if (isRefactoringLikely) {
+    searchMaxCount = 50 // Medium for likely refactoring
+  } else if (fileCount > 5) {
+    searchMaxCount = 30 // Slightly higher for multi-file changes
+  }
+
+  // Calculate read_file_max_size
+  let readFileMaxSize = 10000 // Default 10KB
+  if (isComplexPR || hasCoreFileChanges) {
+    readFileMaxSize = 30000 // 30KB for complex PRs
+  } else if (isRefactoringLikely) {
+    readFileMaxSize = 20000 // 20KB for refactoring
+  }
+
+  return {
+    search_max_count: searchMaxCount,
+    read_file_max_size: readFileMaxSize,
+  }
 }
 
 // ============================================
@@ -720,6 +788,13 @@ async function main() {
     }
   }
 
+  // Calculate tool configuration based on PR characteristics
+  // This adjusts final verdict tool limits for better analysis
+  const toolConfig = calculateToolConfig(changedFiles, categories)
+  console.log(`\n🔧 Tool config for final verdict:`)
+  console.log(`   search_max_count: ${toolConfig.search_max_count}`)
+  console.log(`   read_file_max_size: ${toolConfig.read_file_max_size}`)
+
   // Build output
   const output: TestSelectionOutput = {
     commitSha: getCurrentCommitSha(),
@@ -729,6 +804,7 @@ async function main() {
     model: FAST_MODEL,
     decisions,
     extendedChecks,
+    toolConfig,
     summary: {
       totalTests: decisions.length,
       testsToRun,
@@ -853,6 +929,10 @@ function writeDefaultOutput(baseBranch: string, prNumber: number | null): void {
     model: 'default',
     decisions,
     extendedChecks: [],
+    toolConfig: {
+      search_max_count: 20, // Default values when no changes detected
+      read_file_max_size: 10000,
+    },
     summary: {
       totalTests: decisions.length,
       testsToRun: decisions.length,
