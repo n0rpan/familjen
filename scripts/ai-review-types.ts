@@ -96,6 +96,8 @@ export type IssueCategory =
   | 'code-quality'       // Style, patterns, best practices
   | 'test-failure'       // Test didn't pass
   | 'demo-quality'       // Demo data issues
+  | 'intent-mismatch'    // PR intent not visible in UI
+  | 'intent-verified'    // PR intent confirmed in UI
 
 // ============================================
 // FINAL VERDICT OUTPUT

@@ -75,3 +75,6 @@ docs/kidplan-integration-research.md
 scripts/test-spond-chat.ts
 scripts/test-kidplan.ts
 scripts/debug-spond-messages.ts
+scripts/test-models.ts
+scripts/test-models-challenge.ts
+scripts/compare-quality.ts

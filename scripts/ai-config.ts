@@ -4,17 +4,33 @@
  * Uses OpenRouter for model access with structured outputs.
  * See: https://openrouter.ai/docs/guides/features/structured-outputs
  *
- * Update these models as new versions release.
- * Current as of Dec 2025.
+ * Recommended models (Dec 2025 - tested for quality & speed):
+ *
+ * | Role    | Env Var                  | Recommended Model                    | Why                           |
+ * |---------|--------------------------|--------------------------------------|-------------------------------|
+ * | fast    | OPENROUTER_FAST_MODEL    | google/gemini-3-flash-preview        | Fast (1.5s), thorough         |
+ * | capable | OPENROUTER_CAPABLE_MODEL | anthropic/claude-sonnet-4.5          | Best code review quality      |
+ * | vision  | OPENROUTER_VISION_MODEL  | google/gemini-3-flash-preview        | Fast vision + 1M context      |
+ * | verdict | OPENROUTER_VERDICT_MODEL | openai/gpt-5.2                       | Fast reasoning, 400K context  |
+ * | test    | OPENROUTER_TEST_MODEL    | google/gemini-2.5-flash-lite         | Cheapest for bulk analysis    |
+ *
+ * Alternative options:
+ * - verdict: anthropic/claude-opus-4.5 (best reasoning), google/gemini-3-pro-preview
+ * - capable: x-ai/grok-code-fast-1 (faster but less thorough)
+ * - fast: google/gemini-2.5-flash-lite (cheapest), x-ai/grok-4.1-fast (2M context)
  */
 
 export interface AIModelConfig {
-  // Fast, cheap model for quick checks (migration review, etc.)
+  // Fast model for quick checks (test selector, pre-verdict, etc.)
   fast: string
-  // More capable model for code review
+  // Capable model for detailed code review
   capable: string
-  // Vision-capable model for visual review
+  // Vision model for visual validation
   vision: string
+  // Verdict model for final decision (needs good reasoning)
+  verdict: string
+  // Test model for bulk analysis (cheapest)
+  test: string
 }
 
 // Model configuration - set via environment variables (GitHub Secrets)
@@ -40,6 +56,12 @@ export const AI_MODELS: AIModelConfig = {
   },
   get vision() {
     return getRequiredModel('OPENROUTER_VISION_MODEL', 'vision')
+  },
+  get verdict() {
+    return getRequiredModel('OPENROUTER_VERDICT_MODEL', 'verdict')
+  },
+  get test() {
+    return getRequiredModel('OPENROUTER_TEST_MODEL', 'test')
   },
 }
 

@@ -857,12 +857,27 @@ scripts/
 **Required (GitHub Secrets):**
 ```bash
 OPENROUTER_API_KEY=sk-or-v1-...
-OPENROUTER_FAST_MODEL=google/gemini-2.0-flash-001       # Migration review
-OPENROUTER_CAPABLE_MODEL=anthropic/claude-sonnet-4     # Code review
-OPENROUTER_VISION_MODEL=google/gemini-2.0-flash-001    # Visual validation
-OPENROUTER_VERDICT_MODEL=anthropic/claude-opus-4       # Final verdict (most capable)
-OPENROUTER_TEST_MODEL=google/gemini-2.0-flash-001      # API tests
+OPENROUTER_FAST_MODEL=google/gemini-3-flash-preview     # Fast checks, test selector
+OPENROUTER_CAPABLE_MODEL=anthropic/claude-sonnet-4.5   # Code review (best quality)
+OPENROUTER_VISION_MODEL=google/gemini-3-flash-preview  # Visual validation
+OPENROUTER_VERDICT_MODEL=openai/gpt-5.2                # Final verdict (fast reasoning)
+OPENROUTER_TEST_MODEL=google/gemini-2.5-flash-lite     # Bulk analysis (cheapest)
 ```
+
+**Model Selection Guide (Dec 2025 - tested for quality & speed):**
+
+| Role | Model | Speed | Quality | Context | Notes |
+|------|-------|-------|---------|---------|-------|
+| fast | gemini-3-flash-preview | 1.5s | Good | 1M | Fast + thorough |
+| capable | claude-sonnet-4.5 | 8.5s | Best | 1M | Only one that found all bugs |
+| vision | gemini-3-flash-preview | 1.5s | Good | 1M | Fast vision support |
+| verdict | gpt-5.2 | 4.5s | Good | 400K | Fast reasoning, good decisions |
+| test | gemini-2.5-flash-lite | 1s | Good | 1M | Cheapest, proven in app |
+
+**Alternative options:**
+- **verdict**: `anthropic/claude-opus-4.5` (best reasoning), `google/gemini-3-pro-preview`
+- **capable**: `x-ai/grok-code-fast-1` (faster but less thorough)
+- **fast**: `google/gemini-2.5-flash-lite` (cheapest), `x-ai/grok-4.1-fast` (2M context)
 
 **Optional:**
 ```bash
