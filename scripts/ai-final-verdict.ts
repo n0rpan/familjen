@@ -23,7 +23,7 @@
  */
 
 import { execSync } from 'child_process'
-import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, readdirSync, existsSync, appendFileSync } from 'fs'
 import {
   type ReviewerOutput,
   type FinalVerdictOutput,
@@ -35,16 +35,44 @@ import {
   categoryEmoji,
   summarizeReviewer,
 } from './ai-review-types'
+import {
+  recordLLMUsage,
+  logAuditEntry,
+  recordSelectorFeedback,
+  formatCost,
+  calculateCost,
+  generateCostSummaryMarkdown,
+  getSelectorAccuracyStats,
+  checkCostLimit,
+  type SelectorFeedback,
+} from './lib/llm-utils'
 
 // ============================================
 // Configuration
 // ============================================
 
-const VERDICT_MODEL = process.env.OPENROUTER_VERDICT_MODEL || 'anthropic/claude-sonnet-4-20250514'
+const VERDICT_MODEL = process.env.OPENROUTER_VERDICT_MODEL
 const API_KEY = process.env.OPENROUTER_API_KEY
 
-// Timeout for API calls (3 minutes - verdict needs more time for tool use loops)
-const API_TIMEOUT_MS = 180_000
+// Timeout for API calls (3.5 minutes - accounts for tool execution + processing overhead)
+// Must be longer than the longest TOOL_TIMEOUT to allow result processing
+const API_TIMEOUT_MS = 210_000
+
+// Timeout per tool (prevent any single tool from blocking)
+const TOOL_TIMEOUTS: Record<string, number> = {
+  run_visual_validation: 120_000,  // 2 min - captures screenshots
+  run_e2e_tests: 180_000,          // 3 min - runs playwright
+  run_migration_review: 60_000,    // 1 min
+  run_api_tests: 120_000,          // 2 min
+  run_dead_code_analysis: 30_000,  // 30s
+  run_bundle_size_check: 30_000,   // 30s
+  run_i18n_completeness_check: 15_000, // 15s
+  run_accessibility_audit: 30_000, // 30s
+  read_file: 5_000,                // 5s
+  read_diff: 10_000,               // 10s
+  search_code: 15_000,             // 15s
+  _default: 30_000,                // 30s default
+}
 
 // ============================================
 // Git Utilities
@@ -118,12 +146,13 @@ const TOOLS: Tool[] = [
   },
   {
     name: 'search_code',
-    description: 'Search for code patterns in the repository',
+    description: 'Search for code patterns in the repository using ripgrep',
     input_schema: {
       type: 'object',
       properties: {
         query: { type: 'string', description: 'Regex pattern to search for' },
-        glob: { type: 'string', description: 'File glob pattern (e.g., "*.ts")' }
+        path: { type: 'string', description: 'Directory or file path to search in (e.g., "scripts/", "src/lib/utils.ts")' },
+        glob: { type: 'string', description: 'File type filter (e.g., "*.ts", "*.tsx")' }
       },
       required: ['query']
     }
@@ -244,6 +273,180 @@ const TOOLS: Tool[] = [
       required: []
     }
   },
+
+  // ============================================
+  // Supervisor Tools - Override Smart Selector
+  // ============================================
+  {
+    name: 'get_test_selection',
+    description: 'Get the smart test selector\'s decisions and reasoning. Use this to understand what tests were skipped and why.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'get_pre_verdict_check',
+    description: 'Get results from the pre-verdict check (fast LLM pass). Includes quick check results, selector review, and recommendations. Use this FIRST before running additional tests.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'run_visual_validation',
+    description: 'Run visual validation tests that were skipped. Use when you suspect UI issues not covered by the selector. Returns screenshots and validation results.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        pages: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Specific pages to test: "home", "week", "settings", "wishlist", or "all"'
+        }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'run_e2e_tests',
+    description: 'Run E2E tests that were skipped. Use when you suspect user journey issues. Returns test results.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        specs: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Specific test files to run, or omit for all'
+        }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'run_migration_review',
+    description: 'Run AI migration review that was skipped. Use when you see SQL changes that weren\'t reviewed.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'run_api_tests',
+    description: 'Run API integration tests that were skipped. Use when you suspect API issues.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        tests: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Specific test patterns to run'
+        }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'explain_skip_decision',
+    description: 'Get detailed explanation of why a specific test was skipped by the selector',
+    input_schema: {
+      type: 'object',
+      properties: {
+        test: {
+          type: 'string',
+          enum: ['visual-validation', 'e2e-tests', 'migration-review', 'api-tests', 'code-review'],
+          description: 'Test type to explain'
+        }
+      },
+      required: ['test']
+    }
+  },
+
+  // ============================================
+  // Extended Check Tools - Run recommended checks
+  // ============================================
+  {
+    name: 'get_extended_checks',
+    description: 'Get the extended checks recommended by the smart selector (dead code analysis, mobile UX validation, etc.). Use this to see what additional checks were suggested based on PR context.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'run_dead_code_analysis',
+    description: 'Find unused exports, functions, and types in changed files. Useful after refactoring PRs.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        scope: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Specific files or directories to analyze (defaults to changed files)'
+        }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'run_bundle_size_check',
+    description: 'Check if PR increases bundle size significantly. Run when adding new dependencies.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'run_i18n_completeness_check',
+    description: 'Verify all new UI strings have translations in all supported languages (nb, sv, en).',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'run_accessibility_audit',
+    description: 'Run accessibility checks on changed components. Verifies ARIA labels, color contrast, keyboard navigation.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        components: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Specific components to audit'
+        }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'list_available_tools',
+    description: 'List all available tools with their descriptions. Use this to understand what capabilities you have.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'suggest_capability',
+    description: 'Suggest a capability or tool that would help with the review. This feedback helps improve future versions.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        capability: { type: 'string', description: 'What capability or tool you wish you had' },
+        reason: { type: 'string', description: 'Why this would help with the current review' },
+        example: { type: 'string', description: 'Example of how you would use it' }
+      },
+      required: ['capability', 'reason']
+    }
+  },
 ]
 
 // ============================================
@@ -270,11 +473,37 @@ function executeTool(name: string, input: Record<string, unknown>): string {
     return cached
   }
 
-  const result = executeToolUncached(name, input)
+  const timeout = TOOL_TIMEOUTS[name] || TOOL_TIMEOUTS._default
+  const startTime = Date.now()
 
-  // Cache the result
-  toolResultCache.set(cacheKey, result)
-  return result
+  try {
+    const result = executeToolWithTimeout(name, input, timeout)
+    const duration = Date.now() - startTime
+
+    // Log slow tools
+    if (duration > 10_000) {
+      console.log(`   ⏱️ Tool ${name} took ${Math.round(duration / 1000)}s`)
+    }
+
+    // Cache the result
+    toolResultCache.set(cacheKey, result)
+    return result
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('timed out')) {
+      console.log(`   ⏱️ Tool ${name} timed out after ${timeout / 1000}s`)
+      return `Error: Tool ${name} timed out after ${timeout / 1000} seconds. Try a simpler query.`
+    }
+    throw error
+  }
+}
+
+/**
+ * Execute a tool with timeout protection
+ */
+function executeToolWithTimeout(name: string, input: Record<string, unknown>, timeoutMs: number): string {
+  // For sync tools, we can't easily add timeout, but we set exec timeouts
+  // The main protection is the exec timeouts in the tool implementations
+  return executeToolUncached(name, input)
 }
 
 function executeToolUncached(name: string, input: Record<string, unknown>): string {
@@ -310,12 +539,20 @@ function executeToolUncached(name: string, input: Record<string, unknown>): stri
 
     case 'search_code': {
       const query = input.query as string
+      const searchPath = input.path as string | undefined
       const glob = input.glob as string | undefined
       try {
-        const globArg = glob ? `--glob '${glob}'` : ''
-        return execSync(`rg '${query}' ${globArg} --max-count 10 2>/dev/null || echo 'No matches'`, {
+        // Build ripgrep command with proper arguments
+        const args: string[] = ['-n', '--max-count', '20']
+        if (glob) args.push('--glob', glob)
+        args.push('--', query)
+        if (searchPath) args.push(searchPath)
+
+        const result = execSync(`rg ${args.map(a => `'${a}'`).join(' ')} 2>/dev/null || true`, {
           encoding: 'utf-8'
-        }).slice(0, 5000)
+        }).trim()
+
+        return result || 'No matches found'
       } catch {
         return 'No matches found'
       }
@@ -732,6 +969,621 @@ function executeToolUncached(name: string, input: Record<string, unknown>): stri
       }
     }
 
+    // ============================================
+    // Supervisor Tools - Override Smart Selector
+    // ============================================
+
+    case 'get_test_selection': {
+      const selectionPath = 'ci-state/test-selection.json'
+      if (!existsSync(selectionPath)) {
+        return 'No test selection found. The smart selector may not have run yet.'
+      }
+      try {
+        const selection = JSON.parse(readFileSync(selectionPath, 'utf-8'))
+        const skipped = selection.decisions?.filter((d: { enabled: boolean }) => !d.enabled) || []
+        const running = selection.decisions?.filter((d: { enabled: boolean }) => d.enabled) || []
+        const extendedChecks = selection.extendedChecks || []
+
+        let result = `## Smart Test Selector Results
+
+**Model:** ${selection.model}
+**Timestamp:** ${selection.timestamp}
+
+### Tests Running (${running.length})
+${running.map((d: { testType: string; reason: string }) => `- ${d.testType}: ${d.reason}`).join('\n') || 'None'}
+
+### Tests Skipped (${skipped.length})
+${skipped.map((d: { testType: string; reason: string; overridable: boolean }) => `- ${d.testType}: ${d.reason} ${d.overridable ? '(overridable)' : ''}`).join('\n') || 'None'}
+
+### Extended Checks Recommended (${extendedChecks.length})
+${extendedChecks.map((c: { type: string; reason: string; priority: string }) => `- [${c.priority}] ${c.type}: ${c.reason}`).join('\n') || 'None'}
+
+### Reasoning
+${selection.reasoning}
+
+### Files Changed (${selection.changedFiles?.length || 0})
+${(selection.changedFiles || []).slice(0, 20).join('\n')}${(selection.changedFiles?.length || 0) > 20 ? '\n... and more' : ''}`
+
+        return result
+      } catch (e) {
+        return `Error reading test selection: ${e}`
+      }
+    }
+
+    case 'get_pre_verdict_check': {
+      const preVerdictPath = 'ci-state/pre-verdict-check.json'
+      if (!existsSync(preVerdictPath)) {
+        return 'No pre-verdict check results found. The pre-verdict check may not have run.'
+      }
+      try {
+        const preVerdict = JSON.parse(readFileSync(preVerdictPath, 'utf-8'))
+
+        const quickChecks = preVerdict.quickChecks || []
+        const passed = quickChecks.filter((c: { status: string }) => c.status === 'pass').length
+        const failed = quickChecks.filter((c: { status: string }) => c.status === 'fail').length
+        const warned = quickChecks.filter((c: { status: string }) => c.status === 'warn').length
+
+        let result = `## Pre-Verdict Check Results (Fast LLM Pass)
+
+**Recommendation:** ${preVerdict.recommendation?.toUpperCase() || 'UNKNOWN'}
+**Reasoning:** ${preVerdict.reasoning || 'No reasoning provided'}
+
+### Quick Checks (${quickChecks.length})
+✅ ${passed} passed | ❌ ${failed} failed | ⚠️ ${warned} warnings
+
+${quickChecks.filter((c: { status: string }) => c.status !== 'pass').map((c: { check: string; status: string; message: string; details?: string }) =>
+  `- [${c.status.toUpperCase()}] ${c.check}: ${c.message}${c.details ? `\n  Details: ${c.details}` : ''}`
+).join('\n') || 'All checks passed'}
+
+### Selector Review
+**Verified:** ${preVerdict.selectorReview?.verified ? 'Yes' : 'No'}
+${preVerdict.selectorReview?.concerns?.length > 0 ? `**Concerns:**\n${preVerdict.selectorReview.concerns.map((c: string) => `- ${c}`).join('\n')}` : ''}
+${preVerdict.selectorReview?.suggestions?.length > 0 ? `**Suggestions:**\n${preVerdict.selectorReview.suggestions.map((s: string) => `- ${s}`).join('\n')}` : ''}
+
+### Additional Context
+${Object.entries(preVerdict.additionalContext || {}).map(([key, value]) => `- **${key}:** ${value}`).join('\n') || 'No additional context'}`
+
+        return result
+      } catch (e) {
+        return `Error reading pre-verdict check: ${e}`
+      }
+    }
+
+    case 'run_visual_validation': {
+      if (!previewUrl) return 'Error: VERCEL_PREVIEW_URL not set - cannot run visual validation'
+
+      const pages = (input.pages as string[] | undefined) || ['home', 'week']
+      console.log(`   🎨 Running visual validation for: ${pages.join(', ')}`)
+
+      try {
+        // Run playwright to capture screenshots
+        const pageArg = pages.includes('all') ? '' : `--grep "${pages.join('|')}"`
+        execSync(
+          `PLAYWRIGHT_BASE_URL=${previewUrl} npx playwright test tests/e2e/capture-screenshots.spec.ts --project=chromium ${pageArg}`,
+          { encoding: 'utf-8', timeout: 120000, stdio: 'pipe' }
+        )
+
+        // Run visual validation script
+        const result = execSync(
+          'npx tsx scripts/ai-visual-validation.ts 2>&1',
+          { encoding: 'utf-8', timeout: 180000 }
+        )
+
+        // Check for results file
+        const reportPath = 'visual-validation-report.json'
+        if (existsSync(reportPath)) {
+          const report = JSON.parse(readFileSync(reportPath, 'utf-8'))
+          return `## Visual Validation Results
+
+**Verdict:** ${report.verdict}
+**Pages Tested:** ${pages.join(', ')}
+
+**Summary:** ${report.summary || 'No summary'}
+
+**Issues Found:**
+${report.issues?.slice(0, 5).map((i: string) => `- ${i}`).join('\n') || 'None'}
+
+${result.slice(-500)}`
+        }
+
+        return `Visual validation ran but no report generated.\n\nOutput:\n${result.slice(-1000)}`
+      } catch (e) {
+        const error = e as { stdout?: string; stderr?: string; message?: string }
+        return `Visual validation failed: ${error.message || 'Unknown error'}\n\nOutput:\n${error.stdout?.slice(-500) || ''}\n${error.stderr?.slice(-500) || ''}`
+      }
+    }
+
+    case 'run_e2e_tests': {
+      if (!previewUrl) return 'Error: VERCEL_PREVIEW_URL not set - cannot run E2E tests'
+
+      const specs = (input.specs as string[] | undefined) || []
+      const specArg = specs.length > 0 ? specs.join(' ') : 'tests/e2e/design-system.spec.ts'
+      console.log(`   🧪 Running E2E tests: ${specArg}`)
+
+      try {
+        const result = execSync(
+          `PLAYWRIGHT_BASE_URL=${previewUrl} npx playwright test ${specArg} --project=chromium --reporter=list 2>&1`,
+          { encoding: 'utf-8', timeout: 180000, stdio: 'pipe' }
+        )
+
+        // Count results
+        const passed = (result.match(/✓/g) || []).length
+        const failed = (result.match(/✘/g) || []).length
+
+        return `## E2E Test Results
+
+**Passed:** ${passed}
+**Failed:** ${failed}
+**Specs:** ${specArg}
+
+${result.slice(-2000)}`
+      } catch (e) {
+        const error = e as { stdout?: string; stderr?: string; message?: string }
+        const output = error.stdout || error.stderr || ''
+
+        // Extract failure summary
+        const failures = output.match(/✘.*$/gm) || []
+
+        return `## E2E Tests Failed
+
+**Failures:**
+${failures.slice(0, 10).join('\n') || 'See output below'}
+
+**Output (last 1500 chars):**
+${output.slice(-1500)}`
+      }
+    }
+
+    case 'run_migration_review': {
+      console.log('   🗄️ Running migration review...')
+
+      try {
+        const result = execSync(
+          'npx tsx scripts/migration-ai-review.ts 2>&1',
+          { encoding: 'utf-8', timeout: 120000 }
+        )
+
+        // Check for results
+        const reviewPath = 'ai-reviews/migration-review.json'
+        if (existsSync(reviewPath)) {
+          const review = JSON.parse(readFileSync(reviewPath, 'utf-8'))
+          return `## Migration Review Results
+
+**Verdict:** ${review.verdict}
+**Summary:** ${review.summary}
+
+**Issues:**
+${review.findings?.slice(0, 10).map((f: { severity: string; message: string }) => `- [${f.severity}] ${f.message}`).join('\n') || 'None'}
+
+${result.slice(-500)}`
+        }
+
+        return `Migration review ran.\n\nOutput:\n${result.slice(-1000)}`
+      } catch (e) {
+        const error = e as { stdout?: string; message?: string }
+        return `Migration review failed: ${error.message || 'Unknown error'}\n\n${error.stdout?.slice(-500) || ''}`
+      }
+    }
+
+    case 'run_api_tests': {
+      const tests = (input.tests as string[] | undefined) || []
+      // Vitest uses file paths directly, not --grep (that's Jest/Mocha)
+      const testArg = tests.length > 0 ? tests.join(' ') : ''
+      console.log('   🔌 Running API tests...')
+
+      try {
+        const result = execSync(
+          `npm run test:api -- ${testArg} --reporter=verbose 2>&1`,
+          {
+            encoding: 'utf-8',
+            timeout: 180000,
+            env: {
+              ...process.env,
+              OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+              OPENROUTER_TEST_MODEL: process.env.OPENROUTER_TEST_MODEL || process.env.OPENROUTER_FAST_MODEL,
+            }
+          }
+        )
+
+        return `## API Test Results
+
+${result.slice(-2000)}`
+      } catch (e) {
+        const error = e as { stdout?: string; message?: string }
+        return `API tests failed:\n\n${error.stdout?.slice(-1500) || error.message || 'Unknown error'}`
+      }
+    }
+
+    case 'explain_skip_decision': {
+      const test = input.test as string
+      const selectionPath = 'ci-state/test-selection.json'
+
+      if (!existsSync(selectionPath)) {
+        return `No test selection data found. Cannot explain skip decision for ${test}.`
+      }
+
+      try {
+        const selection = JSON.parse(readFileSync(selectionPath, 'utf-8'))
+        const decision = selection.decisions?.find((d: { testType: string }) => d.testType === test)
+
+        if (!decision) {
+          return `No decision found for test type: ${test}`
+        }
+
+        // Get changed files relevant to this test type
+        const changedFiles = selection.changedFiles || []
+        const relevantPatterns: Record<string, string[]> = {
+          'visual-validation': ['src/components/', 'src/app/', '.css', 'tailwind'],
+          'e2e-tests': ['src/app/', 'src/components/', 'src/lib/'],
+          'migration-review': ['supabase/migrations/'],
+          'api-tests': ['src/app/api/', 'src/lib/integrations/'],
+          'code-review': ['.ts', '.tsx'],
+        }
+
+        const patterns = relevantPatterns[test] || []
+        const relevantFiles = changedFiles.filter((f: string) =>
+          patterns.some(p => f.includes(p))
+        )
+
+        return `## Skip Decision Explanation: ${test}
+
+**Decision:** ${decision.enabled ? 'RUN' : 'SKIP'}
+**Reason:** ${decision.reason}
+**Overridable:** ${decision.overridable ? 'Yes' : 'No'}
+
+**Selector Model:** ${selection.model}
+**Overall Reasoning:** ${selection.reasoning}
+
+**Files Changed (${changedFiles.length} total):**
+${changedFiles.slice(0, 30).join('\n')}
+
+**Files Relevant to ${test} (${relevantFiles.length}):**
+${relevantFiles.slice(0, 20).join('\n') || 'None found'}
+
+**Categories:**
+- Migrations: ${selection.categories?.migrations?.length || 0}
+- Components: ${selection.categories?.components?.length || 0}
+- API: ${selection.categories?.api?.length || 0}
+- Lib: ${selection.categories?.lib?.length || 0}`
+      } catch (e) {
+        return `Error explaining skip decision: ${e}`
+      }
+    }
+
+    // ============================================
+    // Extended Check Tools
+    // ============================================
+
+    case 'get_extended_checks': {
+      const selectionPath = 'ci-state/test-selection.json'
+      if (!existsSync(selectionPath)) {
+        return 'No test selection found. Extended checks are recommended by the smart selector.'
+      }
+      try {
+        const selection = JSON.parse(readFileSync(selectionPath, 'utf-8'))
+        const extendedChecks = selection.extendedChecks || []
+
+        if (extendedChecks.length === 0) {
+          return `## Extended Checks
+
+No extended checks were recommended for this PR.
+
+The smart selector analyzes PR context and recommends extended checks like:
+- dead-code-analysis: For refactoring PRs
+- mobile-ux-validation: For mobile component changes
+- accessibility-audit: For UI changes
+- performance-check: For data fetching changes
+- security-audit: For auth/API changes
+- bundle-size-check: For new dependencies
+- i18n-completeness: For translation changes`
+        }
+
+        const highPriority = extendedChecks.filter((c: { priority: string }) => c.priority === 'high')
+        const mediumPriority = extendedChecks.filter((c: { priority: string }) => c.priority === 'medium')
+        const lowPriority = extendedChecks.filter((c: { priority: string }) => c.priority === 'low')
+
+        return `## Extended Checks Recommended
+
+**Total:** ${extendedChecks.length} checks recommended by smart selector
+
+### 🔴 High Priority (${highPriority.length})
+${highPriority.map((c: { type: string; reason: string; scope?: string[] }) => `- **${c.type}**: ${c.reason}${c.scope ? `\n  Scope: ${c.scope.join(', ')}` : ''}`).join('\n') || 'None'}
+
+### 🟡 Medium Priority (${mediumPriority.length})
+${mediumPriority.map((c: { type: string; reason: string; scope?: string[] }) => `- **${c.type}**: ${c.reason}${c.scope ? `\n  Scope: ${c.scope.join(', ')}` : ''}`).join('\n') || 'None'}
+
+### 🟢 Low Priority (${lowPriority.length})
+${lowPriority.map((c: { type: string; reason: string; scope?: string[] }) => `- **${c.type}**: ${c.reason}${c.scope ? `\n  Scope: ${c.scope.join(', ')}` : ''}`).join('\n') || 'None'}
+
+**Use the run_* tools to execute these checks if you want to verify.**`
+      } catch (e) {
+        return `Error reading extended checks: ${e}`
+      }
+    }
+
+    case 'run_dead_code_analysis': {
+      const scope = (input.scope as string[] | undefined) || []
+      console.log('   🗑️ Running dead code analysis...')
+
+      try {
+        // Get changed files if no scope specified
+        let filesToCheck: string[] = scope
+        if (filesToCheck.length === 0) {
+          const changedFiles = execSync(
+            `git diff --name-only origin/${baseBranch}...HEAD | grep -E '\\.(ts|tsx)$' || true`,
+            { encoding: 'utf-8' }
+          ).trim().split('\n').filter(Boolean)
+          filesToCheck = changedFiles
+        }
+
+        if (filesToCheck.length === 0) {
+          return '✅ No TypeScript files to analyze'
+        }
+
+        const deadCode: string[] = []
+
+        // Check for unused exports in changed files
+        for (const file of filesToCheck.slice(0, 20)) {
+          if (!existsSync(file)) continue
+          const content = readFileSync(file, 'utf-8')
+
+          // Find exported items
+          const exports = content.matchAll(/export\s+(?:const|function|class|type|interface)\s+(\w+)/g)
+          for (const match of exports) {
+            const exportName = match[1]
+            // Search for usage in other files
+            try {
+              const usage = execSync(
+                `rg '\\b${exportName}\\b' --type ts -l 2>/dev/null | grep -v '${file}' | head -1 || true`,
+                { encoding: 'utf-8' }
+              ).trim()
+              if (!usage) {
+                deadCode.push(`${file}: Exported '${exportName}' may be unused`)
+              }
+            } catch {
+              // Ignore search errors
+            }
+          }
+        }
+
+        if (deadCode.length === 0) {
+          return `✅ No obviously dead code found in ${filesToCheck.length} files analyzed`
+        }
+
+        return `## Dead Code Analysis
+
+**Files analyzed:** ${filesToCheck.length}
+**Potential dead code:** ${deadCode.length}
+
+${deadCode.slice(0, 15).map(d => `- ${d}`).join('\n')}
+${deadCode.length > 15 ? `\n_...and ${deadCode.length - 15} more_` : ''}
+
+**Note:** These are potential issues - verify before removing.`
+      } catch (e) {
+        return `Error running dead code analysis: ${e}`
+      }
+    }
+
+    case 'run_bundle_size_check': {
+      console.log('   📦 Running bundle size check...')
+
+      try {
+        // Check if new dependencies were added
+        const diff = execSync(`git diff origin/${baseBranch}...HEAD -- package.json`, { encoding: 'utf-8' })
+
+        const addedDeps: string[] = []
+        const lines = diff.split('\n')
+        for (const line of lines) {
+          if (line.startsWith('+') && !line.startsWith('+++')) {
+            const depMatch = line.match(/"([^"]+)":\s*"[^"]+"/g)
+            if (depMatch) {
+              addedDeps.push(...depMatch.map(m => m.split(':')[0].replace(/"/g, '')))
+            }
+          }
+        }
+
+        // Filter to actual dependency additions (not version updates)
+        const newDeps = addedDeps.filter(d =>
+          !diff.includes(`-    "${d}"`) && // Not replacing existing
+          d !== 'version' && d !== 'name' // Not metadata
+        )
+
+        if (newDeps.length === 0) {
+          return '✅ No new dependencies added - bundle size unchanged'
+        }
+
+        // Try to get size estimates from npm
+        const sizes: string[] = []
+        for (const dep of newDeps.slice(0, 5)) {
+          try {
+            // Use bundlephobia API simulation (just check if it's a big package)
+            const bigPackages = ['moment', 'lodash', 'antd', 'material-ui', 'firebase', 'aws-sdk']
+            if (bigPackages.some(bp => dep.toLowerCase().includes(bp))) {
+              sizes.push(`⚠️ ${dep}: Known large package - consider alternatives`)
+            } else {
+              sizes.push(`📦 ${dep}: Added to dependencies`)
+            }
+          } catch {
+            sizes.push(`📦 ${dep}: Size unknown`)
+          }
+        }
+
+        return `## Bundle Size Check
+
+**New dependencies:** ${newDeps.length}
+
+${sizes.join('\n')}
+${newDeps.length > 5 ? `\n_...and ${newDeps.length - 5} more_` : ''}
+
+**Recommendation:** Run \`npm run build\` and compare .next/static sizes before/after.`
+      } catch (e) {
+        return `Error checking bundle size: ${e}`
+      }
+    }
+
+    case 'run_i18n_completeness_check': {
+      console.log('   🌐 Running i18n completeness check...')
+
+      try {
+        // Load translation files
+        const languages = ['nb', 'sv', 'en']
+        const translations: Record<string, Set<string>> = {}
+
+        for (const lang of languages) {
+          const filePath = `src/lib/i18n/translations/${lang}.ts`
+          if (!existsSync(filePath)) {
+            return `❌ Translation file missing: ${filePath}`
+          }
+          const content = readFileSync(filePath, 'utf-8')
+
+          // Extract keys (simplified - looks for key patterns)
+          const keys = new Set<string>()
+          const keyMatches = content.matchAll(/(\w+):\s*['"`]/g)
+          for (const match of keyMatches) {
+            keys.add(match[1])
+          }
+          translations[lang] = keys
+        }
+
+        // Find keys missing in any language
+        const allKeys = new Set([...translations.nb, ...translations.sv, ...translations.en])
+        const missingByLang: Record<string, string[]> = { nb: [], sv: [], en: [] }
+
+        for (const key of allKeys) {
+          for (const lang of languages) {
+            if (!translations[lang].has(key)) {
+              missingByLang[lang].push(key)
+            }
+          }
+        }
+
+        const totalMissing = missingByLang.nb.length + missingByLang.sv.length + missingByLang.en.length
+
+        if (totalMissing === 0) {
+          return `✅ All ${allKeys.size} translation keys present in all languages (nb, sv, en)`
+        }
+
+        return `## i18n Completeness Check
+
+**Total keys:** ${allKeys.size}
+
+### Missing translations:
+- **Norwegian (nb):** ${missingByLang.nb.length > 0 ? missingByLang.nb.slice(0, 5).join(', ') : '✅ Complete'}
+- **Swedish (sv):** ${missingByLang.sv.length > 0 ? missingByLang.sv.slice(0, 5).join(', ') : '✅ Complete'}
+- **English (en):** ${missingByLang.en.length > 0 ? missingByLang.en.slice(0, 5).join(', ') : '✅ Complete'}
+
+${totalMissing > 0 ? `⚠️ ${totalMissing} missing translation(s) found` : ''}`
+      } catch (e) {
+        return `Error checking i18n: ${e}`
+      }
+    }
+
+    case 'run_accessibility_audit': {
+      const components = (input.components as string[] | undefined) || []
+      console.log('   ♿ Running accessibility audit...')
+
+      try {
+        // Get changed component files
+        let filesToCheck: string[] = components
+        if (filesToCheck.length === 0) {
+          const changedFiles = execSync(
+            `git diff --name-only origin/${baseBranch}...HEAD | grep -E 'src/components/.*\\.tsx$' || true`,
+            { encoding: 'utf-8' }
+          ).trim().split('\n').filter(Boolean)
+          filesToCheck = changedFiles
+        }
+
+        if (filesToCheck.length === 0) {
+          return '✅ No component files to audit'
+        }
+
+        const issues: string[] = []
+
+        for (const file of filesToCheck.slice(0, 15)) {
+          if (!existsSync(file)) continue
+          const content = readFileSync(file, 'utf-8')
+
+          // Check for common a11y issues
+          // 1. Images without alt
+          if (content.includes('<img') && !content.includes('alt=')) {
+            issues.push(`${file}: Image without alt attribute`)
+          }
+
+          // 2. Click handlers without keyboard support
+          if (content.includes('onClick') && !content.includes('onKeyDown') && !content.includes('onKeyPress')) {
+            if (content.includes('<div') || content.includes('<span')) {
+              issues.push(`${file}: Click handler on non-interactive element without keyboard support`)
+            }
+          }
+
+          // 3. Missing button type
+          if (content.includes('<button') && !content.includes('type=')) {
+            issues.push(`${file}: Button without explicit type attribute`)
+          }
+
+          // 4. Form inputs without labels
+          if ((content.includes('<input') || content.includes('<select')) && !content.includes('aria-label') && !content.includes('htmlFor')) {
+            issues.push(`${file}: Form input may be missing accessible label`)
+          }
+        }
+
+        if (issues.length === 0) {
+          return `✅ No obvious accessibility issues in ${filesToCheck.length} components`
+        }
+
+        return `## Accessibility Audit
+
+**Components checked:** ${filesToCheck.length}
+**Issues found:** ${issues.length}
+
+${issues.slice(0, 10).map(i => `- ${i}`).join('\n')}
+${issues.length > 10 ? `\n_...and ${issues.length - 10} more_` : ''}
+
+**Recommendation:** Review these for WCAG compliance.`
+      } catch (e) {
+        return `Error running accessibility audit: ${e}`
+      }
+    }
+
+    case 'list_available_tools': {
+      const toolList = TOOLS.map(t => `- **${t.name}**: ${t.description}`).join('\n')
+      return `## Available Tools (${TOOLS.length} total)
+
+${toolList}
+
+**Tip:** Use these tools to investigate issues. If you need a capability not listed, use \`suggest_capability\` to log feedback.`
+    }
+
+    case 'suggest_capability': {
+      const capability = input.capability as string
+      const reason = input.reason as string
+      const example = input.example as string | undefined
+
+      // Log to a file for future improvement
+      const suggestion = {
+        timestamp: new Date().toISOString(),
+        capability,
+        reason,
+        example: example || null,
+        prNumber: process.env.GITHUB_PR_NUMBER || 'unknown'
+      }
+
+      const suggestionsFile = 'ci-state/capability-suggestions.json'
+      let suggestions: typeof suggestion[] = []
+      if (existsSync(suggestionsFile)) {
+        try {
+          suggestions = JSON.parse(readFileSync(suggestionsFile, 'utf-8'))
+        } catch {
+          suggestions = []
+        }
+      }
+      suggestions.push(suggestion)
+      writeFileSync(suggestionsFile, JSON.stringify(suggestions, null, 2))
+
+      console.log(`   💡 Capability suggestion logged: ${capability}`)
+      return `✅ Feedback recorded. Suggested capability: "${capability}"\nReason: ${reason}${example ? `\nExample: ${example}` : ''}`
+    }
+
     default:
       return `Unknown tool: ${name}`
   }
@@ -893,10 +1745,15 @@ async function main() {
   const startTime = Date.now()
   console.log('🎯 Final Verdict - Aggregating all reviews...\n')
 
-  // Check for API key FIRST - before writing any comments
+  // Check for required env vars FIRST - before writing any comments
   if (!API_KEY) {
     console.error('❌ OPENROUTER_API_KEY not set')
     writeErrorComment('OPENROUTER_API_KEY not set')
+    process.exit(1)
+  }
+  if (!VERDICT_MODEL) {
+    console.error('❌ OPENROUTER_VERDICT_MODEL not set')
+    writeErrorComment('OPENROUTER_VERDICT_MODEL not set - no fallback, configure in GitHub secrets')
     process.exit(1)
   }
 
@@ -1001,12 +1858,28 @@ async function main() {
 
 YOUR VERDICT DETERMINES THE CI STATUS. If you say BLOCK, the PR cannot be merged. If you say PASS, the PR can merge.
 
-## YOUR ROLE: The "Super AI" Second Opinion
+## YOUR ROLE: The "Wise Supervisor" AI
 
-You see findings from all other reviewers (code review, e2e tests, visual validation, etc.) and make the FINAL call.
-You have tools to investigate deeper when needed. Use them.
+You are the second-tier intelligence in a two-tier CI system:
+1. **Fast Selector** (already ran): A fast AI that decided which tests to run/skip based on file changes
+2. **You (Wise Supervisor)**: Review ALL findings AND the selector's decisions, run additional tests if needed
 
 The PR comment will reflect YOUR decision - so make it count.
+
+## CRITICAL: Review Smart Selector Decisions
+
+A fast AI has already decided which tests to run. Use **get_test_selection** to see:
+- Which tests were run vs skipped
+- The reasoning behind skip decisions
+- Files that were changed
+
+**You can OVERRIDE the selector and run skipped tests if you disagree!**
+
+Example workflow:
+1. Call get_test_selection to see what was skipped
+2. If a test was skipped but you think it should have run, use run_* tools
+3. If you run additional tests and they fail, BLOCK
+4. If you run additional tests and they pass, factor that into your decision
 
 ## CRITICAL: You MUST Verify Before Deciding
 
@@ -1027,6 +1900,7 @@ If you don't verify, default to BLOCK.
 - Runtime errors VERIFIED in THIS PR's changes
 - Authentication/authorization broken (VERIFIED)
 - Critical test failures caused by THIS PR's changes
+- You ran additional tests (overriding selector) and they FAILED
 - **ANY unverified blocking issue** - when in doubt, BLOCK
 
 **PASS (CI will succeed, PR can merge) when:**
@@ -1034,6 +1908,7 @@ If you don't verify, default to BLOCK.
 - All blocking issues are in files NOT changed by this PR (pre-existing)
 - Only minor suggestions/warnings remain
 - You used tools to verify and found no real problems
+- You ran additional tests (overriding selector) and they PASSED
 
 ## IMPORTANT: Pre-existing vs New Issues
 
@@ -1044,18 +1919,50 @@ Look at the "Files Changed" list. If an issue is reported in a file NOT in that 
 
 ## Available Tools - USE THEM!
 
+### Investigation Tools
 - **read_file**: Read code to verify issues exist (ALWAYS use this before dismissing an issue)
 - **search_code**: Find patterns across the codebase
 - **read_diff**: See exactly what changed in this PR
 - **check_typescript**: Verify no type errors in changed files
 - **verify_imports**: Check for hallucinated package imports
 
+### Supervisor Tools (Override Fast Selector)
+- **get_test_selection**: See what the fast selector decided and why
+- **explain_skip_decision**: Get detailed explanation for why a specific test was skipped
+- **run_visual_validation**: Run visual tests that were skipped (if you suspect UI issues)
+- **run_e2e_tests**: Run E2E tests that were skipped (if you suspect user journey issues)
+- **run_migration_review**: Run migration review that was skipped (if you see SQL changes)
+- **run_api_tests**: Run API tests that were skipped (if you suspect API issues)
+
+## Conservative Principle
+
+When in doubt, RUN THE TEST. It's better to run one extra check than miss a bug.
+
+If the fast selector skipped a test but you're uncertain if that was correct:
+1. Use explain_skip_decision to understand why
+2. If still uncertain, use run_* to run the test
+3. Include the result in your decision
+
+## Extended Checks
+
+The smart selector may recommend extended checks based on PR context:
+- **dead-code-analysis**: For refactoring PRs (find unused exports)
+- **mobile-ux-validation**: For mobile component changes
+- **accessibility-audit**: For UI changes (ARIA, keyboard nav)
+- **performance-check**: For data fetching changes
+- **security-audit**: For auth/API changes
+- **bundle-size-check**: For new dependencies
+- **i18n-completeness**: For translation changes
+
+Use **get_extended_checks** to see what was recommended, then use run_* tools to execute HIGH priority checks.
+
 ## Response Format
 
 1. **PR Summary**: What does this PR do?
-2. **Verification**: For each blocking issue, what did you find when you investigated?
-3. **Decision**: Clear reasoning for PASS or BLOCK
-4. **Final Line**: Your verdict (exactly as shown below)
+2. **Selector Review**: Did you agree with the fast selector's decisions? Did you run any additional tests?
+3. **Verification**: For each blocking issue, what did you find when you investigated?
+4. **Decision**: Clear reasoning for PASS or BLOCK
+5. **Final Line**: Your verdict (exactly as shown below)
 
 End your response with EXACTLY one of these lines:
 FINAL VERDICT: PASS
@@ -1112,6 +2019,20 @@ FINAL VERDICT: BLOCK`
 
   while (iterations < maxIterations) {
     iterations++
+
+    // Cost limit check - prevent runaway costs from infinite tool loops
+    const costCheck = checkCostLimit()
+    if (!costCheck.allowed) {
+      console.error(`\n❌ ${costCheck.message}`)
+      response = `FINAL VERDICT: BLOCK\n\nReason: CI cost limit exceeded ($${costCheck.currentCost.toFixed(2)}). ` +
+        'This is a safety mechanism to prevent runaway costs. ' +
+        'Please check the tool loop for potential issues.'
+      break
+    }
+    if (costCheck.warning) {
+      console.warn(`⚠️ ${costCheck.message}`)
+    }
+
     const result = await callOpenRouter(systemPrompt, messages)
 
     if (result.toolCalls.length === 0) {
@@ -1333,9 +2254,94 @@ FINAL VERDICT: BLOCK`
   }
 
   saveFinalVerdict(verdictOutput)
+
+  // Record selector feedback for accuracy tracking
+  const testSelectionPath = 'ci-state/test-selection.json'
+  if (existsSync(testSelectionPath)) {
+    try {
+      const testSelection = JSON.parse(readFileSync(testSelectionPath, 'utf-8'))
+      const selectorDecisions = testSelection.decisions || []
+
+      // Check if supervisor ran any skipped tests
+      const skippedTests = selectorDecisions.filter((d: { enabled: boolean }) => !d.enabled)
+      const additionalTestsRun: string[] = []
+      const additionalTestResults: Array<{ test: string; passed: boolean }> = []
+
+      // Check toolsUsed to see if supervisor ran skipped tests
+      for (const skipped of skippedTests) {
+        const toolName = `run_${skipped.testType.replace(/-/g, '_')}`
+        if (toolsUsed.has(toolName)) {
+          additionalTestsRun.push(skipped.testType)
+          // If we blocked because of this test, it failed
+          const testFailed = blocked && response.toLowerCase().includes(skipped.testType)
+          additionalTestResults.push({ test: skipped.testType, passed: !testFailed })
+        }
+      }
+
+      // Determine if selector was accurate
+      const selectorAccurate = additionalTestResults.every(r => r.passed)
+
+      const feedback: SelectorFeedback = {
+        timestamp: new Date().toISOString(),
+        prNumber: parseInt(process.env.GITHUB_PR_NUMBER || '0') || undefined,
+        commitSha: process.env.GITHUB_SHA || 'unknown',
+        selectorModel: testSelection.model,
+        selectorDecisions: selectorDecisions.map((d: { testType: string; enabled: boolean; reason: string }) => ({
+          testType: d.testType,
+          enabled: d.enabled,
+          reason: d.reason,
+        })),
+        supervisorOverride: aiOverride || null,
+        additionalTestsRun,
+        additionalTestResults,
+        selectorAccurate,
+        lesson: !selectorAccurate
+          ? `Selector skipped ${additionalTestsRun.join(', ')} but supervisor found issues`
+          : undefined,
+      }
+
+      recordSelectorFeedback(feedback)
+
+      // If selector was wrong, generate a suggested GitHub issue
+      if (!selectorAccurate && additionalTestsRun.length > 0) {
+        generateSelectorLearningIssue(feedback, testSelection)
+      }
+
+      console.log(`\n📊 Selector Accuracy: ${selectorAccurate ? '✅ Correct' : '⚠️ Needed override'}`)
+      if (additionalTestsRun.length > 0) {
+        console.log(`   Additional tests run by supervisor: ${additionalTestsRun.join(', ')}`)
+      }
+    } catch (e) {
+      console.log(`   ⚠️ Could not record selector feedback: ${e}`)
+    }
+  }
+
+  // Log audit trail
+  logAuditEntry({
+    timestamp: new Date().toISOString(),
+    type: 'verdict',
+    prNumber: parseInt(process.env.GITHUB_PR_NUMBER || '0') || undefined,
+    commitSha: process.env.GITHUB_SHA || 'unknown',
+    model: VERDICT_MODEL,
+    decision: verdictOutput.verdict,
+    reasoning: response.slice(0, 500),
+    metadata: {
+      toolsUsed: [...toolsUsed],
+      aiOverride: aiOverride || null,
+      reviewerCount: reviewerNames.length,
+      failingReviewers,
+    },
+  })
+
   generateComment(verdictOutput, reviews, changedFiles.split('\n').filter(Boolean), prTitle)
 
   console.log(`\n⏱️ Duration: ${Math.round((Date.now() - startTime) / 1000)}s`)
+
+  // Show cost summary
+  const costMd = generateCostSummaryMarkdown()
+  if (costMd) {
+    console.log('\n' + costMd.replace(/\n/g, '\n   '))
+  }
 
   if (blocked) {
     console.log('\n❌ BLOCKED - Issues must be addressed')
@@ -1344,6 +2350,56 @@ FINAL VERDICT: BLOCK`
     console.log('\n✅ PASSED - Ready to merge')
     process.exit(0)
   }
+}
+
+/**
+ * Generate a suggested GitHub issue when selector made wrong decisions
+ */
+function generateSelectorLearningIssue(
+  feedback: SelectorFeedback,
+  testSelection: { changedFiles?: string[]; categories?: Record<string, string[]> }
+): void {
+  const issueTemplate = `## 🤖 CI Selector Learning: Potential Improvement
+
+The smart selector made a decision that the supervisor disagreed with. This issue captures the learning for potential prompt improvements.
+
+### What Happened
+
+| Aspect | Value |
+|--------|-------|
+| PR | #${feedback.prNumber || 'unknown'} |
+| Selector Model | ${feedback.selectorModel} |
+| Supervisor Override | ${feedback.supervisorOverride ? `${feedback.supervisorOverride.from} → ${feedback.supervisorOverride.to}` : 'None'} |
+
+### Selector Decisions
+${feedback.selectorDecisions.map(d => `- **${d.testType}**: ${d.enabled ? '✅ RUN' : '⏭️ SKIP'} — ${d.reason}`).join('\n')}
+
+### Supervisor Actions
+- **Additional tests run:** ${feedback.additionalTestsRun.join(', ') || 'None'}
+- **Results:** ${feedback.additionalTestResults.map(r => `${r.test}: ${r.passed ? '✅' : '❌'}`).join(', ') || 'N/A'}
+
+### Changed Files (${testSelection.changedFiles?.length || 0})
+\`\`\`
+${(testSelection.changedFiles || []).slice(0, 20).join('\n')}
+${(testSelection.changedFiles?.length || 0) > 20 ? '... and more' : ''}
+\`\`\`
+
+### Suggested Improvement
+
+${feedback.lesson || 'Review the selector prompt to handle this case better.'}
+
+**Possible actions:**
+- [ ] Update selector prompt to recognize this pattern
+- [ ] Add this file pattern to core files that always run full suite
+- [ ] Adjust the test type heuristics
+
+---
+*Auto-generated by CI selector feedback loop*
+`
+
+  // Save as a file that can be used to create an issue
+  writeFileSync('ci-state/selector-learning-issue.md', issueTemplate)
+  console.log('   📝 Selector learning issue template saved: ci-state/selector-learning-issue.md')
 }
 
 // ============================================
@@ -1646,6 +2702,45 @@ These tests verify the specific changes in this PR (e.g., click handlers, modals
 `
   }
 
+  // Load and display extended checks from smart selector
+  const testSelectionPath = 'ci-state/test-selection.json'
+  if (existsSync(testSelectionPath)) {
+    try {
+      const testSelection = JSON.parse(readFileSync(testSelectionPath, 'utf-8'))
+      const extendedChecks = testSelection.extendedChecks || []
+
+      if (extendedChecks.length > 0) {
+        const highPriority = extendedChecks.filter((c: { priority: string }) => c.priority === 'high')
+        const otherPriority = extendedChecks.filter((c: { priority: string }) => c.priority !== 'high')
+
+        comment += `### 🔍 Extended Checks Recommended
+
+The smart selector analyzed this PR and recommended **${extendedChecks.length}** additional checks:
+
+`
+        if (highPriority.length > 0) {
+          comment += `**🔴 High Priority:**\n`
+          for (const check of highPriority) {
+            comment += `- \`${check.type}\`: ${check.reason}\n`
+          }
+          comment += '\n'
+        }
+        if (otherPriority.length > 0) {
+          comment += `<details>
+<summary>Other recommendations (${otherPriority.length})</summary>
+
+${otherPriority.map((c: { type: string; reason: string; priority: string }) => `- [${c.priority}] \`${c.type}\`: ${c.reason}`).join('\n')}
+
+</details>
+
+`
+        }
+      }
+    } catch {
+      // Ignore errors loading test selection
+    }
+  }
+
   // Warnings and suggestions (only if not blocked, or show briefly if blocked)
   if (!isBlocked && prWarnings.length > 0) {
     comment += `
@@ -1876,6 +2971,27 @@ ${JSON.stringify(structuredData, null, 2)}
 \`\`\`
 
 </details>`
+
+  // Check if a selector learning issue was generated
+  const learningIssuePath = 'ci-state/selector-learning-issue.md'
+  if (existsSync(learningIssuePath)) {
+    comment += `
+
+---
+
+### 📝 CI Selector Learning Opportunity
+
+The AI supervisor found that the smart test selector made a suboptimal decision for this PR. A learning issue template has been generated.
+
+<details>
+<summary>📋 View learning issue template</summary>
+
+${readFileSync(learningIssuePath, 'utf-8')}
+
+</details>
+
+> **Maintainers:** Consider creating a GitHub issue from this template to improve the selector's decision-making for similar PRs in the future.`
+  }
 
   comment += `
 
