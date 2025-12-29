@@ -7,6 +7,27 @@ import { getPendingChanges, removeChange, incrementRetry, type PendingChange } f
 const MAX_RETRIES = 3
 const LOW_BATTERY_THRESHOLD = 0.15 // 15% battery
 
+// Custom events for sync status
+export const SYNC_EVENTS = {
+  SYNC_SUCCESS: 'familjen:sync:success',
+  SYNC_FAILURE: 'familjen:sync:failure',
+  SYNC_START: 'familjen:sync:start',
+  SYNC_COMPLETE: 'familjen:sync:complete',
+} as const
+
+export interface SyncFailureDetail {
+  table: string
+  operation: string
+  error: string
+  droppedAfterRetries: boolean
+}
+
+function dispatchSyncEvent(type: string, detail?: unknown) {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(type, { detail }))
+  }
+}
+
 /**
  * Check if we should pause sync due to low battery
  * Returns true if battery is low and not charging
@@ -56,6 +77,7 @@ export function useBackgroundSync() {
       }
 
       console.log(`[BackgroundSync] Processing ${changes.length} queued changes`)
+      dispatchSyncEvent(SYNC_EVENTS.SYNC_START, { count: changes.length })
       const supabase = supabaseRef.current
 
       for (const change of changes) {
@@ -63,18 +85,30 @@ export function useBackgroundSync() {
           await processChange(supabase, change)
           await removeChange(change.id)
           console.log(`[BackgroundSync] Synced: ${change.table} ${change.operation}`)
+          dispatchSyncEvent(SYNC_EVENTS.SYNC_SUCCESS, { table: change.table, operation: change.operation })
         } catch (error) {
           console.warn(`[BackgroundSync] Failed to sync change:`, error)
 
-          if (change.retries >= MAX_RETRIES) {
+          const droppedAfterRetries = change.retries >= MAX_RETRIES
+          if (droppedAfterRetries) {
             // Give up after max retries
             console.error(`[BackgroundSync] Removing failed change after ${MAX_RETRIES} retries:`, change)
             await removeChange(change.id)
           } else {
             await incrementRetry(change.id)
           }
+
+          // Dispatch failure event so UI can show toast
+          dispatchSyncEvent(SYNC_EVENTS.SYNC_FAILURE, {
+            table: change.table,
+            operation: change.operation,
+            error: error instanceof Error ? error.message : 'Unknown error',
+            droppedAfterRetries,
+          } as SyncFailureDetail)
         }
       }
+
+      dispatchSyncEvent(SYNC_EVENTS.SYNC_COMPLETE)
     } catch (error) {
       console.error('[BackgroundSync] Queue processing error:', error)
     } finally {
@@ -111,7 +145,16 @@ export function useBackgroundSync() {
   }, [processQueue])
 }
 
-// Process a single change
+/**
+ * Process a single queued change with conflict resolution
+ *
+ * Conflict handling:
+ * - insert: Uses upsert with ignoreDuplicates to skip if item already exists
+ *   (another device may have already synced this item)
+ * - update: Uses upsert to apply changes - "last write wins" strategy
+ *   This is simpler than tracking updated_at and works well for family apps
+ * - delete: May fail silently if item was already deleted by another device
+ */
 async function processChange(
   supabase: ReturnType<typeof createClient>,
   change: PendingChange
@@ -120,25 +163,39 @@ async function processChange(
 
   switch (operation) {
     case 'insert': {
-      const { error } = await supabase.from(table).insert(data)
+      // Use upsert with ignoreDuplicates for inserts
+      // If another device already created this item, we skip it
+      const { error } = await supabase.from(table).upsert(data, {
+        onConflict: 'id',
+        ignoreDuplicates: true,
+      })
       if (error) throw error
       break
     }
     case 'update': {
+      // Use upsert for updates - "last write wins" strategy
+      // This handles conflicts gracefully when multiple devices edit offline
       const { id, ...updateData } = data
-      const { error } = await supabase.from(table).update(updateData).eq('id', id)
+      const updateWithId = { id, ...updateData, updated_at: new Date().toISOString() }
+      const { error } = await supabase.from(table).upsert(updateWithId, {
+        onConflict: 'id',
+      })
       if (error) throw error
       break
     }
     case 'upsert': {
-      const { error } = await supabase.from(table).upsert(data)
+      const { error } = await supabase.from(table).upsert(data, {
+        onConflict: 'id',
+      })
       if (error) throw error
       break
     }
     case 'delete': {
+      // Delete may fail if already deleted by another device - that's OK
       const { id } = data
       const { error } = await supabase.from(table).delete().eq('id', id as string)
-      if (error) throw error
+      // Ignore "not found" errors for deletes (PGRST116)
+      if (error && !error.message?.includes('PGRST116')) throw error
       break
     }
   }

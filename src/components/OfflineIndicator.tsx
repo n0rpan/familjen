@@ -1,15 +1,19 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useLanguage } from '@/lib/i18n/context'
 import { getPendingCount } from '@/lib/offline-queue'
+import { SYNC_EVENTS, type SyncFailureDetail } from '@/hooks/useBackgroundSync'
 
 export function OfflineIndicator() {
   const { t } = useLanguage()
   const [isOffline, setIsOffline] = useState(false)
   const [showBanner, setShowBanner] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
+  const [syncFailure, setSyncFailure] = useState<SyncFailureDetail | null>(null)
+  const [isSyncing, setIsSyncing] = useState(false)
   const pendingCountRef = useRef(0)
+  const failureTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     // Set initial state
@@ -51,28 +55,111 @@ export function OfflineIndicator() {
     // Poll pending count periodically (every 30 seconds, not 5)
     const interval = setInterval(loadPendingCount, 30000)
 
+    // Listen for sync events
+    const handleSyncStart = () => {
+      setIsSyncing(true)
+      setShowBanner(true)
+    }
+
+    const handleSyncComplete = () => {
+      setIsSyncing(false)
+      loadPendingCount()
+      // Hide banner after sync if no pending and online
+      setTimeout(() => {
+        if (pendingCountRef.current === 0 && navigator.onLine) {
+          setShowBanner(false)
+        }
+      }, 2000)
+    }
+
+    const handleSyncFailure = (event: Event) => {
+      const detail = (event as CustomEvent<SyncFailureDetail>).detail
+      setSyncFailure(detail)
+      setShowBanner(true)
+      loadPendingCount()
+
+      // Clear previous timeout
+      if (failureTimeoutRef.current) {
+        clearTimeout(failureTimeoutRef.current)
+      }
+
+      // Auto-hide failure after 8 seconds (or 15 if dropped after retries)
+      failureTimeoutRef.current = setTimeout(() => {
+        setSyncFailure(null)
+      }, detail.droppedAfterRetries ? 15000 : 8000)
+    }
+
+    window.addEventListener(SYNC_EVENTS.SYNC_START, handleSyncStart)
+    window.addEventListener(SYNC_EVENTS.SYNC_COMPLETE, handleSyncComplete)
+    window.addEventListener(SYNC_EVENTS.SYNC_FAILURE, handleSyncFailure)
+
     return () => {
       window.removeEventListener('offline', handleOffline)
       window.removeEventListener('online', handleOnline)
+      window.removeEventListener(SYNC_EVENTS.SYNC_START, handleSyncStart)
+      window.removeEventListener(SYNC_EVENTS.SYNC_COMPLETE, handleSyncComplete)
+      window.removeEventListener(SYNC_EVENTS.SYNC_FAILURE, handleSyncFailure)
       clearInterval(interval)
+      if (failureTimeoutRef.current) {
+        clearTimeout(failureTimeoutRef.current)
+      }
     }
   }, []) // Empty dependency array - only run once
 
-  // Show banner if offline OR if there are pending changes
-  const shouldShow = showBanner || pendingCount > 0
+  // Show banner if offline OR if there are pending changes OR sync failure
+  const shouldShow = showBanner || pendingCount > 0 || syncFailure
+
+  // Dismiss sync failure on click
+  const dismissFailure = useCallback(() => {
+    setSyncFailure(null)
+    if (failureTimeoutRef.current) {
+      clearTimeout(failureTimeoutRef.current)
+    }
+  }, [])
 
   if (!shouldShow) return null
 
-  // Use calmer colors: sky for offline (informational), honey for syncing, sage for online
+  // Priority: failure (coral) > offline (sky) > syncing (honey) > online (sage)
+  const getBackgroundColor = () => {
+    if (syncFailure) return 'var(--color-coral)'
+    if (isOffline) return 'var(--color-sky)'
+    if (pendingCount > 0 || isSyncing) return 'var(--color-honey)'
+    return 'var(--color-sage)'
+  }
+
   return (
     <div
       className="fixed top-0 left-0 right-0 z-50 flex items-center justify-center gap-2 py-2 px-4 text-sm font-medium animate-fade-in"
       style={{
-        background: isOffline ? 'var(--color-sky)' : pendingCount > 0 ? 'var(--color-honey)' : 'var(--color-sage)',
+        background: getBackgroundColor(),
         color: 'white',
       }}
+      onClick={syncFailure ? dismissFailure : undefined}
+      role={syncFailure ? 'button' : undefined}
     >
-      {isOffline ? (
+      {syncFailure ? (
+        <>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span>
+            {syncFailure.droppedAfterRetries
+              ? (t.errors?.syncDropped || 'Endringen kunne ikke lagres')
+              : (t.errors?.syncFailed || 'Synkronisering feilet, prøver igjen...')}
+          </span>
+          <span className="ml-2 text-xs opacity-80">
+            ({syncFailure.table})
+          </span>
+          <button
+            className="ml-2 px-2 py-0.5 rounded text-xs hover:bg-white/20 transition-colors"
+            onClick={dismissFailure}
+          >
+            ✕
+          </button>
+        </>
+      ) : isOffline ? (
         <>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="1" y1="1" x2="23" y2="23" />
@@ -86,16 +173,16 @@ export function OfflineIndicator() {
           <span>{t.common?.offline || 'Offline'}</span>
           {pendingCount > 0 && (
             <span className="ml-2 px-2 py-0.5 rounded-full text-xs" style={{ background: 'rgba(0,0,0,0.2)' }}>
-              {pendingCount} {t.common?.pending || 'pending'}
+              {pendingCount} {t.common?.pending || 'venter'}
             </span>
           )}
         </>
-      ) : pendingCount > 0 ? (
+      ) : pendingCount > 0 || isSyncing ? (
         <>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-pulse">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
             <path d="M21 12a9 9 0 1 1-6.219-8.56" />
           </svg>
-          <span>{t.common?.syncing || 'Syncing'} ({pendingCount})</span>
+          <span>{t.common?.syncing || 'Synkroniserer'}{pendingCount > 0 ? ` (${pendingCount})` : '...'}</span>
         </>
       ) : (
         <>
@@ -105,7 +192,7 @@ export function OfflineIndicator() {
             <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
             <line x1="12" y1="20" x2="12.01" y2="20" />
           </svg>
-          <span>{t.common?.backOnline || 'Back online'}</span>
+          <span>{t.common?.backOnline || 'Tilkoblet igjen'}</span>
         </>
       )}
     </div>
