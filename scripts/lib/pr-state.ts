@@ -296,8 +296,11 @@ export function getCurrentCommitSha(): string {
  * Get files changed in this PR (from base branch)
  */
 export function getPRChangedFiles(baseBranch: string): string[] {
+  // Normalize: strip leading 'origin/' if present to avoid 'origin/origin/main'
+  const normalizedBase = baseBranch.replace(/^origin\//, '')
+
   try {
-    const output = execSync(`git diff --name-only origin/${baseBranch}...HEAD`, {
+    const output = execSync(`git diff --name-only origin/${normalizedBase}...HEAD`, {
       encoding: 'utf-8',
     })
     return output.trim().split('\n').filter(Boolean)

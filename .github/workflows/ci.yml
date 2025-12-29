@@ -966,7 +966,7 @@ jobs:
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}
-          VERCEL_PREVIEW_URL: ${{ needs.smart-selector.outputs.preview_url || '' }}
+          # Note: Preview URL not available here - runs in parallel with e2e-preview
 
       - name: Upload pre-verdict results
         uses: actions/upload-artifact@v4
