@@ -33,6 +33,10 @@ export interface SyncResult {
   duplicatesAutoMerged: number
   duplicateSuggestionsCreated: number
   error?: string
+  debug?: {
+    contentLength?: number
+    model?: string
+  }
 }
 
 interface ExternalEvent {
@@ -156,6 +160,10 @@ export async function syncCalendarSource(
     }
 
     result.eventsFound = extractedEvents.length
+    result.debug = {
+      contentLength: content.length,
+      model,
+    }
 
     // 3. Get existing events for this source
     const { data: existingEvents } = await supabase
