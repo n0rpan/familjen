@@ -107,6 +107,163 @@ function loadToolConfigFromSelector(): void {
 }
 
 // ============================================
+// Security: Path Validation
+// ============================================
+
+/**
+ * Shell metacharacters that could be used for command injection.
+ * These are blocked in ALL user-provided inputs passed to shell commands.
+ */
+const SHELL_METACHARACTERS = /[;&|`$(){}[\]<>!\\'"*?\n\r]/
+
+/**
+ * Validate a test path/spec for safe use in shell commands.
+ * Returns { valid: true } or { valid: false, error: string }
+ */
+function validateTestPath(path: string): { valid: true } | { valid: false; error: string } {
+  if (!path || typeof path !== 'string') {
+    return { valid: false, error: 'Path must be a non-empty string' }
+  }
+
+  if (path.length > 200) {
+    return { valid: false, error: 'Path too long (max 200 chars)' }
+  }
+
+  if (SHELL_METACHARACTERS.test(path)) {
+    return { valid: false, error: `Path contains shell metacharacters: ${path.slice(0, 50)}` }
+  }
+
+  // Path traversal: reject paths trying to escape repo
+  if (path.includes('..')) {
+    return { valid: false, error: 'Path traversal not allowed (..)' }
+  }
+
+  // Only allow: alphanumeric, dots, dashes, underscores, slashes
+  if (!/^[a-zA-Z0-9._\-/]+$/.test(path)) {
+    return { valid: false, error: `Invalid characters in path: ${path.slice(0, 50)}` }
+  }
+
+  return { valid: true }
+}
+
+/**
+ * Validate an array of test paths. Returns first error or all valid paths.
+ */
+function validateTestPaths(paths: unknown[]): { valid: true; paths: string[] } | { valid: false; error: string } {
+  if (!Array.isArray(paths)) {
+    return { valid: false, error: 'Paths must be an array' }
+  }
+
+  const validPaths: string[] = []
+  for (const p of paths) {
+    if (typeof p !== 'string') {
+      return { valid: false, error: `Invalid path type: ${typeof p}` }
+    }
+    const result = validateTestPath(p)
+    if (!result.valid) {
+      return { valid: false, error: (result as { valid: false; error: string }).error }
+    }
+    validPaths.push(p)
+  }
+
+  return { valid: true, paths: validPaths }
+}
+
+/**
+ * Validate page names for visual validation (more restrictive - only allow known pages).
+ */
+function validatePageNames(pages: unknown[]): { valid: true; pages: string[] } | { valid: false; error: string } {
+  const ALLOWED_PAGES = ['home', 'week', 'feed', 'recipes', 'shopping', 'settings', 'admin', 'all']
+
+  if (!Array.isArray(pages)) {
+    return { valid: false, error: 'Pages must be an array' }
+  }
+
+  const validPages: string[] = []
+  for (const p of pages) {
+    if (typeof p !== 'string') {
+      return { valid: false, error: `Invalid page type: ${typeof p}` }
+    }
+    if (!ALLOWED_PAGES.includes(p.toLowerCase())) {
+      return { valid: false, error: `Unknown page: ${p}. Allowed: ${ALLOWED_PAGES.join(', ')}` }
+    }
+    validPages.push(p.toLowerCase())
+  }
+
+  return { valid: true, pages: validPages }
+}
+
+/**
+ * Validate URL path for API endpoint testing.
+ * Only allows: alphanumeric, dots, dashes, underscores, slashes, query params
+ */
+function validateUrlPath(path: string): { valid: true } | { valid: false; error: string } {
+  if (!path || typeof path !== 'string') {
+    return { valid: false, error: 'Path must be a non-empty string' }
+  }
+
+  if (path.length > 500) {
+    return { valid: false, error: 'Path too long (max 500 chars)' }
+  }
+
+  // Must start with /
+  if (!path.startsWith('/')) {
+    return { valid: false, error: 'Path must start with /' }
+  }
+
+  // Block shell metacharacters and dangerous sequences
+  if (SHELL_METACHARACTERS.test(path)) {
+    return { valid: false, error: 'Path contains shell metacharacters' }
+  }
+
+  // Only allow safe URL characters
+  if (!/^[a-zA-Z0-9._\-/?=&%]+$/.test(path)) {
+    return { valid: false, error: `Invalid characters in path: ${path.slice(0, 50)}` }
+  }
+
+  return { valid: true }
+}
+
+/**
+ * Validate HTTP method (whitelist approach).
+ */
+function validateHttpMethod(method: string): { valid: true; method: string } | { valid: false; error: string } {
+  const ALLOWED_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
+
+  if (!method || typeof method !== 'string') {
+    return { valid: false, error: 'Method must be a non-empty string' }
+  }
+
+  const upper = method.toUpperCase()
+  if (!ALLOWED_METHODS.includes(upper)) {
+    return { valid: false, error: `Invalid HTTP method: ${method}. Allowed: ${ALLOWED_METHODS.join(', ')}` }
+  }
+
+  return { valid: true, method: upper }
+}
+
+/**
+ * Validate identifier names (for export names, function names, etc.)
+ * Must be valid JavaScript identifier.
+ */
+function validateIdentifier(name: string): { valid: true } | { valid: false; error: string } {
+  if (!name || typeof name !== 'string') {
+    return { valid: false, error: 'Identifier must be a non-empty string' }
+  }
+
+  if (name.length > 100) {
+    return { valid: false, error: 'Identifier too long (max 100 chars)' }
+  }
+
+  // JavaScript identifier: starts with letter/$/_,  followed by letters/digits/$/_
+  if (!/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name)) {
+    return { valid: false, error: `Invalid identifier: ${name.slice(0, 30)}` }
+  }
+
+  return { valid: true }
+}
+
+// ============================================
 // Git Utilities
 // ============================================
 
@@ -616,6 +773,22 @@ function executeToolUncached(name: string, input: Record<string, unknown>): stri
       const query = input.query as string
       const searchPath = input.path as string | undefined
       const glob = input.glob as string | undefined
+
+      // Security: Validate regex pattern before passing to ripgrep
+      if (!query || query.length > 500) {
+        return 'Error: Invalid query (empty or too long)'
+      }
+      try {
+        new RegExp(query) // Validate as valid regex
+      } catch {
+        return `Error: Invalid regex pattern: ${query.slice(0, 50)}...`
+      }
+
+      // Security: Validate path contains no shell metacharacters
+      if (searchPath && /[;&|`$]/.test(searchPath)) {
+        return 'Error: Invalid path (contains shell metacharacters)'
+      }
+
       // Configurable max_count: defaults from selector analysis, max 100
       // Selector adjusts default based on PR complexity (refactoring PRs get higher limits)
       const defaultMaxCount = SELECTOR_TOOL_CONFIG.search_max_count
@@ -839,20 +1012,33 @@ function executeToolUncached(name: string, input: Record<string, unknown>): stri
     case 'test_endpoint': {
       if (!previewUrl) return 'Error: VERCEL_PREVIEW_URL not set'
 
-      const method = input.method as string
+      // Security: Validate HTTP method (whitelist)
+      const methodValidation = validateHttpMethod(input.method as string)
+      if (!methodValidation.valid) {
+        return `Error: ${(methodValidation as { valid: false; error: string }).error}`
+      }
+      const method = methodValidation.method
+
+      // Security: Validate URL path
+      const pathValidation = validateUrlPath(input.path as string)
+      if (!pathValidation.valid) {
+        return `Error: ${(pathValidation as { valid: false; error: string }).error}`
+      }
       const path = input.path as string
+
       const body = input.body as object | undefined
 
       try {
-        const curlCmd = [
-          'curl', '-s', '-w', '\\n%{http_code}',
+        // Use execFileSync with array arguments to prevent shell injection
+        const args = [
+          '-s', '-w', '\n%{http_code}',
           '-X', method,
-          bypassHeader, // Include Vercel protection bypass
+          ...(bypassHeader ? ['-H', bypassHeader.replace('-H ', '')] : []),
           ...(body ? ['-d', JSON.stringify(body), '-H', 'Content-Type: application/json'] : []),
           `${previewUrl}${path}`
-        ].filter(Boolean).join(' ')
+        ]
 
-        const result = execSync(curlCmd, { encoding: 'utf-8', timeout: 30000 })
+        const result = execFileSync('curl', args, { encoding: 'utf-8', timeout: 30000 })
         const lines = result.trim().split('\n')
         const statusCode = lines.pop()
         const responseBody = lines.join('\n')
@@ -866,14 +1052,23 @@ function executeToolUncached(name: string, input: Record<string, unknown>): stri
     case 'verify_auth_required': {
       if (!previewUrl) return 'Error: VERCEL_PREVIEW_URL not set'
 
+      // Security: Validate URL path
+      const pathValidation = validateUrlPath(input.path as string)
+      if (!pathValidation.valid) {
+        return `Error: ${(pathValidation as { valid: false; error: string }).error}`
+      }
       const path = input.path as string
 
       try {
-        // Use bypass header to get past Vercel protection, then check app-level auth
-        const result = execSync(
-          `curl -s -w '\\n%{http_code}' ${bypassHeader} -X GET '${previewUrl}${path}'`,
-          { encoding: 'utf-8', timeout: 30000 }
-        )
+        // Use execFileSync with array arguments to prevent shell injection
+        const args = [
+          '-s', '-w', '\n%{http_code}',
+          ...(bypassHeader ? ['-H', bypassHeader.replace('-H ', '')] : []),
+          '-X', 'GET',
+          `${previewUrl}${path}`
+        ]
+
+        const result = execFileSync('curl', args, { encoding: 'utf-8', timeout: 30000 })
         const lines = result.trim().split('\n')
         const statusCode = parseInt(lines.pop() || '0')
 
@@ -901,11 +1096,15 @@ function executeToolUncached(name: string, input: Record<string, unknown>): stri
       const results: string[] = []
       for (const { path, name } of paths) {
         try {
-          // Include bypass header to get past Vercel protection
-          const result = execSync(
-            `curl -s -w '\\n%{http_code}' ${bypassHeader} -X GET '${previewUrl}${path}'`,
-            { encoding: 'utf-8', timeout: 30000 }
-          )
+          // Use execFileSync with array arguments to prevent shell injection
+          const args = [
+            '-s', '-w', '\n%{http_code}',
+            ...(bypassHeader ? ['-H', bypassHeader.replace('-H ', '')] : []),
+            '-X', 'GET',
+            `${previewUrl}${path}`
+          ]
+
+          const result = execFileSync('curl', args, { encoding: 'utf-8', timeout: 30000 })
           const statusCode = parseInt(result.trim().split('\n').pop() || '0')
 
           if (statusCode >= 200 && statusCode < 400) {
@@ -1140,11 +1339,19 @@ ${Object.entries(preVerdict.additionalContext || {}).map(([key, value]) => `- **
     case 'run_visual_validation': {
       if (!previewUrl) return 'Error: VERCEL_PREVIEW_URL not set - cannot run visual validation'
 
-      const pages = (input.pages as string[] | undefined) || ['home', 'week']
+      // Security: Validate page names (whitelist approach)
+      const rawPages = (input.pages as string[] | undefined) || ['home', 'week']
+      const pagesValidation = validatePageNames(rawPages)
+      if (!pagesValidation.valid) {
+        return `Error: Invalid pages input - ${(pagesValidation as { valid: false; error: string }).error}`
+      }
+      const pages = pagesValidation.pages
+
       console.log(`   🎨 Running visual validation for: ${pages.join(', ')}`)
 
       try {
         // Run playwright to capture screenshots
+        // pages are validated against whitelist, safe to use in grep pattern
         const pageArg = pages.includes('all') ? '' : `--grep "${pages.join('|')}"`
         execSync(
           `PLAYWRIGHT_BASE_URL=${previewUrl} npx playwright test tests/e2e/capture-screenshots.spec.ts --project=chromium ${pageArg}`,
@@ -1184,8 +1391,24 @@ ${result.slice(-500)}`
     case 'run_e2e_tests': {
       if (!previewUrl) return 'Error: VERCEL_PREVIEW_URL not set - cannot run E2E tests'
 
-      const specs = (input.specs as string[] | undefined) || []
-      const specArg = specs.length > 0 ? specs.join(' ') : 'tests/e2e/design-system.spec.ts'
+      // Security: Validate spec paths
+      const rawSpecs = (input.specs as string[] | undefined) || []
+      let specArg = 'tests/e2e/design-system.spec.ts' // Safe default
+
+      if (rawSpecs.length > 0) {
+        const specsValidation = validateTestPaths(rawSpecs)
+        if (!specsValidation.valid) {
+          return `Error: Invalid specs input - ${(specsValidation as { valid: false; error: string }).error}`
+        }
+        // Additional validation: specs must be in tests/ directory
+        for (const spec of specsValidation.paths) {
+          if (!spec.startsWith('tests/')) {
+            return `Error: Spec must be in tests/ directory: ${spec}`
+          }
+        }
+        specArg = specsValidation.paths.join(' ')
+      }
+
       console.log(`   🧪 Running E2E tests: ${specArg}`)
 
       try {
@@ -1254,9 +1477,24 @@ ${result.slice(-500)}`
     }
 
     case 'run_api_tests': {
-      const tests = (input.tests as string[] | undefined) || []
-      // Vitest uses file paths directly, not --grep (that's Jest/Mocha)
-      const testArg = tests.length > 0 ? tests.join(' ') : ''
+      // Security: Validate test paths
+      const rawTests = (input.tests as string[] | undefined) || []
+      let testArg = '' // Empty means run all API tests
+
+      if (rawTests.length > 0) {
+        const testsValidation = validateTestPaths(rawTests)
+        if (!testsValidation.valid) {
+          return `Error: Invalid tests input - ${(testsValidation as { valid: false; error: string }).error}`
+        }
+        // Additional validation: test files must be in tests/ directory
+        for (const test of testsValidation.paths) {
+          if (!test.startsWith('tests/')) {
+            return `Error: Test file must be in tests/ directory: ${test}`
+          }
+        }
+        testArg = testsValidation.paths.join(' ')
+      }
+
       console.log('   🔌 Running API tests...')
 
       try {
@@ -1390,23 +1628,40 @@ ${lowPriority.map((c: { type: string; reason: string; scope?: string[] }) => `- 
     }
 
     case 'run_dead_code_analysis': {
-      const scope = (input.scope as string[] | undefined) || []
+      // Security: Validate scope paths
+      const rawScope = (input.scope as string[] | undefined) || []
+      let validatedScope: string[] = []
+
+      if (rawScope.length > 0) {
+        const scopeValidation = validateTestPaths(rawScope)
+        if (!scopeValidation.valid) {
+          return `Error: Invalid scope - ${(scopeValidation as { valid: false; error: string }).error}`
+        }
+        // Additional validation: paths must be within repo (no .. or absolute paths)
+        for (const p of scopeValidation.paths) {
+          if (p.startsWith('/')) {
+            return `Error: Absolute paths not allowed: ${p}`
+          }
+        }
+        validatedScope = scopeValidation.paths
+      }
+
       console.log('   🗑️ Running dead code analysis...')
 
       try {
         // Get changed files if no scope specified
         let filesToCheck: string[] = []
 
-        if (scope.length === 0) {
-          // No scope - use changed files
+        if (validatedScope.length === 0) {
+          // No scope - use changed files via git (safe: git command, no user input)
           const changedFiles = execSync(
             `git diff --name-only origin/${baseBranch}...HEAD | grep -E '\\.(ts|tsx)$' || true`,
             { encoding: 'utf-8' }
           ).trim().split('\n').filter(Boolean)
           filesToCheck = changedFiles
         } else {
-          // Expand directories to files using Node.js helper
-          for (const path of scope) {
+          // Expand directories to files using Node.js helper (no shell)
+          for (const path of validatedScope) {
             if (!existsSync(path)) continue
             const stat = statSync(path)
             if (stat.isDirectory()) {
@@ -1436,17 +1691,25 @@ ${lowPriority.map((c: { type: string; reason: string; scope?: string[] }) => `- 
           const exports = content.matchAll(/export\s+(?:const|function|class|type|interface)\s+(\w+)/g)
           for (const match of exports) {
             const exportName = match[1]
-            // Search for usage in other files
+            // exportName is guaranteed to be \w+ (word chars only) from regex
+
+            // Security: Validate that exportName is a valid identifier
+            const identValidation = validateIdentifier(exportName)
+            if (!identValidation.valid) continue // Skip invalid identifiers
+
+            // Search for usage using execFileSync (no shell injection)
             try {
-              const usage = execSync(
-                `rg '\\b${exportName}\\b' --type ts -l 2>/dev/null | grep -v '${file}' | head -1 || true`,
-                { encoding: 'utf-8' }
-              ).trim()
+              const usage = execFileSync(
+                'rg',
+                [`\\b${exportName}\\b`, '--type', 'ts', '-l'],
+                { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+              ).trim().split('\n').filter(f => f && f !== file)[0] || ''
+
               if (!usage) {
                 deadCode.push(`${file}: Exported '${exportName}' may be unused`)
               }
             } catch {
-              // Ignore search errors
+              // Ignore search errors (rg returns non-zero when no matches)
             }
           }
         }
@@ -1584,12 +1847,29 @@ ${totalMissing > 0 ? `⚠️ ${totalMissing} missing translation(s) found` : ''}
     }
 
     case 'run_accessibility_audit': {
-      const components = (input.components as string[] | undefined) || []
+      // Security: Validate component paths
+      const rawComponents = (input.components as string[] | undefined) || []
+      let validatedComponents: string[] = []
+
+      if (rawComponents.length > 0) {
+        const componentsValidation = validateTestPaths(rawComponents)
+        if (!componentsValidation.valid) {
+          return `Error: Invalid components - ${(componentsValidation as { valid: false; error: string }).error}`
+        }
+        // Additional validation: must be in src/components
+        for (const c of componentsValidation.paths) {
+          if (!c.startsWith('src/components/') && !c.startsWith('src/app/')) {
+            return `Error: Component path must be in src/components/ or src/app/: ${c}`
+          }
+        }
+        validatedComponents = componentsValidation.paths
+      }
+
       console.log('   ♿ Running accessibility audit...')
 
       try {
         // Get changed component files
-        let filesToCheck: string[] = components
+        let filesToCheck: string[] = validatedComponents
         if (filesToCheck.length === 0) {
           const changedFiles = execSync(
             `git diff --name-only origin/${baseBranch}...HEAD | grep -E 'src/components/.*\\.tsx$' || true`,
@@ -2105,14 +2385,22 @@ You have ${TOOLS.length} tools available. Call **list_available_tools** if you n
 | list_available_tools | List all tools with descriptions |
 | suggest_capability | Suggest a tool/capability you wish you had |
 
-## IMPORTANT: How to Use Tools
+## CRITICAL: How to Use Tools
 
-**Call tools directly** - do NOT search for them in code. For example:
-- ✅ CORRECT: Call \`get_pre_verdict_check({})\` directly
-- ❌ WRONG: Using \`search_code({ query: "get_pre_verdict_check" })\` to find the tool
+**Call tools directly by name** - NEVER search for tool implementations in code.
 
-If a search returns "No matches found" 2-3 times for the same pattern, STOP searching and move on.
-Don't waste iterations searching for things that don't exist.
+NEVER DO THIS (wastes iterations):
+- \`search_code({ query: "case 'run_e2e_tests'" })\` ❌ searching for tool implementation
+- \`search_code({ query: "get_pre_verdict_check" })\` ❌ searching for tool name
+- \`search_code({ query: "execSync" })\` ❌ searching how tools execute internally
+
+ALWAYS DO THIS (correct usage):
+- \`run_e2e_tests({})\` ✅ call the tool directly
+- \`get_pre_verdict_check({})\` ✅ call the tool directly
+- \`read_file({ path: "src/..." })\` ✅ use tools for their intended purpose
+
+Tools are available to you - just call them. Don't search for their implementations.
+If a search returns "No matches found" twice, STOP and move on.
 
 ## Workflow
 
