@@ -78,3 +78,4 @@ scripts/debug-spond-messages.ts
 scripts/test-models.ts
 scripts/test-models-challenge.ts
 scripts/compare-quality.ts
+scripts/test-verdict-models.ts

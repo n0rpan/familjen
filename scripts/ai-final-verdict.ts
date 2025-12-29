@@ -2105,9 +2105,18 @@ You have ${TOOLS.length} tools available. Call **list_available_tools** if you n
 | list_available_tools | List all tools with descriptions |
 | suggest_capability | Suggest a tool/capability you wish you had |
 
+## IMPORTANT: How to Use Tools
+
+**Call tools directly** - do NOT search for them in code. For example:
+- ✅ CORRECT: Call \`get_pre_verdict_check({})\` directly
+- ❌ WRONG: Using \`search_code({ query: "get_pre_verdict_check" })\` to find the tool
+
+If a search returns "No matches found" 2-3 times for the same pattern, STOP searching and move on.
+Don't waste iterations searching for things that don't exist.
+
 ## Workflow
 
-1. **First**: Call **get_pre_verdict_check** to see what quick checks already ran
+1. **First**: Call **get_pre_verdict_check({})** directly to see quick check results
 2. **Then**: Review findings from reviewers above
 3. **Investigate**: Use read_file/search_code to verify issues are real
 4. **Override if needed**: Use run_* tools to run tests the selector skipped
