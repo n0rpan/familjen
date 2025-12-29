@@ -13,7 +13,7 @@
  * - isFetching: actively fetching data
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
 import { formatDateISO } from '@/lib/utils'
@@ -46,14 +46,25 @@ export function useExternalEvents(options: UseExternalEventsOptions = {}): UseEx
   const [lastFetchKey, setLastFetchKey] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // Track abort controller for cleanup
+  const abortControllerRef = useRef<AbortController | null>(null)
+
   const startDateStr = startDate ? formatDateISO(startDate) : null
   const endDateStr = endDate ? formatDateISO(endDate) : null
 
-  // Generate a key for the current fetch parameters
-  const currentFetchKey = `${household?.id}-${startDateStr}-${endDateStr}`
+  // Memoize fetch key to prevent unnecessary re-renders
+  const currentFetchKey = useMemo(
+    () => `${household?.id}-${startDateStr}-${endDateStr}`,
+    [household?.id, startDateStr, endDateStr]
+  )
 
   const fetchData = useCallback(async () => {
     if (isDemo || !supabase || !household?.id) return
+
+    // Abort any pending request
+    abortControllerRef.current?.abort()
+    abortControllerRef.current = new AbortController()
+    const { signal } = abortControllerRef.current
 
     setIsFetching(true)
     setError(null)
@@ -64,6 +75,9 @@ export function useExternalEvents(options: UseExternalEventsOptions = {}): UseEx
         .from('external_integrations')
         .select('id')
         .eq('household_id', household.id)
+
+      // Check if request was aborted
+      if (signal.aborted) return
 
       if (!integrations || integrations.length === 0) {
         setEvents([])
@@ -91,16 +105,25 @@ export function useExternalEvents(options: UseExternalEventsOptions = {}): UseEx
 
       const { data, error: fetchError } = await query
 
+      // Check if request was aborted
+      if (signal.aborted) return
+
       if (fetchError) throw fetchError
 
       setEvents(data || [])
       setLastFetchKey(currentFetchKey)
     } catch (err) {
+      // Ignore abort errors
+      if (err instanceof Error && err.name === 'AbortError') return
+
       console.error('Error fetching external events:', err)
       setError(err instanceof Error ? err.message : 'Failed to load events')
       setLastFetchKey(currentFetchKey)
     } finally {
-      setIsFetching(false)
+      // Only update if not aborted
+      if (!abortControllerRef.current?.signal.aborted) {
+        setIsFetching(false)
+      }
     }
   }, [isDemo, supabase, household?.id, startDateStr, endDateStr, currentFetchKey])
 
@@ -108,6 +131,11 @@ export function useExternalEvents(options: UseExternalEventsOptions = {}): UseEx
   useEffect(() => {
     if (!isDemo && household?.id && lastFetchKey !== currentFetchKey) {
       fetchData()
+    }
+
+    // Cleanup on unmount or when dependencies change
+    return () => {
+      abortControllerRef.current?.abort()
     }
   }, [isDemo, household?.id, lastFetchKey, currentFetchKey, fetchData])
 

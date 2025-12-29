@@ -12,7 +12,7 @@
  * - isFetching: actively fetching data
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
 import { formatDateISO, type Holiday } from '@/lib/utils'
@@ -44,14 +44,25 @@ export function useHolidays(options: UseHolidaysOptions = {}): UseHolidaysReturn
   const [lastFetchKey, setLastFetchKey] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // Track abort controller for cleanup
+  const abortControllerRef = useRef<AbortController | null>(null)
+
   const startDateStr = startDate ? formatDateISO(startDate) : null
   const endDateStr = endDate ? formatDateISO(endDate) : null
 
-  // Generate a key for the current fetch parameters
-  const currentFetchKey = `${household?.id}-${startDateStr}-${endDateStr}`
+  // Memoize fetch key to prevent unnecessary re-renders
+  const currentFetchKey = useMemo(
+    () => `${household?.id}-${startDateStr}-${endDateStr}`,
+    [household?.id, startDateStr, endDateStr]
+  )
 
   const fetchData = useCallback(async () => {
     if (isDemo || !supabase || !household?.id) return
+
+    // Abort any pending request
+    abortControllerRef.current?.abort()
+    abortControllerRef.current = new AbortController()
+    const { signal } = abortControllerRef.current
 
     setIsFetching(true)
     setError(null)
@@ -76,6 +87,9 @@ export function useHolidays(options: UseHolidaysOptions = {}): UseHolidaysReturn
 
       const { data, error: fetchError } = await query
 
+      // Check if request was aborted
+      if (signal.aborted) return
+
       if (fetchError) {
         // Calendar events table might not exist in all environments
         if (fetchError.code === '42P01') {
@@ -97,11 +111,17 @@ export function useHolidays(options: UseHolidaysOptions = {}): UseHolidaysReturn
       setHolidays(holidayData)
       setLastFetchKey(currentFetchKey)
     } catch (err) {
+      // Ignore abort errors
+      if (err instanceof Error && err.name === 'AbortError') return
+
       console.error('Error fetching holidays:', err)
       setError(err instanceof Error ? err.message : 'Failed to load holidays')
       setLastFetchKey(currentFetchKey)
     } finally {
-      setIsFetching(false)
+      // Only update if not aborted
+      if (!abortControllerRef.current?.signal.aborted) {
+        setIsFetching(false)
+      }
     }
   }, [isDemo, supabase, household?.id, startDateStr, endDateStr, currentFetchKey])
 
@@ -109,6 +129,11 @@ export function useHolidays(options: UseHolidaysOptions = {}): UseHolidaysReturn
   useEffect(() => {
     if (!isDemo && household?.id && lastFetchKey !== currentFetchKey) {
       fetchData()
+    }
+
+    // Cleanup on unmount or when dependencies change
+    return () => {
+      abortControllerRef.current?.abort()
     }
   }, [isDemo, household?.id, lastFetchKey, currentFetchKey, fetchData])
 
