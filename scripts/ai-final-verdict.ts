@@ -286,6 +286,15 @@ const TOOLS: Tool[] = [
     }
   },
   {
+    name: 'get_pre_verdict_check',
+    description: 'Get results from the pre-verdict check (fast LLM pass). Includes quick check results, selector review, and recommendations. Use this FIRST before running additional tests.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
     name: 'run_visual_validation',
     description: 'Run visual validation tests that were skipped. Use when you suspect UI issues not covered by the selector. Returns screenshots and validation results.',
     input_schema: {
@@ -967,6 +976,45 @@ ${(selection.changedFiles || []).slice(0, 20).join('\n')}${(selection.changedFil
         return result
       } catch (e) {
         return `Error reading test selection: ${e}`
+      }
+    }
+
+    case 'get_pre_verdict_check': {
+      const preVerdictPath = 'ci-state/pre-verdict-check.json'
+      if (!existsSync(preVerdictPath)) {
+        return 'No pre-verdict check results found. The pre-verdict check may not have run.'
+      }
+      try {
+        const preVerdict = JSON.parse(readFileSync(preVerdictPath, 'utf-8'))
+
+        const quickChecks = preVerdict.quickChecks || []
+        const passed = quickChecks.filter((c: { status: string }) => c.status === 'pass').length
+        const failed = quickChecks.filter((c: { status: string }) => c.status === 'fail').length
+        const warned = quickChecks.filter((c: { status: string }) => c.status === 'warn').length
+
+        let result = `## Pre-Verdict Check Results (Fast LLM Pass)
+
+**Recommendation:** ${preVerdict.recommendation?.toUpperCase() || 'UNKNOWN'}
+**Reasoning:** ${preVerdict.reasoning || 'No reasoning provided'}
+
+### Quick Checks (${quickChecks.length})
+✅ ${passed} passed | ❌ ${failed} failed | ⚠️ ${warned} warnings
+
+${quickChecks.filter((c: { status: string }) => c.status !== 'pass').map((c: { check: string; status: string; message: string; details?: string }) =>
+  `- [${c.status.toUpperCase()}] ${c.check}: ${c.message}${c.details ? `\n  Details: ${c.details}` : ''}`
+).join('\n') || 'All checks passed'}
+
+### Selector Review
+**Verified:** ${preVerdict.selectorReview?.verified ? 'Yes' : 'No'}
+${preVerdict.selectorReview?.concerns?.length > 0 ? `**Concerns:**\n${preVerdict.selectorReview.concerns.map((c: string) => `- ${c}`).join('\n')}` : ''}
+${preVerdict.selectorReview?.suggestions?.length > 0 ? `**Suggestions:**\n${preVerdict.selectorReview.suggestions.map((s: string) => `- ${s}`).join('\n')}` : ''}
+
+### Additional Context
+${Object.entries(preVerdict.additionalContext || {}).map(([key, value]) => `- **${key}:** ${value}`).join('\n') || 'No additional context'}`
+
+        return result
+      } catch (e) {
+        return `Error reading pre-verdict check: ${e}`
       }
     }
 

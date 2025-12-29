@@ -930,13 +930,59 @@ jobs:
           echo "✓ Migration validation complete"
 
   # ============================================
+  # PRE-VERDICT CHECK - Fast LLM pass before expensive supervisor
+  # Reviews selector decisions, runs quick checks, gathers context
+  # ============================================
+  pre-verdict-check:
+    name: 🔍 Pre-Verdict Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [smart-selector, unit-tests]
+    if: github.event_name == 'pull_request'
+    continue-on-error: true  # Non-blocking - just provides context
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download test selection
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: test-selection
+          path: ci-state/
+
+      - name: Run pre-verdict check
+        run: npx tsx scripts/ai-pre-verdict-check.ts
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}
+          VERCEL_PREVIEW_URL: ${{ needs.smart-selector.outputs.preview_url || '' }}
+
+      - name: Upload pre-verdict results
+        uses: actions/upload-artifact@v4
+        with:
+          name: pre-verdict-check
+          path: ci-state/pre-verdict-check.json
+          retention-days: 7
+
+  # ============================================
   # FINAL VERDICT - The only job that can block PRs
   # ============================================
   final-verdict:
     name: 🎯 Final AI Verdict
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [migration-review, ai-code-review, visual-validation, e2e-preview, api-tests]
+    needs: [migration-review, ai-code-review, visual-validation, e2e-preview, api-tests, pre-verdict-check]
     if: github.event_name == 'pull_request' && always()
     # This job CAN fail and will block the PR
 
@@ -980,6 +1026,14 @@ jobs:
         continue-on-error: true
         with:
           name: test-selection
+          path: ci-state/
+
+      # Download pre-verdict check results (fast LLM preliminary analysis)
+      - name: Download pre-verdict check
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: pre-verdict-check
           path: ci-state/
 
       - name: Create ai-reviews directory
