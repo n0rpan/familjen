@@ -156,7 +156,18 @@ Respond ONLY with a JSON array like:
       jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
     }
 
-    const results: LLMDuplicateResult[] = JSON.parse(jsonStr)
+    let results: LLMDuplicateResult[]
+    try {
+      results = JSON.parse(jsonStr)
+    } catch (parseError) {
+      console.error('[Deduplication] Failed to parse LLM response as JSON:', parseError)
+      return []
+    }
+
+    if (!Array.isArray(results)) {
+      console.error('[Deduplication] LLM response is not an array')
+      return []
+    }
 
     // Validate and map results
     return results.map((r) => ({
