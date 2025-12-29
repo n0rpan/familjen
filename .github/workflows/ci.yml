@@ -109,7 +109,7 @@ jobs:
         if: always()
         continue-on-error: true
         run: |
-          curl -L -X POST "${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook" \
+          curl -L --post301 --post302 -X POST "${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook" \
             -H "Content-Type: application/json" \
             -H "x-ci-secret: ${{ secrets.CI_WEBHOOK_SECRET }}" \
             -d '{
