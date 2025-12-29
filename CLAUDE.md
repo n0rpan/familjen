@@ -786,14 +786,14 @@ The smart selector can recommend additional checks based on PR context:
 
 **How it works:**
 1. Smart selector analyzes PR and recommends checks in `ci-state/test-selection.json`
-2. Pre-verdict check runs high-priority extended checks automatically
+2. Pre-verdict check runs ALL recommended extended checks automatically
 3. Results saved to `ci-state/pre-verdict-check.json` for supervisor
 4. Supervisor reviews findings via `get_pre_verdict_check` tool
 
-**Priority levels:**
-- **High**: Automatically run by pre-verdict check
-- **Medium**: Recommended, supervisor can run if needed
-- **Low**: Nice to have, not critical
+**Priority levels** (for supervisor context, all are run by pre-verdict):
+- **High**: Critical for this PR type
+- **Medium**: Recommended based on changes
+- **Low**: Nice to have
 
 ### Pre-Verdict Check
 
@@ -802,7 +802,7 @@ The pre-verdict check (`ai-pre-verdict-check.ts`) is a **fast, cheap LLM pass** 
 **What it does:**
 1. **Quick checks** (no LLM): TypeScript compilation, preview health, pattern detection
 2. **Selector review**: Fast LLM verifies skip decisions make sense
-3. **Extended checks**: Runs high-priority checks recommended by selector
+3. **Extended checks**: Runs all checks recommended by selector
 4. **Context gathering**: Identifies high-risk changes for supervisor
 
 **Extended checks run:**

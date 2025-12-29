@@ -376,13 +376,17 @@ async function runExtendedChecks(
   changedFiles: string[]
 ): Promise<ExtendedCheckResult[]> {
   const results: ExtendedCheckResult[] = []
-  const extendedChecks = selection.extendedChecks || []
+  const checksToRun = selection.extendedChecks || []
 
-  // Only run high priority checks (to save time/cost)
-  const highPriorityChecks = extendedChecks.filter(c => c.priority === 'high')
+  // Run ALL extended checks the selector recommends
+  // The selector already decided what's relevant - we execute all of them
+  if (checksToRun.length === 0) {
+    console.log('   No extended checks recommended by selector')
+    return results
+  }
 
-  for (const check of highPriorityChecks) {
-    console.log(`   Running extended check: ${check.type}...`)
+  for (const check of checksToRun) {
+    console.log(`   Running ${check.type} (${check.priority})...`)
 
     try {
       switch (check.type) {
