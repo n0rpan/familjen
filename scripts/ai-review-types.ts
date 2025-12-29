@@ -47,6 +47,10 @@ export type ReviewerType =
   | 'api-tests'
   | 'e2e-tests'         // UAT on demo/mock data
   | 'demo-quality'
+  | 'security-review'   // AI security scanner
+  | 'dependency-review' // AI dependency analysis
+  | 'pr-quality'        // PR description, size, commits
+  | 'bundle-size'       // Bundle size tracking
 
 export type ReviewerVerdict =
   | 'PASS'              // No issues found
@@ -92,6 +96,9 @@ export type IssueCategory =
   | 'code-quality'       // Style, patterns, best practices
   | 'test-failure'       // Test didn't pass
   | 'demo-quality'       // Demo data issues
+  | 'intent-mismatch'    // PR intent not visible in UI
+  | 'intent-verified'    // PR intent confirmed in UI
+  | 'ci-infrastructure'  // CI pipeline issues
 
 // ============================================
 // FINAL VERDICT OUTPUT

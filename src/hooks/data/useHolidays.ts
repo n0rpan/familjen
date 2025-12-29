@@ -49,20 +49,21 @@ export function useHolidays(options: UseHolidaysOptions = {}): UseHolidaysReturn
 
     try {
       // Fetch calendar events that are holidays
+      // Schema: calendar_events has columns: date, name, event_type (not event_date, title)
       let query = supabase
         .from('calendar_events')
-        .select('*')
-        .eq('household_id', household.id)
+        .select('date, name, event_type')
+        .or(`household_id.eq.${household.id},household_id.is.null`) // Include system holidays
         .in('event_type', ['holiday', 'birthday', 'flag_day'])
 
       if (startDateStr) {
-        query = query.gte('event_date', startDateStr)
+        query = query.gte('date', startDateStr)
       }
       if (endDateStr) {
-        query = query.lte('event_date', endDateStr)
+        query = query.lte('date', endDateStr)
       }
 
-      query = query.order('event_date', { ascending: true })
+      query = query.order('date', { ascending: true })
 
       const { data, error: fetchError } = await query
 
@@ -78,8 +79,8 @@ export function useHolidays(options: UseHolidaysOptions = {}): UseHolidaysReturn
 
       // Convert to Holiday format (map flag_day to holiday)
       const holidayData: Holiday[] = (data || []).map(e => ({
-        date: e.event_date,
-        name: e.title || '',
+        date: e.date,
+        name: e.name || '',
         type: (e.event_type === 'birthday' ? 'birthday' : 'holiday') as 'holiday' | 'birthday',
       }))
 

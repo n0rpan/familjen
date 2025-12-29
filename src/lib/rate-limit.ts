@@ -45,6 +45,8 @@ export const RATE_LIMITS = {
   mykidTestConnection: { limit: 5, windowMs: 60 * 1000 },
   // Manual URL fetch - 10/minute (external fetch + AI processing)
   urlFetch: { limit: 10, windowMs: 60 * 1000 },
+  // CI webhook - moderate, 60/minute (each PR can generate several events)
+  ciWebhook: { limit: 60, windowMs: 60 * 1000 },
 } as const
 
 // Demo mode rate limits - stricter to prevent abuse

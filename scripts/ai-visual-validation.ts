@@ -1,6 +1,6 @@
 #!/usr/bin/env npx tsx
 /**
- * AI Visual Validation (No Baselines Needed)
+ * AI Visual Validation (Intent-Aware)
  *
  * IMPORTANT: This script is NON-BLOCKING.
  * - It reports findings but does NOT fail the CI
@@ -8,14 +8,16 @@
  * - Exit 0 = review completed (even if issues found)
  * - Exit 1 = script itself failed (API error, couldn't run)
  *
- * Uses AI vision to evaluate if screenshots "look right" based on:
- * - Design system compliance
- * - Expected content visibility
- * - Mobile usability for busy parents
- * - Norwegian app context
+ * INTENT-AWARE VALIDATION:
+ * Instead of just checking "does this look ok?", this script:
+ * 1. Reads the PR diff to understand WHAT changed
+ * 2. Generates EXPECTATIONS based on what the PR claims to do
+ * 3. Validates screenshots against those specific expectations
+ * 4. Reports mismatches between intent and reality
  *
- * Philosophy: "We don't need baseline screenshots. AI can tell us if the UI
- * looks broken, follows our design system, and shows the right content."
+ * Example: If PR says "Add delete button to user profile", the validation
+ * will specifically look for a delete button on the profile page and flag
+ * it if missing - not just do a generic "looks ok" check.
  *
  * Usage:
  *   npm run ai:visual-validate
@@ -24,7 +26,8 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
-import { AI_MODELS, SCHEMAS, fetchWithStructuredOutput } from './ai-config'
+import { execFileSync } from 'child_process'
+import { AI_MODELS, fetchWithStructuredOutput, callOpenRouter } from './ai-config'
 import {
   type ReviewerOutput,
   type Finding,
@@ -35,6 +38,30 @@ import {
 // ============================================
 // Types
 // ============================================
+
+interface PRContext {
+  diff: string
+  description: string
+  changedFiles: string[]
+  uiChanges: string[] // Extracted UI-related changes
+}
+
+interface PRDerivedExpectation {
+  page: string // Which page this applies to (home, week, settings, etc.)
+  description: string // What the PR claims to change
+  shouldSee: string[] // Specific elements that should be visible
+  shouldNotSee: string[] // Elements that should NOT be visible (removed features)
+  visualChanges: string[] // Expected visual differences from before
+}
+
+interface IntentValidationResult {
+  prExpectation: PRDerivedExpectation
+  met: boolean
+  foundElements: string[]
+  missingElements: string[]
+  unexpectedElements: string[]
+  explanation: string
+}
 
 interface PageExpectation {
   name: string
@@ -290,6 +317,277 @@ When reviewing, focus on ACTUAL issues like:
 - Actual functionality problems visible in the UI
 - Content that should be visible but is incorrectly hidden or broken
 `
+
+// ============================================
+// PR Context & Intent-Aware Expectations
+// ============================================
+
+/**
+ * Get the PR context (diff, description, changed files)
+ */
+function getPRContext(baseBranch = 'origin/main'): PRContext | null {
+  try {
+    // Get the diff using execFileSync (safe, no shell injection)
+    let diff = ''
+    try {
+      diff = execFileSync('git', [
+        'diff', `${baseBranch}...HEAD`, '--', '*.tsx', '*.ts', '*.css'
+      ], { encoding: 'utf-8', maxBuffer: 1024 * 1024 }).slice(0, 50000)
+    } catch {
+      // Try without the range if that fails
+      try {
+        diff = execFileSync('git', [
+          'diff', 'HEAD~5', '--', '*.tsx', '*.ts', '*.css'
+        ], { encoding: 'utf-8', maxBuffer: 1024 * 1024 }).slice(0, 50000)
+      } catch {
+        return null
+      }
+    }
+
+    // Get changed files
+    let changedFiles: string[] = []
+    try {
+      const filesOutput = execFileSync('git', [
+        'diff', '--name-only', `${baseBranch}...HEAD`
+      ], { encoding: 'utf-8' })
+      changedFiles = filesOutput.split('\n').filter(Boolean)
+    } catch {
+      changedFiles = []
+    }
+
+    // Get PR description from environment (set by GitHub Actions)
+    const description = process.env.PR_BODY || process.env.PR_DESCRIPTION || ''
+
+    // Extract UI-related changes from diff
+    const uiChanges = extractUIChangesFromDiff(diff)
+
+    return { diff, description, changedFiles, uiChanges }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Extract UI-related changes from the diff
+ */
+function extractUIChangesFromDiff(diff: string): string[] {
+  const uiChanges: string[] = []
+
+  const lines = diff.split('\n')
+  for (const line of lines) {
+    if (line.startsWith('+') && !line.startsWith('+++')) {
+      // Check for button additions
+      if (line.includes('<button') || line.includes('<Button')) {
+        const match = line.match(/>(.*?)<\/button/i) || line.match(/>([^<]+)</i)
+        if (match) {
+          uiChanges.push(`Added button: "${match[1].trim()}"`)
+        } else {
+          uiChanges.push('Added a button element')
+        }
+      }
+      // Check for new text content
+      if (line.includes('{t.') || line.includes("t('")) {
+        uiChanges.push('Added translated text content')
+      }
+      // Check for modal/dialog
+      if (line.includes('Modal') || line.includes('Dialog')) {
+        uiChanges.push('Added modal or dialog component')
+      }
+      // Check for form elements
+      if (line.includes('<input') || line.includes('<Input') || line.includes('<select')) {
+        uiChanges.push('Added form input element')
+      }
+      // Check for icons
+      if (line.includes('Icon') || line.includes('icon')) {
+        uiChanges.push('Added or modified icons')
+      }
+    }
+    if (line.startsWith('-') && !line.startsWith('---')) {
+      // Check for removed elements
+      if (line.includes('<button') || line.includes('<Button')) {
+        uiChanges.push('Removed a button element')
+      }
+    }
+  }
+
+  return Array.from(new Set(uiChanges)) // Dedupe
+}
+
+/**
+ * Generate PR-specific expectations using AI
+ */
+async function generatePRExpectations(context: PRContext): Promise<PRDerivedExpectation[]> {
+  const prompt = `You are analyzing a PR to understand what UI changes it makes.
+
+## PR Description
+${context.description || 'No description provided'}
+
+## Changed Files
+${context.changedFiles.slice(0, 20).join('\n')}
+
+## Detected UI Changes
+${context.uiChanges.join('\n') || 'None detected'}
+
+## Diff Preview (UI-related files)
+\`\`\`diff
+${context.diff.slice(0, 15000)}
+\`\`\`
+
+## Your Task
+Based on this PR, identify what VISUAL changes should be visible in screenshots.
+
+For each affected page, specify:
+1. **page**: Which page is affected (home, week, feed, settings, recipes, shopping, admin)
+2. **description**: What the PR changes on this page
+3. **shouldSee**: Specific UI elements that should now be visible
+4. **shouldNotSee**: UI elements that should be removed/hidden
+5. **visualChanges**: Expected visual differences
+
+Return JSON array:
+[{
+  "page": "home",
+  "description": "Adds delete button to pickup cards",
+  "shouldSee": ["Delete button or trash icon on pickup cards"],
+  "shouldNotSee": [],
+  "visualChanges": ["Pickup cards now have an action button area"]
+}]
+
+If no UI changes are visible (e.g., only backend changes), return: []
+
+Only return the JSON array.`
+
+  try {
+    const response = await callOpenRouter(AI_MODELS.fast, [
+      { role: 'user', content: prompt }
+    ], { temperature: 0, maxTokens: 2000 })
+
+    const jsonMatch = response.match(/\[[\s\S]*\]/)
+    if (!jsonMatch) return []
+
+    const parsed = JSON.parse(jsonMatch[0]) as PRDerivedExpectation[]
+    return parsed.filter(e => e.page && e.description)
+  } catch (error) {
+    console.warn('⚠️ Could not generate PR expectations:', error)
+    return []
+  }
+}
+
+/**
+ * Schema for intent validation
+ */
+const INTENT_VALIDATION_SCHEMA = {
+  type: 'object' as const,
+  properties: {
+    expectationMet: {
+      type: 'boolean' as const,
+      description: 'Whether the PR expectation is met in the screenshot',
+    },
+    foundElements: {
+      type: 'array' as const,
+      items: { type: 'string' as const },
+      description: 'Elements from shouldSee that were found',
+    },
+    missingElements: {
+      type: 'array' as const,
+      items: { type: 'string' as const },
+      description: 'Elements from shouldSee that were NOT found',
+    },
+    unexpectedIssues: {
+      type: 'array' as const,
+      items: { type: 'string' as const },
+      description: 'Any unexpected problems with the change',
+    },
+    explanation: {
+      type: 'string' as const,
+      description: 'Detailed explanation of what was found vs expected',
+    },
+    suggestion: {
+      type: 'string' as const,
+      description: 'Actionable suggestion if expectation not met',
+    },
+  },
+  required: ['expectationMet', 'foundElements', 'missingElements', 'explanation'],
+  additionalProperties: false,
+}
+
+/**
+ * Validate a screenshot against PR-derived expectations
+ */
+async function validateIntentExpectation(
+  screenshotPath: string,
+  expectation: PRDerivedExpectation
+): Promise<IntentValidationResult> {
+  const imageBuffer = fs.readFileSync(screenshotPath)
+  const base64Image = imageBuffer.toString('base64')
+
+  const prompt = `You are validating if a UI change was correctly implemented.
+
+## Expected Change
+**Page:** ${expectation.page}
+**What PR Claims:** ${expectation.description}
+
+## Should See (look for these)
+${expectation.shouldSee.map(s => `- ${s}`).join('\n') || '- No specific elements required'}
+
+## Should NOT See (these should be absent)
+${expectation.shouldNotSee.map(s => `- ${s}`).join('\n') || '- No elements to check for removal'}
+
+## Expected Visual Changes
+${expectation.visualChanges.map(s => `- ${s}`).join('\n') || '- No specific visual changes expected'}
+
+## Your Task
+Look at this screenshot and verify:
+1. Are the "Should See" elements actually visible?
+2. Are the "Should NOT See" elements correctly absent?
+3. Do the visual changes match what was expected?
+
+Be SPECIFIC about what you see. If something is missing, describe exactly where you looked.
+If the implementation looks different from expected but is functionally correct, note that.`
+
+  try {
+    const response = await fetchWithStructuredOutput<{
+      expectationMet: boolean
+      foundElements: string[]
+      missingElements: string[]
+      unexpectedIssues?: string[]
+      explanation: string
+      suggestion?: string
+    }>(
+      [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            {
+              type: 'image_url',
+              image_url: { url: `data:image/png;base64,${base64Image}` },
+            },
+          ],
+        },
+      ],
+      INTENT_VALIDATION_SCHEMA,
+      AI_MODELS.vision
+    )
+
+    return {
+      prExpectation: expectation,
+      met: response.expectationMet,
+      foundElements: response.foundElements,
+      missingElements: response.missingElements,
+      unexpectedElements: response.unexpectedIssues || [],
+      explanation: response.explanation + (response.suggestion ? ` Suggestion: ${response.suggestion}` : ''),
+    }
+  } catch (error) {
+    return {
+      prExpectation: expectation,
+      met: false,
+      foundElements: [],
+      missingElements: expectation.shouldSee,
+      unexpectedElements: [],
+      explanation: `Failed to validate: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    }
+  }
+}
 
 // ============================================
 // Validation Schema
@@ -608,8 +906,9 @@ async function main() {
   const startTime = Date.now()
   const args = process.argv.slice(2)
   let screenshotDir = 'tests/visual/current'
+  let baseBranch = 'origin/main'
 
-  console.log('🔍 AI Visual Validation (Non-Blocking)\n')
+  console.log('🔍 AI Visual Validation (Intent-Aware)\n')
 
   // Parse arguments
   for (let i = 0; i < args.length; i++) {
@@ -665,6 +964,61 @@ async function main() {
 
   console.log(`\n📷 Found ${screenshots.length} screenshots: ${screenshots.join(', ')}`)
 
+  // Get PR context for intent-aware validation
+  const prContext = getPRContext(baseBranch)
+  let prExpectations: PRDerivedExpectation[] = []
+  let intentResults: IntentValidationResult[] = []
+
+  if (prContext) {
+    console.log('\n🎯 INTENT-AWARE MODE')
+    console.log(`   Changed files: ${prContext.changedFiles.length}`)
+    console.log(`   UI changes detected: ${prContext.uiChanges.length}`)
+
+    if (prContext.uiChanges.length > 0) {
+      console.log(`   Detected: ${prContext.uiChanges.slice(0, 3).join(', ')}${prContext.uiChanges.length > 3 ? '...' : ''}`)
+    }
+
+    // Generate PR-specific expectations
+    console.log('\n   Generating expectations from PR diff...')
+    prExpectations = await generatePRExpectations(prContext)
+
+    if (prExpectations.length > 0) {
+      console.log(`   Found ${prExpectations.length} UI expectations:`)
+      for (const exp of prExpectations) {
+        console.log(`   - ${exp.page}: ${exp.description}`)
+      }
+
+      // Validate each expectation against matching screenshots
+      console.log('\n   Validating PR expectations against screenshots...')
+      for (const expectation of prExpectations) {
+        // Find matching screenshot
+        const matchingScreenshot = screenshots.find(s =>
+          s.startsWith(expectation.page) && s.endsWith('.png')
+        )
+
+        if (matchingScreenshot) {
+          const screenshotPath = path.join(screenshotDir, matchingScreenshot)
+          console.log(`   📸 Checking ${expectation.page}: "${expectation.description}"`)
+
+          const result = await validateIntentExpectation(screenshotPath, expectation)
+          intentResults.push(result)
+
+          const icon = result.met ? '✅' : '❌'
+          console.log(`      ${icon} ${result.met ? 'Expectation met' : 'Expectation NOT met'}`)
+          if (!result.met && result.missingElements.length > 0) {
+            console.log(`      Missing: ${result.missingElements.join(', ')}`)
+          }
+        } else {
+          console.log(`   ⚠️ No screenshot found for page: ${expectation.page}`)
+        }
+      }
+    } else {
+      console.log('   No UI-visible changes detected in PR')
+    }
+  } else {
+    console.log('\n📋 STATIC MODE (no PR context available)')
+  }
+
   try {
     const report = await validateAllScreenshots(screenshotDir)
 
@@ -675,7 +1029,36 @@ async function main() {
 
     // Convert to findings and determine verdict based on severity
     const findings = convertToFindings(report.results)
+
+    // Add intent validation findings
+    const intentFailed = intentResults.filter(r => !r.met)
+    for (const result of intentFailed) {
+      findings.push({
+        severity: 'critical',
+        category: 'intent-mismatch',
+        message: `[${result.prExpectation.page}] PR intent not met: ${result.prExpectation.description}. ${result.explanation}`,
+        file: `tests/visual/current/${result.prExpectation.page}.png`,
+      })
+    }
+
+    // Add info findings for met expectations
+    for (const result of intentResults.filter(r => r.met)) {
+      findings.push({
+        severity: 'info',
+        category: 'intent-verified',
+        message: `[${result.prExpectation.page}] PR intent verified: ${result.prExpectation.description}`,
+        file: `tests/visual/current/${result.prExpectation.page}.png`,
+      })
+    }
+
     const verdict = mapVerdict(report, findings)
+
+    // Build summary including intent validation
+    let summaryText = `Validated ${report.totalPages} pages - Score: ${report.averageScore}/100. ${report.passed} passed, ${report.warned} warnings, ${report.failed} failed.`
+    if (intentResults.length > 0) {
+      const intentMet = intentResults.filter(r => r.met).length
+      summaryText += ` Intent validation: ${intentMet}/${intentResults.length} expectations met.`
+    }
 
     // Save in new standardized format
     const output: ReviewerOutput = {
@@ -687,8 +1070,8 @@ async function main() {
       verdict,
       confidence: report.averageScore,
       findings,
-      summary: `Validated ${report.totalPages} pages - Score: ${report.averageScore}/100. ${report.passed} passed, ${report.warned} warnings, ${report.failed} failed.`,
-      raw: report,
+      summary: summaryText,
+      raw: { ...report, intentResults, prExpectations },
     }
     saveReviewerOutput(output)
 
@@ -701,6 +1084,10 @@ async function main() {
     console.log(`   ⚠️  Warnings: ${report.warned}`)
     console.log(`   ❌ Failed: ${report.failed}`)
     console.log(`   📈 Average score: ${report.averageScore}/100`)
+    if (intentResults.length > 0) {
+      const intentMet = intentResults.filter(r => r.met).length
+      console.log(`   🎯 Intent: ${intentMet}/${intentResults.length} expectations met`)
+    }
     console.log('')
     console.log(`   ${report.recommendation}`)
     console.log('='.repeat(50))

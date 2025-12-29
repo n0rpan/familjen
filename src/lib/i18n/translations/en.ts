@@ -558,6 +558,17 @@ export const en: TranslationStrings = {
     expiringToday: 'Expires today',
     assign: 'Assign',
     eventAssigned: 'Event assigned',
+    // CI Dashboard
+    ciDashboardTitle: 'CI/CD Dashboard',
+    ciDashboardDesc: 'AI-powered code review metrics and costs',
+    ciPRsReviewed: 'PRs Reviewed',
+    ciTotalCost: 'Total Cost',
+    ciAvgCost: 'Avg Cost/PR',
+    ciAccuracy: 'Accuracy',
+    ciCostTrend: 'Cost Trend (Last 7 Days)',
+    ciModelUsage: 'Model Usage',
+    ciRecentActivity: 'Recent CI Activity',
+    ciNoEvents: 'No CI events yet. Events will appear here when PRs are reviewed.',
   },
 
   // New household wizard

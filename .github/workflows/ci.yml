@@ -22,12 +22,224 @@ env:
 
 jobs:
   # ============================================
-  # STAGE 1: Fast checks (run in parallel)
+  # SMART TEST SELECTOR (runs first, decides what to test)
   # ============================================
-  lint:
-    name: Lint
+  smart-selector:
+    name: 🧠 Smart Test Selector
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 3
+    # Only run selector on PRs (push to main always runs protection tests)
+    if: github.event_name == 'pull_request'
+    outputs:
+      run_visual: ${{ steps.selector.outputs.run_visual_validation }}
+      run_e2e: ${{ steps.selector.outputs.run_e2e_tests }}
+      run_migration: ${{ steps.selector.outputs.run_migration_review }}
+      run_api: ${{ steps.selector.outputs.run_api_tests }}
+      run_code_review: ${{ steps.selector.outputs.run_code_review }}
+      run_dependency: ${{ steps.selector.outputs.run_dependency_review }}
+      run_security: ${{ steps.selector.outputs.run_security_review }}
+      run_pr_quality: ${{ steps.selector.outputs.run_pr_quality }}
+      suggested_labels: ${{ steps.labeler.outputs.labels }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for diff
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Download previous PR state if exists
+      - name: Download PR state artifact
+        uses: dawidd6/action-download-artifact@v3
+        continue-on-error: true
+        with:
+          workflow: ci.yml
+          name: pr-state-${{ github.event.pull_request.number }}
+          path: ci-state/
+          search_artifacts: true
+
+      - name: Run smart test selector
+        id: selector
+        run: npx tsx scripts/ai-test-selector.ts --base origin/${{ github.base_ref }}
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}
+          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+
+      - name: Run AI PR labeler
+        id: labeler
+        run: npx tsx scripts/ai-pr-labeler.ts
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}
+          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_PR_TITLE: ${{ github.event.pull_request.title }}
+          GITHUB_PR_BODY: ${{ github.event.pull_request.body }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+
+      - name: Apply suggested labels
+        if: steps.labeler.outputs.labels != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = '${{ steps.labeler.outputs.labels }}'.split(',').filter(l => l.trim())
+            if (labels.length === 0) return
+
+            console.log('Applying labels:', labels)
+            try {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels
+              })
+              console.log('✅ Labels applied successfully')
+            } catch (error) {
+              console.log('⚠️ Could not apply labels:', error.message)
+            }
+
+      - name: Send webhook for PR opened
+        if: always()
+        continue-on-error: true
+        run: |
+          curl -X POST "${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook" \
+            -H "Content-Type: application/json" \
+            -H "x-ci-secret: ${{ secrets.CI_WEBHOOK_SECRET }}" \
+            -d '{
+              "type": "review_started",
+              "pr_number": ${{ github.event.pull_request.number }},
+              "pr_title": "${{ github.event.pull_request.title }}",
+              "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+              "data": {
+                "labels": "${{ steps.labeler.outputs.labels }}"
+              }
+            }' || true
+
+      - name: Upload PR state
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-state-${{ github.event.pull_request.number }}
+          path: ci-state/
+          retention-days: 30
+
+      - name: Upload test selection
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-selection
+          path: ci-state/test-selection.json
+          retention-days: 7
+
+  # ============================================
+  # MERGE CHECK - Skip CI if coming from green PR
+  # ============================================
+  merge-check:
+    name: 🔍 Check Merge Status
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    outputs:
+      skip_ci: ${{ steps.check.outputs.skip_ci }}
+      pr_number: ${{ steps.check.outputs.pr_number }}
+
+    steps:
+      - name: Check if from merged PR
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Check if this push is from a merged PR
+            // Handles: merge commits, squash merges, and rebase merges
+            const commitMessage = context.payload.head_commit?.message || '';
+            const commitSha = context.payload.head_commit?.id || '';
+
+            // Check for force-run flag: [ci full] or [full ci] in commit message
+            if (/\[(ci full|full ci)\]/i.test(commitMessage)) {
+              console.log('Force-run flag detected: [ci full]');
+              console.log('Running full CI suite regardless of PR status');
+              core.setOutput('skip_ci', 'false');
+              return;
+            }
+
+            // Pattern 1: Standard merge commit
+            let prMatch = commitMessage.match(/Merge pull request #(\d+)/);
+
+            // Pattern 2: Squash merge (PR title + number in parentheses)
+            if (!prMatch) {
+              prMatch = commitMessage.match(/\(#(\d+)\)$/m);
+            }
+
+            // Pattern 3: Check if commit is associated with a PR via GitHub API
+            if (!prMatch && commitSha) {
+              try {
+                const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  commit_sha: commitSha,
+                });
+                if (prs.length > 0 && prs[0].merged) {
+                  prMatch = ['', prs[0].number.toString()];
+                  console.log(`Found associated merged PR #${prs[0].number} via API`);
+                }
+              } catch (e) {
+                console.log('Could not query associated PRs:', e.message);
+              }
+            }
+
+            if (!prMatch) {
+              console.log('Not a PR merge commit, running full CI');
+              console.log('Commit message:', commitMessage.slice(0, 100));
+              core.setOutput('skip_ci', 'false');
+              return;
+            }
+
+            const prNumber = prMatch[1];
+            core.setOutput('pr_number', prNumber);
+            console.log(`Detected merge from PR #${prNumber}`);
+
+            // Check if PR's CI passed
+            try {
+              const { data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: parseInt(prNumber),
+              });
+
+              // Get the final verdict check
+              const { data: checks } = await github.rest.checks.listForRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: pr.head.sha,
+                check_name: '🎯 Final AI Verdict',
+              });
+
+              const verdictCheck = checks.check_runs[0];
+              if (verdictCheck?.conclusion === 'success') {
+                console.log('PR CI passed, skipping redundant checks');
+                core.setOutput('skip_ci', 'true');
+              } else {
+                console.log('PR CI did not pass or verdict not found, running full CI');
+                console.log('Verdict check:', JSON.stringify(verdictCheck, null, 2));
+                core.setOutput('skip_ci', 'false');
+              }
+            } catch (error) {
+              console.log('Could not check PR status:', error.message);
+              core.setOutput('skip_ci', 'false');
+            }
+
+  # ============================================
+  # STAGE 1: Fast checks (combined for efficiency)
+  # ============================================
+  lint-typecheck:
+    name: 🔍 Lint & Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
 
@@ -39,26 +251,28 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run ESLint
-        run: npm run lint
-
-  typecheck:
-    name: Type Check
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run TypeScript compiler
-        run: npx tsc --noEmit
+      # Run lint and typecheck in parallel within same job
+      # Fail fast if either fails (no point continuing)
+      - name: Run ESLint and TypeScript in parallel
+        run: |
+          set -e
+          npm run lint &
+          LINT_PID=$!
+          npx tsc --noEmit &
+          TSC_PID=$!
+          LINT_EXIT=0
+          TSC_EXIT=0
+          wait $LINT_PID || LINT_EXIT=$?
+          wait $TSC_PID || TSC_EXIT=$?
+          if [ $LINT_EXIT -ne 0 ]; then
+            echo "❌ ESLint failed"
+            exit $LINT_EXIT
+          fi
+          if [ $TSC_EXIT -ne 0 ]; then
+            echo "❌ TypeScript check failed"
+            exit $TSC_EXIT
+          fi
+          echo "✅ Lint and typecheck passed"
 
   # ============================================
   # STAGE 2: Unit tests (after lint/typecheck)
@@ -67,7 +281,7 @@ jobs:
     name: Unit Tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [lint, typecheck]
+    needs: [lint-typecheck]
 
     steps:
       - uses: actions/checkout@v4
@@ -107,13 +321,17 @@ jobs:
   # ============================================
   # AI Migration Review (for PRs with migrations)
   # NON-BLOCKING: Final verdict decides if this blocks
+  # Uses smart selector output to determine if needed
   # ============================================
   migration-review:
     name: AI Migration Review
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [lint]
-    if: github.event_name == 'pull_request'
+    needs: [lint-typecheck, smart-selector]
+    # Run if: selector says run OR selector didn't run (push to main) AND there are migrations
+    if: |
+      github.event_name == 'pull_request' &&
+      (needs.smart-selector.outputs.run_migration == 'true' || needs.smart-selector.outputs.run_migration == '')
     continue-on-error: true  # Non-blocking - final verdict decides
 
     steps:
@@ -310,14 +528,182 @@ jobs:
             }
 
   # ============================================
+  # AI Security Review
+  # NON-BLOCKING: Final verdict decides if this blocks
+  # ============================================
+  security-review:
+    name: 🔒 AI Security Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    needs: [lint-typecheck, smart-selector]
+    # Run if: selector says run OR selector output is empty (fallback to conservative)
+    if: |
+      github.event_name == 'pull_request' &&
+      (needs.smart-selector.outputs.run_security == 'true' || needs.smart-selector.outputs.run_security == '')
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Create ai-reviews directory
+        run: mkdir -p ai-reviews
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run AI security review
+        run: npx tsx scripts/ai-security-review.ts --base origin/${{ github.base_ref }}
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_CAPABLE_MODEL: ${{ secrets.OPENROUTER_CAPABLE_MODEL }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+
+      - name: Write fallback status if no security review
+        if: always()
+        run: |
+          if [ ! -f "ai-reviews/security-review.json" ]; then
+            echo '{"reviewer":"security-review","status":"failed","verdict":"ERROR","confidence":0,"findings":[],"summary":"Security review did not run.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > ai-reviews/security-review.json
+          fi
+
+      - name: Upload review artifact for final verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-reviews-security
+          path: ai-reviews/
+          retention-days: 7
+          if-no-files-found: warn
+
+  # ============================================
+  # AI PR Quality Check
+  # Validates PR description, size, and commit messages
+  # NON-BLOCKING: Final verdict decides if this blocks
+  # Always runs (minimal cost, always useful feedback)
+  # ============================================
+  pr-quality:
+    name: 📋 PR Quality Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'pull_request'
+    # No smart-selector dependency - always runs (minimal cost)
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Create ai-reviews directory
+        run: mkdir -p ai-reviews
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run PR quality check
+        run: npx tsx scripts/ai-pr-quality.ts
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          GITHUB_PR_TITLE: ${{ github.event.pull_request.title }}
+          GITHUB_PR_BODY: ${{ github.event.pull_request.body }}
+          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
+
+      - name: Write fallback status if no PR quality check
+        if: always()
+        run: |
+          if [ ! -f "ai-reviews/pr-quality.json" ]; then
+            echo '{"reviewer":"pr-quality","status":"skipped","verdict":"PASS","confidence":100,"findings":[],"summary":"PR quality check did not run.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > ai-reviews/pr-quality.json
+          fi
+
+      - name: Upload review artifact for final verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-reviews-pr-quality
+          path: ai-reviews/
+          retention-days: 7
+          if-no-files-found: warn
+
+  # ============================================
+  # AI Dependency Review
+  # Reviews new/updated dependencies for security and license
+  # NON-BLOCKING: Final verdict decides if this blocks
+  # ============================================
+  dependency-review:
+    name: 📦 Dependency Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [lint-typecheck, smart-selector]
+    # Run if: selector says run OR selector output is empty (fallback to conservative)
+    if: |
+      github.event_name == 'pull_request' &&
+      (needs.smart-selector.outputs.run_dependency == 'true' || needs.smart-selector.outputs.run_dependency == '')
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Create ai-reviews directory
+        run: mkdir -p ai-reviews
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run AI dependency review
+        run: npx tsx scripts/ai-dependency-review.ts --base origin/${{ github.base_ref }}
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+
+      - name: Write fallback status if no dependency review
+        if: always()
+        run: |
+          if [ ! -f "ai-reviews/dependency-review.json" ]; then
+            echo '{"reviewer":"dependency-review","status":"skipped","verdict":"PASS","confidence":100,"findings":[],"summary":"No dependency changes.","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","model":"none","duration_ms":0}' > ai-reviews/dependency-review.json
+          fi
+
+      - name: Upload review artifact for final verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-reviews-dependency
+          path: ai-reviews/
+          retention-days: 7
+          if-no-files-found: warn
+
+  # ============================================
   # AI Visual Validation (No Baselines Needed)
   # ============================================
   visual-validation:
     name: AI Visual Validation
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [unit-tests]
-    if: github.event_name == 'pull_request'
+    needs: [unit-tests, smart-selector]
+    # Run if: selector says run OR selector skipped it (let supervisor override)
+    if: |
+      github.event_name == 'pull_request' &&
+      (needs.smart-selector.outputs.run_visual == 'true' || needs.smart-selector.outputs.run_visual == '')
     # Visual validation is advisory, not blocking. Reasons:
     # 1. New features may intentionally change UI (not a regression)
     # 2. AI vision models can have false positives
@@ -478,8 +864,11 @@ jobs:
     name: E2E Tests (Preview)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [unit-tests]
-    if: github.event_name == 'pull_request'
+    needs: [unit-tests, smart-selector]
+    # Run if: selector says run OR let supervisor decide
+    if: |
+      github.event_name == 'pull_request' &&
+      (needs.smart-selector.outputs.run_e2e == 'true' || needs.smart-selector.outputs.run_e2e == '')
     continue-on-error: true  # Non-blocking - final verdict decides
 
     steps:
@@ -657,9 +1046,18 @@ jobs:
     name: API Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [unit-tests]
-    # Run on both PRs and main branch
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: [unit-tests, smart-selector]
+    # Run if: PR and selector says run, OR push to main (protection)
+    # smart-selector only runs on PRs, but we need it in needs to access outputs
+    # On main, smart-selector is skipped so outputs are empty, but we hit the push condition
+    if: |
+      always() &&
+      needs.unit-tests.result == 'success' &&
+      (
+        (github.event_name == 'pull_request' &&
+         needs.smart-selector.outputs.run_api != 'false') ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      )
     continue-on-error: true  # Non-blocking - final verdict decides
 
     steps:
@@ -760,13 +1158,59 @@ jobs:
           echo "✓ Migration validation complete"
 
   # ============================================
+  # PRE-VERDICT CHECK - Fast LLM pass before expensive supervisor
+  # Reviews selector decisions, runs quick checks, gathers context
+  # ============================================
+  pre-verdict-check:
+    name: 🔍 Pre-Verdict Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [smart-selector, unit-tests]
+    if: github.event_name == 'pull_request'
+    continue-on-error: true  # Non-blocking - just provides context
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download test selection
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: test-selection
+          path: ci-state/
+
+      - name: Run pre-verdict check
+        run: npx tsx scripts/ai-pre-verdict-check.ts
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}
+          # Note: Preview URL not available here - runs in parallel with e2e-preview
+
+      - name: Upload pre-verdict results
+        uses: actions/upload-artifact@v4
+        with:
+          name: pre-verdict-check
+          path: ci-state/pre-verdict-check.json
+          retention-days: 7
+
+  # ============================================
   # FINAL VERDICT - The only job that can block PRs
   # ============================================
   final-verdict:
     name: 🎯 Final AI Verdict
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [migration-review, ai-code-review, visual-validation, e2e-preview, api-tests]
+    needs: [migration-review, ai-code-review, security-review, pr-quality, dependency-review, visual-validation, e2e-preview, api-tests, pre-verdict-check]
     if: github.event_name == 'pull_request' && always()
     # This job CAN fail and will block the PR
 
@@ -782,6 +1226,43 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Install Playwright browsers (needed if supervisor decides to run visual/e2e tests)
+      # Uses cache to avoid re-downloading on every run (~1.5 min savings)
+      - name: Get Playwright version
+        id: playwright-version
+        run: echo "version=$(npm ls @playwright/test --json | jq -r '.dependencies["@playwright/test"].version // empty')" >> $GITHUB_OUTPUT
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install chromium --with-deps
+
+      - name: Install Playwright deps (if cached)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      # Download test selection from smart-selector (for supervisor tools)
+      - name: Download test selection
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: test-selection
+          path: ci-state/
+
+      # Download pre-verdict check results (fast LLM preliminary analysis)
+      - name: Download pre-verdict check
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: pre-verdict-check
+          path: ci-state/
 
       - name: Create ai-reviews directory
         run: mkdir -p ai-reviews
@@ -845,6 +1326,9 @@ jobs:
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_VERDICT_MODEL: ${{ secrets.OPENROUTER_VERDICT_MODEL }}
+          OPENROUTER_VISION_MODEL: ${{ secrets.OPENROUTER_VISION_MODEL }}
+          OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}
+          OPENROUTER_TEST_MODEL: ${{ secrets.OPENROUTER_TEST_MODEL }}
           GITHUB_BASE_REF: ${{ github.base_ref }}
           GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_PR_TITLE: ${{ github.event.pull_request.title }}
@@ -941,3 +1425,60 @@ jobs:
                 body: comment
               })
             }
+
+      - name: Send verdict webhook
+        if: always()
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs')
+            let verdict = 'ERROR'
+            let summary = 'Verdict not available'
+            let cost = 0
+
+            try {
+              if (fs.existsSync('ai-reviews/final-verdict.json')) {
+                const data = JSON.parse(fs.readFileSync('ai-reviews/final-verdict.json', 'utf8'))
+                verdict = data.verdict || 'ERROR'
+                summary = data.summary || 'No summary available'
+                cost = data.total_cost_usd || 0
+              }
+            } catch (e) {
+              console.log('Could not read verdict:', e.message)
+            }
+
+            const webhookUrl = process.env.CI_WEBHOOK_URL
+            if (!webhookUrl) {
+              console.log('CI_WEBHOOK_URL not set, skipping webhook')
+              return
+            }
+
+            const payload = {
+              type: 'verdict',
+              pr_number: context.issue.number,
+              pr_title: context.payload.pull_request?.title || 'Unknown',
+              timestamp: new Date().toISOString(),
+              data: {
+                verdict,
+                cost_usd: cost,
+                summary
+              }
+            }
+
+            try {
+              const response = await fetch(webhookUrl + '/api/ci/webhook', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-ci-secret': process.env.CI_WEBHOOK_SECRET || ''
+                },
+                body: JSON.stringify(payload)
+              })
+              console.log('Webhook response:', response.status)
+            } catch (e) {
+              console.log('Webhook failed:', e.message)
+            }
+        env:
+          CI_WEBHOOK_URL: ${{ secrets.CI_WEBHOOK_URL }}
+          CI_WEBHOOK_SECRET: ${{ secrets.CI_WEBHOOK_SECRET }}

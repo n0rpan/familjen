@@ -16,6 +16,7 @@ tests/.auth/
 
 # AI review artifacts (generated during CI)
 ai-reviews/
+ci-state/
 migration-review.json
 
 # next.js
@@ -75,3 +76,7 @@ docs/kidplan-integration-research.md
 scripts/test-spond-chat.ts
 scripts/test-kidplan.ts
 scripts/debug-spond-messages.ts
+scripts/test-models.ts
+scripts/test-models-challenge.ts
+scripts/compare-quality.ts
+scripts/test-verdict-models.ts

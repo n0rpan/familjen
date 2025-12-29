@@ -558,6 +558,17 @@ export const nb: TranslationStrings = {
     expiringToday: 'Utløper i dag',
     assign: 'Tilordne',
     eventAssigned: 'Hendelse tilordnet',
+    // CI Dashboard
+    ciDashboardTitle: 'CI/CD Dashboard',
+    ciDashboardDesc: 'AI-drevet kodegjennomgang med kostnad og nøyaktighet',
+    ciPRsReviewed: 'PRer gjennomgått',
+    ciTotalCost: 'Total kostnad',
+    ciAvgCost: 'Gj.snitt/PR',
+    ciAccuracy: 'Nøyaktighet',
+    ciCostTrend: 'Kostnadstrend (siste 7 dager)',
+    ciModelUsage: 'Modellbruk',
+    ciRecentActivity: 'Nylig CI-aktivitet',
+    ciNoEvents: 'Ingen CI-hendelser ennå. Hendelser vises her når PRer gjennomgås.',
   },
 
   // New household wizard

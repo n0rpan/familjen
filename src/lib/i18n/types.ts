@@ -567,6 +567,17 @@ export interface TranslationStrings {
     expiringToday: string
     assign: string
     eventAssigned: string
+    // CI Dashboard
+    ciDashboardTitle: string
+    ciDashboardDesc: string
+    ciPRsReviewed: string
+    ciTotalCost: string
+    ciAvgCost: string
+    ciAccuracy: string
+    ciCostTrend: string
+    ciModelUsage: string
+    ciRecentActivity: string
+    ciNoEvents: string
   }
 
   // New household wizard
