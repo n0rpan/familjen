@@ -146,12 +146,13 @@ const TOOLS: Tool[] = [
   },
   {
     name: 'search_code',
-    description: 'Search for code patterns in the repository',
+    description: 'Search for code patterns in the repository using ripgrep',
     input_schema: {
       type: 'object',
       properties: {
         query: { type: 'string', description: 'Regex pattern to search for' },
-        glob: { type: 'string', description: 'File glob pattern (e.g., "*.ts")' }
+        path: { type: 'string', description: 'Directory or file path to search in (e.g., "scripts/", "src/lib/utils.ts")' },
+        glob: { type: 'string', description: 'File type filter (e.g., "*.ts", "*.tsx")' }
       },
       required: ['query']
     }
@@ -424,6 +425,28 @@ const TOOLS: Tool[] = [
       required: []
     }
   },
+  {
+    name: 'list_available_tools',
+    description: 'List all available tools with their descriptions. Use this to understand what capabilities you have.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'suggest_capability',
+    description: 'Suggest a capability or tool that would help with the review. This feedback helps improve future versions.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        capability: { type: 'string', description: 'What capability or tool you wish you had' },
+        reason: { type: 'string', description: 'Why this would help with the current review' },
+        example: { type: 'string', description: 'Example of how you would use it' }
+      },
+      required: ['capability', 'reason']
+    }
+  },
 ]
 
 // ============================================
@@ -516,12 +539,20 @@ function executeToolUncached(name: string, input: Record<string, unknown>): stri
 
     case 'search_code': {
       const query = input.query as string
+      const searchPath = input.path as string | undefined
       const glob = input.glob as string | undefined
       try {
-        const globArg = glob ? `--glob '${glob}'` : ''
-        return execSync(`rg '${query}' ${globArg} --max-count 10 2>/dev/null || echo 'No matches'`, {
+        // Build ripgrep command with proper arguments
+        const args: string[] = ['-n', '--max-count', '20']
+        if (glob) args.push('--glob', glob)
+        args.push('--', query)
+        if (searchPath) args.push(searchPath)
+
+        const result = execSync(`rg ${args.map(a => `'${a}'`).join(' ')} 2>/dev/null || true`, {
           encoding: 'utf-8'
-        }).slice(0, 5000)
+        }).trim()
+
+        return result || 'No matches found'
       } catch {
         return 'No matches found'
       }
@@ -1512,6 +1543,45 @@ ${issues.length > 10 ? `\n_...and ${issues.length - 10} more_` : ''}
       } catch (e) {
         return `Error running accessibility audit: ${e}`
       }
+    }
+
+    case 'list_available_tools': {
+      const toolList = TOOLS.map(t => `- **${t.name}**: ${t.description}`).join('\n')
+      return `## Available Tools (${TOOLS.length} total)
+
+${toolList}
+
+**Tip:** Use these tools to investigate issues. If you need a capability not listed, use \`suggest_capability\` to log feedback.`
+    }
+
+    case 'suggest_capability': {
+      const capability = input.capability as string
+      const reason = input.reason as string
+      const example = input.example as string | undefined
+
+      // Log to a file for future improvement
+      const suggestion = {
+        timestamp: new Date().toISOString(),
+        capability,
+        reason,
+        example: example || null,
+        prNumber: process.env.GITHUB_PR_NUMBER || 'unknown'
+      }
+
+      const suggestionsFile = 'ci-state/capability-suggestions.json'
+      let suggestions: typeof suggestion[] = []
+      if (existsSync(suggestionsFile)) {
+        try {
+          suggestions = JSON.parse(readFileSync(suggestionsFile, 'utf-8'))
+        } catch {
+          suggestions = []
+        }
+      }
+      suggestions.push(suggestion)
+      writeFileSync(suggestionsFile, JSON.stringify(suggestions, null, 2))
+
+      console.log(`   💡 Capability suggestion logged: ${capability}`)
+      return `✅ Feedback recorded. Suggested capability: "${capability}"\nReason: ${reason}${example ? `\nExample: ${example}` : ''}`
     }
 
     default:
