@@ -462,6 +462,14 @@ export const nb: TranslationStrings = {
     restoreAnyway: 'Legg til likevel',
     showAllNotifications: 'Vis alle {count} varsler',
     showFewerNotifications: 'Vis færre',
+    // Reminder card
+    overdue: 'Forfalt',
+    // Message card
+    readMore: 'Les mer',
+    showLess: 'Vis mindre',
+    comment: 'kommentar',
+    comments: 'kommentarer',
+    // Integrations disabled state
     integrationsDisabled: 'Integrasjoner ikke aktivert',
     contactAdmin: 'Kontakt administrator for å aktivere integrasjoner for din husstand.',
     // Duplicates management

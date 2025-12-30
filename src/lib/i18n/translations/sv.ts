@@ -462,6 +462,14 @@ export const sv: TranslationStrings = {
     restoreAnyway: 'Lägg till ändå',
     showAllNotifications: 'Visa alla {count} aviseringar',
     showFewerNotifications: 'Visa färre',
+    // Reminder card
+    overdue: 'Försenad',
+    // Message card
+    readMore: 'Läs mer',
+    showLess: 'Visa mindre',
+    comment: 'kommentar',
+    comments: 'kommentarer',
+    // Integrations disabled state
     integrationsDisabled: 'Integrationer inte aktiverade',
     contactAdmin: 'Kontakta administratören för att aktivera integrationer för ditt hushåll.',
     // Duplicates management

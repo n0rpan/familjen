@@ -1,5 +1,8 @@
 'use client'
 
+import { useLanguage } from '@/lib/i18n/context'
+import { getLocale } from '@/lib/utils'
+
 export interface FeedReminder {
   id: string
   title: string
@@ -17,6 +20,8 @@ interface Props {
 }
 
 export function ReminderCard({ reminder, onToggle }: Props) {
+  const { t, language } = useLanguage()
+
   // Format date - compare dates only (ignore time) to avoid timezone issues
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return null
@@ -38,15 +43,15 @@ export function ReminderCard({ reminder, onToggle }: Props) {
     const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
 
     if (diffDays < 0) {
-      return { text: 'Forfalt', isOverdue: true }
+      return { text: t.feed.overdue, isOverdue: true }
     } else if (diffDays === 0) {
-      return { text: 'I dag', isOverdue: false }
+      return { text: t.common.today, isOverdue: false }
     } else if (diffDays === 1) {
-      return { text: 'I morgen', isOverdue: false }
+      return { text: t.common.tomorrow, isOverdue: false }
     } else if (diffDays < 7) {
-      return { text: dueDate.toLocaleDateString('nb-NO', { weekday: 'long' }), isOverdue: false }
+      return { text: dueDate.toLocaleDateString(getLocale(language), { weekday: 'long' }), isOverdue: false }
     }
-    return { text: dueDate.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' }), isOverdue: false }
+    return { text: dueDate.toLocaleDateString(getLocale(language), { day: 'numeric', month: 'short' }), isOverdue: false }
   }
 
   const dueInfo = formatDate(reminder.due_date)

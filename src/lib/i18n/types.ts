@@ -470,6 +470,13 @@ export interface TranslationStrings {
     restoreAnyway: string
     showAllNotifications: string
     showFewerNotifications: string
+    // Reminder card
+    overdue: string
+    // Message card
+    readMore: string
+    showLess: string
+    comment: string
+    comments: string
     // Integrations disabled state
     integrationsDisabled: string
     contactAdmin: string

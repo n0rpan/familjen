@@ -462,6 +462,14 @@ export const en: TranslationStrings = {
     restoreAnyway: 'Add anyway',
     showAllNotifications: 'Show all {count} notifications',
     showFewerNotifications: 'Show fewer',
+    // Reminder card
+    overdue: 'Overdue',
+    // Message card
+    readMore: 'Read more',
+    showLess: 'Show less',
+    comment: 'comment',
+    comments: 'comments',
+    // Integrations disabled state
     integrationsDisabled: 'Integrations not enabled',
     contactAdmin: 'Contact your administrator to enable integrations for your household.',
     // Duplicates management
