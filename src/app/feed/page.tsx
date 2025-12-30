@@ -62,6 +62,33 @@ export default function Feed() {
     await syncIntegrations()
   }
 
+  // Handle manual deduplication
+  const handleDeduplicate = async () => {
+    if (isDemo) return null
+    try {
+      const response = await fetch('/api/integrations/deduplicate', {
+        method: 'POST',
+      })
+      if (!response.ok) {
+        console.error('[Deduplicate] API error:', response.status)
+        return null
+      }
+      const result = await response.json()
+      // Refetch to show updated event list if any duplicates were hidden
+      if (result.autoMerged > 0) {
+        await refetch()
+      }
+      return {
+        autoMerged: result.autoMerged || 0,
+        suggestionsCreated: result.suggestionsCreated || 0,
+        pairsChecked: result.pairsChecked || 0,
+      }
+    } catch (error) {
+      console.error('[Deduplicate] Error:', error)
+      return null
+    }
+  }
+
   // Loading state
   if (loading) {
     return (
@@ -161,6 +188,7 @@ export default function Feed() {
         initialFilter={initialFilter}
         onToggleReminder={handleToggleReminder}
         onSync={handleSync}
+        onDeduplicate={handleDeduplicate}
         onNotificationUpdate={refetch}
         isDemo={isDemo}
       />

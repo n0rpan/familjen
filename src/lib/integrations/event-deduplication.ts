@@ -47,6 +47,7 @@ export interface DeduplicationResult {
   autoMerged: number
   suggestionsCreated: number
   errors: string[]
+  pairsChecked?: number
 }
 
 /**
@@ -481,4 +482,204 @@ export async function getPendingDuplicateSuggestions(
     matchReason: row.match_reason || '',
     createdAt: row.created_at,
   }))
+}
+
+/**
+ * Manually trigger deduplication on ALL future events in a household.
+ * Scans all events from different sources and finds duplicates.
+ */
+export async function deduplicateAllEvents(
+  supabase: SupabaseClient,
+  householdId: string
+): Promise<DeduplicationResult> {
+  const result: DeduplicationResult = {
+    autoMerged: 0,
+    suggestionsCreated: 0,
+    errors: [],
+    pairsChecked: 0,
+  }
+
+  // Get AI model from settings
+  const model = await getDeduplicationModel(supabase)
+
+  // Get all source IDs for this household
+  const [sourceUrlsResult, integrationsResult] = await Promise.all([
+    supabase.from('external_source_urls').select('id').eq('household_id', householdId),
+    supabase.from('external_integrations').select('id').eq('household_id', householdId),
+  ])
+
+  const sourceUrlIds = sourceUrlsResult.data?.map((s) => s.id) || []
+  const integrationIds = integrationsResult.data?.map((i) => i.id) || []
+
+  if (sourceUrlIds.length === 0 && integrationIds.length === 0) {
+    return result
+  }
+
+  // Get all future events (from today onwards) that aren't already marked as duplicates
+  const today = formatDateISO(new Date())
+
+  // Build filters for sources
+  const filters: string[] = []
+  if (sourceUrlIds.length > 0) {
+    filters.push(`source_url_id.in.(${sourceUrlIds.join(',')})`)
+  }
+  if (integrationIds.length > 0) {
+    filters.push(`integration_id.in.(${integrationIds.join(',')})`)
+  }
+
+  const { data: allEvents, error: fetchError } = await supabase
+    .from('external_events')
+    .select(
+      'id, title, event_date, end_date, event_time, event_type, source_url_id, integration_id, child_id, duplicate_of_id, is_hidden'
+    )
+    .or(filters.join(','))
+    .gte('event_date', today)
+    .is('duplicate_of_id', null)
+    .eq('is_hidden', false)
+    .order('event_date', { ascending: true })
+
+  if (fetchError || !allEvents) {
+    result.errors.push(`Failed to fetch events: ${fetchError?.message}`)
+    return result
+  }
+
+  if (allEvents.length < 2) {
+    return result // Need at least 2 events to compare
+  }
+
+  // Group events by source (source_url_id or integration_id)
+  const eventsBySource = new Map<string, ExternalEvent[]>()
+  for (const event of allEvents as ExternalEvent[]) {
+    const sourceKey = event.source_url_id || event.integration_id || 'unknown'
+    if (!eventsBySource.has(sourceKey)) {
+      eventsBySource.set(sourceKey, [])
+    }
+    eventsBySource.get(sourceKey)!.push(event)
+  }
+
+  // Build pairs to check: compare events from DIFFERENT sources only
+  // Also check date proximity (±3 days)
+  const pairsToCheck: Array<{ eventA: ExternalEvent; eventB: ExternalEvent }> = []
+  const sourceKeys = Array.from(eventsBySource.keys())
+
+  for (let i = 0; i < sourceKeys.length; i++) {
+    for (let j = i + 1; j < sourceKeys.length; j++) {
+      const eventsA = eventsBySource.get(sourceKeys[i])!
+      const eventsB = eventsBySource.get(sourceKeys[j])!
+
+      for (const eventA of eventsA) {
+        for (const eventB of eventsB) {
+          // Check date proximity (±3 days)
+          const daysDiff = Math.abs(
+            (new Date(eventA.event_date).getTime() - new Date(eventB.event_date).getTime()) /
+              (1000 * 60 * 60 * 24)
+          )
+          if (daysDiff <= 3) {
+            pairsToCheck.push({ eventA, eventB })
+          }
+        }
+      }
+    }
+  }
+
+  if (pairsToCheck.length === 0) {
+    return result
+  }
+
+  result.pairsChecked = pairsToCheck.length
+
+  // Batch pairs for LLM (max 10 per request to avoid token limits)
+  const batchSize = 10
+  const allLLMResults: LLMDuplicateResult[] = []
+
+  for (let i = 0; i < pairsToCheck.length; i += batchSize) {
+    const batch = pairsToCheck.slice(i, i + batchSize)
+    const results = await evaluateDuplicatesWithLLM(batch, model)
+    allLLMResults.push(...results)
+  }
+
+  // Convert LLM results to DuplicateCandidate format
+  const pairsMap = new Map(
+    pairsToCheck.map((p) => [`${p.eventA.id}:${p.eventB.id}`, p])
+  )
+
+  // Track which pairs we've already processed
+  const processedPairs = new Set<string>()
+
+  for (const llmResult of allLLMResults) {
+    if (!llmResult.isDuplicate || llmResult.confidence < MEDIUM_CONFIDENCE_THRESHOLD) {
+      continue
+    }
+
+    // Find the original pair (could be A:B or B:A)
+    const pair = pairsMap.get(`${llmResult.eventAId}:${llmResult.eventBId}`) ||
+                 pairsMap.get(`${llmResult.eventBId}:${llmResult.eventAId}`)
+
+    if (!pair) continue
+
+    // Normalize pair key (smaller ID first)
+    const pairKey =
+      pair.eventA.id < pair.eventB.id
+        ? `${pair.eventA.id}:${pair.eventB.id}`
+        : `${pair.eventB.id}:${pair.eventA.id}`
+
+    if (processedPairs.has(pairKey)) continue
+    processedPairs.add(pairKey)
+
+    if (llmResult.confidence >= HIGH_CONFIDENCE_THRESHOLD) {
+      // Auto-merge: Hide the newer event (by ID)
+      const keepEvent = pair.eventA.id < pair.eventB.id ? pair.eventA : pair.eventB
+      const hideEvent = pair.eventA.id < pair.eventB.id ? pair.eventB : pair.eventA
+
+      const { error: mergeError } = await supabase
+        .from('external_events')
+        .update({
+          duplicate_of_id: keepEvent.id,
+          is_hidden: true,
+          duplicate_confidence: llmResult.confidence,
+        })
+        .eq('id', hideEvent.id)
+
+      if (mergeError) {
+        result.errors.push(`Failed to merge duplicate ${hideEvent.id}: ${mergeError.message}`)
+      } else {
+        result.autoMerged++
+      }
+    } else {
+      // Medium confidence: Create suggestion for user review
+      const eventAId = pair.eventA.id < pair.eventB.id ? pair.eventA.id : pair.eventB.id
+      const eventBId = pair.eventA.id < pair.eventB.id ? pair.eventB.id : pair.eventA.id
+
+      // Check if suggestion already exists
+      const { data: existing } = await supabase
+        .from('event_duplicate_suggestions')
+        .select('id')
+        .eq('event_a_id', eventAId)
+        .eq('event_b_id', eventBId)
+        .eq('status', 'pending')
+        .single()
+
+      if (!existing) {
+        const { error: suggestionError } = await supabase
+          .from('event_duplicate_suggestions')
+          .insert({
+            household_id: householdId,
+            event_a_id: eventAId,
+            event_b_id: eventBId,
+            confidence: llmResult.confidence,
+            match_reason: llmResult.reason,
+          })
+
+        if (suggestionError) {
+          if (!suggestionError.message.includes('duplicate key')) {
+            result.errors.push(`Failed to create suggestion: ${suggestionError.message}`)
+          }
+        } else {
+          result.suggestionsCreated++
+        }
+      }
+    }
+  }
+
+  return result
 }
