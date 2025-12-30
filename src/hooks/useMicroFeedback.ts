@@ -61,15 +61,3 @@ export function useMicroFeedback(duration = 1000) {
   return { markChanged, isRecentlyChanged, clearAll }
 }
 
-/**
- * Simpler version that just returns a className helper
- */
-export function useFeedbackClass(duration = 1000) {
-  const { markChanged, isRecentlyChanged, clearAll } = useMicroFeedback(duration)
-
-  const getFeedbackClass = useCallback((id: string, baseClass = 'just-saved') => {
-    return isRecentlyChanged(id) ? baseClass : ''
-  }, [isRecentlyChanged])
-
-  return { markChanged, getFeedbackClass, clearAll }
-}

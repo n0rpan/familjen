@@ -175,57 +175,6 @@ export async function setCache<T>(key: string, data: T, retryCount = 0): Promise
 }
 
 /**
- * Clear a specific cache entry
- */
-export async function clearCache(key: string): Promise<void> {
-  try {
-    const db = await openDB()
-
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite')
-      const store = tx.objectStore(STORE_NAME)
-      const request = store.delete(key)
-
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => resolve()
-    })
-  } catch (error) {
-    console.warn('[Cache] Failed to clear cache:', error)
-  }
-}
-
-/**
- * Clear all cache entries matching a prefix
- * e.g., clearCacheByPrefix('week:') clears all week data
- */
-export async function clearCacheByPrefix(prefix: string): Promise<void> {
-  try {
-    const db = await openDB()
-
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite')
-      const store = tx.objectStore(STORE_NAME)
-      const request = store.openCursor()
-
-      request.onerror = () => reject(request.error)
-      request.onsuccess = (event) => {
-        const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result
-        if (cursor) {
-          if (cursor.key.toString().startsWith(prefix)) {
-            cursor.delete()
-          }
-          cursor.continue()
-        } else {
-          resolve()
-        }
-      }
-    })
-  } catch (error) {
-    console.warn('[Cache] Failed to clear cache by prefix:', error)
-  }
-}
-
-/**
  * Clear all cache entries for a household
  * Use when user logs out or switches household
  */

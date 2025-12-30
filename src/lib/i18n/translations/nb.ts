@@ -636,6 +636,9 @@ export const nb: TranslationStrings = {
     aiSuggestionFailed: 'AI-forslagene fungerte ikke denne gangen. Prøv igjen?',
     calendarSyncFailed: 'Kalendersynk traff en hindring. Prøv å synke igjen.',
     invalidUrl: 'Ugyldig kalender-URL. Bruk https:// eller webcal://',
+    syncFailed: 'Synkronisering feilet, prøver igjen...',
+    syncDropped: 'Endringen kunne ikke lagres',
+    syncConflict: 'Endringer fra en annen enhet ble overskrevet',
   },
 
   // Success messages

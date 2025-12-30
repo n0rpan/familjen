@@ -7,6 +7,38 @@ import { getPendingChanges, removeChange, incrementRetry, type PendingChange } f
 const MAX_RETRIES = 3
 const LOW_BATTERY_THRESHOLD = 0.15 // 15% battery
 
+// Custom events for sync status
+export const SYNC_EVENTS = {
+  SYNC_SUCCESS: 'familjen:sync:success',
+  SYNC_FAILURE: 'familjen:sync:failure',
+  SYNC_START: 'familjen:sync:start',
+  SYNC_COMPLETE: 'familjen:sync:complete',
+  SYNC_CONFLICT: 'familjen:sync:conflict',
+} as const
+
+export interface SyncFailureDetail {
+  table: string
+  operation: string
+  error: string
+  droppedAfterRetries: boolean
+}
+
+export interface SyncConflictDetail {
+  table: string
+  itemId: string
+  localData: Record<string, unknown>
+  serverUpdatedAt: string
+  localUpdatedAt: string
+  /** If true, the local change was applied anyway (last-write-wins fallback) */
+  autoResolved: boolean
+}
+
+function dispatchSyncEvent(type: string, detail?: unknown) {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(type, { detail }))
+  }
+}
+
 /**
  * Check if we should pause sync due to low battery
  * Returns true if battery is low and not charging
@@ -56,6 +88,7 @@ export function useBackgroundSync() {
       }
 
       console.log(`[BackgroundSync] Processing ${changes.length} queued changes`)
+      dispatchSyncEvent(SYNC_EVENTS.SYNC_START, { count: changes.length })
       const supabase = supabaseRef.current
 
       for (const change of changes) {
@@ -63,18 +96,30 @@ export function useBackgroundSync() {
           await processChange(supabase, change)
           await removeChange(change.id)
           console.log(`[BackgroundSync] Synced: ${change.table} ${change.operation}`)
+          dispatchSyncEvent(SYNC_EVENTS.SYNC_SUCCESS, { table: change.table, operation: change.operation })
         } catch (error) {
           console.warn(`[BackgroundSync] Failed to sync change:`, error)
 
-          if (change.retries >= MAX_RETRIES) {
+          const droppedAfterRetries = change.retries >= MAX_RETRIES
+          if (droppedAfterRetries) {
             // Give up after max retries
             console.error(`[BackgroundSync] Removing failed change after ${MAX_RETRIES} retries:`, change)
             await removeChange(change.id)
           } else {
             await incrementRetry(change.id)
           }
+
+          // Dispatch failure event so UI can show toast
+          dispatchSyncEvent(SYNC_EVENTS.SYNC_FAILURE, {
+            table: change.table,
+            operation: change.operation,
+            error: error instanceof Error ? error.message : 'Unknown error',
+            droppedAfterRetries,
+          } as SyncFailureDetail)
         }
       }
+
+      dispatchSyncEvent(SYNC_EVENTS.SYNC_COMPLETE)
     } catch (error) {
       console.error('[BackgroundSync] Queue processing error:', error)
     } finally {
@@ -111,34 +156,90 @@ export function useBackgroundSync() {
   }, [processQueue])
 }
 
-// Process a single change
+/**
+ * Process a single queued change with conflict detection
+ *
+ * Conflict handling:
+ * - insert: Uses upsert with ignoreDuplicates to skip if item already exists
+ * - update: Checks updated_at timestamp for conflicts before applying
+ * - delete: May fail silently if item was already deleted
+ *
+ * When a conflict is detected (server has newer data), emits SYNC_CONFLICT event
+ * and uses "last write wins" as fallback to maintain data consistency.
+ */
 async function processChange(
   supabase: ReturnType<typeof createClient>,
   change: PendingChange
 ): Promise<void> {
-  const { table, operation, data } = change
+  const { table, operation, data, originalUpdatedAt } = change
 
   switch (operation) {
     case 'insert': {
-      const { error } = await supabase.from(table).insert(data)
+      // Strip internal _tempId field before sending to DB
+      const { _tempId, ...insertData } = data
+      // Use upsert with ignoreDuplicates for inserts
+      // If another device already created this item, we skip it
+      const { error } = await supabase.from(table).upsert(insertData, {
+        onConflict: 'id',
+        ignoreDuplicates: true,
+      })
       if (error) throw error
       break
     }
     case 'update': {
       const { id, ...updateData } = data
-      const { error } = await supabase.from(table).update(updateData).eq('id', id)
+      const itemId = id as string
+
+      // Check for conflicts if we have the original timestamp
+      if (originalUpdatedAt) {
+        const { data: currentData, error: fetchError } = await supabase
+          .from(table)
+          .select('updated_at')
+          .eq('id', itemId)
+          .single()
+
+        if (!fetchError && currentData?.updated_at) {
+          const serverTime = new Date(currentData.updated_at).getTime()
+          const localTime = new Date(originalUpdatedAt).getTime()
+
+          if (serverTime > localTime) {
+            // Conflict detected! Server has newer data
+            dispatchSyncEvent(SYNC_EVENTS.SYNC_CONFLICT, {
+              table,
+              itemId,
+              localData: updateData,
+              serverUpdatedAt: currentData.updated_at,
+              localUpdatedAt: originalUpdatedAt,
+              autoResolved: true, // We're applying local changes anyway (last-write-wins)
+            } as SyncConflictDetail)
+
+            // Continue with update anyway (last-write-wins fallback)
+            // In future, we could skip and let user resolve manually
+          }
+        }
+      }
+
+      // Apply the update
+      const updateWithId = { id: itemId, ...updateData, updated_at: new Date().toISOString() }
+      const { error } = await supabase.from(table).upsert(updateWithId, {
+        onConflict: 'id',
+      })
       if (error) throw error
       break
     }
     case 'upsert': {
-      const { error } = await supabase.from(table).upsert(data)
+      const { error } = await supabase.from(table).upsert(data, {
+        onConflict: 'id',
+      })
       if (error) throw error
       break
     }
     case 'delete': {
+      // Delete may fail if already deleted by another device - that's OK
       const { id } = data
       const { error } = await supabase.from(table).delete().eq('id', id as string)
-      if (error) throw error
+      // Ignore "not found" errors for deletes (PGRST116)
+      if (error && !error.message?.includes('PGRST116')) throw error
       break
     }
   }

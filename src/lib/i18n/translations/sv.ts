@@ -636,6 +636,9 @@ export const sv: TranslationStrings = {
     aiSuggestionFailed: 'AI-förslagen fungerade inte den här gången. Försök igen?',
     calendarSyncFailed: 'Kalendersynk stötte på problem. Prova att synka igen.',
     invalidUrl: 'Ogiltig kalender-URL. Använd https:// eller webcal://',
+    syncFailed: 'Synkronisering misslyckades, försöker igen...',
+    syncDropped: 'Ändringen kunde inte sparas',
+    syncConflict: 'Ändringar från en annan enhet överskrevs',
   },
 
   // Success messages

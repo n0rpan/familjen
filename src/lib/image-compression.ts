@@ -167,18 +167,3 @@ export async function compressImageToBase64(
   const result = await compressImage(file, options)
   return result.base64
 }
-
-/**
- * Compress image and return a new File object (for upload to storage)
- */
-export async function compressImageToFile(
-  file: File,
-  options: CompressOptions = {}
-): Promise<File> {
-  const result = await compressImage(file, options)
-  // Create a new file with correct extension based on format used
-  const ext = result.format === 'webp' ? '.webp' : '.jpg'
-  const mimeType = result.format === 'webp' ? 'image/webp' : 'image/jpeg'
-  const newFileName = file.name.replace(/\.[^.]+$/, ext)
-  return new File([result.blob], newFileName, { type: mimeType })
-}

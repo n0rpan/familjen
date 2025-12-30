@@ -9,6 +9,8 @@ import { useTranslation } from '@/lib/i18n/context'
 import { TransitionLink } from './TransitionLink'
 import { usePrefetchRoutes, KEY_ROUTES, SECONDARY_ROUTES } from '@/hooks/usePrefetchRoutes'
 import { useIsDemo } from '@/lib/demo/context'
+import { clearAllCache } from '@/lib/cache'
+import { clearAllChanges } from '@/lib/offline-queue'
 
 // Notification badge component
 function NotificationBadge({ count }: { count: number }) {
@@ -233,6 +235,11 @@ export function Header() {
 
   const handleLogout = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault()
+    // Clear local caches before logout (silent fail - not critical)
+    await Promise.all([
+      clearAllCache(),
+      clearAllChanges(),
+    ]).catch(() => {})
     await supabase.auth.signOut()
     window.location.href = '/login'
   }, [supabase])

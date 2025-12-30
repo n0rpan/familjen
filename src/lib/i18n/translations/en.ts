@@ -636,6 +636,9 @@ export const en: TranslationStrings = {
     aiSuggestionFailed: 'AI suggestions didn\'t work this time. Try again?',
     calendarSyncFailed: 'Calendar sync hit a snag. Try syncing again.',
     invalidUrl: 'Invalid calendar URL. Use https:// or webcal://',
+    syncFailed: 'Sync failed, retrying...',
+    syncDropped: 'Change could not be saved',
+    syncConflict: 'Changes from another device were overwritten',
   },
 
   // Success messages

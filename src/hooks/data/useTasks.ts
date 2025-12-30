@@ -10,12 +10,20 @@
  * - householdLoading: waiting for household to load
  * - needsFetch: household loaded but fetch for current params not done
  * - isFetching: actively fetching data
+ *
+ * Offline support:
+ * - Mutations queue to IndexedDB when offline via queueChange()
+ * - useBackgroundSync processes queue when back online
+ * - This hook refetches 2s after online event to sync temp items with server data
+ * - Optimistic updates show immediately with temp IDs (temp-{timestamp})
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
 import { formatDateISO } from '@/lib/utils'
+import { createChildTaskSchema } from '@/lib/schemas'
+import { queueChange, updateQueuedInsert, removeQueuedInsert } from '@/lib/offline-queue'
 import type { ChildTask, ChildTaskWithChild, Child } from '@/lib/types'
 
 export interface UseTasksOptions {
@@ -124,16 +132,67 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
     }
   }, [isDemo, household?.id, lastFetchKey, currentFetchKey, fetchData])
 
+  // Refetch when coming back online (syncs temp items with server data)
+  useEffect(() => {
+    if (isDemo || typeof window === 'undefined') return
+
+    const handleOnline = () => {
+      // Small delay to let useBackgroundSync process queue first
+      setTimeout(() => {
+        if (household?.id) fetchData()
+      }, 2000)
+    }
+
+    window.addEventListener('online', handleOnline)
+    return () => window.removeEventListener('online', handleOnline)
+  }, [isDemo, household?.id, fetchData])
+
   // Add task mutation
   const addTask = useCallback(async (
     task: Omit<ChildTask, 'id' | 'created_at' | 'updated_at'>
   ) => {
+    // Validate task data (excluding household_id which is added separately)
+    const validation = createChildTaskSchema.safeParse({
+      child_id: task.child_id,
+      date: task.date,
+      time: task.time,
+      task_type: task.task_type,
+      title: task.title,
+      notes: task.notes,
+      source: task.source,
+      recurrence_pattern: task.recurrence_pattern,
+    })
+    if (!validation.success) {
+      const errors = validation.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+      throw new Error(errors)
+    }
+
     if (isDemo) {
       demoMutations.addTask(task)
       return
     }
 
     if (!supabase) return
+
+    // If offline, queue the change for later sync
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      // Generate temp ID first so we can store it in the queue for later matching
+      const tempId = `temp-${Date.now()}`
+      await queueChange({
+        table: 'child_tasks',
+        operation: 'insert',
+        data: { ...task, _tempId: tempId } as Record<string, unknown>,
+      })
+      // Optimistically add to local state with temporary ID
+      const tempTask: ChildTask = {
+        ...task,
+        id: tempId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } as ChildTask
+      setTasks(prev => [...prev, tempTask])
+      return
+    }
 
     try {
       await supabase
@@ -152,12 +211,50 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
     taskId: string,
     updates: Partial<ChildTask>
   ) => {
+    // Validate update data (only validates fields that are being updated)
+    const fieldsToValidate: Record<string, unknown> = {}
+    if (updates.date !== undefined) fieldsToValidate.date = updates.date
+    if (updates.time !== undefined) fieldsToValidate.time = updates.time
+    if (updates.task_type !== undefined) fieldsToValidate.task_type = updates.task_type
+    if (updates.title !== undefined) fieldsToValidate.title = updates.title
+    if (updates.notes !== undefined) fieldsToValidate.notes = updates.notes
+
+    if (Object.keys(fieldsToValidate).length > 0) {
+      // Use partial schema validation
+      const validation = createChildTaskSchema.partial().safeParse(fieldsToValidate)
+      if (!validation.success) {
+        const errors = validation.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+        throw new Error(errors)
+      }
+    }
+
     if (isDemo) {
       demoMutations.updateTask(taskId, updates)
       return
     }
 
     if (!supabase) return
+
+    // If offline, queue the change for later sync
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      if (taskId.startsWith('temp-')) {
+        // For temp items, update the queued insert's data directly
+        await updateQueuedInsert('child_tasks', '_tempId', taskId, updates)
+      } else {
+        // For real items, queue a separate update operation
+        // Include original updated_at for conflict detection during sync
+        const existingTask = tasks.find(t => t.id === taskId)
+        await queueChange({
+          table: 'child_tasks',
+          operation: 'update',
+          data: { id: taskId, ...updates } as Record<string, unknown>,
+          originalUpdatedAt: existingTask?.updated_at ?? undefined,
+        })
+      }
+      // Optimistically update local state
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t))
+      return
+    }
 
     try {
       await supabase
@@ -180,6 +277,24 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
     }
 
     if (!supabase) return
+
+    // If offline, queue the change for later sync
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      if (taskId.startsWith('temp-')) {
+        // For temp items, remove the queued insert entirely
+        await removeQueuedInsert('child_tasks', '_tempId', taskId)
+      } else {
+        // For real items, queue a delete operation
+        await queueChange({
+          table: 'child_tasks',
+          operation: 'delete',
+          data: { id: taskId },
+        })
+      }
+      // Optimistically remove from local state
+      setTasks(prev => prev.filter(t => t.id !== taskId))
+      return
+    }
 
     try {
       await supabase

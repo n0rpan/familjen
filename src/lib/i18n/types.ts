@@ -646,6 +646,9 @@ export interface TranslationStrings {
     aiSuggestionFailed: string
     calendarSyncFailed: string
     invalidUrl: string
+    syncFailed: string
+    syncDropped: string
+    syncConflict: string
   }
 
   // Success messages
