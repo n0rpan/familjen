@@ -8,7 +8,7 @@
  * This ensures visual consistency between demo and production.
  */
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { FeedFilters, type FeedFilter } from './FeedFilters'
 import { FeedSearch } from './FeedSearch'
 import { MessageCard, type FeedMessage } from './MessageCard'
@@ -71,6 +71,16 @@ export function FeedPageContent({
   const [syncing, setSyncing] = useState(false)
   const [deduplicating, setDeduplicating] = useState(false)
   const [dedupeResult, setDedupeResult] = useState<DeduplicationResult | null>(null)
+  const [dedupeError, setDedupeError] = useState<string | null>(null)
+  const dedupeTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    const timer = dedupeTimerRef.current
+    return () => {
+      if (timer) clearTimeout(timer)
+    }
+  }, [])
 
   // Handle sync
   const handleSync = async () => {
@@ -88,11 +98,22 @@ export function FeedPageContent({
     if (!onDeduplicate) return
     setDeduplicating(true)
     setDedupeResult(null)
+    setDedupeError(null)
+    // Clear any existing timer
+    if (dedupeTimerRef.current) {
+      clearTimeout(dedupeTimerRef.current)
+    }
     try {
       const result = await onDeduplicate()
-      setDedupeResult(result)
-      // Clear result after 10 seconds
-      setTimeout(() => setDedupeResult(null), 10000)
+      if (result) {
+        setDedupeResult(result)
+        // Clear result after 10 seconds
+        dedupeTimerRef.current = setTimeout(() => setDedupeResult(null), 10000)
+      } else {
+        setDedupeError('Kunne ikke kjøre duplikatsjekk. Prøv igjen senere.')
+      }
+    } catch {
+      setDedupeError('Noe gikk galt. Prøv igjen senere.')
     } finally {
       setDeduplicating(false)
     }
@@ -261,6 +282,33 @@ export function FeedPageContent({
           )}
         </div>
       </div>
+
+      {/* Deduplication error banner */}
+      {dedupeError && (
+        <div
+          className="p-4 rounded-xl flex items-start gap-3"
+          style={{
+            background: 'rgba(232, 140, 140, 0.2)',
+            border: '1px solid var(--color-coral)',
+          }}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--color-coral)', flexShrink: 0, marginTop: 2 }}>
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <p className="font-medium" style={{ color: 'var(--foreground)' }}>{dedupeError}</p>
+          <button
+            onClick={() => setDedupeError(null)}
+            className="ml-auto p-1 rounded hover:bg-white/10"
+            style={{ color: 'var(--muted)' }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       {/* Deduplication result banner */}
       {dedupeResult && (

@@ -558,7 +558,7 @@ export async function deduplicateAllEvents(
   }
 
   // Build pairs to check: compare events from DIFFERENT sources only
-  // Also check date proximity (±3 days)
+  // Also check date proximity (±3 days) and child context
   const pairsToCheck: Array<{ eventA: ExternalEvent; eventB: ExternalEvent }> = []
   const sourceKeys = Array.from(eventsBySource.keys())
 
@@ -569,6 +569,15 @@ export async function deduplicateAllEvents(
 
       for (const eventA of eventsA) {
         for (const eventB of eventsB) {
+          // Only compare events for the same child (or both without child context)
+          // This prevents false positives like "Vinterferie" for different children
+          if (eventA.child_id !== eventB.child_id) {
+            // Allow comparison if either has no child (household-wide event)
+            if (eventA.child_id !== null && eventB.child_id !== null) {
+              continue
+            }
+          }
+
           // Check date proximity (±3 days)
           const daysDiff = Math.abs(
             (new Date(eventA.event_date).getTime() - new Date(eventB.event_date).getTime()) /
