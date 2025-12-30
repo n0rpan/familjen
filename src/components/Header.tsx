@@ -235,11 +235,11 @@ export function Header() {
 
   const handleLogout = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault()
-    // Clear local caches before logout
+    // Clear local caches before logout (silent fail - not critical)
     await Promise.all([
       clearAllCache(),
       clearAllChanges(),
-    ]).catch(err => console.warn('Failed to clear caches on logout:', err))
+    ]).catch(() => {})
     await supabase.auth.signOut()
     window.location.href = '/login'
   }, [supabase])

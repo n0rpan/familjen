@@ -149,9 +149,6 @@ export function OfflineIndicator() {
               ? (t.errors?.syncDropped || 'Endringen kunne ikke lagres')
               : (t.errors?.syncFailed || 'Synkronisering feilet, prøver igjen...')}
           </span>
-          <span className="ml-2 text-xs opacity-80">
-            ({syncFailure.table})
-          </span>
           <button
             className="ml-2 px-2 py-0.5 rounded text-xs hover:bg-white/20 transition-colors"
             onClick={dismissFailure}
