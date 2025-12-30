@@ -8,6 +8,38 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+// UUID validation regex
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+/**
+ * Validate that a string is a valid UUID to prevent SQL injection
+ */
+function isValidUUID(id: string): boolean {
+  return UUID_REGEX.test(id)
+}
+
+/**
+ * Build safe .or() filter for source IDs
+ * Validates all UUIDs before building the filter string
+ */
+function buildSourceFilter(sourceUrlIds: string[], integrationIds: string[]): string | null {
+  const filters: string[] = []
+
+  // Validate and filter source URL IDs
+  const validSourceUrlIds = sourceUrlIds.filter(isValidUUID)
+  if (validSourceUrlIds.length > 0) {
+    filters.push(`source_url_id.in.(${validSourceUrlIds.join(',')})`)
+  }
+
+  // Validate and filter integration IDs
+  const validIntegrationIds = integrationIds.filter(isValidUUID)
+  if (validIntegrationIds.length > 0) {
+    filters.push(`integration_id.in.(${validIntegrationIds.join(',')})`)
+  }
+
+  return filters.length > 0 ? filters.join(',') : null
+}
+
 export async function GET() {
   const supabase = await createClient()
 
@@ -85,13 +117,8 @@ export async function GET() {
     const sourceUrlIds = sourceUrlsResult.data?.map((s) => s.id) || []
     const integrationIds = integrationsResult.data?.map((i) => i.id) || []
 
-    const filters: string[] = []
-    if (sourceUrlIds.length > 0) {
-      filters.push(`source_url_id.in.(${sourceUrlIds.join(',')})`)
-    }
-    if (integrationIds.length > 0) {
-      filters.push(`integration_id.in.(${integrationIds.join(',')})`)
-    }
+    // Build safe filter with UUID validation
+    const sourceFilter = buildSourceFilter(sourceUrlIds, integrationIds)
 
     let mergedDuplicates: Array<{
       id: string
@@ -106,13 +133,13 @@ export async function GET() {
       updated_at: string
     }> = []
 
-    if (filters.length > 0) {
+    if (sourceFilter) {
       const { data: merged, error: mergedError } = await supabase
         .from('external_events')
         .select('id, title, event_date, event_time, duplicate_of_id, duplicate_confidence, source_url_id, integration_id, child_id, updated_at')
         .not('duplicate_of_id', 'is', null)
         .eq('is_hidden', true)
-        .or(filters.join(','))
+        .or(sourceFilter)
         .gte('updated_at', thirtyDaysAgo.toISOString())
         .order('updated_at', { ascending: false })
         .limit(20)

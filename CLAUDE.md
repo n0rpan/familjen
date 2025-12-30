@@ -161,6 +161,9 @@ Key interfaces:
 | `/api/calendar/sync` | Sync inbound calendar events |
 | `/api/calendar/send-invite` | Send pickup to work calendar |
 | `/api/openrouter/analyze-wishlist-image` | AI extracts product info from images |
+| `/api/integrations/deduplicate` | Trigger AI duplicate detection for household |
+| `/api/integrations/duplicates` | GET pending suggestions and merged duplicates |
+| `/api/cron/sync-integrations` | Nightly cron: sync all integrations + deduplicate |
 
 ## Database Schema
 
@@ -1277,9 +1280,20 @@ Uses OpenRouter API with context:
 
 | Role | Access |
 |------|--------|
-| User | Own household data |
-| Household Admin | Manage household members/children |
+| User | Own household data (all normal app features) |
+| Household Admin | Destructive operations: delete household, remove members |
 | App Admin | All households, user management, AI settings |
+
+**When to use `is_household_admin()`:**
+- Deleting the household
+- Removing household members
+- Changing household-level settings that affect all members
+
+**When NOT to require admin:**
+- Normal app usage (pickups, meals, tasks, wishlists)
+- Syncing integrations
+- Managing duplicate events
+- Viewing/editing own profile
 
 ## External Integrations
 
@@ -1324,6 +1338,35 @@ src/components/integrations/
 ├── KidplanIntegration.tsx
 ├── ISkoleIntegration.tsx
 └── MyKidIntegration.tsx
+```
+
+### Event Deduplication
+
+Events from multiple sources (school calendar, Spond, kindergarten) often duplicate. The app uses AI to detect and merge duplicates.
+
+**Files:**
+- `src/lib/integrations/event-deduplication.ts` - Core deduplication logic
+- `src/app/api/integrations/deduplicate/route.ts` - Manual trigger endpoint
+- `src/app/api/integrations/duplicates/route.ts` - GET suggestions/merged
+- `src/components/feed/DuplicateSuggestions.tsx` - Review UI
+- `src/components/feed/MergedDuplicates.tsx` - Undo merged duplicates
+
+**Confidence thresholds:**
+- `>90%`: Auto-merge (hide duplicate, keep one)
+- `60-90%`: Create suggestion for user review
+- `<60%`: No action
+
+**Safety safeguards:**
+- UUID validation on all filter queries (prevents SQL injection)
+- Deletion detection skipped if API returns <1 event or >50% would be deleted
+- Max 10 deletions per sync (likely API error if more)
+
+**Cron sync behavior:**
+```
+05:00 UTC daily:
+1. Sync all integrations (Spond, MyKid, etc.)
+2. Detect deleted/changed events → notify parents
+3. Run deduplication for all households
 ```
 
 ### Database Tables

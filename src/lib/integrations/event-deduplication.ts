@@ -14,6 +14,38 @@ import { formatDateISO } from '@/lib/utils'
 const HIGH_CONFIDENCE_THRESHOLD = 0.9
 const MEDIUM_CONFIDENCE_THRESHOLD = 0.6
 
+// UUID validation regex
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+/**
+ * Validate that a string is a valid UUID to prevent SQL injection
+ */
+function isValidUUID(id: string): boolean {
+  return UUID_REGEX.test(id)
+}
+
+/**
+ * Build safe .or() filter for source IDs
+ * Validates all UUIDs before building the filter string
+ */
+function buildSourceFilter(sourceUrlIds: string[], integrationIds: string[]): string | null {
+  const filters: string[] = []
+
+  // Validate and filter source URL IDs
+  const validSourceUrlIds = sourceUrlIds.filter(isValidUUID)
+  if (validSourceUrlIds.length > 0) {
+    filters.push(`source_url_id.in.(${validSourceUrlIds.join(',')})`)
+  }
+
+  // Validate and filter integration IDs
+  const validIntegrationIds = integrationIds.filter(isValidUUID)
+  if (validIntegrationIds.length > 0) {
+    filters.push(`integration_id.in.(${validIntegrationIds.join(',')})`)
+  }
+
+  return filters.length > 0 ? filters.join(',') : null
+}
+
 interface ExternalEvent {
   id: string
   title: string
@@ -205,7 +237,9 @@ async function findPotentialDuplicates(
   const sourceUrlIds = sourceUrlsResult.data?.map((s) => s.id) || []
   const integrationIds = integrationsResult.data?.map((i) => i.id) || []
 
-  if (sourceUrlIds.length === 0 && integrationIds.length === 0) {
+  // Build safe filter with UUID validation
+  const sourceFilter = buildSourceFilter(sourceUrlIds, integrationIds)
+  if (!sourceFilter) {
     return []
   }
 
@@ -216,22 +250,13 @@ async function findPotentialDuplicates(
   minDate.setDate(minDate.getDate() - 3)
   maxDate.setDate(maxDate.getDate() + 3)
 
-  // Build filters for sources
-  const filters: string[] = []
-  if (sourceUrlIds.length > 0) {
-    filters.push(`source_url_id.in.(${sourceUrlIds.join(',')})`)
-  }
-  if (integrationIds.length > 0) {
-    filters.push(`integration_id.in.(${integrationIds.join(',')})`)
-  }
-
   // Query all events in date range from this household
   const { data: allEvents, error } = await supabase
     .from('external_events')
     .select(
       'id, title, event_date, end_date, event_time, event_type, source_url_id, integration_id, child_id, duplicate_of_id, is_hidden'
     )
-    .or(filters.join(','))
+    .or(sourceFilter)
     .gte('event_date', formatDateISO(minDate))
     .lte('event_date', formatDateISO(maxDate))
     .is('duplicate_of_id', null)
@@ -511,28 +536,21 @@ export async function deduplicateAllEvents(
   const sourceUrlIds = sourceUrlsResult.data?.map((s) => s.id) || []
   const integrationIds = integrationsResult.data?.map((i) => i.id) || []
 
-  if (sourceUrlIds.length === 0 && integrationIds.length === 0) {
+  // Build safe filter with UUID validation
+  const sourceFilter = buildSourceFilter(sourceUrlIds, integrationIds)
+  if (!sourceFilter) {
     return result
   }
 
   // Get all future events (from today onwards) that aren't already marked as duplicates
   const today = formatDateISO(new Date())
 
-  // Build filters for sources
-  const filters: string[] = []
-  if (sourceUrlIds.length > 0) {
-    filters.push(`source_url_id.in.(${sourceUrlIds.join(',')})`)
-  }
-  if (integrationIds.length > 0) {
-    filters.push(`integration_id.in.(${integrationIds.join(',')})`)
-  }
-
   const { data: allEvents, error: fetchError } = await supabase
     .from('external_events')
     .select(
       'id, title, event_date, end_date, event_time, event_type, source_url_id, integration_id, child_id, duplicate_of_id, is_hidden'
     )
-    .or(filters.join(','))
+    .or(sourceFilter)
     .gte('event_date', today)
     .is('duplicate_of_id', null)
     .eq('is_hidden', false)

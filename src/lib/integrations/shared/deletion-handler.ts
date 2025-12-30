@@ -6,10 +6,18 @@
  * - Creating undo-able deletion records
  * - Sending push notifications for deletions
  * - Tracking event changes (date/title modifications)
+ *
+ * SAFETY: Includes safeguards against partial API responses causing false deletions.
+ * If an API returns suspiciously few events, deletion detection is skipped.
  */
 
 import { SupabaseClient } from '@supabase/supabase-js'
 import { sendPushNotification, type NotificationType } from '@/lib/push-notifications'
+
+// Safety thresholds to prevent false deletions from partial API responses
+const MIN_EVENTS_FOR_DELETION_CHECK = 1 // At least some events must be returned
+const MAX_DELETION_RATIO = 0.5 // Skip if >50% of events would be deleted (likely API error)
+const MAX_ABSOLUTE_DELETIONS = 10 // Skip if >10 deletions in one sync (likely API error)
 
 export interface ExternalEventRecord {
   id: string
@@ -81,12 +89,34 @@ export async function handleEventDeletionsAndChanges(
     return result
   }
 
+  // SAFETY CHECK: If API returned no events but we have existing events,
+  // this is likely an API error - skip deletion detection entirely
+  if (currentEvents.length < MIN_EVENTS_FOR_DELETION_CHECK && existingEvents.length > 0) {
+    console.warn(
+      `[${serviceName}] Skipping deletion detection: API returned ${currentEvents.length} events but DB has ${existingEvents.length}. Possible API error.`
+    )
+    return result
+  }
+
   // Create a map of current external_ids for quick lookup
   const currentExternalIds = new Set(currentEvents.map(e => e.external_id))
   const currentEventsMap = new Map(currentEvents.map(e => [e.external_id, e]))
 
   // Find deleted events (exist in DB but not in current sync)
   const deletedEvents = existingEvents.filter(e => !currentExternalIds.has(e.external_id))
+
+  // SAFETY CHECK: Prevent mass deletions from partial API responses
+  if (deletedEvents.length > 0 && existingEvents.length > 0) {
+    const deletionRatio = deletedEvents.length / existingEvents.length
+
+    // If more than 50% would be deleted OR more than 10 absolute deletions, skip
+    if (deletionRatio > MAX_DELETION_RATIO || deletedEvents.length > MAX_ABSOLUTE_DELETIONS) {
+      console.warn(
+        `[${serviceName}] Skipping deletion detection: ${deletedEvents.length}/${existingEvents.length} events would be deleted (${(deletionRatio * 100).toFixed(0)}%). Possible partial API response.`
+      )
+      return result
+    }
+  }
 
   // Find modified events (exist in both but details changed)
   const modifiedEvents: Array<{ existing: ExternalEventRecord; current: SyncedEvent }> = []
