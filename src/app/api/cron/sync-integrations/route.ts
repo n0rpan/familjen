@@ -8,6 +8,7 @@ import { extractEventsFromHtml, extractEventsFromPdf, extractEventsFromImage, ty
 import { syncCalendarSource, type CalendarSource } from '@/lib/integrations/calendar-source-sync'
 import { formatDateISO, addDays } from '@/lib/utils'
 import { FUTURE_SYNC_DAYS, HISTORICAL_SYNC_DAYS } from '@/lib/integrations/shared'
+import { handleEventDeletionsAndChanges, type SyncedEvent } from '@/lib/integrations/shared/deletion-handler'
 import { fetchAndParseICS, type ICSEvent } from '@/lib/ics-parser'
 import { syncHouseholdICS as syncHouseholdICSShared } from '@/lib/household-ics-sync'
 import { verifyCronRequest } from '@/lib/cron-auth'
@@ -682,6 +683,29 @@ async function syncSpondIntegration(
       }
     }
 
+    // Detect deleted/changed events and notify parents
+    try {
+      const syncedEvents: SyncedEvent[] = eventsToUpsert.map(e => ({
+        external_id: e.external_id as string,
+        title: e.title as string,
+        event_date: e.event_date as string,
+        event_time: e.event_time as string | null,
+        end_date: e.end_date as string | null,
+        location: e.location as string | null,
+      }))
+
+      await handleEventDeletionsAndChanges(
+        supabase,
+        integration.id,
+        integration.household_id,
+        syncedEvents,
+        'Spond'
+      )
+    } catch (deletionError) {
+      // Non-fatal - log but continue
+      console.error(`[Cron] Deletion detection error for Spond ${integration.id}:`, deletionError)
+    }
+
     // Fetch messages
     try {
       const chats = await client.getChats({ limit: 50 })
@@ -1215,6 +1239,29 @@ async function syncMyKidIntegration(
 
         if (!eventsError) {
           result.eventsCount = eventsToUpsert.length
+        }
+
+        // Detect deleted/changed events and notify parents
+        try {
+          const syncedEvents: SyncedEvent[] = eventsToUpsert.map(e => ({
+            external_id: e.external_id as string,
+            title: e.title as string,
+            event_date: e.event_date as string,
+            event_time: e.event_time as string | null,
+            end_date: e.end_date as string | null,
+            location: e.location as string | null,
+          }))
+
+          await handleEventDeletionsAndChanges(
+            supabase,
+            integration.id,
+            integration.household_id,
+            syncedEvents,
+            'MyKid'
+          )
+        } catch (deletionError) {
+          // Non-fatal - log but continue
+          console.error(`[Cron] Deletion detection error for MyKid ${integration.id}:`, deletionError)
         }
       }
     } catch (calendarError) {
