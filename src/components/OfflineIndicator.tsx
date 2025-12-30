@@ -180,7 +180,7 @@ export function OfflineIndicator() {
               : (t.errors?.syncFailed || 'Synkronisering feilet, prøver igjen...')}
           </span>
           <button
-            className="ml-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded hover:bg-white/20 transition-colors"
+            className="ml-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded hover:bg-white/20 active:bg-white/30 transition-colors"
             onClick={dismissNotification}
             aria-label="Lukk"
           >
@@ -196,7 +196,7 @@ export function OfflineIndicator() {
           </svg>
           <span>{t.errors?.syncConflict || 'Endringer fra en annen enhet ble overskrevet'}</span>
           <button
-            className="ml-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded hover:bg-white/20 transition-colors"
+            className="ml-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded hover:bg-white/20 active:bg-white/30 transition-colors"
             onClick={dismissNotification}
             aria-label="Lukk"
           >
