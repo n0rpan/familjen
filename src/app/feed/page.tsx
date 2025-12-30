@@ -8,11 +8,14 @@
  * Unauthenticated users are redirected to /login at the middleware level.
  */
 
+import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useLanguage } from '@/lib/i18n/context'
 import { useFeed } from '@/hooks/data'
 import { FeedPageContent } from '@/components/feed/FeedPageContent'
 import type { FeedFilter } from '@/components/feed/FeedFilters'
+import type { DuplicateSuggestion } from '@/components/feed/DuplicateSuggestions'
+import type { MergedDuplicate } from '@/components/feed/MergedDuplicates'
 
 export default function Feed() {
   const searchParams = useSearchParams()
@@ -20,6 +23,10 @@ export default function Feed() {
   const serviceFilter = searchParams.get('service')?.toLowerCase()
   const typeFilter = searchParams.get('type')?.toLowerCase()
   const { t } = useLanguage()
+
+  // State for duplicate management
+  const [duplicateSuggestions, setDuplicateSuggestions] = useState<DuplicateSuggestion[]>([])
+  const [mergedDuplicates, setMergedDuplicates] = useState<MergedDuplicate[]>([])
 
   // Use the unified feed hook - works for both demo and production
   const {
@@ -36,6 +43,26 @@ export default function Feed() {
     syncIntegrations,
     refetch,
   } = useFeed()
+
+  // Fetch duplicates data
+  const fetchDuplicates = useCallback(async () => {
+    if (isDemo) return
+    try {
+      const response = await fetch('/api/integrations/duplicates')
+      if (response.ok) {
+        const data = await response.json()
+        setDuplicateSuggestions(data.suggestions || [])
+        setMergedDuplicates(data.mergedDuplicates || [])
+      }
+    } catch (error) {
+      console.error('[Feed] Error fetching duplicates:', error)
+    }
+  }, [isDemo])
+
+  // Fetch duplicates on mount
+  useEffect(() => {
+    fetchDuplicates()
+  }, [fetchDuplicates])
 
   // Determine initial filter from URL params
   const getInitialFilter = (): FeedFilter => {
@@ -74,10 +101,8 @@ export default function Feed() {
         return null
       }
       const result = await response.json()
-      // Refetch to show updated event list if any duplicates were hidden
-      if (result.autoMerged > 0) {
-        await refetch()
-      }
+      // Refetch to show updated data
+      await Promise.all([refetch(), fetchDuplicates()])
       return {
         autoMerged: result.autoMerged || 0,
         suggestionsCreated: result.suggestionsCreated || 0,
@@ -185,11 +210,14 @@ export default function Feed() {
         notifications={notifications}
         integrationChildren={integrationChildren}
         integrationStatuses={integrationStatuses}
+        duplicateSuggestions={duplicateSuggestions}
+        mergedDuplicates={mergedDuplicates}
         initialFilter={initialFilter}
         onToggleReminder={handleToggleReminder}
         onSync={handleSync}
         onDeduplicate={handleDeduplicate}
         onNotificationUpdate={refetch}
+        onDuplicatesUpdate={fetchDuplicates}
         isDemo={isDemo}
       />
     </div>

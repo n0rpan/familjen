@@ -16,6 +16,8 @@ import { PhotoGallery, type FeedPhoto } from './PhotoGallery'
 import { ReminderCard, type FeedReminder } from './ReminderCard'
 import { EventChangeNotificationList, type EventNotification } from './EventChangeNotification'
 import { SyncStatusBanner, type IntegrationStatus } from './SyncStatusBanner'
+import { DuplicateSuggestionsList, type DuplicateSuggestion } from './DuplicateSuggestions'
+import { MergedDuplicatesList, type MergedDuplicate } from './MergedDuplicates'
 
 // Integration children mapping (which children belong to which integrations)
 export interface IntegrationChild {
@@ -40,6 +42,10 @@ export interface FeedPageContentProps {
   integrationChildren: IntegrationChild[]
   integrationStatuses: IntegrationStatus[]
 
+  // Duplicate management
+  duplicateSuggestions?: DuplicateSuggestion[]
+  mergedDuplicates?: MergedDuplicate[]
+
   // Initial state
   initialFilter?: FeedFilter
 
@@ -48,6 +54,7 @@ export interface FeedPageContentProps {
   onSync?: () => Promise<void>
   onNotificationUpdate?: () => void
   onDeduplicate?: () => Promise<DeduplicationResult | null>
+  onDuplicatesUpdate?: () => void
 
   // Demo mode
   isDemo?: boolean
@@ -60,11 +67,14 @@ export function FeedPageContent({
   notifications,
   integrationChildren,
   integrationStatuses,
+  duplicateSuggestions = [],
+  mergedDuplicates = [],
   initialFilter = 'all',
   onToggleReminder,
   onSync,
   onNotificationUpdate,
   onDeduplicate,
+  onDuplicatesUpdate,
   isDemo = false,
 }: FeedPageContentProps) {
   const [activeFilter, setActiveFilter] = useState<FeedFilter>(initialFilter)
@@ -349,6 +359,22 @@ export function FeedPageContent({
             </svg>
           </button>
         </div>
+      )}
+
+      {/* Duplicate suggestions for review - only in production */}
+      {!isDemo && duplicateSuggestions.length > 0 && activeFilter === 'all' && (
+        <DuplicateSuggestionsList
+          suggestions={duplicateSuggestions}
+          onUpdate={onDuplicatesUpdate || (() => {})}
+        />
+      )}
+
+      {/* Recently merged duplicates (collapsible) - only in production */}
+      {!isDemo && mergedDuplicates.length > 0 && activeFilter === 'all' && (
+        <MergedDuplicatesList
+          mergedDuplicates={mergedDuplicates}
+          onUpdate={onDuplicatesUpdate || (() => {})}
+        />
       )}
 
       {/* Event change notifications (calendar source removals) - only in production */}
