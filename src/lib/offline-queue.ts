@@ -14,6 +14,11 @@ export interface PendingChange {
   data: Record<string, unknown>
   createdAt: string
   retries: number
+  /**
+   * For updates: the updated_at timestamp of the record when the user started editing.
+   * Used for conflict detection - if server's updated_at is newer, there's a conflict.
+   */
+  originalUpdatedAt?: string
 }
 
 let dbInstance: IDBDatabase | null = null
@@ -71,8 +76,19 @@ async function openDB(): Promise<IDBDatabase> {
   return dbPromise
 }
 
+export interface QueueChangeOptions {
+  table: string
+  operation: 'insert' | 'update' | 'upsert' | 'delete'
+  data: Record<string, unknown>
+  /**
+   * For updates: the updated_at timestamp of the record when the user started editing.
+   * Used for conflict detection during sync.
+   */
+  originalUpdatedAt?: string
+}
+
 // Add a change to the queue
-export async function queueChange(change: Omit<PendingChange, 'id' | 'createdAt' | 'retries'>): Promise<string> {
+export async function queueChange(change: QueueChangeOptions): Promise<string> {
   const db = await openDB()
   const id = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
 
@@ -81,7 +97,10 @@ export async function queueChange(change: Omit<PendingChange, 'id' | 'createdAt'
     const store = tx.objectStore(STORE_NAME)
 
     const pendingChange: PendingChange = {
-      ...change,
+      table: change.table,
+      operation: change.operation,
+      data: change.data,
+      originalUpdatedAt: change.originalUpdatedAt,
       id,
       createdAt: new Date().toISOString(),
       retries: 0,

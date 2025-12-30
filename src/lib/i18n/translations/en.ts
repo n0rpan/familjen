@@ -638,6 +638,7 @@ export const en: TranslationStrings = {
     invalidUrl: 'Invalid calendar URL. Use https:// or webcal://',
     syncFailed: 'Sync failed, retrying...',
     syncDropped: 'Change could not be saved',
+    syncConflict: 'Changes from another device were overwritten',
   },
 
   // Success messages

@@ -13,6 +13,7 @@ export const SYNC_EVENTS = {
   SYNC_FAILURE: 'familjen:sync:failure',
   SYNC_START: 'familjen:sync:start',
   SYNC_COMPLETE: 'familjen:sync:complete',
+  SYNC_CONFLICT: 'familjen:sync:conflict',
 } as const
 
 export interface SyncFailureDetail {
@@ -20,6 +21,16 @@ export interface SyncFailureDetail {
   operation: string
   error: string
   droppedAfterRetries: boolean
+}
+
+export interface SyncConflictDetail {
+  table: string
+  itemId: string
+  localData: Record<string, unknown>
+  serverUpdatedAt: string
+  localUpdatedAt: string
+  /** If true, the local change was applied anyway (last-write-wins fallback) */
+  autoResolved: boolean
 }
 
 function dispatchSyncEvent(type: string, detail?: unknown) {
@@ -146,20 +157,21 @@ export function useBackgroundSync() {
 }
 
 /**
- * Process a single queued change with conflict resolution
+ * Process a single queued change with conflict detection
  *
  * Conflict handling:
  * - insert: Uses upsert with ignoreDuplicates to skip if item already exists
- *   (another device may have already synced this item)
- * - update: Uses upsert to apply changes - "last write wins" strategy
- *   This is simpler than tracking updated_at and works well for family apps
- * - delete: May fail silently if item was already deleted by another device
+ * - update: Checks updated_at timestamp for conflicts before applying
+ * - delete: May fail silently if item was already deleted
+ *
+ * When a conflict is detected (server has newer data), emits SYNC_CONFLICT event
+ * and uses "last write wins" as fallback to maintain data consistency.
  */
 async function processChange(
   supabase: ReturnType<typeof createClient>,
   change: PendingChange
 ): Promise<void> {
-  const { table, operation, data } = change
+  const { table, operation, data, originalUpdatedAt } = change
 
   switch (operation) {
     case 'insert': {
@@ -175,10 +187,40 @@ async function processChange(
       break
     }
     case 'update': {
-      // Use upsert for updates - "last write wins" strategy
-      // This handles conflicts gracefully when multiple devices edit offline
       const { id, ...updateData } = data
-      const updateWithId = { id, ...updateData, updated_at: new Date().toISOString() }
+      const itemId = id as string
+
+      // Check for conflicts if we have the original timestamp
+      if (originalUpdatedAt) {
+        const { data: currentData, error: fetchError } = await supabase
+          .from(table)
+          .select('updated_at')
+          .eq('id', itemId)
+          .single()
+
+        if (!fetchError && currentData?.updated_at) {
+          const serverTime = new Date(currentData.updated_at).getTime()
+          const localTime = new Date(originalUpdatedAt).getTime()
+
+          if (serverTime > localTime) {
+            // Conflict detected! Server has newer data
+            dispatchSyncEvent(SYNC_EVENTS.SYNC_CONFLICT, {
+              table,
+              itemId,
+              localData: updateData,
+              serverUpdatedAt: currentData.updated_at,
+              localUpdatedAt: originalUpdatedAt,
+              autoResolved: true, // We're applying local changes anyway (last-write-wins)
+            } as SyncConflictDetail)
+
+            // Continue with update anyway (last-write-wins fallback)
+            // In future, we could skip and let user resolve manually
+          }
+        }
+      }
+
+      // Apply the update
+      const updateWithId = { id: itemId, ...updateData, updated_at: new Date().toISOString() }
       const { error } = await supabase.from(table).upsert(updateWithId, {
         onConflict: 'id',
       })

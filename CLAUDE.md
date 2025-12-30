@@ -1565,6 +1565,179 @@ When adding new pages, follow these steps to ensure demo/production consistency:
 - If demo and production diverge, tests become unreliable
 - Hardcoded strings break i18n and make the app inconsistent
 
+## Offline Support and Sync
+
+The app supports offline-first mutations with background sync when connectivity is restored.
+
+### Architecture
+
+```
+src/lib/
+├── offline-queue.ts              # IndexedDB queue for pending changes
+│   ├── queueChange()             # Queue a change for later sync
+│   ├── updateQueuedInsert()      # Update data in a queued insert
+│   ├── removeQueuedInsert()      # Remove a queued insert
+│   ├── getQueuedChanges()        # Get all pending changes
+│   ├── clearAllChanges()         # Clear the queue
+│   └── getPendingCount()         # Count pending changes
+
+src/hooks/
+├── useBackgroundSync.ts          # Processes queue when online
+│   ├── SYNC_EVENTS               # Custom events for UI feedback
+│   └── processChange()           # Handles each change type
+
+src/components/
+└── OfflineIndicator.tsx          # Shows sync status banner
+```
+
+### Offline Mutation Flow
+
+1. **User makes a change** (add/update/delete task, wishlist item, etc.)
+2. **Check connectivity** via `navigator.onLine`
+3. **If offline:**
+   - Generate temp ID (`temp-{timestamp}`) for new items
+   - Queue change to IndexedDB via `queueChange()`
+   - Optimistically update local state
+4. **When online:**
+   - `useBackgroundSync` detects connectivity
+   - Processes queue in order (FIFO)
+   - Emits sync events for UI feedback
+   - Refetches data to sync temp IDs with real IDs
+
+### Temp ID Handling
+
+When creating items offline, they get temporary IDs. If the user edits or deletes a temp item before sync:
+
+```typescript
+// Editing a temp item - update the queued insert directly
+if (taskId.startsWith('temp-')) {
+  await updateQueuedInsert('child_tasks', '_tempId', taskId, updates)
+} else {
+  await queueChange({ table: 'child_tasks', operation: 'update', data: { id: taskId, ...updates } })
+}
+
+// Deleting a temp item - remove the queued insert
+if (taskId.startsWith('temp-')) {
+  await removeQueuedInsert('child_tasks', '_tempId', taskId)
+} else {
+  await queueChange({ table: 'child_tasks', operation: 'delete', data: { id: taskId } })
+}
+```
+
+### Conflict Resolution: Last Write Wins (with Detection)
+
+**The app uses "last write wins" with conflict detection and user notification.**
+
+When syncing updates, the app:
+1. Checks the server's `updated_at` timestamp
+2. Compares it to the timestamp when the user started editing
+3. If server is newer (another device synced first), emits a `SYNC_CONFLICT` event
+4. Applies local changes anyway (last-write-wins) and notifies the user
+
+```typescript
+// In useBackgroundSync.ts processChange()
+case 'update': {
+  const { id, ...updateData } = data
+  const itemId = id as string
+
+  // Check for conflicts if we have the original timestamp
+  if (originalUpdatedAt) {
+    const { data: currentData } = await supabase
+      .from(table)
+      .select('updated_at')
+      .eq('id', itemId)
+      .single()
+
+    if (currentData?.updated_at) {
+      const serverTime = new Date(currentData.updated_at).getTime()
+      const localTime = new Date(originalUpdatedAt).getTime()
+
+      if (serverTime > localTime) {
+        // Conflict detected! Notify user but continue with update
+        dispatchSyncEvent(SYNC_EVENTS.SYNC_CONFLICT, {
+          table, itemId, localData: updateData,
+          serverUpdatedAt: currentData.updated_at,
+          localUpdatedAt: originalUpdatedAt,
+          autoResolved: true,
+        })
+      }
+    }
+  }
+
+  // Apply the update (last-write-wins)
+  const updateWithId = { id: itemId, ...updateData, updated_at: new Date().toISOString() }
+  await supabase.from(table).upsert(updateWithId, { onConflict: 'id' })
+  break
+}
+```
+
+**How it works:**
+- Inserts use `upsert` with `ignoreDuplicates: true` - if a duplicate temp ID somehow exists, it's ignored
+- Updates check `updated_at` timestamp for conflicts before applying
+- The last device to sync "wins", but user is notified of the conflict
+- User sees a yellow banner: "Changes from another device were overwritten"
+
+**Trade-offs:**
+| Scenario | Behavior |
+|----------|----------|
+| Single device, intermittent connectivity | Works perfectly - no conflicts |
+| Multiple devices, same user | Conflict detected, user notified, local wins |
+| Rapid edits while offline | All edits merge correctly (queue updated in-place) |
+| Delete then recreate while offline | Works correctly (insert queued, delete removed) |
+
+**Why this approach:**
+- Simple to implement and reason about
+- User is aware when conflicts occur (can check other device)
+- Matches user mental model for a family app (one parent usually makes changes)
+- Avoids blocking sync on conflicts - data always moves forward
+
+**Optional enhancement (not implemented):**
+For critical data, you could reject the local update and show a manual resolution UI instead of auto-resolving.
+
+### Sync Events
+
+The background sync emits custom DOM events for UI feedback:
+
+```typescript
+export const SYNC_EVENTS = {
+  SYNC_START: 'familjen:sync:start',
+  SYNC_SUCCESS: 'familjen:sync:success',
+  SYNC_FAILURE: 'familjen:sync:failure',
+  SYNC_COMPLETE: 'familjen:sync:complete',
+} as const
+
+export interface SyncFailureDetail {
+  table: string
+  operation: string
+  error: string
+  droppedAfterRetries?: boolean
+}
+
+// Emitting events
+window.dispatchEvent(new CustomEvent(SYNC_EVENTS.SYNC_FAILURE, {
+  detail: { table, operation, error: error.message, droppedAfterRetries: true }
+}))
+```
+
+### OfflineIndicator States
+
+| State | Color | Message |
+|-------|-------|---------|
+| Sync failed | Coral red | "Synkronisering feilet, prøver igjen..." |
+| Dropped after retries | Coral red | "Endringen kunne ikke lagres" |
+| Conflict detected | Honey yellow | "Endringer fra en annen enhet ble overskrevet" |
+| Offline | Sky blue | "Offline" + pending count |
+| Syncing | Honey yellow | "Synkroniserer (N)..." |
+| Back online | Sage green | "Tilkoblet igjen" |
+
+### Retry Logic
+
+Failed syncs retry up to 3 times with exponential backoff:
+- 1st retry: 1 second delay
+- 2nd retry: 2 second delay
+- 3rd retry: 4 second delay
+- After 3 failures: change is dropped and user is notified
+
 ## Performance Patterns
 
 ### View Transitions

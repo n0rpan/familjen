@@ -188,10 +188,13 @@ export function useWishlists(): UseWishlistsReturn {
         await updateQueuedInsert('wishlist_items', '_tempId', itemId, updates)
       } else {
         // For real items, queue a separate update operation
+        // Include original updated_at for conflict detection during sync
+        const existingItem = items.find(i => i.id === itemId)
         await queueChange({
           table: 'wishlist_items',
           operation: 'update',
           data: { id: itemId, ...updates } as Record<string, unknown>,
+          originalUpdatedAt: existingItem?.updated_at ?? undefined,
         })
       }
       // Optimistically update local state

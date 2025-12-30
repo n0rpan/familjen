@@ -638,6 +638,7 @@ export const nb: TranslationStrings = {
     invalidUrl: 'Ugyldig kalender-URL. Bruk https:// eller webcal://',
     syncFailed: 'Synkronisering feilet, prøver igjen...',
     syncDropped: 'Endringen kunne ikke lagres',
+    syncConflict: 'Endringer fra en annen enhet ble overskrevet',
   },
 
   // Success messages

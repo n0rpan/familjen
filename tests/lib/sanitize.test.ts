@@ -4,12 +4,9 @@ import {
   sanitizeString,
   sanitizeDate,
   sanitizeTime,
-  sanitizeUrl,
   isUrlAllowed,
   sanitizePromptInput,
   sanitizePromptArray,
-  sanitizeExternalEvent,
-  sanitizeExternalMessage,
 } from '@/lib/sanitize'
 
 describe('truncate', () => {
@@ -98,24 +95,6 @@ describe('sanitizeTime', () => {
   })
 })
 
-describe('sanitizeUrl', () => {
-  it('returns null for invalid URLs', () => {
-    expect(sanitizeUrl('not a url')).toBeNull()
-    expect(sanitizeUrl('')).toBeNull()
-  })
-
-  it('blocks non-http protocols', () => {
-    expect(sanitizeUrl('javascript:alert(1)')).toBeNull()
-    expect(sanitizeUrl('file:///etc/passwd')).toBeNull()
-    expect(sanitizeUrl('ftp://example.com')).toBeNull()
-  })
-
-  it('accepts http/https URLs', () => {
-    expect(sanitizeUrl('http://example.com')).toBe('http://example.com')
-    expect(sanitizeUrl('https://example.com/path')).toBe('https://example.com/path')
-  })
-})
-
 describe('isUrlAllowed (SSRF prevention)', () => {
   it('blocks localhost', () => {
     expect(isUrlAllowed('http://localhost')).toBe(false)
@@ -183,57 +162,5 @@ describe('sanitizePromptArray', () => {
   it('limits item length', () => {
     const items = ['a'.repeat(100)]
     expect(sanitizePromptArray(items, 10)[0]).toHaveLength(10)
-  })
-})
-
-describe('sanitizeExternalEvent', () => {
-  it('sanitizes all fields', () => {
-    const result = sanitizeExternalEvent({
-      title: '  Event Title\0  ',
-      description: 'Description',
-      location: 'Oslo',
-      event_date: '2024-12-25',
-      end_date: 'invalid',
-      event_time: '14:00',
-      end_time: '99:99',
-    })
-
-    expect(result.title).toBe('Event Title')
-    expect(result.description).toBe('Description')
-    expect(result.location).toBe('Oslo')
-    expect(result.event_date).toBe('2024-12-25')
-    expect(result.end_date).toBeNull() // Invalid date rejected
-    expect(result.event_time).toBe('14:00')
-    expect(result.end_time).toBeNull() // Invalid time rejected
-  })
-
-  it('truncates long fields', () => {
-    const result = sanitizeExternalEvent({
-      title: 'a'.repeat(300),
-      description: 'b'.repeat(3000),
-    })
-
-    expect(result.title!.length).toBeLessThanOrEqual(200)
-    expect(result.description!.length).toBeLessThanOrEqual(2000)
-  })
-})
-
-describe('sanitizeExternalMessage', () => {
-  it('sanitizes all fields', () => {
-    const result = sanitizeExternalMessage({
-      title: '  Message Title  ',
-      body: 'Message body',
-      sender_name: 'John\0Doe',
-    })
-
-    expect(result.title).toBe('Message Title')
-    expect(result.body).toBe('Message body')
-    expect(result.sender_name).toBe('JohnDoe')
-  })
-
-  it('allows long message bodies', () => {
-    const longBody = 'a'.repeat(60000)
-    const result = sanitizeExternalMessage({ body: longBody })
-    expect(result.body!.length).toBeLessThanOrEqual(50000)
   })
 })

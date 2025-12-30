@@ -648,6 +648,7 @@ export interface TranslationStrings {
     invalidUrl: string
     syncFailed: string
     syncDropped: string
+    syncConflict: string
   }
 
   // Success messages

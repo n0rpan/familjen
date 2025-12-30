@@ -242,10 +242,13 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
         await updateQueuedInsert('child_tasks', '_tempId', taskId, updates)
       } else {
         // For real items, queue a separate update operation
+        // Include original updated_at for conflict detection during sync
+        const existingTask = tasks.find(t => t.id === taskId)
         await queueChange({
           table: 'child_tasks',
           operation: 'update',
           data: { id: taskId, ...updates } as Record<string, unknown>,
+          originalUpdatedAt: existingTask?.updated_at ?? undefined,
         })
       }
       // Optimistically update local state

@@ -638,6 +638,7 @@ export const sv: TranslationStrings = {
     invalidUrl: 'Ogiltig kalender-URL. Använd https:// eller webcal://',
     syncFailed: 'Synkronisering misslyckades, försöker igen...',
     syncDropped: 'Ändringen kunde inte sparas',
+    syncConflict: 'Ändringar från en annan enhet överskrevs',
   },
 
   // Success messages

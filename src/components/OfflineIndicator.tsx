@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useLanguage } from '@/lib/i18n/context'
 import { getPendingCount } from '@/lib/offline-queue'
-import { SYNC_EVENTS, type SyncFailureDetail } from '@/hooks/useBackgroundSync'
+import { SYNC_EVENTS, type SyncFailureDetail, type SyncConflictDetail } from '@/hooks/useBackgroundSync'
 
 export function OfflineIndicator() {
   const { t } = useLanguage()
@@ -11,9 +11,11 @@ export function OfflineIndicator() {
   const [showBanner, setShowBanner] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
   const [syncFailure, setSyncFailure] = useState<SyncFailureDetail | null>(null)
+  const [syncConflict, setSyncConflict] = useState<SyncConflictDetail | null>(null)
   const [isSyncing, setIsSyncing] = useState(false)
   const pendingCountRef = useRef(0)
   const failureTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const conflictTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     // Set initial state
@@ -89,9 +91,26 @@ export function OfflineIndicator() {
       }, detail.droppedAfterRetries ? 15000 : 8000)
     }
 
+    const handleSyncConflict = (event: Event) => {
+      const detail = (event as CustomEvent<SyncConflictDetail>).detail
+      setSyncConflict(detail)
+      setShowBanner(true)
+
+      // Clear previous timeout
+      if (conflictTimeoutRef.current) {
+        clearTimeout(conflictTimeoutRef.current)
+      }
+
+      // Auto-hide conflict notification after 6 seconds
+      conflictTimeoutRef.current = setTimeout(() => {
+        setSyncConflict(null)
+      }, 6000)
+    }
+
     window.addEventListener(SYNC_EVENTS.SYNC_START, handleSyncStart)
     window.addEventListener(SYNC_EVENTS.SYNC_COMPLETE, handleSyncComplete)
     window.addEventListener(SYNC_EVENTS.SYNC_FAILURE, handleSyncFailure)
+    window.addEventListener(SYNC_EVENTS.SYNC_CONFLICT, handleSyncConflict)
 
     return () => {
       window.removeEventListener('offline', handleOffline)
@@ -99,33 +118,44 @@ export function OfflineIndicator() {
       window.removeEventListener(SYNC_EVENTS.SYNC_START, handleSyncStart)
       window.removeEventListener(SYNC_EVENTS.SYNC_COMPLETE, handleSyncComplete)
       window.removeEventListener(SYNC_EVENTS.SYNC_FAILURE, handleSyncFailure)
+      window.removeEventListener(SYNC_EVENTS.SYNC_CONFLICT, handleSyncConflict)
       clearInterval(interval)
       if (failureTimeoutRef.current) {
         clearTimeout(failureTimeoutRef.current)
       }
+      if (conflictTimeoutRef.current) {
+        clearTimeout(conflictTimeoutRef.current)
+      }
     }
   }, []) // Empty dependency array - only run once
 
-  // Show banner if offline OR if there are pending changes OR sync failure
-  const shouldShow = showBanner || pendingCount > 0 || syncFailure
+  // Show banner if offline OR if there are pending changes OR sync failure OR conflict
+  const shouldShow = showBanner || pendingCount > 0 || syncFailure || syncConflict
 
-  // Dismiss sync failure on click
-  const dismissFailure = useCallback(() => {
+  // Dismiss sync failure or conflict on click
+  const dismissNotification = useCallback(() => {
     setSyncFailure(null)
+    setSyncConflict(null)
     if (failureTimeoutRef.current) {
       clearTimeout(failureTimeoutRef.current)
+    }
+    if (conflictTimeoutRef.current) {
+      clearTimeout(conflictTimeoutRef.current)
     }
   }, [])
 
   if (!shouldShow) return null
 
-  // Priority: failure (coral) > offline (sky) > syncing (honey) > online (sage)
+  // Priority: failure (coral) > conflict (honey) > offline (sky) > syncing (honey) > online (sage)
   const getBackgroundColor = () => {
     if (syncFailure) return 'var(--color-coral)'
+    if (syncConflict) return 'var(--color-honey)'
     if (isOffline) return 'var(--color-sky)'
     if (pendingCount > 0 || isSyncing) return 'var(--color-honey)'
     return 'var(--color-sage)'
   }
+
+  const hasDismissable = syncFailure || syncConflict
 
   return (
     <div
@@ -134,8 +164,8 @@ export function OfflineIndicator() {
         background: getBackgroundColor(),
         color: 'white',
       }}
-      onClick={syncFailure ? dismissFailure : undefined}
-      role={syncFailure ? 'button' : undefined}
+      onClick={hasDismissable ? dismissNotification : undefined}
+      role={hasDismissable ? 'button' : undefined}
     >
       {syncFailure ? (
         <>
@@ -151,7 +181,22 @@ export function OfflineIndicator() {
           </span>
           <button
             className="ml-2 px-2 py-0.5 rounded text-xs hover:bg-white/20 transition-colors"
-            onClick={dismissFailure}
+            onClick={dismissNotification}
+          >
+            ✕
+          </button>
+        </>
+      ) : syncConflict ? (
+        <>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          <span>{t.errors?.syncConflict || 'Endringer fra en annen enhet ble overskrevet'}</span>
+          <button
+            className="ml-2 px-2 py-0.5 rounded text-xs hover:bg-white/20 transition-colors"
+            onClick={dismissNotification}
           >
             ✕
           </button>
