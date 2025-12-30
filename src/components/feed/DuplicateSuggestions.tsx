@@ -13,7 +13,7 @@
  * - Collapsible list for many suggestions
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 
@@ -71,12 +71,14 @@ function EventCard({
   onSelect,
   formatDate,
   formatTime,
+  keptLabel,
 }: {
   event: DuplicateEvent
   isSelected: boolean
   onSelect: () => void
   formatDate: (d: string) => string
   formatTime: (t: string | null) => string | null
+  keptLabel: string
 }) {
   return (
     <button
@@ -131,7 +133,7 @@ function EventCard({
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4L12 14.01l-3-3" />
           </svg>
-          Beholdes
+          {keptLabel}
         </div>
       )}
     </button>
@@ -140,7 +142,7 @@ function EventCard({
 
 function DuplicateSuggestionCard({ suggestion, onResolve, loading }: SuggestionCardProps) {
   const [selectedEvent, setSelectedEvent] = useState<'a' | 'b' | null>(null)
-  const { language } = useLanguage()
+  const { language, t } = useLanguage()
 
   const getLocale = () => {
     switch (language) {
@@ -183,7 +185,7 @@ function DuplicateSuggestionCard({ suggestion, onResolve, loading }: SuggestionC
       <div className="flex items-start justify-between mb-3">
         <div>
           <p className="font-medium text-sm" style={{ color: 'var(--foreground)' }}>
-            Mulig duplikat funnet
+            {t.feed.duplicates.possibleDuplicate}
           </p>
           <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
             {suggestion.matchReason}
@@ -202,6 +204,7 @@ function DuplicateSuggestionCard({ suggestion, onResolve, loading }: SuggestionC
           onSelect={() => setSelectedEvent('a')}
           formatDate={formatDate}
           formatTime={formatTime}
+          keptLabel={t.feed.duplicates.kept}
         />
         <EventCard
           event={suggestion.eventB}
@@ -209,13 +212,14 @@ function DuplicateSuggestionCard({ suggestion, onResolve, loading }: SuggestionC
           onSelect={() => setSelectedEvent('b')}
           formatDate={formatDate}
           formatTime={formatTime}
+          keptLabel={t.feed.duplicates.kept}
         />
       </div>
 
       {/* Instructions */}
       {!selectedEvent && (
         <p className="text-xs mb-3 text-center" style={{ color: 'var(--muted)' }}>
-          Velg hvilken hendelse du vil beholde, eller behold begge
+          {t.feed.duplicates.selectToKeep}
         </p>
       )}
 
@@ -230,21 +234,21 @@ function DuplicateSuggestionCard({ suggestion, onResolve, loading }: SuggestionC
             cursor: selectedEvent ? 'pointer' : 'not-allowed',
           }}
         >
-          {loading ? 'Slår sammen...' : 'Slå sammen'}
+          {loading ? t.feed.duplicates.merging : t.feed.duplicates.merge}
         </button>
         <button
           onClick={handleKeepBoth}
           disabled={loading}
           className="btn btn-secondary text-sm"
         >
-          Behold begge
+          {t.feed.duplicates.keepBoth}
         </button>
         <button
           onClick={handleDismiss}
           disabled={loading}
           className="p-2 rounded-lg hover:bg-white/5"
           style={{ color: 'var(--muted)' }}
-          title="Skjul forslag"
+          title={t.feed.duplicates.hideSuggestion}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" />
@@ -263,16 +267,31 @@ interface SuggestionsListProps {
 const COLLAPSE_THRESHOLD = 3
 
 export function DuplicateSuggestionsList({ suggestions, onUpdate }: SuggestionsListProps) {
+  const { t } = useLanguage()
   const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set())
   const [loadingId, setLoadingId] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const timerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+    }
+  }, [])
 
   const handleResolve = useCallback(async (
     id: string,
     action: 'merge_a' | 'merge_b' | 'not_duplicate' | 'dismiss'
   ) => {
     setLoadingId(id)
+    setErrorMessage(null)
+
+    // Clear any existing timer
+    if (timerRef.current) clearTimeout(timerRef.current)
+
     try {
       const supabase = createClient()
       const { error } = await supabase.rpc('resolve_duplicate_suggestion', {
@@ -282,28 +301,31 @@ export function DuplicateSuggestionsList({ suggestions, onUpdate }: SuggestionsL
 
       if (error) {
         console.error('Error resolving suggestion:', error)
+        setErrorMessage(t.feed.duplicates.couldNotComplete)
+        timerRef.current = setTimeout(() => setErrorMessage(null), 5000)
         return
       }
 
       setResolvedIds((prev) => new Set(prev).add(id))
 
       if (action === 'merge_a' || action === 'merge_b') {
-        setSuccessMessage('Hendelsene ble slått sammen')
+        setSuccessMessage(t.feed.duplicates.eventsMerged)
       } else if (action === 'not_duplicate') {
-        setSuccessMessage('Begge hendelser beholdt')
+        setSuccessMessage(t.feed.duplicates.bothKept)
       }
 
-      if (successMessage) {
-        setTimeout(() => setSuccessMessage(null), 3000)
-      }
+      // Always set timer to clear success message
+      timerRef.current = setTimeout(() => setSuccessMessage(null), 3000)
 
       onUpdate()
     } catch (error) {
       console.error('Error resolving suggestion:', error)
+      setErrorMessage(t.feed.duplicates.couldNotComplete)
+      timerRef.current = setTimeout(() => setErrorMessage(null), 5000)
     } finally {
       setLoadingId(null)
     }
-  }, [onUpdate, successMessage])
+  }, [onUpdate, t.feed.duplicates])
 
   const visibleSuggestions = suggestions.filter((s) => !resolvedIds.has(s.id))
 
@@ -319,7 +341,7 @@ export function DuplicateSuggestionsList({ suggestions, onUpdate }: SuggestionsL
   return (
     <section className="space-y-3">
       <h2 className="text-lg font-semibold" style={{ color: 'var(--foreground)' }}>
-        Foreslåtte duplikater
+        {t.feed.duplicates.suggestionsTitle}
         <span
           className="ml-2 px-2 py-0.5 text-xs rounded-full"
           style={{ background: 'var(--color-honey)', color: 'white' }}
@@ -327,6 +349,20 @@ export function DuplicateSuggestionsList({ suggestions, onUpdate }: SuggestionsL
           {visibleSuggestions.length}
         </span>
       </h2>
+
+      {errorMessage && (
+        <div
+          className="p-3 rounded-lg flex items-center gap-2"
+          style={{ background: 'rgba(232, 140, 140, 0.2)', color: 'var(--color-coral)' }}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          {errorMessage}
+        </div>
+      )}
 
       {successMessage && (
         <div
@@ -357,8 +393,8 @@ export function DuplicateSuggestionsList({ suggestions, onUpdate }: SuggestionsL
           style={{ color: 'var(--primary)', background: 'var(--background)' }}
         >
           {expanded
-            ? 'Vis færre forslag'
-            : `Vis ${visibleSuggestions.length - COLLAPSE_THRESHOLD} flere forslag`
+            ? t.feed.duplicates.showFewer
+            : t.feed.duplicates.showMore.replace('{count}', String(visibleSuggestions.length - COLLAPSE_THRESHOLD))
           }
         </button>
       )}

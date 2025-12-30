@@ -13,7 +13,7 @@
  * - Batch operations for power users
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 
@@ -38,7 +38,7 @@ interface MergedCardProps {
 }
 
 function MergedDuplicateCard({ merged, onUndo, loading }: MergedCardProps) {
-  const { language } = useLanguage()
+  const { language, t } = useLanguage()
 
   const getLocale = () => {
     switch (language) {
@@ -60,10 +60,13 @@ function MergedDuplicateCard({ merged, onUndo, loading }: MergedCardProps) {
     const diffMs = now.getTime() - date.getTime()
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
 
-    if (diffDays === 0) return 'I dag'
-    if (diffDays === 1) return 'I går'
-    if (diffDays < 7) return `${diffDays} dager siden`
-    if (diffDays < 30) return `${Math.floor(diffDays / 7)} uker siden`
+    if (diffDays === 0) return t.common.today
+    if (diffDays === 1) return t.common.yesterday
+    if (diffDays < 7) return `${diffDays} ${t.common.days} ${language === 'en' ? 'ago' : 'siden'}`
+    if (diffDays < 30) {
+      const weeks = Math.floor(diffDays / 7)
+      return language === 'en' ? `${weeks} weeks ago` : language === 'sv' ? `${weeks} veckor sedan` : `${weeks} uker siden`
+    }
     return formatDate(dateStr)
   }
 
@@ -99,7 +102,7 @@ function MergedDuplicateCard({ merged, onUndo, loading }: MergedCardProps) {
               <span>{formatDate(merged.event_date)}</span>
               {merged.source_name && <span>• {merged.source_name}</span>}
               {merged.child_name && <span>• {merged.child_name}</span>}
-              <span>• {confidence}% sannsynlighet</span>
+              <span>• {confidence}% {t.feed.duplicates.probability}</span>
             </div>
           </div>
           <span className="text-xs flex-shrink-0" style={{ color: 'var(--muted)' }}>
@@ -119,7 +122,7 @@ function MergedDuplicateCard({ merged, onUndo, loading }: MergedCardProps) {
           opacity: loading ? 0.5 : 1,
         }}
       >
-        {loading ? 'Angrer...' : 'Angre'}
+        {loading ? t.feed.duplicates.undoing : t.feed.duplicates.undo}
       </button>
     </div>
   )
@@ -131,13 +134,28 @@ interface MergedListProps {
 }
 
 export function MergedDuplicatesList({ mergedDuplicates, onUpdate }: MergedListProps) {
+  const { t } = useLanguage()
   const [expanded, setExpanded] = useState(false)
   const [restoredIds, setRestoredIds] = useState<Set<string>>(new Set())
   const [loadingId, setLoadingId] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const timerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+    }
+  }, [])
 
   const handleUndo = useCallback(async (id: string) => {
     setLoadingId(id)
+    setErrorMessage(null)
+
+    // Clear any existing timer
+    if (timerRef.current) clearTimeout(timerRef.current)
+
     try {
       const supabase = createClient()
 
@@ -153,19 +171,23 @@ export function MergedDuplicatesList({ mergedDuplicates, onUpdate }: MergedListP
 
       if (error) {
         console.error('Error undoing merge:', error)
+        setErrorMessage(t.feed.duplicates.couldNotRestore)
+        timerRef.current = setTimeout(() => setErrorMessage(null), 5000)
         return
       }
 
       setRestoredIds((prev) => new Set(prev).add(id))
-      setSuccessMessage('Hendelsen er gjenopprettet')
-      setTimeout(() => setSuccessMessage(null), 3000)
+      setSuccessMessage(t.feed.duplicates.eventRestored)
+      timerRef.current = setTimeout(() => setSuccessMessage(null), 3000)
       onUpdate()
     } catch (error) {
       console.error('Error undoing merge:', error)
+      setErrorMessage(t.feed.duplicates.couldNotRestore)
+      timerRef.current = setTimeout(() => setErrorMessage(null), 5000)
     } finally {
       setLoadingId(null)
     }
-  }, [onUpdate])
+  }, [onUpdate, t.feed.duplicates])
 
   const visibleMerged = mergedDuplicates.filter((m) => !restoredIds.has(m.id))
 
@@ -198,7 +220,7 @@ export function MergedDuplicatesList({ mergedDuplicates, onUpdate }: MergedListP
             <polyline points="9 18 15 12 9 6" />
           </svg>
           <span className="font-medium text-sm" style={{ color: 'var(--foreground)' }}>
-            Nylig sammenslåtte duplikater
+            {t.feed.duplicates.mergedTitle}
           </span>
           <span
             className="px-2 py-0.5 text-xs rounded-full"
@@ -208,13 +230,27 @@ export function MergedDuplicatesList({ mergedDuplicates, onUpdate }: MergedListP
           </span>
         </div>
         <span className="text-xs" style={{ color: 'var(--muted)' }}>
-          {expanded ? 'Skjul' : 'Vis'}
+          {expanded ? t.feed.duplicates.hide : t.feed.duplicates.show}
         </span>
       </button>
 
       {/* Expanded content */}
       {expanded && (
         <div className="space-y-2">
+          {errorMessage && (
+            <div
+              className="p-3 rounded-lg flex items-center gap-2"
+              style={{ background: 'rgba(232, 140, 140, 0.2)', color: 'var(--color-coral)' }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              {errorMessage}
+            </div>
+          )}
+
           {successMessage && (
             <div
               className="p-3 rounded-lg flex items-center gap-2"
@@ -229,8 +265,7 @@ export function MergedDuplicatesList({ mergedDuplicates, onUpdate }: MergedListP
           )}
 
           <p className="text-xs px-1" style={{ color: 'var(--muted)' }}>
-            Disse hendelsene ble automatisk skjult fordi de ble vurdert som duplikater.
-            Du kan angre hvis du mener de ikke er like.
+            {t.feed.duplicates.mergedExplanation}
           </p>
 
           {visibleMerged.map((merged) => (

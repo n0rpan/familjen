@@ -9,6 +9,7 @@
  */
 
 import { useState, useMemo, useRef, useEffect } from 'react'
+import { useLanguage } from '@/lib/i18n/context'
 import { FeedFilters, type FeedFilter } from './FeedFilters'
 import { FeedSearch } from './FeedSearch'
 import { MessageCard, type FeedMessage } from './MessageCard'
@@ -77,6 +78,7 @@ export function FeedPageContent({
   onDuplicatesUpdate,
   isDemo = false,
 }: FeedPageContentProps) {
+  const { t, language } = useLanguage()
   const [activeFilter, setActiveFilter] = useState<FeedFilter>(initialFilter)
   const [syncing, setSyncing] = useState(false)
   const [deduplicating, setDeduplicating] = useState(false)
@@ -120,10 +122,10 @@ export function FeedPageContent({
         // Clear result after 10 seconds
         dedupeTimerRef.current = setTimeout(() => setDedupeResult(null), 10000)
       } else {
-        setDedupeError('Kunne ikke kjøre duplikatsjekk. Prøv igjen senere.')
+        setDedupeError(t.feed.duplicates.couldNotStartSearch)
       }
     } catch {
-      setDedupeError('Noe gikk galt. Prøv igjen senere.')
+      setDedupeError(t.feed.duplicates.couldNotStartSearch)
     } finally {
       setDeduplicating(false)
     }
@@ -216,7 +218,7 @@ export function FeedPageContent({
               disabled={deduplicating || isDemo}
               className="btn btn-secondary text-sm flex-shrink-0"
               style={isDemo ? { opacity: 0.5 } : undefined}
-              title="Finn og skjul duplikate hendelser fra forskjellige kilder"
+              title={t.feed.duplicates.findDuplicates}
             >
               {deduplicating ? (
                 <span className="flex items-center gap-2">
@@ -236,7 +238,7 @@ export function FeedPageContent({
                       d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                     />
                   </svg>
-                  Søker...
+                  {t.feed.duplicates.searching}
                 </span>
               ) : (
                 <span className="flex items-center gap-2">
@@ -246,7 +248,7 @@ export function FeedPageContent({
                     <path d="M14 14h7v7h-7z" opacity="0.5" />
                     <path d="M7 14l-4 4m0-4l4 4" strokeLinecap="round" />
                   </svg>
-                  Finn duplikater
+                  {t.feed.duplicates.findDuplicates}
                 </span>
               )}
             </button>
@@ -339,13 +341,13 @@ export function FeedPageContent({
           <div>
             <p className="font-medium" style={{ color: 'var(--foreground)' }}>
               {dedupeResult.autoMerged > 0
-                ? `${dedupeResult.autoMerged} duplikat${dedupeResult.autoMerged > 1 ? 'er' : ''} skjult`
-                : 'Ingen duplikater funnet'}
+                ? t.feed.duplicates.autoMerged.replace('{count}', String(dedupeResult.autoMerged))
+                : t.feed.duplicates.noDuplicatesFound}
             </p>
             <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>
-              {dedupeResult.pairsChecked} hendelsespar ble sjekket
+              {t.feed.duplicates.pairsChecked.replace('{count}', String(dedupeResult.pairsChecked))}
               {dedupeResult.suggestionsCreated > 0 && (
-                <> &bull; {dedupeResult.suggestionsCreated} forslag til gjennomgang</>
+                <> &bull; {t.feed.duplicates.suggestionsNeedReview.replace('{count}', String(dedupeResult.suggestionsCreated))}</>
               )}
             </p>
           </div>
