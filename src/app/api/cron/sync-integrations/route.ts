@@ -9,6 +9,7 @@ import { syncCalendarSource, type CalendarSource } from '@/lib/integrations/cale
 import { formatDateISO, addDays } from '@/lib/utils'
 import { FUTURE_SYNC_DAYS, HISTORICAL_SYNC_DAYS } from '@/lib/integrations/shared'
 import { handleEventDeletionsAndChanges, type SyncedEvent } from '@/lib/integrations/shared/deletion-handler'
+import { deduplicateAllEvents } from '@/lib/integrations/event-deduplication'
 import { fetchAndParseICS, type ICSEvent } from '@/lib/ics-parser'
 import { syncHouseholdICS as syncHouseholdICSShared } from '@/lib/household-ics-sync'
 import { verifyCronRequest } from '@/lib/cron-auth'
@@ -522,6 +523,23 @@ export async function GET(request: Request) {
     console.log(`[Cron] Documents: ${documentsProcessed} processed, ${documentSuggestionsCreated} suggestions`)
     console.log(`[Cron] Calendar sources: ${calendarSourcesSuccess}/${calendarSourcesProcessed} synced, ${calendarEventsFound} events found, ${calendarEventsRemoved} removed`)
 
+    // Run deduplication on all households after syncing
+    let deduplicationAutoMerged = 0
+    let deduplicationSuggestionsCreated = 0
+    for (const household of households) {
+      try {
+        const dedupeResult = await deduplicateAllEvents(supabase, household.id)
+        deduplicationAutoMerged += dedupeResult.autoMerged
+        deduplicationSuggestionsCreated += dedupeResult.suggestionsCreated
+        if (dedupeResult.autoMerged > 0 || dedupeResult.suggestionsCreated > 0) {
+          console.log(`[Cron] Deduplication for ${household.name}: ${dedupeResult.autoMerged} auto-merged, ${dedupeResult.suggestionsCreated} suggestions`)
+        }
+      } catch (dedupeError) {
+        console.error(`[Cron] Deduplication error for ${household.name}:`, dedupeError)
+      }
+    }
+    console.log(`[Cron] Deduplication total: ${deduplicationAutoMerged} auto-merged, ${deduplicationSuggestionsCreated} suggestions`)
+
     // Summary
     const successCount = results.filter((r) => r.success).length
     const failureCount = results.filter((r) => !r.success).length
@@ -553,6 +571,10 @@ export async function GET(request: Request) {
         membersProcessed: icsResults.membersProcessed,
         membersSuccess: icsResults.membersSuccess,
         eventsTotal: icsResults.eventsTotal,
+      },
+      deduplication: {
+        autoMerged: deduplicationAutoMerged,
+        suggestionsCreated: deduplicationSuggestionsCreated,
       },
     })
   } catch (error) {
