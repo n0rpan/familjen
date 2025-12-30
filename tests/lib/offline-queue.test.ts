@@ -27,7 +27,8 @@ describe('offline-queue', () => {
       })
 
       expect(id).toBeDefined()
-      expect(id).toMatch(/^\d+-[a-z0-9]+$/)
+      // UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
 
       const changes = await getPendingChanges()
       expect(changes).toHaveLength(1)

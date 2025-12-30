@@ -22,7 +22,6 @@ vi.mock('@/lib/image-compression', () => ({
     compressedSize: 500000,
     format: 'jpeg',
   }),
-  compressImageToFile: vi.fn().mockResolvedValue(new File(['fake'], 'test.jpg', { type: 'image/jpeg' })),
 }))
 
 // Mock language context

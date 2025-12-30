@@ -90,7 +90,7 @@ export interface QueueChangeOptions {
 // Add a change to the queue
 export async function queueChange(change: QueueChangeOptions): Promise<string> {
   const db = await openDB()
-  const id = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
+  const id = crypto.randomUUID()
 
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite')
