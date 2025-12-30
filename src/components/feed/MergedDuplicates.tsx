@@ -16,6 +16,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
+import { formatRelativeTime, formatDateShort } from '@/lib/utils'
 
 export interface MergedDuplicate {
   id: string // ID of the hidden event
@@ -39,37 +40,6 @@ interface MergedCardProps {
 
 function MergedDuplicateCard({ merged, onUndo, loading }: MergedCardProps) {
   const { language, t } = useLanguage()
-
-  const getLocale = () => {
-    switch (language) {
-      case 'nb': return 'nb-NO'
-      case 'sv': return 'sv-SE'
-      case 'en': return 'en-US'
-      default: return 'nb-NO'
-    }
-  }
-
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr)
-    return date.toLocaleDateString(getLocale(), { day: 'numeric', month: 'short' })
-  }
-
-  const formatRelativeTime = (dateStr: string) => {
-    const date = new Date(dateStr)
-    const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-
-    if (diffDays === 0) return t.common.today
-    if (diffDays === 1) return t.common.yesterday
-    if (diffDays < 7) return `${diffDays} ${t.common.days} ${language === 'en' ? 'ago' : 'siden'}`
-    if (diffDays < 30) {
-      const weeks = Math.floor(diffDays / 7)
-      return language === 'en' ? `${weeks} weeks ago` : language === 'sv' ? `${weeks} veckor sedan` : `${weeks} uker siden`
-    }
-    return formatDate(dateStr)
-  }
-
   const confidence = Math.round(merged.duplicate_confidence * 100)
 
   return (
@@ -99,14 +69,14 @@ function MergedDuplicateCard({ merged, onUndo, loading }: MergedCardProps) {
               <span className="font-medium">{merged.kept_event_title}</span>
             </p>
             <div className="flex flex-wrap gap-2 mt-1 text-xs" style={{ color: 'var(--muted)' }}>
-              <span>{formatDate(merged.event_date)}</span>
+              <span>{formatDateShort(merged.event_date, language)}</span>
               {merged.source_name && <span>• {merged.source_name}</span>}
               {merged.child_name && <span>• {merged.child_name}</span>}
               <span>• {confidence}% {t.feed.duplicates.probability}</span>
             </div>
           </div>
           <span className="text-xs flex-shrink-0" style={{ color: 'var(--muted)' }}>
-            {formatRelativeTime(merged.merged_at)}
+            {formatRelativeTime(merged.merged_at, language, t)}
           </span>
         </div>
       </div>

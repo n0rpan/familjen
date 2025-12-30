@@ -1,5 +1,58 @@
-import type { Language } from './i18n/types'
+import type { Language, TranslationStrings } from './i18n/types'
 import { getTranslations } from './i18n/translations'
+
+/**
+ * Get the locale string for Intl APIs based on language
+ */
+export function getLocale(language: Language): string {
+  switch (language) {
+    case 'nb': return 'nb-NO'
+    case 'sv': return 'sv-SE'
+    case 'en': return 'en-US'
+    default: return 'nb-NO'
+  }
+}
+
+/**
+ * Format a relative time string like "2 days ago", "1 week ago"
+ * Uses localized strings from translations
+ */
+export function formatRelativeTime(
+  dateStr: string,
+  language: Language,
+  t: TranslationStrings
+): string {
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+  if (diffDays === 0) return t.common.today
+  if (diffDays === 1) return t.common.yesterday
+  if (diffDays < 7) {
+    const suffix = language === 'en' ? 'ago' : language === 'sv' ? 'sedan' : 'siden'
+    return `${diffDays} ${t.common.days} ${suffix}`
+  }
+  if (diffDays < 30) {
+    const weeks = Math.floor(diffDays / 7)
+    const weekWord = weeks === 1
+      ? (language === 'en' ? 'week' : language === 'sv' ? 'vecka' : 'uke')
+      : (language === 'en' ? 'weeks' : language === 'sv' ? 'veckor' : 'uker')
+    const suffix = language === 'en' ? 'ago' : language === 'sv' ? 'sedan' : 'siden'
+    return `${weeks} ${weekWord} ${suffix}`
+  }
+
+  // For dates older than 30 days, show the formatted date
+  return formatDateShort(dateStr, language)
+}
+
+/**
+ * Format a date as short localized string (e.g., "16 Dec", "16 des")
+ */
+export function formatDateShort(dateStr: string, language: Language): string {
+  const date = new Date(dateStr)
+  return date.toLocaleDateString(getLocale(language), { day: 'numeric', month: 'short' })
+}
 
 /**
  * Format a date in localized style: "mandag 16. desember" (nb), "Monday 16. december" (en)

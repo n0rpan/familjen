@@ -16,6 +16,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
+import { formatDateShort } from '@/lib/utils'
 
 export interface DuplicateEvent {
   id: string
@@ -144,19 +145,7 @@ function DuplicateSuggestionCard({ suggestion, onResolve, loading }: SuggestionC
   const [selectedEvent, setSelectedEvent] = useState<'a' | 'b' | null>(null)
   const { language, t } = useLanguage()
 
-  const getLocale = () => {
-    switch (language) {
-      case 'nb': return 'nb-NO'
-      case 'sv': return 'sv-SE'
-      case 'en': return 'en-US'
-      default: return 'nb-NO'
-    }
-  }
-
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr)
-    return date.toLocaleDateString(getLocale(), { day: 'numeric', month: 'short' })
-  }
+  const formatDate = (dateStr: string) => formatDateShort(dateStr, language)
 
   const formatTime = (timeStr: string | null) => {
     if (!timeStr) return null
