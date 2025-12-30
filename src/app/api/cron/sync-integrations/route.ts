@@ -7,7 +7,7 @@ import { MyKidClient, MyKidAuthError, MyKidError } from '@/lib/integrations/myki
 import { extractEventsFromHtml, extractEventsFromPdf, extractEventsFromImage, type ExtractedEvent } from '@/lib/integrations/document-extraction'
 import { syncCalendarSource, type CalendarSource } from '@/lib/integrations/calendar-source-sync'
 import { formatDateISO, addDays } from '@/lib/utils'
-import { FUTURE_SYNC_DAYS } from '@/lib/integrations/shared'
+import { FUTURE_SYNC_DAYS, HISTORICAL_SYNC_DAYS } from '@/lib/integrations/shared'
 import { fetchAndParseICS, type ICSEvent } from '@/lib/ics-parser'
 import { syncHouseholdICS as syncHouseholdICSShared } from '@/lib/household-ics-sync'
 import { verifyCronRequest } from '@/lib/cron-auth'
@@ -623,12 +623,13 @@ async function syncSpondIntegration(
       throw error
     }
 
-    // Calculate date ranges (full year ahead for calendar, 30 days back for messages)
+    // Calculate date ranges (full year ahead for calendar, historical for first sync)
     const now = new Date()
     const futureDate = addDays(now, FUTURE_SYNC_DAYS)
+    const isFirstSync = !integration.last_sync_at
     const lastSync = integration.last_sync_at
       ? new Date(integration.last_sync_at)
-      : addDays(now, -30)
+      : addDays(now, -HISTORICAL_SYNC_DAYS) // Use 365 days for first sync, matching manual sync
 
     const mappedGroupIds = new Set(childMappings.map((m) => m.groupId))
 
@@ -889,7 +890,7 @@ async function syncKidplanIntegration(
     const now = new Date()
     const lastSync = integration.last_sync_at
       ? new Date(integration.last_sync_at)
-      : addDays(now, -30)
+      : addDays(now, -HISTORICAL_SYNC_DAYS) // Use 365 days for first sync
 
     // Fetch board posts and conversations
     // Note: Kidplan messages are not child-specific (board posts/conversations apply to all children)
@@ -1049,7 +1050,7 @@ async function syncISkoleIntegration(
     const now = new Date()
     const lastSync = integration.last_sync_at
       ? new Date(integration.last_sync_at)
-      : addDays(now, -30)
+      : addDays(now, -HISTORICAL_SYNC_DAYS) // Use 365 days for first sync
 
     const messagesToUpsert: Array<Record<string, unknown>> = []
 
@@ -1175,9 +1176,10 @@ async function syncMyKidIntegration(
 
     const now = new Date()
     const futureDate = addDays(now, FUTURE_SYNC_DAYS)
+    const isFirstSync = !integration.last_sync_at
     const lastSync = integration.last_sync_at
       ? new Date(integration.last_sync_at)
-      : addDays(now, -30)
+      : addDays(now, -HISTORICAL_SYNC_DAYS) // Use 365 days for first sync
 
     // Sync calendar events (JSON API - easy)
     try {
@@ -1225,8 +1227,9 @@ async function syncMyKidIntegration(
     try {
       const newsletters = await client.getNewsletterList()
 
-      // Limit to recent 20 in cron
-      for (const summary of newsletters.slice(0, 20)) {
+      // Match manual sync limit (50) for first sync, otherwise 20 for incremental
+      const newsletterLimit = isFirstSync ? 50 : 20
+      for (const summary of newsletters.slice(0, newsletterLimit)) {
         // Check if already synced
         const { data: existing } = await supabase
           .from('external_messages')
