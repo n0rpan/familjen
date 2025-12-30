@@ -23,7 +23,7 @@ import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
 import { formatDateISO } from '@/lib/utils'
 import { createChildTaskSchema } from '@/lib/schemas'
-import { queueChange } from '@/lib/offline-queue'
+import { queueChange, updateQueuedInsert, removeQueuedInsert } from '@/lib/offline-queue'
 import type { ChildTask, ChildTaskWithChild, Child } from '@/lib/types'
 
 export interface UseTasksOptions {
@@ -176,15 +176,17 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
 
     // If offline, queue the change for later sync
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      // Generate temp ID first so we can store it in the queue for later matching
+      const tempId = `temp-${Date.now()}`
       await queueChange({
         table: 'child_tasks',
         operation: 'insert',
-        data: task as Record<string, unknown>,
+        data: { ...task, _tempId: tempId } as Record<string, unknown>,
       })
       // Optimistically add to local state with temporary ID
       const tempTask: ChildTask = {
         ...task,
-        id: `temp-${Date.now()}`,
+        id: tempId,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       } as ChildTask
@@ -235,9 +237,11 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
 
     // If offline, queue the change for later sync
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      // Don't queue updates for temp items - they're not in DB yet
-      // The original insert is already queued and will sync first
-      if (!taskId.startsWith('temp-')) {
+      if (taskId.startsWith('temp-')) {
+        // For temp items, update the queued insert's data directly
+        await updateQueuedInsert('child_tasks', '_tempId', taskId, updates)
+      } else {
+        // For real items, queue a separate update operation
         await queueChange({
           table: 'child_tasks',
           operation: 'update',
@@ -273,9 +277,11 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
 
     // If offline, queue the change for later sync
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      // Don't queue deletes for temp items - they're not in DB yet
-      // Just remove from local state (the insert will never sync)
-      if (!taskId.startsWith('temp-')) {
+      if (taskId.startsWith('temp-')) {
+        // For temp items, remove the queued insert entirely
+        await removeQueuedInsert('child_tasks', '_tempId', taskId)
+      } else {
+        // For real items, queue a delete operation
         await queueChange({
           table: 'child_tasks',
           operation: 'delete',

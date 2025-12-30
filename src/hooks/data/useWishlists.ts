@@ -21,7 +21,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
 import { createWishlistItemSchema, updateWishlistItemSchema } from '@/lib/schemas'
-import { queueChange } from '@/lib/offline-queue'
+import { queueChange, updateQueuedInsert, removeQueuedInsert } from '@/lib/offline-queue'
 import type { WishlistItem } from '@/lib/types'
 
 export interface UseWishlistsReturn {
@@ -123,15 +123,17 @@ export function useWishlists(): UseWishlistsReturn {
 
     // If offline, queue the change for later sync
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      // Generate temp ID first so we can store it in the queue for later matching
+      const tempId = `temp-${Date.now()}`
       await queueChange({
         table: 'wishlist_items',
         operation: 'insert',
-        data: item as Record<string, unknown>,
+        data: { ...item, _tempId: tempId } as Record<string, unknown>,
       })
       // Optimistically add to local state with temporary ID
       const tempItem: WishlistItem = {
         ...item,
-        id: `temp-${Date.now()}`,
+        id: tempId,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       } as WishlistItem
@@ -181,8 +183,11 @@ export function useWishlists(): UseWishlistsReturn {
 
     // If offline, queue the change for later sync
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      // Don't queue updates for temp items - they're not in DB yet
-      if (!itemId.startsWith('temp-')) {
+      if (itemId.startsWith('temp-')) {
+        // For temp items, update the queued insert's data directly
+        await updateQueuedInsert('wishlist_items', '_tempId', itemId, updates)
+      } else {
+        // For real items, queue a separate update operation
         await queueChange({
           table: 'wishlist_items',
           operation: 'update',
@@ -218,8 +223,11 @@ export function useWishlists(): UseWishlistsReturn {
 
     // If offline, queue the change for later sync
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      // Don't queue deletes for temp items - they're not in DB yet
-      if (!itemId.startsWith('temp-')) {
+      if (itemId.startsWith('temp-')) {
+        // For temp items, remove the queued insert entirely
+        await removeQueuedInsert('wishlist_items', '_tempId', itemId)
+      } else {
+        // For real items, queue a delete operation
         await queueChange({
           table: 'wishlist_items',
           operation: 'delete',

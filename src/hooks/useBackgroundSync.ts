@@ -163,9 +163,11 @@ async function processChange(
 
   switch (operation) {
     case 'insert': {
+      // Strip internal _tempId field before sending to DB
+      const { _tempId, ...insertData } = data
       // Use upsert with ignoreDuplicates for inserts
       // If another device already created this item, we skip it
-      const { error } = await supabase.from(table).upsert(data, {
+      const { error } = await supabase.from(table).upsert(insertData, {
         onConflict: 'id',
         ignoreDuplicates: true,
       })

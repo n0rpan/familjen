@@ -176,3 +176,81 @@ export async function clearAllChanges(): Promise<void> {
     request.onsuccess = () => resolve()
   })
 }
+
+/**
+ * Find and update a queued insert's data by matching a field value.
+ * Used when editing an item that was created offline (before sync).
+ */
+export async function updateQueuedInsert(
+  table: string,
+  matchField: string,
+  matchValue: unknown,
+  updates: Record<string, unknown>
+): Promise<boolean> {
+  const db = await openDB()
+
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite')
+    const store = tx.objectStore(STORE_NAME)
+    const index = store.index('table')
+    const request = index.openCursor(IDBKeyRange.only(table))
+
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => {
+      const cursor = request.result
+      if (cursor) {
+        const change = cursor.value as PendingChange
+        if (change.operation === 'insert' && change.data[matchField] === matchValue) {
+          // Found the matching insert - update its data
+          change.data = { ...change.data, ...updates }
+          const updateRequest = cursor.update(change)
+          updateRequest.onerror = () => reject(updateRequest.error)
+          updateRequest.onsuccess = () => resolve(true)
+          return
+        }
+        cursor.continue()
+      } else {
+        // No matching insert found
+        resolve(false)
+      }
+    }
+  })
+}
+
+/**
+ * Find and remove a queued insert by matching a field value.
+ * Used when deleting an item that was created offline (before sync).
+ */
+export async function removeQueuedInsert(
+  table: string,
+  matchField: string,
+  matchValue: unknown
+): Promise<boolean> {
+  const db = await openDB()
+
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite')
+    const store = tx.objectStore(STORE_NAME)
+    const index = store.index('table')
+    const request = index.openCursor(IDBKeyRange.only(table))
+
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => {
+      const cursor = request.result
+      if (cursor) {
+        const change = cursor.value as PendingChange
+        if (change.operation === 'insert' && change.data[matchField] === matchValue) {
+          // Found the matching insert - delete it
+          const deleteRequest = cursor.delete()
+          deleteRequest.onerror = () => reject(deleteRequest.error)
+          deleteRequest.onsuccess = () => resolve(true)
+          return
+        }
+        cursor.continue()
+      } else {
+        // No matching insert found
+        resolve(false)
+      }
+    }
+  })
+}
