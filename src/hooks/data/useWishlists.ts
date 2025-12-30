@@ -181,11 +181,14 @@ export function useWishlists(): UseWishlistsReturn {
 
     // If offline, queue the change for later sync
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      await queueChange({
-        table: 'wishlist_items',
-        operation: 'update',
-        data: { id: itemId, ...updates } as Record<string, unknown>,
-      })
+      // Don't queue updates for temp items - they're not in DB yet
+      if (!itemId.startsWith('temp-')) {
+        await queueChange({
+          table: 'wishlist_items',
+          operation: 'update',
+          data: { id: itemId, ...updates } as Record<string, unknown>,
+        })
+      }
       // Optimistically update local state
       setItems(prev => prev.map(i => i.id === itemId ? { ...i, ...updates } : i))
       return
@@ -215,11 +218,14 @@ export function useWishlists(): UseWishlistsReturn {
 
     // If offline, queue the change for later sync
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      await queueChange({
-        table: 'wishlist_items',
-        operation: 'delete',
-        data: { id: itemId },
-      })
+      // Don't queue deletes for temp items - they're not in DB yet
+      if (!itemId.startsWith('temp-')) {
+        await queueChange({
+          table: 'wishlist_items',
+          operation: 'delete',
+          data: { id: itemId },
+        })
+      }
       // Optimistically remove from local state
       setItems(prev => prev.filter(i => i.id !== itemId))
       return

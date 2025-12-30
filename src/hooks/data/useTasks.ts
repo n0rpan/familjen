@@ -235,11 +235,15 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
 
     // If offline, queue the change for later sync
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      await queueChange({
-        table: 'child_tasks',
-        operation: 'update',
-        data: { id: taskId, ...updates } as Record<string, unknown>,
-      })
+      // Don't queue updates for temp items - they're not in DB yet
+      // The original insert is already queued and will sync first
+      if (!taskId.startsWith('temp-')) {
+        await queueChange({
+          table: 'child_tasks',
+          operation: 'update',
+          data: { id: taskId, ...updates } as Record<string, unknown>,
+        })
+      }
       // Optimistically update local state
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t))
       return
@@ -269,11 +273,15 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
 
     // If offline, queue the change for later sync
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      await queueChange({
-        table: 'child_tasks',
-        operation: 'delete',
-        data: { id: taskId },
-      })
+      // Don't queue deletes for temp items - they're not in DB yet
+      // Just remove from local state (the insert will never sync)
+      if (!taskId.startsWith('temp-')) {
+        await queueChange({
+          table: 'child_tasks',
+          operation: 'delete',
+          data: { id: taskId },
+        })
+      }
       // Optimistically remove from local state
       setTasks(prev => prev.filter(t => t.id !== taskId))
       return
