@@ -3,6 +3,10 @@
  *
  * Handles syncing external calendar sources (HTML pages, ICS feeds, PDFs)
  * with proper update/delete detection and removal notifications.
+ *
+ * Key insight: AI extraction is non-deterministic. The same event can be
+ * extracted with slightly different titles between syncs. We use LLM verification
+ * to check if "removed" events are actually still present with different wording.
  */
 
 import { SupabaseClient } from '@supabase/supabase-js'
@@ -82,6 +86,197 @@ export function generateEventHash(
   return createHash('sha256').update(input).digest('hex').slice(0, 16)
 }
 
+interface RemovalVerification {
+  removedEventId: string
+  matchedNewEventId: string | null  // ID of the new event this "removal" actually matches
+  isActuallyRemoved: boolean
+  reason: string
+}
+
+/**
+ * Use LLM to verify if "removed" events are actually removed or just extracted with different wording.
+ * This prevents false positive removal notifications due to AI extraction variation.
+ */
+async function verifyRemovalsWithLLM(
+  potentiallyRemovedEvents: ExternalEvent[],
+  newlyCreatedEvents: Array<{ id: string; title: string; event_date: string; end_date: string | null }>,
+  model: string
+): Promise<RemovalVerification[]> {
+  if (potentiallyRemovedEvents.length === 0) return []
+
+  const apiKey = process.env.OPENROUTER_API_KEY
+  if (!apiKey) {
+    // If no API key, assume all removals are real (conservative approach)
+    console.warn('[CalendarSourceSync] No OPENROUTER_API_KEY, skipping removal verification')
+    return potentiallyRemovedEvents.map(event => ({
+      removedEventId: event.id,
+      matchedNewEventId: null,
+      isActuallyRemoved: true,
+      reason: 'Ingen API-nøkkel for verifisering',
+    }))
+  }
+
+  // Find potential matches based on date proximity (±3 days)
+  const pairsToCheck: Array<{ removed: ExternalEvent; newEvent: typeof newlyCreatedEvents[0] }> = []
+
+  for (const removed of potentiallyRemovedEvents) {
+    const removedDate = new Date(removed.event_date)
+
+    for (const newEvent of newlyCreatedEvents) {
+      const newDate = new Date(newEvent.event_date)
+      const daysDiff = Math.abs((removedDate.getTime() - newDate.getTime()) / (1000 * 60 * 60 * 24))
+
+      if (daysDiff <= 3) {
+        pairsToCheck.push({ removed, newEvent })
+      }
+    }
+  }
+
+  // If no pairs with date proximity, all removals are real
+  if (pairsToCheck.length === 0) {
+    return potentiallyRemovedEvents.map(event => ({
+      removedEventId: event.id,
+      matchedNewEventId: null,
+      isActuallyRemoved: true,
+      reason: 'Ingen liknende hendelser funnet',
+    }))
+  }
+
+  // Build prompt for LLM
+  const pairsDescription = pairsToCheck.map((pair, index) => {
+    const r = pair.removed
+    const n = pair.newEvent
+    return `Pair ${index + 1}:
+  OLD (might be removed): "${r.title}" on ${r.event_date}${r.end_date ? ` to ${r.end_date}` : ''}
+  NEW (just extracted): "${n.title}" on ${n.event_date}${n.end_date ? ` to ${n.end_date}` : ''}`
+  }).join('\n\n')
+
+  const systemPrompt = `Du er ekspert på norske skolekalendere og barnehagerutiner.
+
+Oppgaven din er å avgjøre om en "fjernet" hendelse faktisk er den samme som en ny hendelse, bare med litt annen formulering fra AI-ekstraksjon.
+
+Vanlige varianter:
+- "Fri (Helligdag)" og "Helligdag" er SAMME hendelse
+- "Påskeferie" og "Påske ferie" er SAMME hendelse
+- "Vinterferie" og "Ferie uke 8" er SAMME hendelse
+- "Planleggingsdag" og "Planl.dag" er SAMME hendelse
+- "Stengt SFO" og "SFO stengt" er SAMME hendelse
+
+Svar med JSON for hvert par.`
+
+  const userPrompt = `Sjekk om disse "fjernede" hendelsene faktisk matcher noen av de nye hendelsene:
+
+${pairsDescription}
+
+For hvert par, svar:
+- pairIndex: tallet (1, 2, 3...)
+- isSameEvent: true hvis de er samme hendelse med ulik formulering
+- confidence: 0.0-1.0
+
+Svar KUN med JSON-array:
+[{"pairIndex": 1, "isSameEvent": true, "confidence": 0.95}, ...]`
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://familjen.eu',
+        'X-Title': 'Familjen Removal Verification',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.1,
+        max_tokens: 1000,
+      }),
+    })
+
+    if (!response.ok) {
+      console.error('[CalendarSourceSync] LLM verification error:', response.status)
+      // On error, assume all removals are real (conservative)
+      return potentiallyRemovedEvents.map(event => ({
+        removedEventId: event.id,
+        matchedNewEventId: null,
+        isActuallyRemoved: true,
+        reason: 'Verifikasjon feilet',
+      }))
+    }
+
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content
+
+    if (!content) {
+      return potentiallyRemovedEvents.map(event => ({
+        removedEventId: event.id,
+        matchedNewEventId: null,
+        isActuallyRemoved: true,
+        reason: 'Ingen svar fra AI',
+      }))
+    }
+
+    // Parse JSON
+    let jsonStr = content.trim()
+    if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+    }
+
+    let llmResults: Array<{ pairIndex: number; isSameEvent: boolean; confidence: number }>
+    try {
+      llmResults = JSON.parse(jsonStr)
+    } catch {
+      return potentiallyRemovedEvents.map(event => ({
+        removedEventId: event.id,
+        matchedNewEventId: null,
+        isActuallyRemoved: true,
+        reason: 'Kunne ikke tolke AI-svar',
+      }))
+    }
+
+    // Build result for each potentially removed event
+    const matchedRemovedIds = new Map<string, string>() // removedId -> newEventId
+
+    for (const llmResult of llmResults) {
+      if (llmResult.isSameEvent && llmResult.confidence >= 0.8) {
+        const pair = pairsToCheck[llmResult.pairIndex - 1]
+        if (pair) {
+          matchedRemovedIds.set(pair.removed.id, pair.newEvent.id)
+        }
+      }
+    }
+
+    return potentiallyRemovedEvents.map(event => {
+      const matchedNewId = matchedRemovedIds.get(event.id)
+      if (matchedNewId) {
+        return {
+          removedEventId: event.id,
+          matchedNewEventId: matchedNewId,
+          isActuallyRemoved: false,
+          reason: 'Samme hendelse med ulik formulering',
+        }
+      }
+      return {
+        removedEventId: event.id,
+        matchedNewEventId: null,
+        isActuallyRemoved: true,
+        reason: 'Hendelse fjernet fra kalenderkilde',
+      }
+    })
+  } catch (error) {
+    console.error('[CalendarSourceSync] LLM verification exception:', error)
+    return potentiallyRemovedEvents.map(event => ({
+      removedEventId: event.id,
+      matchedNewEventId: null,
+      isActuallyRemoved: true,
+      reason: 'Verifikasjon feilet',
+    }))
+  }
+}
+
 /**
  * Sync a calendar source, handling updates and deletions properly.
  */
@@ -104,8 +299,9 @@ export async function syncCalendarSource(
     duplicateSuggestionsCreated: 0,
   }
 
-  // Track newly created event IDs for deduplication
+  // Track newly created events for deduplication and removal verification
   const newEventIds: string[] = []
+  const newlyCreatedEvents: Array<{ id: string; title: string; event_date: string; end_date: string | null }> = []
 
   try {
     // 1. Fetch content from source
@@ -227,12 +423,18 @@ export async function syncCalendarSource(
         } else if (insertedEvent) {
           result.eventsCreated++
           newEventIds.push(insertedEvent.id)
+          newlyCreatedEvents.push({
+            id: insertedEvent.id,
+            title: eventData.title || event.title,  // Fallback to original if sanitization returned null
+            event_date: eventData.event_date,
+            end_date: eventData.end_date,
+          })
         }
       }
     }
 
-    // 5. Find removed events (in DB but not in current extraction)
-    const removedEvents: ExternalEvent[] = []
+    // 5. Find potentially removed events (in DB but not in current extraction)
+    const potentiallyRemovedEvents: ExternalEvent[] = []
     for (const [hash, event] of existingByHash) {
       if (!processedHashes.has(hash)) {
         // Only consider removal if event is in the future (don't notify about past events)
@@ -241,13 +443,50 @@ export async function syncCalendarSource(
         today.setHours(0, 0, 0, 0)
 
         if (eventDate >= today) {
-          removedEvents.push(event)
+          potentiallyRemovedEvents.push(event)
         }
       }
     }
 
-    // 6. Handle removed events - create notifications and delete
-    for (const event of removedEvents) {
+    // 5.5. Verify removals with LLM - this prevents false positives from AI extraction variation
+    // (e.g., "Fri (Helligdag)" vs "Helligdag" are the same event, just extracted differently)
+    let actuallyRemovedEvents: ExternalEvent[] = []
+
+    if (potentiallyRemovedEvents.length > 0 && newlyCreatedEvents.length > 0) {
+      // Use LLM to verify which events are actually removed vs just renamed
+      const verificationResults = await verifyRemovalsWithLLM(
+        potentiallyRemovedEvents,
+        newlyCreatedEvents,
+        model
+      )
+
+      // Process verification results
+      for (const verification of verificationResults) {
+        const event = potentiallyRemovedEvents.find(e => e.id === verification.removedEventId)
+        if (!event) continue
+
+        if (verification.isActuallyRemoved) {
+          // Event is truly removed - add to list for notification
+          actuallyRemovedEvents.push(event)
+        } else {
+          // Event is not actually removed - just extracted with different title
+          // Delete the old event silently (the new event already exists with the new title)
+          await supabase
+            .from('external_events')
+            .delete()
+            .eq('id', event.id)
+
+          console.log(`[CalendarSourceSync] Silently removed "${event.title}" - matched by new event`)
+        }
+      }
+    } else {
+      // No new events to compare with, or no potentially removed events
+      // All potentially removed events are actually removed
+      actuallyRemovedEvents = potentiallyRemovedEvents
+    }
+
+    // 6. Handle actually removed events - create notifications and delete
+    for (const event of actuallyRemovedEvents) {
       // Get linked task info if any
       let linkedTask: LinkedTask | null = null
       if (event.linked_task_id) {
