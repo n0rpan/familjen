@@ -57,7 +57,8 @@ export function ShoppingPageContent() {
   const [activeFilter, setActiveFilter] = useState<ShoppingFilter>('all')
   const [duplicateWarning, setDuplicateWarning] = useState<{
     listId: string
-    matches: Array<{ id: string; name: string; quantity: string | null }>
+    matches: Array<{ id: string; name: string; quantity: string | null; matchType?: string; reason?: string }>
+    suggestion?: string | null
   } | null>(null)
   const duplicateCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasInitialized = useRef(false)
@@ -143,20 +144,52 @@ export function ShoppingPageContent() {
       setDuplicateWarning(null)
       return
     }
+
+    // Get existing items from the current list to check against
+    const currentList = lists.find(l => l.id === listId)
+    const existingItems = currentList?.items
+      .filter(item => !item.is_bought)
+      .map(item => ({
+        id: item.id,
+        name: item.name,
+        quantity: item.quantity,
+      })) || []
+
+    // If no existing items, nothing to check
+    if (existingItems.length === 0) {
+      setDuplicateWarning(null)
+      return
+    }
+
+    // Use semantic LLM-based duplicate check (500ms debounce for LLM calls)
     duplicateCheckTimer.current = setTimeout(async () => {
       try {
-        const { data } = await supabase.rpc('check_shopping_duplicate', {
-          p_item_name: text,
-          p_similarity_threshold: 0.6,
+        const response = await fetch('/api/openrouter/check-shopping-duplicate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            newItem: text,
+            existingItems,
+          }),
         })
-        if (data && data.length > 0) {
+
+        if (!response.ok) {
+          setDuplicateWarning(null)
+          return
+        }
+
+        const data = await response.json()
+        if (data.matches && data.matches.length > 0) {
           setDuplicateWarning({
             listId,
-            matches: data.map((d: { id: string; name: string; quantity: string | null }) => ({
-              id: d.id,
-              name: d.name,
-              quantity: d.quantity,
+            matches: data.matches.map((m: { id: string; name: string; quantity: string | null; matchType?: string; reason?: string }) => ({
+              id: m.id,
+              name: m.name,
+              quantity: m.quantity,
+              matchType: m.matchType,
+              reason: m.reason,
             })),
+            suggestion: data.suggestion,
           })
         } else {
           setDuplicateWarning(null)
@@ -164,8 +197,8 @@ export function ShoppingPageContent() {
       } catch {
         setDuplicateWarning(null)
       }
-    }, 300)
-  }, [supabase, isDemo])
+    }, 500) // Longer debounce for LLM calls
+  }, [isDemo, lists])
 
   const handleItemTextChange = useCallback((listId: string, text: string) => {
     setNewItemText(prev => ({ ...prev, [listId]: text }))
@@ -898,18 +931,27 @@ export function ShoppingPageContent() {
                       </svg>
                       <span style={{ color: 'var(--color-honey)' }}>{t.shopping.alreadyOnList}:</span>
                     </div>
-                    <div className="flex flex-wrap gap-1">
+                    <div className="space-y-1">
                       {duplicateWarning.matches.slice(0, 3).map(match => (
-                        <span
-                          key={match.id}
-                          className="px-2 py-0.5 rounded"
-                          style={{ background: 'var(--background)' }}
-                        >
-                          {match.name}
-                          {match.quantity && <span className="ml-1 opacity-60">({match.quantity})</span>}
-                        </span>
+                        <div key={match.id} className="flex items-center gap-2">
+                          <span
+                            className="px-2 py-0.5 rounded"
+                            style={{ background: 'var(--background)' }}
+                          >
+                            {match.name}
+                            {match.quantity && <span className="ml-1 opacity-60">({match.quantity})</span>}
+                          </span>
+                          {match.reason && (
+                            <span className="opacity-70 italic">{match.reason}</span>
+                          )}
+                        </div>
                       ))}
                     </div>
+                    {duplicateWarning.suggestion && (
+                      <p className="mt-2 opacity-80" style={{ color: 'var(--color-honey)' }}>
+                        💡 {duplicateWarning.suggestion}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>

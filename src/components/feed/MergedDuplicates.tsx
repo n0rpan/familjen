@@ -40,7 +40,10 @@ interface MergedCardProps {
 
 function MergedDuplicateCard({ merged, onUndo, loading }: MergedCardProps) {
   const { language, t } = useLanguage()
-  const confidence = Math.round(merged.duplicate_confidence * 100)
+  // Handle null/undefined confidence (from old merges before confidence tracking)
+  const confidence = merged.duplicate_confidence != null
+    ? Math.round(merged.duplicate_confidence * 100)
+    : null
 
   return (
     <div
@@ -72,7 +75,7 @@ function MergedDuplicateCard({ merged, onUndo, loading }: MergedCardProps) {
               <span>{formatDateShort(merged.event_date, language)}</span>
               {merged.source_name && <span>• {merged.source_name}</span>}
               {merged.child_name && <span>• {merged.child_name}</span>}
-              <span>• {confidence}% {t.feed.duplicates.probability}</span>
+              {confidence !== null && <span>• {confidence}% {t.feed.duplicates.probability}</span>}
             </div>
           </div>
           <span className="text-xs flex-shrink-0" style={{ color: 'var(--muted)' }}>
@@ -146,10 +149,12 @@ export function MergedDuplicatesList({ mergedDuplicates, onUpdate }: MergedListP
         return
       }
 
+      // Optimistic update - immediately hide the item
       setRestoredIds((prev) => new Set(prev).add(id))
       setSuccessMessage(t.feed.duplicates.eventRestored)
       timerRef.current = setTimeout(() => setSuccessMessage(null), 3000)
-      onUpdate()
+      // Background sync - defer to avoid blocking UI (optimistic update already done)
+      setTimeout(() => onUpdate(), 500)
     } catch (error) {
       console.error('Error undoing merge:', error)
       setErrorMessage(t.feed.duplicates.couldNotRestore)
