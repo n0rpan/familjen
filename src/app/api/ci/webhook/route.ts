@@ -52,6 +52,7 @@ export interface CIEvent {
     lines_removed?: number
     actor?: string
     event?: string  // 'push' | 'pull_request'
+    tips?: string   // AI-generated tips, pipe-separated
   }
 }
 

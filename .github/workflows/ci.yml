@@ -39,6 +39,9 @@ jobs:
 
       - name: Analyze activity and send pulse
         id: pulse
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}
         run: |
           echo "⚡ Activity Pulse - $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           echo ""
@@ -68,19 +71,21 @@ jobs:
           echo "📝 Latest: $COMMIT_MSG"
           echo "👤 Author: $COMMIT_AUTHOR"
 
-          # Analyze changed files (last commit)
+          # Get changed files list
+          CHANGED_FILES=$(git diff --name-only HEAD~1 2>/dev/null | head -20 || echo "")
           echo ""
-          echo "📁 Changed areas:"
-          AREAS=""
+          echo "📁 Changed files:"
+          echo "$CHANGED_FILES" | head -10
 
           # Count changes by area
-          UI_CHANGES=$(git diff --name-only HEAD~1 2>/dev/null | grep -c "^src/components\|^src/app.*page\|\.tsx$" || echo "0")
-          API_CHANGES=$(git diff --name-only HEAD~1 2>/dev/null | grep -c "^src/app/api\|route\.ts$" || echo "0")
-          LIB_CHANGES=$(git diff --name-only HEAD~1 2>/dev/null | grep -c "^src/lib/" || echo "0")
-          TEST_CHANGES=$(git diff --name-only HEAD~1 2>/dev/null | grep -c "^tests/\|\.test\." || echo "0")
-          CI_CHANGES=$(git diff --name-only HEAD~1 2>/dev/null | grep -c "^\.github/\|^scripts/" || echo "0")
-          DB_CHANGES=$(git diff --name-only HEAD~1 2>/dev/null | grep -c "^supabase/\|migration" || echo "0")
+          UI_CHANGES=$(echo "$CHANGED_FILES" | grep -c "^src/components\|^src/app.*page\|\.tsx$" || echo "0")
+          API_CHANGES=$(echo "$CHANGED_FILES" | grep -c "^src/app/api\|route\.ts$" || echo "0")
+          LIB_CHANGES=$(echo "$CHANGED_FILES" | grep -c "^src/lib/" || echo "0")
+          TEST_CHANGES=$(echo "$CHANGED_FILES" | grep -c "^tests/\|\.test\." || echo "0")
+          CI_CHANGES=$(echo "$CHANGED_FILES" | grep -c "^\.github/\|^scripts/" || echo "0")
+          DB_CHANGES=$(echo "$CHANGED_FILES" | grep -c "^supabase/\|migration" || echo "0")
 
+          AREAS=""
           [[ $UI_CHANGES -gt 0 ]] && AREAS="$AREAS ui($UI_CHANGES)"
           [[ $API_CHANGES -gt 0 ]] && AREAS="$AREAS api($API_CHANGES)"
           [[ $LIB_CHANGES -gt 0 ]] && AREAS="$AREAS lib($LIB_CHANGES)"
@@ -88,54 +93,91 @@ jobs:
           [[ $CI_CHANGES -gt 0 ]] && AREAS="$AREAS ci($CI_CHANGES)"
           [[ $DB_CHANGES -gt 0 ]] && AREAS="$AREAS db($DB_CHANGES)"
 
-          echo "   $AREAS"
-
-          # Generate tips for AI agents based on what's changed
-          echo ""
-          echo "💡 Tips for AI agents working on this branch:"
-
-          if [[ $DB_CHANGES -gt 0 ]]; then
-            echo "   • Database changes detected - remember RLS policies and SECURITY DEFINER"
-            echo "   • Use IF EXISTS for DROP statements"
-            echo "   • Check household_id scoping"
-          fi
-
-          if [[ $API_CHANGES -gt 0 ]]; then
-            echo "   • API changes - use ApiErrors helper for Norwegian error messages"
-            echo "   • Check rate limiting for expensive operations"
-            echo "   • Validate auth with createClient() from @/lib/supabase/server"
-          fi
-
-          if [[ $UI_CHANGES -gt 0 ]]; then
-            echo "   • UI changes - use useLanguage() for i18n, not hardcoded strings"
-            echo "   • Check demo mode compatibility (useDataSource hook)"
-            echo "   • Touch targets should be 44px+ for mobile"
-          fi
-
-          if [[ $TEST_CHANGES -gt 0 ]]; then
-            echo "   • Test changes - run 'npm run test:run' to verify"
-            echo "   • Integration tests need mocked Supabase client"
-          fi
-
-          if [[ $CI_CHANGES -gt 0 ]]; then
-            echo "   • CI changes - test locally with 'npx tsx scripts/...'"
-            echo "   • Reviewers should exit 0 (non-blocking), final-verdict decides"
-          fi
+          echo "📊 Areas: $AREAS"
 
           # Count total lines changed
           LINES_ADDED=$(git diff --shortstat HEAD~1 2>/dev/null | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
           LINES_REMOVED=$(git diff --shortstat HEAD~1 2>/dev/null | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
+          echo "📈 Stats: +$LINES_ADDED -$LINES_REMOVED lines"
 
-          echo ""
-          echo "📊 Stats: +$LINES_ADDED -$LINES_REMOVED lines"
+          # Generate AI tips if API key available
+          TIPS=""
+          if [ -n "$OPENROUTER_API_KEY" ] && [ -n "$OPENROUTER_FAST_MODEL" ]; then
+            echo ""
+            echo "🤖 Generating contextual tips with AI..."
+
+            # Get a small diff sample for context (first 100 lines)
+            DIFF_SAMPLE=$(git diff HEAD~1 2>/dev/null | head -100 || echo "")
+
+            # Build the prompt
+            PROMPT="You are helping AI coding agents working on a Norwegian family planning app (Familjen).
+
+Branch: $BRANCH
+Commit: $COMMIT_MSG
+Changed files:
+$CHANGED_FILES
+
+Diff sample (first 100 lines):
+$DIFF_SAMPLE
+
+Based on this commit, provide 2-3 SHORT, SPECIFIC tips for AI agents continuing work on this branch.
+Focus on:
+- Patterns to follow from this codebase (RLS policies, Norwegian i18n, demo mode)
+- Potential issues to watch for
+- Related files that might need updating
+
+Format: Return ONLY a JSON object like: {\"tips\": [\"tip1\", \"tip2\", \"tip3\"]}
+Keep each tip under 100 characters. Be specific to THIS change, not generic advice."
+
+            # Call OpenRouter API
+            RESPONSE=$(curl -s --max-time 10 "https://openrouter.ai/api/v1/chat/completions" \
+              -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+              -H "Content-Type: application/json" \
+              -H "HTTP-Referer: https://familjen.eu" \
+              -d "$(jq -n \
+                --arg model "$OPENROUTER_FAST_MODEL" \
+                --arg prompt "$PROMPT" \
+                '{
+                  model: $model,
+                  messages: [{ role: "user", content: $prompt }],
+                  max_tokens: 300,
+                  temperature: 0.3
+                }')" 2>/dev/null || echo "")
+
+            if [ -n "$RESPONSE" ]; then
+              # Extract tips from response
+              TIPS=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // empty' 2>/dev/null | jq -r '.tips // empty' 2>/dev/null | jq -r '.[]' 2>/dev/null || echo "")
+
+              if [ -n "$TIPS" ]; then
+                echo ""
+                echo "💡 AI Tips for agents on this branch:"
+                echo "$TIPS" | while read -r tip; do
+                  echo "   • $tip"
+                done
+              fi
+            fi
+          else
+            echo ""
+            echo "💡 Tips (set OPENROUTER_API_KEY for AI-generated tips):"
+            # Fallback to basic tips
+            [[ $DB_CHANGES -gt 0 ]] && echo "   • DB: Remember RLS policies and household_id scoping"
+            [[ $API_CHANGES -gt 0 ]] && echo "   • API: Use ApiErrors helper for Norwegian messages"
+            [[ $UI_CHANGES -gt 0 ]] && echo "   • UI: Use useLanguage() for i18n, check demo mode"
+            [[ $CI_CHANGES -gt 0 ]] && echo "   • CI: Reviewers exit 0, final-verdict decides"
+          fi
 
           # Set outputs for webhook
           echo "branch=$BRANCH" >> $GITHUB_OUTPUT
           echo "work_type=$WORK_TYPE" >> $GITHUB_OUTPUT
-          echo "commit_msg=$COMMIT_MSG" >> $GITHUB_OUTPUT
+          # Escape quotes in commit message for JSON
+          COMMIT_MSG_ESCAPED=$(echo "$COMMIT_MSG" | sed 's/"/\\"/g' | tr -d '\n')
+          echo "commit_msg=$COMMIT_MSG_ESCAPED" >> $GITHUB_OUTPUT
           echo "areas=$AREAS" >> $GITHUB_OUTPUT
           echo "lines_added=$LINES_ADDED" >> $GITHUB_OUTPUT
           echo "lines_removed=$LINES_REMOVED" >> $GITHUB_OUTPUT
+          # Store tips for webhook (escaped for JSON)
+          TIPS_ESCAPED=$(echo "$TIPS" | tr '\n' '|' | sed 's/"/\\"/g')
+          echo "tips=$TIPS_ESCAPED" >> $GITHUB_OUTPUT
 
       - name: Send activity pulse to dashboard
         if: always()
@@ -147,8 +189,28 @@ jobs:
             exit 0
           fi
 
+          # First, check where the redirect goes (without sending credentials)
+          echo "🔍 Checking for redirects..."
+          REDIRECT_CHECK=$(curl -s -o /dev/null -w "%{http_code}|%{redirect_url}" \
+            -X POST "${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook" \
+            -H "Content-Type: application/json" \
+            -d '{"type":"ping"}' 2>&1 || echo "000|")
+          HTTP_CODE=$(echo "$REDIRECT_CHECK" | cut -d'|' -f1)
+          REDIRECT_URL=$(echo "$REDIRECT_CHECK" | cut -d'|' -f2)
+
+          if [ "$HTTP_CODE" = "301" ] || [ "$HTTP_CODE" = "302" ]; then
+            echo "⚠️  Redirect detected! HTTP $HTTP_CODE"
+            echo "📍 CI_WEBHOOK_URL redirects to: $REDIRECT_URL"
+            echo "💡 Update CI_WEBHOOK_URL secret to: ${REDIRECT_URL%/api/ci/webhook}"
+            # Use the redirect URL for the actual request
+            WEBHOOK_TARGET="${REDIRECT_URL:-${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook}"
+          else
+            WEBHOOK_TARGET="${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook"
+          fi
+
+          echo "📤 Sending pulse to: $WEBHOOK_TARGET"
           curl -X POST --max-redirs 0 -s -w "\nHTTP_STATUS: %{http_code}\n" \
-            "${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook" \
+            "$WEBHOOK_TARGET" \
             -H "Content-Type: application/json" \
             -H "x-ci-secret: ${{ secrets.CI_WEBHOOK_SECRET }}" \
             -d '{
@@ -165,7 +227,8 @@ jobs:
                 "lines_added": ${{ steps.pulse.outputs.lines_added || 0 }},
                 "lines_removed": ${{ steps.pulse.outputs.lines_removed || 0 }},
                 "actor": "${{ github.actor }}",
-                "event": "${{ github.event_name }}"
+                "event": "${{ github.event_name }}",
+                "tips": "${{ steps.pulse.outputs.tips }}"
               }
             }' 2>&1 || true
 

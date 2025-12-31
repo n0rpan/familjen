@@ -23,6 +23,7 @@ interface CIEvent {
     lines_removed?: number
     actor?: string
     event?: string
+    tips?: string  // AI-generated tips, pipe-separated
   }
   created_at: string
 }
@@ -342,6 +343,9 @@ function ActivityPulseRow({ event }: { event: CIEvent }) {
   const { data } = event
   const timeAgo = getTimeAgo(new Date(event.created_at))
 
+  // Parse tips from pipe-separated string
+  const tips = data.tips ? data.tips.split('|').filter(t => t.trim()) : []
+
   const workTypeColors: Record<string, string> = {
     'ai-agent': 'var(--color-lavender)',
     'feature': 'var(--color-sky)',
@@ -361,55 +365,72 @@ function ActivityPulseRow({ event }: { event: CIEvent }) {
   }
 
   return (
-    <div
-      className="flex items-center gap-3 p-2 rounded-lg"
-      style={{ background: 'var(--card)' }}
-    >
-      {/* Work type badge */}
-      <span
-        className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap"
-        style={{
-          background: `${workTypeColors[data.work_type || 'unknown']}20`,
-          color: workTypeColors[data.work_type || 'unknown'],
-        }}
-      >
-        {workTypeLabels[data.work_type || 'unknown']}
-      </span>
+    <div className="rounded-lg" style={{ background: 'var(--card)' }}>
+      <div className="flex items-center gap-3 p-2">
+        {/* Work type badge */}
+        <span
+          className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap"
+          style={{
+            background: `${workTypeColors[data.work_type || 'unknown']}20`,
+            color: workTypeColors[data.work_type || 'unknown'],
+          }}
+        >
+          {workTypeLabels[data.work_type || 'unknown']}
+        </span>
 
-      {/* Branch and commit info */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-mono truncate" style={{ color: 'var(--foreground)' }}>
-            {data.branch}
-          </span>
-          {data.areas && (
-            <span className="text-xs" style={{ color: 'var(--muted)' }}>
-              {data.areas}
+        {/* Branch and commit info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono truncate" style={{ color: 'var(--foreground)' }}>
+              {data.branch}
             </span>
-          )}
+            {data.areas && (
+              <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                {data.areas}
+              </span>
+            )}
+          </div>
+          <p className="text-xs truncate" style={{ color: 'var(--muted)' }}>
+            {data.commit_msg || event.pr_title}
+          </p>
         </div>
-        <p className="text-xs truncate" style={{ color: 'var(--muted)' }}>
-          {data.commit_msg || event.pr_title}
-        </p>
+
+        {/* Stats */}
+        <div className="text-right flex-shrink-0">
+          <div className="text-xs" style={{ color: 'var(--foreground)' }}>
+            {data.actor}
+          </div>
+          <div className="text-xs" style={{ color: 'var(--muted)' }}>
+            {data.lines_added !== undefined && data.lines_removed !== undefined && (
+              <span>
+                <span style={{ color: 'var(--color-sage)' }}>+{data.lines_added}</span>
+                {' '}
+                <span style={{ color: 'var(--color-coral)' }}>-{data.lines_removed}</span>
+              </span>
+            )}
+            {' · '}
+            {timeAgo}
+          </div>
+        </div>
       </div>
 
-      {/* Stats */}
-      <div className="text-right flex-shrink-0">
-        <div className="text-xs" style={{ color: 'var(--foreground)' }}>
-          {data.actor}
+      {/* AI Tips */}
+      {tips.length > 0 && (
+        <div
+          className="px-3 py-2 border-t text-xs space-y-1"
+          style={{ borderColor: 'var(--border)' }}
+        >
+          <div className="flex items-center gap-1" style={{ color: 'var(--color-honey)' }}>
+            <span>💡</span>
+            <span className="font-medium">AI Tips:</span>
+          </div>
+          {tips.map((tip, i) => (
+            <div key={i} className="pl-4" style={{ color: 'var(--muted)' }}>
+              • {tip}
+            </div>
+          ))}
         </div>
-        <div className="text-xs" style={{ color: 'var(--muted)' }}>
-          {data.lines_added !== undefined && data.lines_removed !== undefined && (
-            <span>
-              <span style={{ color: 'var(--color-sage)' }}>+{data.lines_added}</span>
-              {' '}
-              <span style={{ color: 'var(--color-coral)' }}>-{data.lines_removed}</span>
-            </span>
-          )}
-          {' · '}
-          {timeAgo}
-        </div>
-      </div>
+      )}
     </div>
   )
 }
