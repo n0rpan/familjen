@@ -4,9 +4,11 @@
  * Handles syncing external calendar sources (HTML pages, ICS feeds, PDFs)
  * with proper update/delete detection and removal notifications.
  *
- * Key insight: AI extraction is non-deterministic. The same event can be
- * extracted with slightly different titles between syncs. We use LLM-based
- * semantic matching for ALL event matching - not just removal verification.
+ * Key insights:
+ * 1. AI extraction is non-deterministic - use LLM-based semantic matching
+ * 2. Date/time changes are important - notify users when events move
+ * 3. Extraction can have errors - validate with second LLM pass
+ * 4. Notifications should be smart - explain what changed and why
  */
 
 import { SupabaseClient } from '@supabase/supabase-js'
@@ -15,6 +17,7 @@ import { extractEventsFromHtml } from './document-extraction'
 import type { ExtractedEvent } from './document-extraction'
 import { isUrlAllowed, truncate, sanitizeString, sanitizeTime } from '@/lib/sanitize'
 import { deduplicateEvents } from './event-deduplication'
+import { formatDateISO } from '@/lib/utils'
 
 export interface CalendarSource {
   id: string
@@ -32,16 +35,19 @@ export interface SyncResult {
   eventsFound: number
   eventsCreated: number
   eventsUpdated: number
+  eventsChanged: number  // Events where date/time changed
   eventsRemoved: number
   notificationsCreated: number
   duplicatesAutoMerged: number
   duplicateSuggestionsCreated: number
+  extractionIssues: string[]  // Issues found during validation
   error?: string
   debug?: {
     contentLength?: number
     model?: string
     firstError?: string
     matchingMethod?: 'llm' | 'hash'
+    validationRan?: boolean
   }
 }
 
@@ -89,6 +95,12 @@ interface EventMatch {
   extractedIndex: number
   existingId: string
   confidence: number
+  dateChanged: boolean
+  timeChanged: boolean
+  oldDate?: string
+  newDate?: string
+  oldTime?: string | null
+  newTime?: string | null
 }
 
 interface MatchingResult {
@@ -97,9 +109,13 @@ interface MatchingResult {
   unmatchedExistingIds: string[]
 }
 
+// ============================================================================
+// IMPROVEMENT #1: Date/Time Change Detection
+// ============================================================================
+
 /**
  * Use LLM to semantically match extracted events to existing events.
- * This handles AI extraction variation like "Fri (Helligdag)" vs "Helligdag".
+ * Also detects if date/time changed for matched events.
  */
 async function matchEventsWithLLM(
   extractedEvents: ExtractedEvent[],
@@ -134,27 +150,30 @@ async function matchEventsWithLLM(
   ).join('\n')
 
   const existingDesc = existingEvents.map((e, i) =>
-    `D${i + 1}: "${e.title}" on ${e.event_date}${e.end_date ? ` to ${e.end_date}` : ''}${e.event_time ? ` at ${e.event_time}` : ''} [ID: ${e.id}]`
+    `D${i + 1}: "${e.title}" on ${e.event_date}${e.end_date ? ` to ${e.end_date}` : ''}${e.event_time ? ` at ${e.event_time}` : ''}`
   ).join('\n')
 
   const systemPrompt = `Du er ekspert på å matche kalenderhendelser fra norske skoler og barnehager.
 
 Oppgaven din er å finne hvilke nylig ekstraherte hendelser (E1, E2, ...) som matcher eksisterende hendelser i databasen (D1, D2, ...).
 
-TO HENDELSER MATCHER HVIS:
-- De er på samme dato (eller innenfor 1-2 dager hvis det er en feil)
-- De beskriver samme ting, selv med ulik formulering:
-  • "Fri (Helligdag)" = "Helligdag" = "Fridag"
-  • "Påskeferie" = "Påske ferie" = "Ferie (påske)"
-  • "Vinterferie" = "Ferie uke 8" = "Vinterferieuke"
-  • "Planleggingsdag" = "Planl.dag" = "Kursdag for lærere"
-  • "SFO stengt" = "Stengt SFO" = "Ingen SFO"
-  • "Foreldremøte" = "Møte for foreldre"
+TO HENDELSER MATCHER HVIS de beskriver samme type hendelse, SELV OM DATOEN ER FORSKJELLIG:
+- Samme type ferie/fridag kan ha blitt flyttet
+- Planleggingsdager kan ha blitt flyttet
+- Foreldremøter kan ha blitt flyttet til ny dato
+
+Semantiske varianter som matcher:
+• "Fri (Helligdag)" = "Helligdag" = "Fridag"
+• "Påskeferie" = "Påske ferie" = "Ferie (påske)"
+• "Vinterferie" = "Ferie uke 8" = "Vinterferieuke"
+• "Planleggingsdag" = "Planl.dag" = "Kursdag for lærere"
+• "SFO stengt" = "Stengt SFO" = "Ingen SFO"
 
 VIKTIG:
 - Hver ekstrahert hendelse kan kun matche ÉN eksisterende hendelse
 - Hver eksisterende hendelse kan kun matches av ÉN ekstrahert hendelse
-- Hvis du er usikker, ikke match (la den være umatched)`
+- Match hendelser selv om datoen endret seg (det er viktig å oppdage datoflytt)
+- Hvis usikker, ikke match`
 
   const userPrompt = `Match disse hendelsene:
 
@@ -164,15 +183,17 @@ ${extractedDesc}
 EKSISTERENDE I DATABASE:
 ${existingDesc}
 
-Returner JSON med matches. For hver match, oppgi:
-- extractedIndex: tallet fra E (1, 2, 3...)
-- existingIndex: tallet fra D (1, 2, 3...)
+For hver match, oppgi:
+- extractedIndex: E-tallet (1, 2, 3...)
+- existingIndex: D-tallet (1, 2, 3...)
 - confidence: 0.0-1.0
+- dateChanged: true hvis datoen er forskjellig
+- timeChanged: true hvis klokkeslettet er forskjellig
 
-Returner KUN JSON-array, ingen annen tekst:
-[{"extractedIndex": 1, "existingIndex": 2, "confidence": 0.95}, ...]
+Returner KUN JSON-array:
+[{"extractedIndex": 1, "existingIndex": 2, "confidence": 0.95, "dateChanged": false, "timeChanged": false}, ...]
 
-Hvis ingen matcher, returner tom array: []`
+Hvis ingen matcher, returner: []`
 
   try {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -213,7 +234,13 @@ Hvis ingen matcher, returner tom array: []`
       jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
     }
 
-    let llmMatches: Array<{ extractedIndex: number; existingIndex: number; confidence: number }>
+    let llmMatches: Array<{
+      extractedIndex: number
+      existingIndex: number
+      confidence: number
+      dateChanged?: boolean
+      timeChanged?: boolean
+    }>
     try {
       const parsed = JSON.parse(jsonStr)
       if (!Array.isArray(parsed)) {
@@ -230,30 +257,42 @@ Hvis ingen matcher, returner tom array: []`
     const matchedExtractedIndices = new Set<number>()
     const matchedExistingIds = new Set<string>()
 
-    // Sort by confidence descending to prioritize best matches
+    // Sort by confidence descending
     llmMatches.sort((a, b) => (b.confidence || 0) - (a.confidence || 0))
 
     for (const match of llmMatches) {
-      const extractedIdx = match.extractedIndex - 1 // Convert to 0-indexed
+      const extractedIdx = match.extractedIndex - 1
       const existingIdx = match.existingIndex - 1
 
-      // Validate indices
       if (extractedIdx < 0 || extractedIdx >= extractedEvents.length) continue
       if (existingIdx < 0 || existingIdx >= existingEvents.length) continue
-
-      // Skip if already matched (1:1 constraint)
       if (matchedExtractedIndices.has(extractedIdx)) continue
       if (matchedExistingIds.has(existingEvents[existingIdx].id)) continue
 
-      // Only accept high confidence matches
       if ((match.confidence || 0) >= 0.7) {
+        const extracted = extractedEvents[extractedIdx]
+        const existing = existingEvents[existingIdx]
+
+        // Detect actual changes by comparing values
+        const dateChanged = match.dateChanged || extracted.date !== existing.event_date
+        // Normalize both times to null for comparison (undefined/empty string → null)
+        const extractedTime = extracted.time || null
+        const existingTime = existing.event_time || null
+        const timeChanged = match.timeChanged || extractedTime !== existingTime
+
         result.matches.push({
           extractedIndex: extractedIdx,
-          existingId: existingEvents[existingIdx].id,
+          existingId: existing.id,
           confidence: match.confidence,
+          dateChanged,
+          timeChanged,
+          oldDate: existing.event_date,
+          newDate: extracted.date,
+          oldTime: existing.event_time,
+          newTime: extracted.time || null,
         })
         matchedExtractedIndices.add(extractedIdx)
-        matchedExistingIds.add(existingEvents[existingIdx].id)
+        matchedExistingIds.add(existing.id)
       }
     }
 
@@ -270,7 +309,8 @@ Hvis ingen matcher, returner tom array: []`
       }
     }
 
-    console.log(`[CalendarSourceSync] LLM matching: ${result.matches.length} matches, ${result.unmatchedExtractedIndices.length} new, ${result.unmatchedExistingIds.length} potentially removed`)
+    const changedCount = result.matches.filter(m => m.dateChanged || m.timeChanged).length
+    console.log(`[CalendarSourceSync] LLM matching: ${result.matches.length} matches (${changedCount} changed), ${result.unmatchedExtractedIndices.length} new, ${result.unmatchedExistingIds.length} potentially removed`)
 
     return result
   } catch (error) {
@@ -292,24 +332,12 @@ function fallbackToHashMatching(
     unmatchedExistingIds: [],
   }
 
-  // Build hash map of existing events
-  const existingByHash = new Map<string, ExternalEvent>()
-  for (const event of existingEvents) {
-    if (event.source_event_hash) {
-      existingByHash.set(event.source_event_hash, event)
-    }
-  }
-
   const matchedExistingIds = new Set<string>()
 
-  // Match extracted events by hash
   for (let i = 0; i < extractedEvents.length; i++) {
     const extracted = extractedEvents[i]
-    // We need source_url_id for hash, but we don't have it here
-    // Use a placeholder - this is why hash matching is inferior
     const hash = generateEventHash('temp', extracted.date, extracted.title)
 
-    // Try to find by normalized title + date
     let found = false
     for (const existing of existingEvents) {
       if (matchedExistingIds.has(existing.id)) continue
@@ -320,6 +348,8 @@ function fallbackToHashMatching(
           extractedIndex: i,
           existingId: existing.id,
           confidence: 1.0,
+          dateChanged: false,
+          timeChanged: false,
         })
         matchedExistingIds.add(existing.id)
         found = true
@@ -332,7 +362,6 @@ function fallbackToHashMatching(
     }
   }
 
-  // Find unmatched existing
   for (const existing of existingEvents) {
     if (!matchedExistingIds.has(existing.id)) {
       result.unmatchedExistingIds.push(existing.id)
@@ -342,9 +371,310 @@ function fallbackToHashMatching(
   return result
 }
 
+// ============================================================================
+// IMPROVEMENT #2: Extraction Quality Validation
+// ============================================================================
+
+interface ValidationResult {
+  isValid: boolean
+  issues: string[]
+  correctedEvents?: ExtractedEvent[]
+}
+
 /**
- * Sync a calendar source, handling updates and deletions properly.
- * Uses LLM-based semantic matching for robust event tracking.
+ * Validate extracted events using LLM to catch obvious errors.
+ */
+async function validateExtractedEvents(
+  events: ExtractedEvent[],
+  context: { schoolName: string; childName?: string },
+  model: string
+): Promise<ValidationResult> {
+  if (events.length === 0) {
+    return { isValid: true, issues: [] }
+  }
+
+  const apiKey = process.env.OPENROUTER_API_KEY
+  if (!apiKey) {
+    return { isValid: true, issues: [] }
+  }
+
+  const now = new Date()
+  const currentMonth = now.getMonth()
+  const currentYear = now.getFullYear()
+  const schoolYearStart = currentMonth >= 7 ? currentYear : currentYear - 1
+  const schoolYearEnd = schoolYearStart + 1
+
+  const eventsDesc = events.map((e, i) =>
+    `${i + 1}. "${e.title}" on ${e.date}${e.endDate ? ` to ${e.endDate}` : ''} (type: ${e.eventType}, confidence: ${e.confidence})`
+  ).join('\n')
+
+  const systemPrompt = `Du er ekspert på norske skolekalendere. Valider disse ekstraherte hendelsene og finn åpenbare feil.`
+
+  const userPrompt = `Skole/barnehage: ${context.schoolName}
+Skoleår: ${schoolYearStart}-${schoolYearEnd}
+Dagens dato: ${formatDateISO(now)}
+
+Ekstraherte hendelser:
+${eventsDesc}
+
+Sjekk for:
+1. FEIL ÅRSTALL: Vinterferie i juli, påskeferie i september, etc.
+2. DUPLIKATER: Samme hendelse listet flere ganger
+3. UMULIGE DATOER: 30. februar, 31. april, etc.
+4. FEIL TYPE: "Foreldremøte" markert som "holiday"
+5. USANNSYNLIGE HENDELSER: Ferie midt i skoleåret uten grunn
+
+Returner JSON:
+{
+  "isValid": true/false,
+  "issues": ["Beskrivelse av problem 1", "Problem 2", ...],
+  "corrections": [
+    {"index": 1, "field": "date", "oldValue": "2025-07-15", "newValue": "2026-02-15", "reason": "Vinterferie er i februar"}
+  ]
+}
+
+Hvis alt ser bra ut: {"isValid": true, "issues": [], "corrections": []}`
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://familjen.eu',
+        'X-Title': 'Familjen Extraction Validation',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.1,
+        max_tokens: 1500,
+      }),
+    })
+
+    if (!response.ok) {
+      console.error('[CalendarSourceSync] Validation LLM error:', response.status)
+      return { isValid: true, issues: [] }
+    }
+
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content
+
+    if (!content) {
+      return { isValid: true, issues: [] }
+    }
+
+    let jsonStr = content.trim()
+    if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+    }
+
+    const validation = JSON.parse(jsonStr) as {
+      isValid: boolean
+      issues: string[]
+      corrections?: Array<{ index: number; field: string; oldValue: string; newValue: string; reason: string }>
+    }
+
+    // Apply corrections if any
+    let correctedEvents: ExtractedEvent[] | undefined
+    if (validation.corrections && validation.corrections.length > 0) {
+      correctedEvents = [...events]
+      for (const correction of validation.corrections) {
+        const idx = correction.index - 1
+        if (idx >= 0 && idx < correctedEvents.length) {
+          const event = { ...correctedEvents[idx] }
+          if (correction.field === 'date' && correction.newValue) {
+            event.date = correction.newValue
+          } else if (correction.field === 'endDate' && correction.newValue) {
+            event.endDate = correction.newValue
+          } else if (correction.field === 'eventType' && correction.newValue) {
+            event.eventType = correction.newValue as ExtractedEvent['eventType']
+          }
+          correctedEvents[idx] = event
+          console.log(`[CalendarSourceSync] Corrected event ${idx + 1}: ${correction.field} "${correction.oldValue}" → "${correction.newValue}" (${correction.reason})`)
+        }
+      }
+    }
+
+    return {
+      isValid: validation.isValid,
+      issues: validation.issues || [],
+      correctedEvents,
+    }
+  } catch (error) {
+    console.error('[CalendarSourceSync] Validation exception:', error)
+    return { isValid: true, issues: [] }
+  }
+}
+
+// ============================================================================
+// IMPROVEMENT #3: Smart Change Notifications
+// ============================================================================
+
+interface SmartNotification {
+  changeType: 'removed' | 'changed' | 'moved'
+  title: string
+  explanation: string
+  suggestedAction?: string
+  oldDate?: string
+  newDate?: string
+  oldTime?: string | null
+  newTime?: string | null
+}
+
+/**
+ * Generate smart notification with context about what changed.
+ */
+async function generateSmartNotification(
+  event: ExternalEvent,
+  allExtractedEvents: ExtractedEvent[],
+  changeType: 'removed' | 'changed',
+  changeDetails: { newDate?: string; newTime?: string | null } | null,
+  sourceName: string,
+  model: string
+): Promise<SmartNotification> {
+  const apiKey = process.env.OPENROUTER_API_KEY
+
+  // Default notification if no API key
+  if (!apiKey) {
+    if (changeType === 'changed' && changeDetails) {
+      return {
+        changeType: 'moved',
+        title: event.title,
+        explanation: `Hendelsen ble flyttet fra ${event.event_date} til ${changeDetails.newDate}`,
+        oldDate: event.event_date,
+        newDate: changeDetails.newDate,
+        oldTime: event.event_time,
+        newTime: changeDetails.newTime,
+      }
+    }
+    return {
+      changeType: 'removed',
+      title: event.title,
+      explanation: 'Hendelsen ble fjernet fra kalenderen',
+    }
+  }
+
+  // For changed events, return a simpler notification
+  if (changeType === 'changed' && changeDetails) {
+    const timeInfo = changeDetails.newTime !== event.event_time
+      ? ` Tidspunkt endret fra ${event.event_time || 'hele dagen'} til ${changeDetails.newTime || 'hele dagen'}.`
+      : ''
+
+    return {
+      changeType: 'moved',
+      title: event.title,
+      explanation: `Hendelsen ble flyttet fra ${event.event_date} til ${changeDetails.newDate}.${timeInfo}`,
+      suggestedAction: 'Oppdater kalenderen din med ny dato.',
+      oldDate: event.event_date,
+      newDate: changeDetails.newDate,
+      oldTime: event.event_time,
+      newTime: changeDetails.newTime,
+    }
+  }
+
+  // For removed events, use LLM to provide context
+  const extractedDesc = allExtractedEvents.slice(0, 20).map(e =>
+    `"${e.title}" on ${e.date}`
+  ).join(', ')
+
+  const systemPrompt = `Du er en hjelpsom assistent for norske familier som bruker en kalenderapp.`
+
+  const userPrompt = `En hendelse ble fjernet fra skolekalenderen "${sourceName}":
+- Tittel: "${event.title}"
+- Dato: ${event.event_date}
+- Type: ${event.event_type || 'ukjent'}
+
+Andre hendelser i kalenderen nå: ${extractedDesc || 'ingen'}
+
+Gi en kort, vennlig forklaring på norsk (maks 2 setninger) om hva som kan ha skjedd og hva forelderen bør gjøre.
+
+Returner JSON:
+{
+  "explanation": "Kort forklaring",
+  "suggestedAction": "Hva forelderen bør gjøre",
+  "possibleReason": "moved_date" | "cancelled" | "error" | "unknown"
+}`
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://familjen.eu',
+        'X-Title': 'Familjen Smart Notification',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.3,
+        max_tokens: 300,
+      }),
+    })
+
+    if (!response.ok) {
+      return {
+        changeType: 'removed',
+        title: event.title,
+        explanation: 'Hendelsen ble fjernet fra kalenderen.',
+      }
+    }
+
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content
+
+    if (!content) {
+      return {
+        changeType: 'removed',
+        title: event.title,
+        explanation: 'Hendelsen ble fjernet fra kalenderen.',
+      }
+    }
+
+    let jsonStr = content.trim()
+    if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+    }
+
+    const result = JSON.parse(jsonStr) as {
+      explanation: string
+      suggestedAction?: string
+      possibleReason?: string
+    }
+
+    return {
+      changeType: result.possibleReason === 'moved_date' ? 'moved' : 'removed',
+      title: event.title,
+      explanation: result.explanation,
+      suggestedAction: result.suggestedAction,
+    }
+  } catch (error) {
+    console.error('[CalendarSourceSync] Smart notification exception:', error)
+    return {
+      changeType: 'removed',
+      title: event.title,
+      explanation: 'Hendelsen ble fjernet fra kalenderen.',
+    }
+  }
+}
+
+// ============================================================================
+// MAIN SYNC FUNCTION
+// ============================================================================
+
+/**
+ * Sync a calendar source with full LLM-powered intelligence:
+ * 1. Extract events from HTML
+ * 2. Validate extraction quality
+ * 3. Match to existing events (detect date/time changes)
+ * 4. Generate smart notifications for changes
  */
 export async function syncCalendarSource(
   supabase: SupabaseClient,
@@ -359,10 +689,12 @@ export async function syncCalendarSource(
     eventsFound: 0,
     eventsCreated: 0,
     eventsUpdated: 0,
+    eventsChanged: 0,
     eventsRemoved: 0,
     notificationsCreated: 0,
     duplicatesAutoMerged: 0,
     duplicateSuggestionsCreated: 0,
+    extractionIssues: [],
   }
 
   const newEventIds: string[] = []
@@ -405,7 +737,7 @@ export async function syncCalendarSource(
       childName = child?.name
     }
 
-    const extractedEvents = await extractEventsFromHtml(content, {
+    let extractedEvents = await extractEventsFromHtml(content, {
       childName,
       schoolName: source.display_name,
       model,
@@ -415,9 +747,24 @@ export async function syncCalendarSource(
     result.debug = {
       contentLength: content.length,
       model,
+      validationRan: false,
     }
 
-    // 3. Get ALL existing events for this source
+    // 3. IMPROVEMENT #2: Validate extraction quality
+    const validation = await validateExtractedEvents(
+      extractedEvents,
+      { schoolName: source.display_name, childName },
+      model
+    )
+    result.debug.validationRan = true
+    result.extractionIssues = validation.issues
+
+    if (validation.correctedEvents) {
+      console.log(`[CalendarSourceSync] Applied ${validation.issues.length} corrections to extracted events`)
+      extractedEvents = validation.correctedEvents
+    }
+
+    // 4. Get ALL existing events for this source
     const { data: existingEvents } = await supabase
       .from('external_events')
       .select('id, source_url_id, source_event_hash, title, event_date, end_date, event_time, event_type, description, child_id, linked_task_id')
@@ -425,24 +772,31 @@ export async function syncCalendarSource(
 
     const existingList = (existingEvents || []) as ExternalEvent[]
 
-    // 4. Use LLM to match extracted events to existing events
+    // 5. IMPROVEMENT #1: Match with date/time change detection
     const matchingResult = await matchEventsWithLLM(extractedEvents, existingList, model)
     result.debug!.matchingMethod = process.env.OPENROUTER_API_KEY ? 'llm' : 'hash'
 
-    // 5. Process matches - UPDATE existing events
+    // 6. Process matches - UPDATE existing events, notify on changes
     for (const match of matchingResult.matches) {
       const extracted = extractedEvents[match.extractedIndex]
+      const existing = existingList.find(e => e.id === match.existingId)!
       const hash = generateEventHash(source.id, extracted.date, extracted.title)
 
       const eventData = {
         source_event_hash: hash,
-        title: truncate(sanitizeString(extracted.title), 200),
+        title: truncate(sanitizeString(extracted.title), 200) || extracted.title,
         event_date: extracted.date,
         end_date: extracted.endDate || null,
         event_time: sanitizeTime(extracted.time),
         event_type: extracted.eventType,
         description: truncate(sanitizeString(extracted.description), 2000),
-        raw_data: { confidence: extracted.confidence, extracted_at: new Date().toISOString(), match_confidence: match.confidence },
+        raw_data: {
+          confidence: extracted.confidence,
+          extracted_at: new Date().toISOString(),
+          match_confidence: match.confidence,
+          previous_date: match.dateChanged ? match.oldDate : undefined,
+          previous_time: match.timeChanged ? match.oldTime : undefined,
+        },
       }
 
       const { error } = await supabase
@@ -456,11 +810,61 @@ export async function syncCalendarSource(
           result.debug!.firstError = `Update: ${error.message}`
         }
       } else {
-        result.eventsUpdated++
+        // IMPROVEMENT #1 & #3: Notify on date/time changes
+        if (match.dateChanged || match.timeChanged) {
+          result.eventsChanged++
+
+          // Get child name for notification
+          let childNameForNotif: string | null = null
+          if (existing.child_id) {
+            const { data: child } = await supabase
+              .from('children')
+              .select('name')
+              .eq('id', existing.child_id)
+              .single()
+            childNameForNotif = child?.name || null
+          }
+
+          // Generate smart notification
+          const smartNotif = await generateSmartNotification(
+            existing,
+            extractedEvents,
+            'changed',
+            { newDate: match.newDate, newTime: match.newTime },
+            source.display_name,
+            model
+          )
+
+          // Create change notification
+          await supabase
+            .from('event_change_notifications')
+            .insert({
+              household_id: source.household_id,
+              change_type: 'changed',
+              source_url_id: source.id,
+              source_name: source.display_name,
+              original_title: existing.title,
+              original_date: match.oldDate,
+              original_end_date: existing.end_date,
+              original_time: match.oldTime,
+              new_title: extracted.title,
+              new_date: match.newDate,
+              new_time: match.newTime,
+              child_id: existing.child_id,
+              child_name: childNameForNotif,
+              explanation: smartNotif.explanation,
+              suggested_action: smartNotif.suggestedAction,
+              status: 'unread',
+            })
+
+          result.notificationsCreated++
+        } else {
+          result.eventsUpdated++
+        }
       }
     }
 
-    // 6. Process unmatched extracted events - INSERT as new
+    // 7. Process unmatched extracted events - INSERT as new
     for (const idx of matchingResult.unmatchedExtractedIndices) {
       const extracted = extractedEvents[idx]
       const hash = generateEventHash(source.id, extracted.date, extracted.title)
@@ -469,7 +873,7 @@ export async function syncCalendarSource(
         source_url_id: source.id,
         source_event_hash: hash,
         external_id: `source_${source.id}_${hash}`,
-        title: truncate(sanitizeString(extracted.title), 200),
+        title: truncate(sanitizeString(extracted.title), 200) || extracted.title,
         event_date: extracted.date,
         end_date: extracted.endDate || null,
         event_time: sanitizeTime(extracted.time),
@@ -496,8 +900,7 @@ export async function syncCalendarSource(
       }
     }
 
-    // 7. Process unmatched existing events - these are REMOVED
-    // Only notify for future events
+    // 8. Process unmatched existing events - REMOVED
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
@@ -507,12 +910,12 @@ export async function syncCalendarSource(
 
       const eventDate = new Date(event.event_date)
       if (eventDate < today) {
-        // Past event - just delete silently
+        // Past event - delete silently
         await supabase.from('external_events').delete().eq('id', event.id)
         continue
       }
 
-      // Future event - notify user and delete
+      // Future event - generate smart notification
       let linkedTask: LinkedTask | null = null
       if (event.linked_task_id) {
         const { data } = await supabase
@@ -533,12 +936,22 @@ export async function syncCalendarSource(
         childNameForNotif = child?.name || null
       }
 
-      // Create removal notification
+      // IMPROVEMENT #3: Generate smart notification
+      const smartNotif = await generateSmartNotification(
+        event,
+        extractedEvents,
+        'removed',
+        null,
+        source.display_name,
+        model
+      )
+
+      // Create removal notification with context
       const { error: notifError } = await supabase
         .from('event_change_notifications')
         .insert({
           household_id: source.household_id,
-          change_type: 'removed',
+          change_type: smartNotif.changeType,
           source_url_id: source.id,
           source_name: source.display_name,
           original_title: event.title,
@@ -551,6 +964,8 @@ export async function syncCalendarSource(
           deleted_task_id: linkedTask?.id || null,
           deleted_task_type: linkedTask?.task_type || null,
           deleted_task_title: linkedTask?.title || null,
+          explanation: smartNotif.explanation,
+          suggested_action: smartNotif.suggestedAction,
           status: 'unread',
         })
 
@@ -568,7 +983,7 @@ export async function syncCalendarSource(
       result.eventsRemoved++
     }
 
-    // 8. Update sync status
+    // 9. Update sync status
     await supabase
       .from('external_source_urls')
       .update({
@@ -578,7 +993,7 @@ export async function syncCalendarSource(
       })
       .eq('id', source.id)
 
-    // 9. Run deduplication on newly created events
+    // 10. Run deduplication on newly created events
     if (newEventIds.length > 0) {
       try {
         const dedupeResult = await deduplicateEvents(supabase, source.household_id, newEventIds)
