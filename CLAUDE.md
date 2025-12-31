@@ -891,6 +891,112 @@ VERCEL_AUTOMATION_BYPASS_SECRET=xxx                     # Bypass Vercel protecti
 
 **Note:** All model env vars are required - no hardcoded defaults. This ensures you're always using your intended models and prevents silent fallbacks to stale model IDs when you update your secrets.
 
+### Online Models (Web Search)
+
+Append `:online` to any model ID to enable real-time web search:
+
+```typescript
+import { getOnlineModel, researchQuery, callOpenRouter, AI_MODELS } from './scripts/ai-config'
+
+// Method 1: Manual - get online model variant
+const model = getOnlineModel('openai/gpt-4o')  // => 'openai/gpt-4o:online'
+
+// Method 2: Automatic - use researchQuery helper
+const info = await researchQuery(AI_MODELS.fast, 'What is the latest version of Next.js?')
+
+// Method 3: Pass enableWebSearch option to callOpenRouter
+const response = await callOpenRouter(AI_MODELS.fast, messages, { enableWebSearch: true })
+```
+
+See: https://openrouter.ai/docs/guides/routing/model-variants/online
+
+### Model Pricing API
+
+Fetch real pricing from OpenRouter instead of using hardcoded rates:
+
+```typescript
+import { fetchModelPricing, getModelPricing, calculateRealCost } from './scripts/ai-config'
+
+// Get all models with pricing (cached for 5 minutes)
+const models = await fetchModelPricing()
+
+// Get pricing for specific model
+const pricing = await getModelPricing('anthropic/claude-sonnet-4')
+// => { id: '...', pricing: { prompt: 0.000003, completion: 0.000015 }, ... }
+
+// Calculate real cost for a request
+const { cost, source } = await calculateRealCost('anthropic/claude-sonnet-4', 1000, 500)
+// => { cost: 0.0105, source: 'api' }  // or 'estimate' if pricing unavailable
+```
+
+### Activity Pulse (Dashboard Integration)
+
+Every commit triggers an activity pulse with AI-generated context:
+
+```json
+{
+  "type": "activity_pulse",
+  "data": {
+    "branch": "claude/feature-xyz",
+    "work_type": "ai-agent",
+    "areas": "ui(3) api(1)",
+    "tips": ["Check RLS policies...", "Use useLanguage()..."],
+    "agent_context": "This PR adds pickup notifications. Key files are...",
+    "risk_level": "medium",
+    "focus_areas": ["auth", "i18n"],
+    "ai_cost": "0.000123"
+  }
+}
+```
+
+The `agent_context` is designed to be copy-pasted into an AI agent prompt for context continuity.
+
+### Cost Tracking
+
+All AI calls are tracked with per-model cost breakdowns. **Costs are fetched directly from OpenRouter's API response** when available, with fallback to calculated estimates.
+
+**How it works:**
+1. OpenRouter returns `usage.cost` in API responses (real cost in dollars)
+2. CI extracts this value instead of calculating from hardcoded rates
+3. Falls back to conservative estimate if API doesn't return cost
+4. All costs aggregated in final-verdict.json
+
+```json
+// In final-verdict.json
+{
+  "verdict": "PASS",
+  "total_cost_usd": 0.0542,
+  "model_usage": {
+    "gemini-3-flash-preview": { "calls": 5, "cost_usd": 0.0012 },
+    "claude-sonnet-4.5": { "calls": 1, "cost_usd": 0.0530 }
+  }
+}
+```
+
+**For script usage:**
+```typescript
+import { callOpenRouterWithCost } from './scripts/ai-config'
+import { calculateCostWithApiCost } from './scripts/ai-metrics'
+
+// Get response with real cost
+const { content, usage } = await callOpenRouterWithCost(model, messages)
+console.log(`Cost: $${usage?.cost}`)  // Real cost from OpenRouter
+
+// Or use the metrics helper
+const { cost, source } = calculateCostWithApiCost(model, tokens, apiCost)
+// source: 'api' (real) or 'fallback' (estimated)
+```
+
+### Final Verdict Philosophy
+
+The final verdict AI acts as **project owner** with full judgment authority:
+
+- Uses proportional judgment (minor style → suggest, security issue → block)
+- Checks FINAL state of files, not individual commits
+- Can override selector decisions and run additional tests
+- Considers user impact (busy Norwegian parents)
+- Responds ONLY in English for international team
+
 ### Running Locally
 
 ```bash

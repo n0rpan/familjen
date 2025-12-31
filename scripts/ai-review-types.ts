@@ -134,6 +134,10 @@ export interface FinalVerdictOutput {
     to: string      // AI's verdict
     reason: string  // Why AI overrode
   }
+
+  // Cost tracking for dashboard
+  total_cost_usd?: number       // Total LLM cost for this CI run
+  model_usage?: Record<string, { calls: number; cost_usd: number }>
 }
 
 export interface VerificationResults {

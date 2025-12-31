@@ -100,25 +100,62 @@ jobs:
           LINES_REMOVED=$(git diff --shortstat HEAD~1 2>/dev/null | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
           echo "📈 Stats: +$LINES_ADDED -$LINES_REMOVED lines"
 
-          # Generate AI tips if API key available
+          # Generate AI tips and agent context if API key available
           TIPS=""
+          AGENT_CONTEXT=""
+          AI_COST="0"
           if [ -n "$OPENROUTER_API_KEY" ] && [ -n "$OPENROUTER_FAST_MODEL" ]; then
             echo ""
-            echo "🤖 Generating contextual tips with AI..."
-            # Build prompt as single line to avoid YAML parsing issues
-            PROMPT="AI coding assistant for Familjen (Norwegian family app). Branch: $BRANCH. Commit: $COMMIT_MSG. Files: $(echo $CHANGED_FILES | tr '\n' ', '). Give 2-3 SHORT tips for AI agents. Focus on: RLS policies, i18n, demo mode. Return JSON: {\"tips\":[\"tip1\",\"tip2\"]}"
-            # Call OpenRouter API
-            RESPONSE=$(curl -s --max-time 10 "https://openrouter.ai/api/v1/chat/completions" \
+            echo "🤖 Generating contextual tips and agent prompt..."
+
+            # Build rich context for AI
+            FILES_LIST=$(echo "$CHANGED_FILES" | head -20 | tr '\n' ', ')
+
+            # Call OpenRouter for tips AND agent context (single line to avoid YAML parsing issues)
+            PROMPT="You are analyzing a commit to Familjen (Norwegian family planning app with Next.js, Supabase, TypeScript). Branch: $BRANCH. Commit: $COMMIT_MSG. Changed files: $FILES_LIST. Areas: $AREAS. Respond with JSON: {\"tips\":[\"tip1\",\"tip2\",\"tip3\"],\"agent_context\":\"A 2-3 sentence summary for AI agent continuity\",\"risk_level\":\"low|medium|high\",\"focus_areas\":[\"area1\",\"area2\"]}. Tips should be specific and actionable. Focus on Familjen patterns: RLS policies, i18n (useLanguage), demo mode, household_id scoping."
+
+            RESPONSE=$(curl -s --max-time 15 "https://openrouter.ai/api/v1/chat/completions" \
               -H "Authorization: Bearer $OPENROUTER_API_KEY" \
               -H "Content-Type: application/json" \
               -H "HTTP-Referer: https://familjen.eu" \
-              -d "$(jq -n --arg model "$OPENROUTER_FAST_MODEL" --arg prompt "$PROMPT" '{model:$model,messages:[{role:"user",content:$prompt}],max_tokens:200,temperature:0.3}')" 2>/dev/null || echo "")
+              -d "$(jq -n --arg model "$OPENROUTER_FAST_MODEL" --arg prompt "$PROMPT" '{model:$model,messages:[{role:"user",content:$prompt}],max_tokens:400,temperature:0.3}')" 2>/dev/null || echo "")
+
             if [ -n "$RESPONSE" ]; then
-              TIPS=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // empty' 2>/dev/null | jq -r '.tips[]? // empty' 2>/dev/null || echo "")
+              # Extract JSON from response
+              CONTENT=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // empty' 2>/dev/null)
+              # Try to parse as JSON (handle markdown code blocks)
+              CLEAN_CONTENT=$(echo "$CONTENT" | sed 's/```json//g' | sed 's/```//g')
+              TIPS=$(echo "$CLEAN_CONTENT" | jq -r '.tips[]? // empty' 2>/dev/null || echo "")
+              AGENT_CONTEXT=$(echo "$CLEAN_CONTENT" | jq -r '.agent_context // empty' 2>/dev/null || echo "")
+              RISK_LEVEL=$(echo "$CLEAN_CONTENT" | jq -r '.risk_level // "unknown"' 2>/dev/null || echo "unknown")
+              FOCUS_AREAS=$(echo "$CLEAN_CONTENT" | jq -r '.focus_areas // [] | join(", ")' 2>/dev/null || echo "")
+
+              # Get cost from OpenRouter response (real cost in dollars)
+              # OpenRouter returns cost in usage.cost or usage.total_cost
+              API_COST=$(echo "$RESPONSE" | jq -r '.usage.cost // .usage.total_cost // empty' 2>/dev/null)
+              if [ -n "$API_COST" ] && [ "$API_COST" != "null" ]; then
+                AI_COST="$API_COST"
+                echo "💰 Cost source: OpenRouter API"
+              else
+                # Fallback to calculated estimate if API doesn't return cost
+                PROMPT_TOKENS=$(echo "$RESPONSE" | jq -r '.usage.prompt_tokens // 0' 2>/dev/null)
+                COMPLETION_TOKENS=$(echo "$RESPONSE" | jq -r '.usage.completion_tokens // 0' 2>/dev/null)
+                # Fallback estimate (conservative: ~$1/1M input, $4/1M output)
+                AI_COST=$(echo "scale=6; ($PROMPT_TOKENS * 0.000001) + ($COMPLETION_TOKENS * 0.000004)" | bc 2>/dev/null || echo "0")
+                echo "💰 Cost source: Estimated"
+              fi
+
               if [ -n "$TIPS" ]; then
                 echo "💡 AI Tips:"
                 echo "$TIPS" | while read -r tip; do [ -n "$tip" ] && echo "   • $tip"; done
               fi
+              if [ -n "$AGENT_CONTEXT" ]; then
+                echo ""
+                echo "🤖 Agent Context: $AGENT_CONTEXT"
+              fi
+              echo "⚠️  Risk Level: $RISK_LEVEL"
+              [ -n "$FOCUS_AREAS" ] && echo "🎯 Focus: $FOCUS_AREAS"
+              echo "💰 AI Cost: \$$AI_COST"
             fi
           else
             echo ""
@@ -127,6 +164,8 @@ jobs:
             [[ $API_CHANGES -gt 0 ]] && echo "   • API: Use ApiErrors helper for Norwegian messages"
             [[ $UI_CHANGES -gt 0 ]] && echo "   • UI: Use useLanguage() for i18n, check demo mode"
             [[ $CI_CHANGES -gt 0 ]] && echo "   • CI: Reviewers exit 0, final-verdict decides"
+            RISK_LEVEL="unknown"
+            FOCUS_AREAS=""
           fi
 
           # Set outputs for webhook
@@ -141,6 +180,13 @@ jobs:
           # Store tips for webhook (escaped for JSON)
           TIPS_ESCAPED=$(echo "$TIPS" | tr '\n' '|' | sed 's/"/\\"/g')
           echo "tips=$TIPS_ESCAPED" >> $GITHUB_OUTPUT
+          # New fields for richer dashboard
+          AGENT_CONTEXT_ESCAPED=$(echo "$AGENT_CONTEXT" | sed 's/"/\\"/g' | tr -d '\n')
+          echo "agent_context=$AGENT_CONTEXT_ESCAPED" >> $GITHUB_OUTPUT
+          echo "risk_level=$RISK_LEVEL" >> $GITHUB_OUTPUT
+          FOCUS_AREAS_ESCAPED=$(echo "$FOCUS_AREAS" | sed 's/"/\\"/g')
+          echo "focus_areas=$FOCUS_AREAS_ESCAPED" >> $GITHUB_OUTPUT
+          echo "ai_cost=$AI_COST" >> $GITHUB_OUTPUT
 
       - name: Send activity pulse to dashboard
         if: always()
@@ -171,7 +217,11 @@ jobs:
                 "lines_removed": ${{ steps.pulse.outputs.lines_removed || 0 }},
                 "actor": "${{ github.actor }}",
                 "event": "${{ github.event_name }}",
-                "tips": "${{ steps.pulse.outputs.tips }}"
+                "tips": "${{ steps.pulse.outputs.tips }}",
+                "agent_context": "${{ steps.pulse.outputs.agent_context }}",
+                "risk_level": "${{ steps.pulse.outputs.risk_level }}",
+                "focus_areas": "${{ steps.pulse.outputs.focus_areas }}",
+                "ai_cost": "${{ steps.pulse.outputs.ai_cost }}"
               }
             }' 2>&1 || true
 
