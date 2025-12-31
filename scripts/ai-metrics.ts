@@ -67,29 +67,58 @@ export interface TrendData {
 // COST CALCULATION
 // ============================================
 
-// OpenRouter pricing (per 1M tokens) - Update as needed
+// Fallback pricing (per 1M tokens) - Used when API pricing unavailable
 // Source: https://openrouter.ai/docs/pricing
-const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+const FALLBACK_PRICING: Record<string, { input: number; output: number }> = {
   // Google
   'google/gemini-2.0-flash-001': { input: 0.10, output: 0.40 },
   'google/gemini-2.5-flash-preview': { input: 0.15, output: 0.60 },
   'google/gemini-2.5-flash-lite': { input: 0.075, output: 0.30 },
+  'google/gemini-3-flash-preview': { input: 0.15, output: 0.60 },
   // Anthropic
   'anthropic/claude-sonnet-4': { input: 3.00, output: 15.00 },
+  'anthropic/claude-sonnet-4.5': { input: 3.00, output: 15.00 },
   'anthropic/claude-opus-4': { input: 15.00, output: 75.00 },
+  'anthropic/claude-opus-4.5': { input: 15.00, output: 75.00 },
   'anthropic/claude-3.5-sonnet': { input: 3.00, output: 15.00 },
   // OpenAI
   'openai/gpt-4o': { input: 2.50, output: 10.00 },
   'openai/gpt-4o-mini': { input: 0.15, output: 0.60 },
+  'openai/gpt-5.2': { input: 5.00, output: 20.00 },
   // Default fallback
   'default': { input: 1.00, output: 4.00 },
 }
 
+/**
+ * Calculate cost from token usage.
+ * Use calculateCostWithApiCost() when you have the cost from OpenRouter response.
+ */
 export function calculateCost(model: string, tokens: TokenUsage): number {
-  const pricing = MODEL_PRICING[model] || MODEL_PRICING['default']
+  // Remove :online suffix for pricing lookup
+  const baseModel = model.replace(/:online$/, '')
+  const pricing = FALLBACK_PRICING[baseModel] || FALLBACK_PRICING['default']
   const inputCost = (tokens.prompt_tokens / 1_000_000) * pricing.input
   const outputCost = (tokens.completion_tokens / 1_000_000) * pricing.output
   return inputCost + outputCost
+}
+
+/**
+ * Get cost preferring the real cost from OpenRouter API response.
+ * OpenRouter includes 'cost' in the usage object (in dollars).
+ * Falls back to calculated estimate if not available.
+ */
+export function calculateCostWithApiCost(
+  model: string,
+  tokens: TokenUsage,
+  apiCost?: number | null
+): { cost: number; source: 'api' | 'fallback' } {
+  // Prefer real cost from API if available (OpenRouter returns in dollars)
+  if (typeof apiCost === 'number' && apiCost > 0) {
+    return { cost: apiCost, source: 'api' }
+  }
+
+  // Fall back to calculated estimate
+  return { cost: calculateCost(model, tokens), source: 'fallback' }
 }
 
 // ============================================
@@ -350,6 +379,8 @@ export interface TrackedAPIResponse {
 /**
  * Make an API call with automatic metrics tracking.
  * Use this instead of callOpenRouter for full tracking.
+ *
+ * Extracts real cost from OpenRouter response when available.
  */
 export async function trackedAPICall(
   model: string,
@@ -373,7 +404,15 @@ export async function trackedAPICall(
       completion_tokens: 0,
       total_tokens: 0,
     }
-    const cost_usd = calculateCost(model, usage)
+
+    // Prefer real cost from OpenRouter response (in dollars)
+    // OpenRouter returns cost in the usage object
+    const apiCost = data.usage?.cost ?? data.usage?.total_cost ?? null
+    const { cost: cost_usd, source: costSource } = calculateCostWithApiCost(model, usage, apiCost)
+
+    if (costSource === 'api') {
+      console.log(`💰 ${operation}: $${cost_usd.toFixed(6)} (from API)`)
+    }
 
     // Record the call
     recordAPICall({

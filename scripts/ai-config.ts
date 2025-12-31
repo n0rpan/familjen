@@ -103,10 +103,43 @@ export function supportsOnline(model: string): boolean {
 }
 
 /**
- * Fetch current model availability from OpenRouter API.
- * Useful for checking if a model exists or getting latest pricing.
+ * Model pricing info from OpenRouter API
+ */
+export interface ModelPricing {
+  id: string
+  name: string
+  pricing: {
+    prompt: number   // Cost per token (input)
+    completion: number  // Cost per token (output)
+  }
+  context_length: number
+  supportsOnline: boolean
+}
+
+// Cache for model pricing (5 minute TTL)
+let modelPricingCache: { data: ModelPricing[]; timestamp: number } | null = null
+const CACHE_TTL_MS = 5 * 60 * 1000
+
+/**
+ * Fetch current model availability and pricing from OpenRouter API.
+ * Results are cached for 5 minutes to avoid excessive API calls.
  */
 export async function fetchAvailableModels(): Promise<string[]> {
+  const models = await fetchModelPricing()
+  return models.map(m => m.id)
+}
+
+/**
+ * Fetch model pricing from OpenRouter API.
+ * Returns pricing per token for cost calculation.
+ * Cached for 5 minutes.
+ */
+export async function fetchModelPricing(): Promise<ModelPricing[]> {
+  // Return cached data if still valid
+  if (modelPricingCache && Date.now() - modelPricingCache.timestamp < CACHE_TTL_MS) {
+    return modelPricingCache.data
+  }
+
   try {
     const response = await fetch('https://openrouter.ai/api/v1/models', {
       headers: {
@@ -115,14 +148,66 @@ export async function fetchAvailableModels(): Promise<string[]> {
     })
     if (!response.ok) {
       console.warn('Could not fetch OpenRouter models:', response.status)
-      return []
+      return modelPricingCache?.data || []
     }
     const data = await response.json()
-    return (data.data || []).map((m: { id: string }) => m.id)
+
+    const models: ModelPricing[] = (data.data || []).map((m: {
+      id: string
+      name: string
+      pricing?: { prompt?: string; completion?: string }
+      context_length?: number
+    }) => ({
+      id: m.id,
+      name: m.name || m.id,
+      pricing: {
+        // OpenRouter returns pricing as string per token
+        prompt: parseFloat(m.pricing?.prompt || '0'),
+        completion: parseFloat(m.pricing?.completion || '0'),
+      },
+      context_length: m.context_length || 0,
+      supportsOnline: supportsOnline(m.id),
+    }))
+
+    // Update cache
+    modelPricingCache = { data: models, timestamp: Date.now() }
+    return models
   } catch (e) {
     console.warn('Error fetching OpenRouter models:', e)
-    return []
+    return modelPricingCache?.data || []
   }
+}
+
+/**
+ * Get pricing for a specific model.
+ * Returns null if model not found or pricing unavailable.
+ */
+export async function getModelPricing(modelId: string): Promise<ModelPricing | null> {
+  const models = await fetchModelPricing()
+  // Remove :online suffix for lookup
+  const baseModelId = modelId.replace(/:online$/, '')
+  return models.find(m => m.id === baseModelId) || null
+}
+
+/**
+ * Calculate cost from token usage using real OpenRouter pricing.
+ * Falls back to estimate if pricing unavailable.
+ */
+export async function calculateRealCost(
+  modelId: string,
+  promptTokens: number,
+  completionTokens: number
+): Promise<{ cost: number; source: 'api' | 'estimate' }> {
+  const pricing = await getModelPricing(modelId)
+
+  if (pricing && (pricing.pricing.prompt > 0 || pricing.pricing.completion > 0)) {
+    const cost = (promptTokens * pricing.pricing.prompt) + (completionTokens * pricing.pricing.completion)
+    return { cost, source: 'api' }
+  }
+
+  // Fallback: rough estimate ($1/1M input, $4/1M output)
+  const estimatedCost = (promptTokens / 1_000_000) * 1.0 + (completionTokens / 1_000_000) * 4.0
+  return { cost: estimatedCost, source: 'estimate' }
 }
 
 // JSON Schemas for structured outputs
@@ -336,6 +421,18 @@ interface CallOptions {
   schema?: (typeof SCHEMAS)[keyof typeof SCHEMAS]
   schemaName?: string
   timeoutMs?: number
+  /** Enable web search for research tasks (adds :online suffix) */
+  enableWebSearch?: boolean
+}
+
+export interface OpenRouterResponse {
+  content: string
+  usage?: {
+    prompt_tokens: number
+    completion_tokens: number
+    total_tokens: number
+    cost?: number
+  }
 }
 
 /**
@@ -344,11 +441,18 @@ interface CallOptions {
  * When schema is provided, uses OpenRouter's structured outputs feature
  * to guarantee the response matches the JSON schema.
  *
+ * When enableWebSearch is true, uses the :online model variant for web search.
+ *
  * Includes timeout protection to prevent hung CI jobs.
  */
 export async function callOpenRouter(model: string, messages: Message[], options: CallOptions = {}): Promise<string> {
+  // Use online model if web search enabled
+  const effectiveModel = options.enableWebSearch && supportsOnline(model)
+    ? getOnlineModel(model)
+    : model
+
   const body: Record<string, unknown> = {
-    model,
+    model: effectiveModel,
     messages,
     temperature: options.temperature ?? 0,
     max_tokens: options.maxTokens ?? 4000,
@@ -389,6 +493,95 @@ export async function callOpenRouter(model: string, messages: Message[], options
 
   const data = await response.json()
   return data.choices?.[0]?.message?.content || ''
+}
+
+/**
+ * Call OpenRouter API and return full response including cost info.
+ * Use this when you need to track costs accurately.
+ */
+export async function callOpenRouterWithCost(
+  model: string,
+  messages: Message[],
+  options: CallOptions = {}
+): Promise<OpenRouterResponse> {
+  // Use online model if web search enabled
+  const effectiveModel = options.enableWebSearch && supportsOnline(model)
+    ? getOnlineModel(model)
+    : model
+
+  const body: Record<string, unknown> = {
+    model: effectiveModel,
+    messages,
+    temperature: options.temperature ?? 0,
+    max_tokens: options.maxTokens ?? 4000,
+  }
+
+  if (options.schema) {
+    body.response_format = {
+      type: 'json_schema',
+      json_schema: {
+        name: options.schemaName || 'response',
+        strict: true,
+        schema: options.schema,
+      },
+    }
+  }
+
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const operationName = options.schemaName ? `AI ${options.schemaName}` : 'AI API call'
+
+  const fetchPromise = fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${getOpenRouterKey()}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://github.com/n0rpan/familjen',
+      'X-Title': 'Familjen CI/CD',
+    },
+    body: JSON.stringify(body),
+  })
+
+  const response = await withTimeout(fetchPromise, timeoutMs, operationName)
+
+  if (!response.ok) {
+    const error = await response.text()
+    throw new Error(`OpenRouter API error: ${response.status} - ${error}`)
+  }
+
+  const data = await response.json()
+  const content = data.choices?.[0]?.message?.content || ''
+  const usage = data.usage ? {
+    prompt_tokens: data.usage.prompt_tokens || 0,
+    completion_tokens: data.usage.completion_tokens || 0,
+    total_tokens: data.usage.total_tokens || 0,
+    cost: data.usage.cost ?? data.usage.total_cost ?? undefined,
+  } : undefined
+
+  return { content, usage }
+}
+
+/**
+ * Perform a research query using web search.
+ * Uses :online model variant to access real-time web data.
+ *
+ * @example
+ * const info = await researchQuery(AI_MODELS.fast, "What is the latest version of Next.js?")
+ */
+export async function researchQuery(model: string, query: string): Promise<string> {
+  return callOpenRouter(model, [
+    {
+      role: 'system',
+      content: 'You are a research assistant with web search capability. Provide accurate, up-to-date information based on current web data. Be concise and cite sources when relevant.',
+    },
+    {
+      role: 'user',
+      content: query,
+    },
+  ], {
+    enableWebSearch: true,
+    temperature: 0,
+    maxTokens: 2000,
+  })
 }
 
 /**

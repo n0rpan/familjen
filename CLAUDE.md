@@ -896,13 +896,38 @@ VERCEL_AUTOMATION_BYPASS_SECRET=xxx                     # Bypass Vercel protecti
 Append `:online` to any model ID to enable real-time web search:
 
 ```typescript
-import { getOnlineModel } from './scripts/ai-config'
+import { getOnlineModel, researchQuery, callOpenRouter, AI_MODELS } from './scripts/ai-config'
 
-// Use for research tasks, checking model availability, latest docs
+// Method 1: Manual - get online model variant
 const model = getOnlineModel('openai/gpt-4o')  // => 'openai/gpt-4o:online'
+
+// Method 2: Automatic - use researchQuery helper
+const info = await researchQuery(AI_MODELS.fast, 'What is the latest version of Next.js?')
+
+// Method 3: Pass enableWebSearch option to callOpenRouter
+const response = await callOpenRouter(AI_MODELS.fast, messages, { enableWebSearch: true })
 ```
 
 See: https://openrouter.ai/docs/guides/routing/model-variants/online
+
+### Model Pricing API
+
+Fetch real pricing from OpenRouter instead of using hardcoded rates:
+
+```typescript
+import { fetchModelPricing, getModelPricing, calculateRealCost } from './scripts/ai-config'
+
+// Get all models with pricing (cached for 5 minutes)
+const models = await fetchModelPricing()
+
+// Get pricing for specific model
+const pricing = await getModelPricing('anthropic/claude-sonnet-4')
+// => { id: '...', pricing: { prompt: 0.000003, completion: 0.000015 }, ... }
+
+// Calculate real cost for a request
+const { cost, source } = await calculateRealCost('anthropic/claude-sonnet-4', 1000, 500)
+// => { cost: 0.0105, source: 'api' }  // or 'estimate' if pricing unavailable
+```
 
 ### Activity Pulse (Dashboard Integration)
 
@@ -928,7 +953,13 @@ The `agent_context` is designed to be copy-pasted into an AI agent prompt for co
 
 ### Cost Tracking
 
-All AI calls are tracked with per-model cost breakdowns:
+All AI calls are tracked with per-model cost breakdowns. **Costs are fetched directly from OpenRouter's API response** when available, with fallback to calculated estimates.
+
+**How it works:**
+1. OpenRouter returns `usage.cost` in API responses (real cost in dollars)
+2. CI extracts this value instead of calculating from hardcoded rates
+3. Falls back to conservative estimate if API doesn't return cost
+4. All costs aggregated in final-verdict.json
 
 ```json
 // In final-verdict.json
@@ -940,6 +971,20 @@ All AI calls are tracked with per-model cost breakdowns:
     "claude-sonnet-4.5": { "calls": 1, "cost_usd": 0.0530 }
   }
 }
+```
+
+**For script usage:**
+```typescript
+import { callOpenRouterWithCost } from './scripts/ai-config'
+import { calculateCostWithApiCost } from './scripts/ai-metrics'
+
+// Get response with real cost
+const { content, usage } = await callOpenRouterWithCost(model, messages)
+console.log(`Cost: $${usage?.cost}`)  // Real cost from OpenRouter
+
+// Or use the metrics helper
+const { cost, source } = calculateCostWithApiCost(model, tokens, apiCost)
+// source: 'api' (real) or 'fallback' (estimated)
 ```
 
 ### Final Verdict Philosophy
