@@ -306,7 +306,8 @@ export function DuplicateSuggestionsList({ suggestions, onUpdate }: SuggestionsL
       // Always set timer to clear success message
       timerRef.current = setTimeout(() => setSuccessMessage(null), 3000)
 
-      onUpdate()
+      // Background sync - defer to avoid blocking UI (optimistic update already done via resolvedIds)
+      setTimeout(() => onUpdate(), 500)
     } catch (error) {
       console.error('Error resolving suggestion:', error)
       setErrorMessage(t.feed.duplicates.couldNotComplete)

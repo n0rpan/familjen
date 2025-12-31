@@ -776,11 +776,12 @@ export const WeekGrid = memo(function WeekGrid({
                       />
                     ) : (
                       <span
-                        className="text-sm"
+                        className="text-sm block truncate max-w-full"
                         style={{
                           color: meal ? 'var(--foreground)' : 'var(--muted)',
                           opacity: meal ? 1 : 0.5,
                         }}
+                        title={meal?.recipe?.name || meal?.custom_meal || undefined}
                       >
                         {meal?.recipe?.name || meal?.custom_meal || '-'}
                       </span>

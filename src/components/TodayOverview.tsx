@@ -252,9 +252,13 @@ export const TodayOverview = memo(function TodayOverview({
                   <path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3zm0 0v7"/>
                 </svg>
               </div>
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <span className="text-sm" style={{ color: 'var(--muted)' }}>{t.home.meal}</span>
-                <span className="font-medium block" style={{ color: 'var(--foreground)' }}>
+                <span
+                  className="font-medium block truncate"
+                  style={{ color: 'var(--foreground)' }}
+                  title={summary.meal.recipe?.name || summary.meal.custom_meal || undefined}
+                >
                   {summary.meal.recipe?.name || summary.meal.custom_meal || t.home.noMealPlanned}
                 </span>
               </div>

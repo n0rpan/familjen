@@ -15,6 +15,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
+import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealtimeSubscription'
 import { formatDateISO } from '@/lib/utils'
 import type { Pickup, PickupWithDetails, Child, HouseholdMember } from '@/lib/types'
 
@@ -112,6 +113,34 @@ export function usePickups(options: UsePickupsOptions = {}): UsePickupsReturn {
       }
     }
   }, [isDemo, supabase, household?.id, startDateStr, endDateStr, currentFetchKey])
+
+  // Debounced refetch for realtime - prevents thundering herd when multiple changes come in
+  const realtimeRefetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const debouncedRefetch = useCallback(() => {
+    if (realtimeRefetchTimer.current) {
+      clearTimeout(realtimeRefetchTimer.current)
+    }
+    realtimeRefetchTimer.current = setTimeout(() => {
+      fetchData()
+    }, 300) // 300ms debounce for realtime changes
+  }, [fetchData])
+
+  // Cleanup debounce timer
+  useEffect(() => {
+    return () => {
+      if (realtimeRefetchTimer.current) {
+        clearTimeout(realtimeRefetchTimer.current)
+      }
+    }
+  }, [])
+
+  // Subscribe to realtime changes for instant sync between parents
+  useRealtimeSubscription<Pickup>({
+    table: 'pickups',
+    filter: household?.id ? createHouseholdFilter(household.id) : undefined,
+    enabled: !isDemo && !!household?.id,
+    onAny: debouncedRefetch,
+  })
 
   // Fetch when household or date range changes
   useEffect(() => {
