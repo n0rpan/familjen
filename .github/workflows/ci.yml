@@ -2,7 +2,7 @@ name: AI-Powered CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, 'claude/**', 'feature/**', 'fix/**']
   pull_request:
     # Run on all PRs to catch issues early
     types: [opened, synchronize, reopened]
@@ -21,6 +21,160 @@ env:
   NODE_OPTIONS: '--max-old-space-size=6144'
 
 jobs:
+  # ============================================
+  # ACTIVITY PULSE - Super fast, runs on ALL commits
+  # Sends live activity to dashboard, provides context for AI agents
+  # ============================================
+  activity-pulse:
+    name: ⚡ Activity Pulse
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    # Run on everything - PRs and pushes to any branch
+    if: always()
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 10  # Just recent history for speed
+
+      - name: Analyze activity and send pulse
+        id: pulse
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_FAST_MODEL: ${{ secrets.OPENROUTER_FAST_MODEL }}
+        run: |
+          echo "⚡ Activity Pulse - $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo ""
+
+          # Extract branch info
+          BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}"
+          echo "📍 Branch: $BRANCH"
+
+          # Detect work type from branch name
+          WORK_TYPE="unknown"
+          if [[ "$BRANCH" == claude/* ]]; then
+            WORK_TYPE="ai-agent"
+          elif [[ "$BRANCH" == feature/* ]]; then
+            WORK_TYPE="feature"
+          elif [[ "$BRANCH" == fix/* ]]; then
+            WORK_TYPE="bugfix"
+          elif [[ "$BRANCH" == "main" ]]; then
+            WORK_TYPE="production"
+          elif [[ "$BRANCH" == "develop" ]]; then
+            WORK_TYPE="development"
+          fi
+          echo "🏷️  Work type: $WORK_TYPE"
+
+          # Get recent commit info
+          COMMIT_MSG=$(git log -1 --pretty=format:"%s")
+          COMMIT_AUTHOR=$(git log -1 --pretty=format:"%an")
+          echo "📝 Latest: $COMMIT_MSG"
+          echo "👤 Author: $COMMIT_AUTHOR"
+
+          # Get changed files list
+          CHANGED_FILES=$(git diff --name-only HEAD~1 2>/dev/null | head -20 || echo "")
+          echo ""
+          echo "📁 Changed files:"
+          echo "$CHANGED_FILES" | head -10
+
+          # Count changes by area
+          UI_CHANGES=$(echo "$CHANGED_FILES" | grep -c "^src/components\|^src/app.*page\|\.tsx$" || echo "0")
+          API_CHANGES=$(echo "$CHANGED_FILES" | grep -c "^src/app/api\|route\.ts$" || echo "0")
+          LIB_CHANGES=$(echo "$CHANGED_FILES" | grep -c "^src/lib/" || echo "0")
+          TEST_CHANGES=$(echo "$CHANGED_FILES" | grep -c "^tests/\|\.test\." || echo "0")
+          CI_CHANGES=$(echo "$CHANGED_FILES" | grep -c "^\.github/\|^scripts/" || echo "0")
+          DB_CHANGES=$(echo "$CHANGED_FILES" | grep -c "^supabase/\|migration" || echo "0")
+
+          AREAS=""
+          [[ $UI_CHANGES -gt 0 ]] && AREAS="$AREAS ui($UI_CHANGES)"
+          [[ $API_CHANGES -gt 0 ]] && AREAS="$AREAS api($API_CHANGES)"
+          [[ $LIB_CHANGES -gt 0 ]] && AREAS="$AREAS lib($LIB_CHANGES)"
+          [[ $TEST_CHANGES -gt 0 ]] && AREAS="$AREAS tests($TEST_CHANGES)"
+          [[ $CI_CHANGES -gt 0 ]] && AREAS="$AREAS ci($CI_CHANGES)"
+          [[ $DB_CHANGES -gt 0 ]] && AREAS="$AREAS db($DB_CHANGES)"
+
+          echo "📊 Areas: $AREAS"
+
+          # Count total lines changed
+          LINES_ADDED=$(git diff --shortstat HEAD~1 2>/dev/null | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
+          LINES_REMOVED=$(git diff --shortstat HEAD~1 2>/dev/null | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
+          echo "📈 Stats: +$LINES_ADDED -$LINES_REMOVED lines"
+
+          # Generate AI tips if API key available
+          TIPS=""
+          if [ -n "$OPENROUTER_API_KEY" ] && [ -n "$OPENROUTER_FAST_MODEL" ]; then
+            echo ""
+            echo "🤖 Generating contextual tips with AI..."
+            # Build prompt as single line to avoid YAML parsing issues
+            PROMPT="AI coding assistant for Familjen (Norwegian family app). Branch: $BRANCH. Commit: $COMMIT_MSG. Files: $(echo $CHANGED_FILES | tr '\n' ', '). Give 2-3 SHORT tips for AI agents. Focus on: RLS policies, i18n, demo mode. Return JSON: {\"tips\":[\"tip1\",\"tip2\"]}"
+            # Call OpenRouter API
+            RESPONSE=$(curl -s --max-time 10 "https://openrouter.ai/api/v1/chat/completions" \
+              -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+              -H "Content-Type: application/json" \
+              -H "HTTP-Referer: https://familjen.eu" \
+              -d "$(jq -n --arg model "$OPENROUTER_FAST_MODEL" --arg prompt "$PROMPT" '{model:$model,messages:[{role:"user",content:$prompt}],max_tokens:200,temperature:0.3}')" 2>/dev/null || echo "")
+            if [ -n "$RESPONSE" ]; then
+              TIPS=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // empty' 2>/dev/null | jq -r '.tips[]? // empty' 2>/dev/null || echo "")
+              if [ -n "$TIPS" ]; then
+                echo "💡 AI Tips:"
+                echo "$TIPS" | while read -r tip; do [ -n "$tip" ] && echo "   • $tip"; done
+              fi
+            fi
+          else
+            echo ""
+            echo "💡 Tips (set OPENROUTER_API_KEY for AI-generated tips):"
+            [[ $DB_CHANGES -gt 0 ]] && echo "   • DB: Remember RLS policies and household_id scoping"
+            [[ $API_CHANGES -gt 0 ]] && echo "   • API: Use ApiErrors helper for Norwegian messages"
+            [[ $UI_CHANGES -gt 0 ]] && echo "   • UI: Use useLanguage() for i18n, check demo mode"
+            [[ $CI_CHANGES -gt 0 ]] && echo "   • CI: Reviewers exit 0, final-verdict decides"
+          fi
+
+          # Set outputs for webhook
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+          echo "work_type=$WORK_TYPE" >> $GITHUB_OUTPUT
+          # Escape quotes in commit message for JSON
+          COMMIT_MSG_ESCAPED=$(echo "$COMMIT_MSG" | sed 's/"/\\"/g' | tr -d '\n')
+          echo "commit_msg=$COMMIT_MSG_ESCAPED" >> $GITHUB_OUTPUT
+          echo "areas=$AREAS" >> $GITHUB_OUTPUT
+          echo "lines_added=$LINES_ADDED" >> $GITHUB_OUTPUT
+          echo "lines_removed=$LINES_REMOVED" >> $GITHUB_OUTPUT
+          # Store tips for webhook (escaped for JSON)
+          TIPS_ESCAPED=$(echo "$TIPS" | tr '\n' '|' | sed 's/"/\\"/g')
+          echo "tips=$TIPS_ESCAPED" >> $GITHUB_OUTPUT
+
+      - name: Send activity pulse to dashboard
+        if: always()
+        continue-on-error: true
+        run: |
+          # Skip if no webhook URL configured
+          if [ -z "${{ secrets.CI_WEBHOOK_URL }}" ]; then
+            exit 0
+          fi
+
+          # --max-redirs 0: Don't follow redirects - security risk to pass credentials to different host
+          curl -X POST --max-redirs 0 -s -w "\nHTTP: %{http_code}\n" \
+            "${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook" \
+            -H "Content-Type: application/json" \
+            -H "x-ci-secret: ${{ secrets.CI_WEBHOOK_SECRET }}" \
+            -d '{
+              "type": "activity_pulse",
+              "pr_number": ${{ github.event.pull_request.number || 0 }},
+              "pr_title": "${{ github.event.pull_request.title || github.event.head_commit.message }}",
+              "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+              "data": {
+                "branch": "${{ steps.pulse.outputs.branch }}",
+                "work_type": "${{ steps.pulse.outputs.work_type }}",
+                "commit_sha": "${{ github.sha }}",
+                "commit_msg": "${{ steps.pulse.outputs.commit_msg }}",
+                "areas": "${{ steps.pulse.outputs.areas }}",
+                "lines_added": ${{ steps.pulse.outputs.lines_added || 0 }},
+                "lines_removed": ${{ steps.pulse.outputs.lines_removed || 0 }},
+                "actor": "${{ github.actor }}",
+                "event": "${{ github.event_name }}",
+                "tips": "${{ steps.pulse.outputs.tips }}"
+              }
+            }' 2>&1 || true
+
   # ============================================
   # SMART TEST SELECTOR (runs first, decides what to test)
   # ============================================
@@ -109,7 +263,9 @@ jobs:
         if: always()
         continue-on-error: true
         run: |
-          curl -X POST "${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook" \
+          # --max-redirs 0: Don't follow redirects - security risk to pass credentials to different host
+          curl -X POST --max-redirs 0 -s -w "\nHTTP: %{http_code}\n" \
+            "${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook" \
             -H "Content-Type: application/json" \
             -H "x-ci-secret: ${{ secrets.CI_WEBHOOK_SECRET }}" \
             -d '{
@@ -120,7 +276,7 @@ jobs:
               "data": {
                 "labels": "${{ steps.labeler.outputs.labels }}"
               }
-            }' || true
+            }' 2>&1 || true
 
       - name: Upload PR state
         uses: actions/upload-artifact@v4
@@ -1469,6 +1625,7 @@ jobs:
             try {
               const response = await fetch(webhookUrl + '/api/ci/webhook', {
                 method: 'POST',
+                redirect: 'error', // Don't follow redirects - security risk to pass credentials to different host
                 headers: {
                   'Content-Type': 'application/json',
                   'x-ci-secret': process.env.CI_WEBHOOK_SECRET || ''
@@ -1477,7 +1634,11 @@ jobs:
               })
               console.log('Webhook response:', response.status)
             } catch (e) {
+              // Log detailed error for debugging redirect issues
               console.log('Webhook failed:', e.message)
+              if (e.message.includes('redirect')) {
+                console.log('Hint: Check CI_WEBHOOK_URL - it may be causing a redirect. Use the final URL directly.')
+              }
             }
         env:
           CI_WEBHOOK_URL: ${{ secrets.CI_WEBHOOK_URL }}
