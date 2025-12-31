@@ -1357,9 +1357,24 @@ Events from multiple sources (school calendar, Spond, kindergarten) often duplic
 - `<60%`: No action
 
 **Safety safeguards:**
-- UUID validation on all filter queries (prevents SQL injection)
+- Parameterized `.in()` queries instead of `.or()` string interpolation (prevents SQL injection)
+- Separate queries by source type, combined in JavaScript (avoids string concatenation)
 - Deletion detection skipped if API returns <1 event or >50% would be deleted
 - Max 10 deletions per sync (likely API error if more)
+
+**Security pattern (IMPORTANT):**
+```typescript
+// ❌ UNSAFE - String interpolation in .or() can be exploited
+const sourceFilter = `source_url_id.in.(${ids.join(',')})`
+await supabase.from('external_events').or(sourceFilter)
+
+// ✅ SAFE - Parameterized .in() queries, combined in JavaScript
+const [result1, result2] = await Promise.all([
+  supabase.from('external_events').in('source_url_id', sourceUrlIds),
+  supabase.from('external_events').in('integration_id', integrationIds),
+])
+const combined = combineAndDeduplicateEvents(result1.data, result2.data)
+```
 
 **Cron sync behavior:**
 ```

@@ -14,36 +14,28 @@ import { formatDateISO } from '@/lib/utils'
 const HIGH_CONFIDENCE_THRESHOLD = 0.9
 const MEDIUM_CONFIDENCE_THRESHOLD = 0.6
 
-// UUID validation regex
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
 /**
- * Validate that a string is a valid UUID to prevent SQL injection
+ * Combine results from two queries, deduplicating by ID.
  */
-function isValidUUID(id: string): boolean {
-  return UUID_REGEX.test(id)
-}
+function combineAndDeduplicateEvents(events1: ExternalEvent[], events2: ExternalEvent[]): ExternalEvent[] {
+  const seenIds = new Set<string>()
+  const results: ExternalEvent[] = []
 
-/**
- * Build safe .or() filter for source IDs
- * Validates all UUIDs before building the filter string
- */
-function buildSourceFilter(sourceUrlIds: string[], integrationIds: string[]): string | null {
-  const filters: string[] = []
-
-  // Validate and filter source URL IDs
-  const validSourceUrlIds = sourceUrlIds.filter(isValidUUID)
-  if (validSourceUrlIds.length > 0) {
-    filters.push(`source_url_id.in.(${validSourceUrlIds.join(',')})`)
+  for (const event of events1) {
+    if (!seenIds.has(event.id)) {
+      seenIds.add(event.id)
+      results.push(event)
+    }
   }
 
-  // Validate and filter integration IDs
-  const validIntegrationIds = integrationIds.filter(isValidUUID)
-  if (validIntegrationIds.length > 0) {
-    filters.push(`integration_id.in.(${validIntegrationIds.join(',')})`)
+  for (const event of events2) {
+    if (!seenIds.has(event.id)) {
+      seenIds.add(event.id)
+      results.push(event)
+    }
   }
 
-  return filters.length > 0 ? filters.join(',') : null
+  return results
 }
 
 interface ExternalEvent {
@@ -237,9 +229,7 @@ async function findPotentialDuplicates(
   const sourceUrlIds = sourceUrlsResult.data?.map((s) => s.id) || []
   const integrationIds = integrationsResult.data?.map((i) => i.id) || []
 
-  // Build safe filter with UUID validation
-  const sourceFilter = buildSourceFilter(sourceUrlIds, integrationIds)
-  if (!sourceFilter) {
+  if (sourceUrlIds.length === 0 && integrationIds.length === 0) {
     return []
   }
 
@@ -250,20 +240,49 @@ async function findPotentialDuplicates(
   minDate.setDate(minDate.getDate() - 3)
   maxDate.setDate(maxDate.getDate() + 3)
 
-  // Query all events in date range from this household
-  const { data: allEvents, error } = await supabase
-    .from('external_events')
-    .select(
-      'id, title, event_date, end_date, event_time, event_type, source_url_id, integration_id, child_id, duplicate_of_id, is_hidden'
-    )
-    .or(sourceFilter)
-    .gte('event_date', formatDateISO(minDate))
-    .lte('event_date', formatDateISO(maxDate))
-    .is('duplicate_of_id', null)
-    .eq('is_hidden', false)
+  const minDateStr = formatDateISO(minDate)
+  const maxDateStr = formatDateISO(maxDate)
 
-  if (error || !allEvents) {
-    console.error('[Deduplication] Error fetching events:', error)
+  const eventSelectFields = 'id, title, event_date, end_date, event_time, event_type, source_url_id, integration_id, child_id, duplicate_of_id, is_hidden'
+
+  // Query using safe parameterized .in() instead of .or() string interpolation
+  // Make separate queries and combine results to avoid SQL injection
+  const [sourceUrlEventsResult, integrationEventsResult] = await Promise.all([
+    sourceUrlIds.length > 0
+      ? supabase
+          .from('external_events')
+          .select(eventSelectFields)
+          .in('source_url_id', sourceUrlIds)
+          .gte('event_date', minDateStr)
+          .lte('event_date', maxDateStr)
+          .is('duplicate_of_id', null)
+          .eq('is_hidden', false)
+      : Promise.resolve({ data: [], error: null }),
+    integrationIds.length > 0
+      ? supabase
+          .from('external_events')
+          .select(eventSelectFields)
+          .in('integration_id', integrationIds)
+          .gte('event_date', minDateStr)
+          .lte('event_date', maxDateStr)
+          .is('duplicate_of_id', null)
+          .eq('is_hidden', false)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+
+  if (sourceUrlEventsResult.error) {
+    console.error('[Deduplication] Error querying by source_url_id:', sourceUrlEventsResult.error)
+  }
+  if (integrationEventsResult.error) {
+    console.error('[Deduplication] Error querying by integration_id:', integrationEventsResult.error)
+  }
+
+  const allEvents = combineAndDeduplicateEvents(
+    (sourceUrlEventsResult.data || []) as ExternalEvent[],
+    (integrationEventsResult.data || []) as ExternalEvent[]
+  )
+
+  if (allEvents.length === 0) {
     return []
   }
 
@@ -536,30 +555,52 @@ export async function deduplicateAllEvents(
   const sourceUrlIds = sourceUrlsResult.data?.map((s) => s.id) || []
   const integrationIds = integrationsResult.data?.map((i) => i.id) || []
 
-  // Build safe filter with UUID validation
-  const sourceFilter = buildSourceFilter(sourceUrlIds, integrationIds)
-  if (!sourceFilter) {
+  if (sourceUrlIds.length === 0 && integrationIds.length === 0) {
     return result
   }
 
   // Get all future events (from today onwards) that aren't already marked as duplicates
   const today = formatDateISO(new Date())
 
-  const { data: allEvents, error: fetchError } = await supabase
-    .from('external_events')
-    .select(
-      'id, title, event_date, end_date, event_time, event_type, source_url_id, integration_id, child_id, duplicate_of_id, is_hidden'
-    )
-    .or(sourceFilter)
-    .gte('event_date', today)
-    .is('duplicate_of_id', null)
-    .eq('is_hidden', false)
-    .order('event_date', { ascending: true })
+  const eventSelectFields = 'id, title, event_date, end_date, event_time, event_type, source_url_id, integration_id, child_id, duplicate_of_id, is_hidden'
 
-  if (fetchError || !allEvents) {
-    result.errors.push(`Failed to fetch events: ${fetchError?.message}`)
-    return result
+  // Query using safe parameterized .in() instead of .or() string interpolation
+  // Make separate queries and combine results to avoid SQL injection
+  const [sourceUrlEventsResult, integrationEventsResult] = await Promise.all([
+    sourceUrlIds.length > 0
+      ? supabase
+          .from('external_events')
+          .select(eventSelectFields)
+          .in('source_url_id', sourceUrlIds)
+          .gte('event_date', today)
+          .is('duplicate_of_id', null)
+          .eq('is_hidden', false)
+      : Promise.resolve({ data: [], error: null }),
+    integrationIds.length > 0
+      ? supabase
+          .from('external_events')
+          .select(eventSelectFields)
+          .in('integration_id', integrationIds)
+          .gte('event_date', today)
+          .is('duplicate_of_id', null)
+          .eq('is_hidden', false)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+
+  if (sourceUrlEventsResult.error) {
+    result.errors.push(`Error querying by source_url_id: ${sourceUrlEventsResult.error.message}`)
   }
+  if (integrationEventsResult.error) {
+    result.errors.push(`Error querying by integration_id: ${integrationEventsResult.error.message}`)
+  }
+
+  const allEvents = combineAndDeduplicateEvents(
+    (sourceUrlEventsResult.data || []) as ExternalEvent[],
+    (integrationEventsResult.data || []) as ExternalEvent[]
+  )
+
+  // Sort by event_date ascending (since we combined results from two queries)
+  allEvents.sort((a, b) => a.event_date.localeCompare(b.event_date))
 
   if (allEvents.length < 2) {
     return result // Need at least 2 events to compare

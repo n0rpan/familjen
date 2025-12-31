@@ -8,36 +8,86 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-// UUID validation regex
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
-/**
- * Validate that a string is a valid UUID to prevent SQL injection
- */
-function isValidUUID(id: string): boolean {
-  return UUID_REGEX.test(id)
+interface MergedDuplicate {
+  id: string
+  title: string
+  event_date: string
+  event_time: string | null
+  duplicate_of_id: string
+  duplicate_confidence: number
+  source_url_id: string | null
+  integration_id: string | null
+  child_id: string | null
+  updated_at: string
 }
 
 /**
- * Build safe .or() filter for source IDs
- * Validates all UUIDs before building the filter string
+ * Query merged duplicates using parameterized .in() filters instead of string interpolation.
+ * Makes separate queries for source_url_id and integration_id, then combines results.
+ * This is the SAFE approach - avoids SQL injection via .or() string interpolation.
  */
-function buildSourceFilter(sourceUrlIds: string[], integrationIds: string[]): string | null {
-  const filters: string[] = []
+async function queryMergedDuplicates(
+  supabase: ReturnType<typeof createClient> extends Promise<infer T> ? T : never,
+  sourceUrlIds: string[],
+  integrationIds: string[],
+  thirtyDaysAgo: Date
+): Promise<MergedDuplicate[]> {
+  const results: MergedDuplicate[] = []
+  const seenIds = new Set<string>()
 
-  // Validate and filter source URL IDs
-  const validSourceUrlIds = sourceUrlIds.filter(isValidUUID)
-  if (validSourceUrlIds.length > 0) {
-    filters.push(`source_url_id.in.(${validSourceUrlIds.join(',')})`)
+  const baseSelect = 'id, title, event_date, event_time, duplicate_of_id, duplicate_confidence, source_url_id, integration_id, child_id, updated_at'
+
+  // Query by source_url_id using parameterized .in()
+  if (sourceUrlIds.length > 0) {
+    const { data, error } = await supabase
+      .from('external_events')
+      .select(baseSelect)
+      .not('duplicate_of_id', 'is', null)
+      .eq('is_hidden', true)
+      .in('source_url_id', sourceUrlIds)
+      .gte('updated_at', thirtyDaysAgo.toISOString())
+      .order('updated_at', { ascending: false })
+      .limit(20)
+
+    if (error) {
+      console.error('[Duplicates API] Error querying by source_url_id:', error)
+    } else if (data) {
+      for (const item of data) {
+        if (!seenIds.has(item.id)) {
+          seenIds.add(item.id)
+          results.push(item as MergedDuplicate)
+        }
+      }
+    }
   }
 
-  // Validate and filter integration IDs
-  const validIntegrationIds = integrationIds.filter(isValidUUID)
-  if (validIntegrationIds.length > 0) {
-    filters.push(`integration_id.in.(${validIntegrationIds.join(',')})`)
+  // Query by integration_id using parameterized .in()
+  if (integrationIds.length > 0) {
+    const { data, error } = await supabase
+      .from('external_events')
+      .select(baseSelect)
+      .not('duplicate_of_id', 'is', null)
+      .eq('is_hidden', true)
+      .in('integration_id', integrationIds)
+      .gte('updated_at', thirtyDaysAgo.toISOString())
+      .order('updated_at', { ascending: false })
+      .limit(20)
+
+    if (error) {
+      console.error('[Duplicates API] Error querying by integration_id:', error)
+    } else if (data) {
+      for (const item of data) {
+        if (!seenIds.has(item.id)) {
+          seenIds.add(item.id)
+          results.push(item as MergedDuplicate)
+        }
+      }
+    }
   }
 
-  return filters.length > 0 ? filters.join(',') : null
+  // Sort by updated_at descending and limit to 20
+  results.sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+  return results.slice(0, 20)
 }
 
 export async function GET() {
@@ -117,39 +167,13 @@ export async function GET() {
     const sourceUrlIds = sourceUrlsResult.data?.map((s) => s.id) || []
     const integrationIds = integrationsResult.data?.map((i) => i.id) || []
 
-    // Build safe filter with UUID validation
-    const sourceFilter = buildSourceFilter(sourceUrlIds, integrationIds)
-
-    let mergedDuplicates: Array<{
-      id: string
-      title: string
-      event_date: string
-      event_time: string | null
-      duplicate_of_id: string
-      duplicate_confidence: number
-      source_url_id: string | null
-      integration_id: string | null
-      child_id: string | null
-      updated_at: string
-    }> = []
-
-    if (sourceFilter) {
-      const { data: merged, error: mergedError } = await supabase
-        .from('external_events')
-        .select('id, title, event_date, event_time, duplicate_of_id, duplicate_confidence, source_url_id, integration_id, child_id, updated_at')
-        .not('duplicate_of_id', 'is', null)
-        .eq('is_hidden', true)
-        .or(sourceFilter)
-        .gte('updated_at', thirtyDaysAgo.toISOString())
-        .order('updated_at', { ascending: false })
-        .limit(20)
-
-      if (mergedError) {
-        console.error('[Duplicates API] Error fetching merged:', mergedError)
-      } else {
-        mergedDuplicates = merged || []
-      }
-    }
+    // Query using safe parameterized .in() queries instead of .or() string interpolation
+    const mergedDuplicates = await queryMergedDuplicates(
+      supabase,
+      sourceUrlIds,
+      integrationIds,
+      thirtyDaysAgo
+    )
 
     // Get the kept events for merged duplicates
     const keptEventIds = [...new Set(mergedDuplicates.map((m) => m.duplicate_of_id))]
