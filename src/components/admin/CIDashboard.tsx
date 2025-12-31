@@ -342,9 +342,17 @@ function getTimeAgo(date: Date): string {
 function ActivityPulseRow({ event }: { event: CIEvent }) {
   const { data } = event
   const timeAgo = getTimeAgo(new Date(event.created_at))
+  const [copied, setCopied] = useState(false)
 
   // Parse tips from pipe-separated string
   const tips = data.tips ? data.tips.split('|').filter(t => t.trim()) : []
+
+  const copyTips = async () => {
+    const text = `Context for ${data.branch}:\n${tips.map(t => `• ${t}`).join('\n')}`
+    await navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
   const workTypeColors: Record<string, string> = {
     'ai-agent': 'var(--color-lavender)',
@@ -420,9 +428,21 @@ function ActivityPulseRow({ event }: { event: CIEvent }) {
           className="px-3 py-2 border-t text-xs space-y-1"
           style={{ borderColor: 'var(--border)' }}
         >
-          <div className="flex items-center gap-1" style={{ color: 'var(--color-honey)' }}>
-            <span>💡</span>
-            <span className="font-medium">AI Tips:</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1" style={{ color: 'var(--color-honey)' }}>
+              <span>💡</span>
+              <span className="font-medium">AI Tips:</span>
+            </div>
+            <button
+              onClick={copyTips}
+              className="px-2 py-0.5 rounded text-xs transition-colors"
+              style={{
+                background: copied ? 'var(--color-sage)' : 'var(--sand)',
+                color: copied ? 'white' : 'var(--muted)',
+              }}
+            >
+              {copied ? '✓ Copied' : '📋 Copy'}
+            </button>
           </div>
           {tips.map((tip, i) => (
             <div key={i} className="pl-4" style={{ color: 'var(--muted)' }}>
