@@ -109,7 +109,8 @@ jobs:
         if: always()
         continue-on-error: true
         run: |
-          curl -X POST "${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook" \
+          # --max-redirs 0: Don't follow redirects - security risk to pass credentials to different host
+          curl -X POST --max-redirs 0 "${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook" \
             -H "Content-Type: application/json" \
             -H "x-ci-secret: ${{ secrets.CI_WEBHOOK_SECRET }}" \
             -d '{
@@ -1469,6 +1470,7 @@ jobs:
             try {
               const response = await fetch(webhookUrl + '/api/ci/webhook', {
                 method: 'POST',
+                redirect: 'error', // Don't follow redirects - security risk to pass credentials to different host
                 headers: {
                   'Content-Type': 'application/json',
                   'x-ci-secret': process.env.CI_WEBHOOK_SECRET || ''
@@ -1477,7 +1479,11 @@ jobs:
               })
               console.log('Webhook response:', response.status)
             } catch (e) {
+              // Log detailed error for debugging redirect issues
               console.log('Webhook failed:', e.message)
+              if (e.message.includes('redirect')) {
+                console.log('Hint: Check CI_WEBHOOK_URL - it may be causing a redirect. Use the final URL directly.')
+              }
             }
         env:
           CI_WEBHOOK_URL: ${{ secrets.CI_WEBHOOK_URL }}

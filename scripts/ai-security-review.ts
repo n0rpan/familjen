@@ -197,9 +197,12 @@ async function main() {
     writeFileSync('security-review-comment.md', comment)
     console.log('📄 Saved: security-review-comment.md')
 
-    // Exit code based on verdict
+    // Always exit 0 - security review is non-blocking
+    // The final verdict script will decide based on the findings in the JSON output
+    // This prevents a confusing red X in CI when issues are found but not blocking
     console.log(`\n${verdict === 'PASS' ? '✅' : verdict === 'WARN' ? '⚠️' : '❌'} Verdict: ${verdict}`)
-    process.exit(verdict === 'FAIL' ? 1 : 0)
+    console.log('Note: Security review is non-blocking. Final verdict will determine if this blocks the PR.')
+    process.exit(0)
 
   } catch (error) {
     console.error('❌ Security review failed:', error)
