@@ -750,10 +750,11 @@ export async function syncCalendarSource(
     }
 
     // 2. Extract events using AI
-    const model = options.model || process.env.OPENROUTER_TEST_MODEL || process.env.OPENROUTER_FAST_MODEL
-    if (!model) {
-      throw new Error('No AI model configured. Set OPENROUTER_TEST_MODEL or pass model in options.')
+    // Model must be passed in options - caller fetches from app_settings.openrouter_vision_model
+    if (!options.model) {
+      throw new Error('No AI model configured. Pass model in options (from app_settings).')
     }
+    const model = options.model
 
     let childName: string | undefined
     if (source.child_id) {
