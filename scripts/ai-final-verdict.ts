@@ -2298,10 +2298,13 @@ async function main() {
   // Get PR metadata
   const prTitle = process.env.GITHUB_PR_TITLE || 'Unknown PR'
   const prBody = process.env.GITHUB_PR_BODY || ''
+  const baseBranch = process.env.GITHUB_BASE_REF || 'main'
 
+  // Get ALL files changed in the entire branch (from base to HEAD)
+  // This gives the AI full context of what's being implemented
   let changedFiles = ''
   try {
-    changedFiles = execSync('git diff --name-only origin/main...HEAD', { encoding: 'utf-8' })
+    changedFiles = execSync(`git diff --name-only origin/${baseBranch}...HEAD`, { encoding: 'utf-8' })
   } catch {
     changedFiles = 'Unable to get changed files'
   }
