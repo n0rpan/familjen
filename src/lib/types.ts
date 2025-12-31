@@ -265,15 +265,6 @@ export interface ShoppingSettings {
   filters?: Record<string, ShoppingCategory[]>  // Custom filter definitions
 }
 
-// Duplicate check result from check_shopping_duplicate function
-export interface ShoppingDuplicateMatch {
-  id: string
-  name: string
-  quantity: string | null
-  list_id: string
-  similarity_score: number
-}
-
 export interface CalendarEvent {
   id: string
   household_id: string | null  // NULL for system holidays
