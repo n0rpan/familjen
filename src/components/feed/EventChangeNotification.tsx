@@ -3,6 +3,7 @@
 import { useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
+import { getLocale } from '@/lib/utils'
 
 export interface EventNotification {
   id: string
@@ -34,18 +35,9 @@ export function EventChangeNotificationCard({ notification, onDismiss, onRestore
   const [loading, setLoading] = useState(false)
   const { t, language } = useLanguage()
 
-  const getLocale = () => {
-    switch (language) {
-      case 'nb': return 'nb-NO'
-      case 'sv': return 'sv-SE'
-      case 'en': return 'en-US'
-      default: return 'nb-NO'
-    }
-  }
-
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr)
-    return date.toLocaleDateString(getLocale(), {
+    return date.toLocaleDateString(getLocale(language), {
       day: 'numeric',
       month: 'short',
     })

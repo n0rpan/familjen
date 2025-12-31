@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
+import { useLanguage } from '@/lib/i18n/context'
+import { formatDateShort } from '@/lib/utils'
 
 export interface FeedPhoto {
   id: string
@@ -25,6 +27,7 @@ interface Props {
 export function PhotoGallery({ photos, onPhotoClick }: Props) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const [mounted, setMounted] = useState(false)
+  const { language } = useLanguage()
 
   // For portal to work on client side
   useEffect(() => {
@@ -55,11 +58,10 @@ export function PhotoGallery({ photos, onPhotoClick }: Props) {
     return null
   }
 
-  // Format date
+  // Format date using shared utility
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return ''
-    const date = new Date(dateStr)
-    return date.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })
+    return formatDateShort(dateStr, language)
   }
 
   const handlePhotoClick = (index: number) => {

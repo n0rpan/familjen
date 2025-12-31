@@ -470,9 +470,50 @@ export interface TranslationStrings {
     restoreAnyway: string
     showAllNotifications: string
     showFewerNotifications: string
+    // Reminder card
+    overdue: string
+    // Message card
+    readMore: string
+    showLess: string
+    comment: string
+    comments: string
     // Integrations disabled state
     integrationsDisabled: string
     contactAdmin: string
+    // Duplicates management
+    duplicates: {
+      findDuplicates: string
+      searching: string
+      autoMerged: string
+      suggestionsNeedReview: string
+      noDuplicatesFound: string
+      pairsChecked: string
+      couldNotStartSearch: string
+      // Suggestions
+      suggestionsTitle: string
+      possibleDuplicate: string
+      selectToKeep: string
+      merging: string
+      merge: string
+      keepBoth: string
+      hideSuggestion: string
+      kept: string
+      couldNotComplete: string
+      eventsMerged: string
+      bothKept: string
+      showMore: string
+      showFewer: string
+      // Merged duplicates
+      mergedTitle: string
+      hide: string
+      show: string
+      undoing: string
+      undo: string
+      probability: string
+      eventRestored: string
+      couldNotRestore: string
+      mergedExplanation: string
+    }
   }
 
   // Admin page

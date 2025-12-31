@@ -7,7 +7,9 @@ import { MyKidClient, MyKidAuthError, MyKidError } from '@/lib/integrations/myki
 import { extractEventsFromHtml, extractEventsFromPdf, extractEventsFromImage, type ExtractedEvent } from '@/lib/integrations/document-extraction'
 import { syncCalendarSource, type CalendarSource } from '@/lib/integrations/calendar-source-sync'
 import { formatDateISO, addDays } from '@/lib/utils'
-import { FUTURE_SYNC_DAYS } from '@/lib/integrations/shared'
+import { FUTURE_SYNC_DAYS, HISTORICAL_SYNC_DAYS } from '@/lib/integrations/shared'
+import { handleEventDeletionsAndChanges, type SyncedEvent } from '@/lib/integrations/shared/deletion-handler'
+import { deduplicateAllEvents } from '@/lib/integrations/event-deduplication'
 import { fetchAndParseICS, type ICSEvent } from '@/lib/ics-parser'
 import { syncHouseholdICS as syncHouseholdICSShared } from '@/lib/household-ics-sync'
 import { verifyCronRequest } from '@/lib/cron-auth'
@@ -521,6 +523,23 @@ export async function GET(request: Request) {
     console.log(`[Cron] Documents: ${documentsProcessed} processed, ${documentSuggestionsCreated} suggestions`)
     console.log(`[Cron] Calendar sources: ${calendarSourcesSuccess}/${calendarSourcesProcessed} synced, ${calendarEventsFound} events found, ${calendarEventsRemoved} removed`)
 
+    // Run deduplication on all households after syncing
+    let deduplicationAutoMerged = 0
+    let deduplicationSuggestionsCreated = 0
+    for (const household of households) {
+      try {
+        const dedupeResult = await deduplicateAllEvents(supabase, household.id)
+        deduplicationAutoMerged += dedupeResult.autoMerged
+        deduplicationSuggestionsCreated += dedupeResult.suggestionsCreated
+        if (dedupeResult.autoMerged > 0 || dedupeResult.suggestionsCreated > 0) {
+          console.log(`[Cron] Deduplication for ${household.name}: ${dedupeResult.autoMerged} auto-merged, ${dedupeResult.suggestionsCreated} suggestions`)
+        }
+      } catch (dedupeError) {
+        console.error(`[Cron] Deduplication error for ${household.name}:`, dedupeError)
+      }
+    }
+    console.log(`[Cron] Deduplication total: ${deduplicationAutoMerged} auto-merged, ${deduplicationSuggestionsCreated} suggestions`)
+
     // Summary
     const successCount = results.filter((r) => r.success).length
     const failureCount = results.filter((r) => !r.success).length
@@ -552,6 +571,10 @@ export async function GET(request: Request) {
         membersProcessed: icsResults.membersProcessed,
         membersSuccess: icsResults.membersSuccess,
         eventsTotal: icsResults.eventsTotal,
+      },
+      deduplication: {
+        autoMerged: deduplicationAutoMerged,
+        suggestionsCreated: deduplicationSuggestionsCreated,
       },
     })
   } catch (error) {
@@ -623,12 +646,13 @@ async function syncSpondIntegration(
       throw error
     }
 
-    // Calculate date ranges (full year ahead for calendar, 30 days back for messages)
+    // Calculate date ranges (full year ahead for calendar, historical for first sync)
     const now = new Date()
     const futureDate = addDays(now, FUTURE_SYNC_DAYS)
+    const isFirstSync = !integration.last_sync_at
     const lastSync = integration.last_sync_at
       ? new Date(integration.last_sync_at)
-      : addDays(now, -30)
+      : addDays(now, -HISTORICAL_SYNC_DAYS) // Use 365 days for first sync, matching manual sync
 
     const mappedGroupIds = new Set(childMappings.map((m) => m.groupId))
 
@@ -679,6 +703,29 @@ async function syncSpondIntegration(
       if (!eventsError) {
         result.eventsCount = eventsToUpsert.length
       }
+    }
+
+    // Detect deleted/changed events and notify parents
+    try {
+      const syncedEvents: SyncedEvent[] = eventsToUpsert.map(e => ({
+        external_id: e.external_id as string,
+        title: e.title as string,
+        event_date: e.event_date as string,
+        event_time: e.event_time as string | null,
+        end_date: e.end_date as string | null,
+        location: e.location as string | null,
+      }))
+
+      await handleEventDeletionsAndChanges(
+        supabase,
+        integration.id,
+        integration.household_id,
+        syncedEvents,
+        'Spond'
+      )
+    } catch (deletionError) {
+      // Non-fatal - log but continue
+      console.error(`[Cron] Deletion detection error for Spond ${integration.id}:`, deletionError)
     }
 
     // Fetch messages
@@ -889,7 +936,7 @@ async function syncKidplanIntegration(
     const now = new Date()
     const lastSync = integration.last_sync_at
       ? new Date(integration.last_sync_at)
-      : addDays(now, -30)
+      : addDays(now, -HISTORICAL_SYNC_DAYS) // Use 365 days for first sync
 
     // Fetch board posts and conversations
     // Note: Kidplan messages are not child-specific (board posts/conversations apply to all children)
@@ -1049,7 +1096,7 @@ async function syncISkoleIntegration(
     const now = new Date()
     const lastSync = integration.last_sync_at
       ? new Date(integration.last_sync_at)
-      : addDays(now, -30)
+      : addDays(now, -HISTORICAL_SYNC_DAYS) // Use 365 days for first sync
 
     const messagesToUpsert: Array<Record<string, unknown>> = []
 
@@ -1175,9 +1222,10 @@ async function syncMyKidIntegration(
 
     const now = new Date()
     const futureDate = addDays(now, FUTURE_SYNC_DAYS)
+    const isFirstSync = !integration.last_sync_at
     const lastSync = integration.last_sync_at
       ? new Date(integration.last_sync_at)
-      : addDays(now, -30)
+      : addDays(now, -HISTORICAL_SYNC_DAYS) // Use 365 days for first sync
 
     // Sync calendar events (JSON API - easy)
     try {
@@ -1214,6 +1262,29 @@ async function syncMyKidIntegration(
         if (!eventsError) {
           result.eventsCount = eventsToUpsert.length
         }
+
+        // Detect deleted/changed events and notify parents
+        try {
+          const syncedEvents: SyncedEvent[] = eventsToUpsert.map(e => ({
+            external_id: e.external_id as string,
+            title: e.title as string,
+            event_date: e.event_date as string,
+            event_time: e.event_time as string | null,
+            end_date: e.end_date as string | null,
+            location: e.location as string | null,
+          }))
+
+          await handleEventDeletionsAndChanges(
+            supabase,
+            integration.id,
+            integration.household_id,
+            syncedEvents,
+            'MyKid'
+          )
+        } catch (deletionError) {
+          // Non-fatal - log but continue
+          console.error(`[Cron] Deletion detection error for MyKid ${integration.id}:`, deletionError)
+        }
       }
     } catch (calendarError) {
       console.error(`[Cron] MyKid calendar error for ${integration.id}:`, calendarError)
@@ -1225,8 +1296,9 @@ async function syncMyKidIntegration(
     try {
       const newsletters = await client.getNewsletterList()
 
-      // Limit to recent 20 in cron
-      for (const summary of newsletters.slice(0, 20)) {
+      // Match manual sync limit (50) for first sync, otherwise 20 for incremental
+      const newsletterLimit = isFirstSync ? 50 : 20
+      for (const summary of newsletters.slice(0, newsletterLimit)) {
         // Check if already synced
         const { data: existing } = await supabase
           .from('external_messages')

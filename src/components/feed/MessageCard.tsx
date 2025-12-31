@@ -2,6 +2,8 @@
 
 import { useState, useMemo } from 'react'
 import type { IntegrationChild } from './FeedPageContent'
+import { useLanguage } from '@/lib/i18n/context'
+import { getLocale, formatDateShort } from '@/lib/utils'
 
 // Spond comment structure from raw_data
 interface SpondComment {
@@ -46,6 +48,7 @@ interface Props {
 export function MessageCard({ message, integrationChildren = [] }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [showComments, setShowComments] = useState(false)
+  const { t, language } = useLanguage()
 
   // Extract Spond-specific data from raw_data
   const spondData = message.service === 'spond' && message.raw_data
@@ -81,7 +84,7 @@ export function MessageCard({ message, integrationChildren = [] }: Props) {
   // Combine group names from Spond raw_data and integration mapping
   const groupName = spondGroupName || integrationContext.groupName
 
-  // Format date
+  // Format date with localization
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr)
     const now = new Date()
@@ -89,13 +92,13 @@ export function MessageCard({ message, integrationChildren = [] }: Props) {
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
 
     if (diffDays === 0) {
-      return date.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' })
+      return date.toLocaleTimeString(getLocale(language), { hour: '2-digit', minute: '2-digit' })
     } else if (diffDays === 1) {
-      return 'I går'
+      return t.common.yesterday
     } else if (diffDays < 7) {
-      return date.toLocaleDateString('nb-NO', { weekday: 'long' })
+      return date.toLocaleDateString(getLocale(language), { weekday: 'long' })
     }
-    return date.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })
+    return formatDateShort(dateStr, language)
   }
 
   // Service badge colors
@@ -176,7 +179,7 @@ export function MessageCard({ message, integrationChildren = [] }: Props) {
           className="text-sm mt-2 font-medium"
           style={{ color: 'var(--accent)' }}
         >
-          {expanded ? 'Vis mindre' : 'Les mer'}
+          {expanded ? t.feed.showLess : t.feed.readMore}
         </button>
       )}
 
@@ -191,7 +194,7 @@ export function MessageCard({ message, integrationChildren = [] }: Props) {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
-            {comments.length} {comments.length === 1 ? 'kommentar' : 'kommentarer'}
+            {comments.length} {comments.length === 1 ? t.feed.comment : t.feed.comments}
             <svg
               width="12"
               height="12"

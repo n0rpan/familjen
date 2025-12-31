@@ -8,7 +8,8 @@
  * This ensures visual consistency between demo and production.
  */
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
+import { useLanguage } from '@/lib/i18n/context'
 import { FeedFilters, type FeedFilter } from './FeedFilters'
 import { FeedSearch } from './FeedSearch'
 import { MessageCard, type FeedMessage } from './MessageCard'
@@ -16,6 +17,8 @@ import { PhotoGallery, type FeedPhoto } from './PhotoGallery'
 import { ReminderCard, type FeedReminder } from './ReminderCard'
 import { EventChangeNotificationList, type EventNotification } from './EventChangeNotification'
 import { SyncStatusBanner, type IntegrationStatus } from './SyncStatusBanner'
+import { DuplicateSuggestionsList, type DuplicateSuggestion } from './DuplicateSuggestions'
+import { MergedDuplicatesList, type MergedDuplicate } from './MergedDuplicates'
 
 // Integration children mapping (which children belong to which integrations)
 export interface IntegrationChild {
@@ -23,6 +26,12 @@ export interface IntegrationChild {
   childId: string
   childName: string
   groupName: string | null
+}
+
+export interface DeduplicationResult {
+  autoMerged: number
+  suggestionsCreated: number
+  pairsChecked: number
 }
 
 export interface FeedPageContentProps {
@@ -34,6 +43,10 @@ export interface FeedPageContentProps {
   integrationChildren: IntegrationChild[]
   integrationStatuses: IntegrationStatus[]
 
+  // Duplicate management
+  duplicateSuggestions?: DuplicateSuggestion[]
+  mergedDuplicates?: MergedDuplicate[]
+
   // Initial state
   initialFilter?: FeedFilter
 
@@ -41,6 +54,8 @@ export interface FeedPageContentProps {
   onToggleReminder?: (id: string, completed: boolean) => void
   onSync?: () => Promise<void>
   onNotificationUpdate?: () => void
+  onDeduplicate?: () => Promise<DeduplicationResult | null>
+  onDuplicatesUpdate?: () => void
 
   // Demo mode
   isDemo?: boolean
@@ -53,14 +68,31 @@ export function FeedPageContent({
   notifications,
   integrationChildren,
   integrationStatuses,
+  duplicateSuggestions = [],
+  mergedDuplicates = [],
   initialFilter = 'all',
   onToggleReminder,
   onSync,
   onNotificationUpdate,
+  onDeduplicate,
+  onDuplicatesUpdate,
   isDemo = false,
 }: FeedPageContentProps) {
+  const { t, language } = useLanguage()
   const [activeFilter, setActiveFilter] = useState<FeedFilter>(initialFilter)
   const [syncing, setSyncing] = useState(false)
+  const [deduplicating, setDeduplicating] = useState(false)
+  const [dedupeResult, setDedupeResult] = useState<DeduplicationResult | null>(null)
+  const [dedupeError, setDedupeError] = useState<string | null>(null)
+  const dedupeTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    const timer = dedupeTimerRef.current
+    return () => {
+      if (timer) clearTimeout(timer)
+    }
+  }, [])
 
   // Handle sync
   const handleSync = async () => {
@@ -70,6 +102,32 @@ export function FeedPageContent({
       await onSync()
     } finally {
       setSyncing(false)
+    }
+  }
+
+  // Handle manual deduplication
+  const handleDeduplicate = async () => {
+    if (!onDeduplicate) return
+    setDeduplicating(true)
+    setDedupeResult(null)
+    setDedupeError(null)
+    // Clear any existing timer
+    if (dedupeTimerRef.current) {
+      clearTimeout(dedupeTimerRef.current)
+    }
+    try {
+      const result = await onDeduplicate()
+      if (result) {
+        setDedupeResult(result)
+        // Clear result after 10 seconds
+        dedupeTimerRef.current = setTimeout(() => setDedupeResult(null), 10000)
+      } else {
+        setDedupeError(t.feed.duplicates.couldNotStartSearch)
+      }
+    } catch {
+      setDedupeError(t.feed.duplicates.couldNotStartSearch)
+    } finally {
+      setDeduplicating(false)
     }
   }
 
@@ -153,46 +211,173 @@ export function FeedPageContent({
           onFilterChange={setActiveFilter}
           counts={counts}
         />
-        {onSync && (
-          <button
-            onClick={handleSync}
-            disabled={syncing || isDemo}
-            className="btn btn-secondary text-sm flex-shrink-0 self-end sm:self-auto"
-            style={isDemo ? { opacity: 0.5 } : undefined}
-          >
-            {syncing ? (
-              <span className="flex items-center gap-2">
-                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                    fill="none"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  />
-                </svg>
-                Synker...
-              </span>
-            ) : (
-              <span className="flex items-center gap-2">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polyline points="23 4 23 10 17 10" />
-                  <polyline points="1 20 1 14 7 14" />
-                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-                </svg>
-                Oppdater
-              </span>
-            )}
-          </button>
-        )}
+        <div className="flex gap-2 self-end sm:self-auto">
+          {onDeduplicate && (
+            <button
+              onClick={handleDeduplicate}
+              disabled={deduplicating || isDemo}
+              className="btn btn-secondary text-sm flex-shrink-0"
+              style={isDemo ? { opacity: 0.5 } : undefined}
+              title={t.feed.duplicates.findDuplicates}
+            >
+              {deduplicating ? (
+                <span className="flex items-center gap-2">
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                      fill="none"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                  {t.feed.duplicates.searching}
+                </span>
+              ) : (
+                <span className="flex items-center gap-2">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="3" width="7" height="7" rx="1" />
+                    <rect x="14" y="3" width="7" height="7" rx="1" />
+                    <path d="M14 14h7v7h-7z" opacity="0.5" />
+                    <path d="M7 14l-4 4m0-4l4 4" strokeLinecap="round" />
+                  </svg>
+                  {t.feed.duplicates.findDuplicates}
+                </span>
+              )}
+            </button>
+          )}
+          {onSync && (
+            <button
+              onClick={handleSync}
+              disabled={syncing || isDemo}
+              className="btn btn-secondary text-sm flex-shrink-0"
+              style={isDemo ? { opacity: 0.5 } : undefined}
+            >
+              {syncing ? (
+                <span className="flex items-center gap-2">
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                      fill="none"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                  Synker...
+                </span>
+              ) : (
+                <span className="flex items-center gap-2">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="23 4 23 10 17 10" />
+                    <polyline points="1 20 1 14 7 14" />
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                  </svg>
+                  Oppdater
+                </span>
+              )}
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Deduplication error banner */}
+      {dedupeError && (
+        <div
+          className="p-4 rounded-xl flex items-start gap-3"
+          style={{
+            background: 'rgba(232, 140, 140, 0.2)',
+            border: '1px solid var(--color-coral)',
+          }}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--color-coral)', flexShrink: 0, marginTop: 2 }}>
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <p className="font-medium" style={{ color: 'var(--foreground)' }}>{dedupeError}</p>
+          <button
+            onClick={() => setDedupeError(null)}
+            className="ml-auto p-1 rounded hover:bg-white/10"
+            style={{ color: 'var(--muted)' }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {/* Deduplication result banner */}
+      {dedupeResult && (
+        <div
+          className="p-4 rounded-xl flex items-start gap-3"
+          style={{
+            background: dedupeResult.autoMerged > 0 ? 'rgba(172, 203, 163, 0.2)' : 'rgba(126, 182, 196, 0.2)',
+            border: `1px solid ${dedupeResult.autoMerged > 0 ? 'var(--color-sage)' : 'var(--color-sky)'}`,
+          }}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: dedupeResult.autoMerged > 0 ? 'var(--color-sage)' : 'var(--color-sky)', flexShrink: 0, marginTop: 2 }}>
+            {dedupeResult.autoMerged > 0 ? (
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4L12 14.01l-3-3" strokeLinecap="round" strokeLinejoin="round" />
+            ) : (
+              <circle cx="12" cy="12" r="10" />
+            )}
+          </svg>
+          <div>
+            <p className="font-medium" style={{ color: 'var(--foreground)' }}>
+              {dedupeResult.autoMerged > 0
+                ? t.feed.duplicates.autoMerged.replace('{count}', String(dedupeResult.autoMerged))
+                : t.feed.duplicates.noDuplicatesFound}
+            </p>
+            <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>
+              {t.feed.duplicates.pairsChecked.replace('{count}', String(dedupeResult.pairsChecked))}
+              {dedupeResult.suggestionsCreated > 0 && (
+                <> &bull; {t.feed.duplicates.suggestionsNeedReview.replace('{count}', String(dedupeResult.suggestionsCreated))}</>
+              )}
+            </p>
+          </div>
+          <button
+            onClick={() => setDedupeResult(null)}
+            className="ml-auto p-1 rounded hover:bg-white/10"
+            style={{ color: 'var(--muted)' }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {/* Duplicate suggestions for review - only in production */}
+      {!isDemo && duplicateSuggestions.length > 0 && activeFilter === 'all' && (
+        <DuplicateSuggestionsList
+          suggestions={duplicateSuggestions}
+          onUpdate={onDuplicatesUpdate || (() => {})}
+        />
+      )}
+
+      {/* Recently merged duplicates (collapsible) - only in production */}
+      {!isDemo && mergedDuplicates.length > 0 && activeFilter === 'all' && (
+        <MergedDuplicatesList
+          mergedDuplicates={mergedDuplicates}
+          onUpdate={onDuplicatesUpdate || (() => {})}
+        />
+      )}
 
       {/* Event change notifications (calendar source removals) - only in production */}
       {!isDemo && notifications.length > 0 && activeFilter === 'all' && (
