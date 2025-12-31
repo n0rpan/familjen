@@ -105,61 +105,24 @@ jobs:
           if [ -n "$OPENROUTER_API_KEY" ] && [ -n "$OPENROUTER_FAST_MODEL" ]; then
             echo ""
             echo "🤖 Generating contextual tips with AI..."
-
-            # Get a small diff sample for context (first 100 lines)
-            DIFF_SAMPLE=$(git diff HEAD~1 2>/dev/null | head -100 || echo "")
-
-            # Build the prompt
-            PROMPT="You are helping AI coding agents working on a Norwegian family planning app (Familjen).
-
-Branch: $BRANCH
-Commit: $COMMIT_MSG
-Changed files:
-$CHANGED_FILES
-
-Diff sample (first 100 lines):
-$DIFF_SAMPLE
-
-Based on this commit, provide 2-3 SHORT, SPECIFIC tips for AI agents continuing work on this branch.
-Focus on:
-- Patterns to follow from this codebase (RLS policies, Norwegian i18n, demo mode)
-- Potential issues to watch for
-- Related files that might need updating
-
-Format: Return ONLY a JSON object like: {\"tips\": [\"tip1\", \"tip2\", \"tip3\"]}
-Keep each tip under 100 characters. Be specific to THIS change, not generic advice."
-
+            # Build prompt as single line to avoid YAML parsing issues
+            PROMPT="AI coding assistant for Familjen (Norwegian family app). Branch: $BRANCH. Commit: $COMMIT_MSG. Files: $(echo $CHANGED_FILES | tr '\n' ', '). Give 2-3 SHORT tips for AI agents. Focus on: RLS policies, i18n, demo mode. Return JSON: {\"tips\":[\"tip1\",\"tip2\"]}"
             # Call OpenRouter API
             RESPONSE=$(curl -s --max-time 10 "https://openrouter.ai/api/v1/chat/completions" \
               -H "Authorization: Bearer $OPENROUTER_API_KEY" \
               -H "Content-Type: application/json" \
               -H "HTTP-Referer: https://familjen.eu" \
-              -d "$(jq -n \
-                --arg model "$OPENROUTER_FAST_MODEL" \
-                --arg prompt "$PROMPT" \
-                '{
-                  model: $model,
-                  messages: [{ role: "user", content: $prompt }],
-                  max_tokens: 300,
-                  temperature: 0.3
-                }')" 2>/dev/null || echo "")
-
+              -d "$(jq -n --arg model "$OPENROUTER_FAST_MODEL" --arg prompt "$PROMPT" '{model:$model,messages:[{role:"user",content:$prompt}],max_tokens:200,temperature:0.3}')" 2>/dev/null || echo "")
             if [ -n "$RESPONSE" ]; then
-              # Extract tips from response
-              TIPS=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // empty' 2>/dev/null | jq -r '.tips // empty' 2>/dev/null | jq -r '.[]' 2>/dev/null || echo "")
-
+              TIPS=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // empty' 2>/dev/null | jq -r '.tips[]? // empty' 2>/dev/null || echo "")
               if [ -n "$TIPS" ]; then
-                echo ""
-                echo "💡 AI Tips for agents on this branch:"
-                echo "$TIPS" | while read -r tip; do
-                  echo "   • $tip"
-                done
+                echo "💡 AI Tips:"
+                echo "$TIPS" | while read -r tip; do [ -n "$tip" ] && echo "   • $tip"; done
               fi
             fi
           else
             echo ""
             echo "💡 Tips (set OPENROUTER_API_KEY for AI-generated tips):"
-            # Fallback to basic tips
             [[ $DB_CHANGES -gt 0 ]] && echo "   • DB: Remember RLS policies and household_id scoping"
             [[ $API_CHANGES -gt 0 ]] && echo "   • API: Use ApiErrors helper for Norwegian messages"
             [[ $UI_CHANGES -gt 0 ]] && echo "   • UI: Use useLanguage() for i18n, check demo mode"
