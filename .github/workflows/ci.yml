@@ -2,7 +2,7 @@ name: AI-Powered CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, 'claude/**', 'feature/**', 'fix/**']
   pull_request:
     # Run on all PRs to catch issues early
     types: [opened, synchronize, reopened]
@@ -21,6 +21,154 @@ env:
   NODE_OPTIONS: '--max-old-space-size=6144'
 
 jobs:
+  # ============================================
+  # ACTIVITY PULSE - Super fast, runs on ALL commits
+  # Sends live activity to dashboard, provides context for AI agents
+  # ============================================
+  activity-pulse:
+    name: ⚡ Activity Pulse
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    # Run on everything - PRs and pushes to any branch
+    if: always()
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 10  # Just recent history for speed
+
+      - name: Analyze activity and send pulse
+        id: pulse
+        run: |
+          echo "⚡ Activity Pulse - $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo ""
+
+          # Extract branch info
+          BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}"
+          echo "📍 Branch: $BRANCH"
+
+          # Detect work type from branch name
+          WORK_TYPE="unknown"
+          if [[ "$BRANCH" == claude/* ]]; then
+            WORK_TYPE="ai-agent"
+          elif [[ "$BRANCH" == feature/* ]]; then
+            WORK_TYPE="feature"
+          elif [[ "$BRANCH" == fix/* ]]; then
+            WORK_TYPE="bugfix"
+          elif [[ "$BRANCH" == "main" ]]; then
+            WORK_TYPE="production"
+          elif [[ "$BRANCH" == "develop" ]]; then
+            WORK_TYPE="development"
+          fi
+          echo "🏷️  Work type: $WORK_TYPE"
+
+          # Get recent commit info
+          COMMIT_MSG=$(git log -1 --pretty=format:"%s")
+          COMMIT_AUTHOR=$(git log -1 --pretty=format:"%an")
+          echo "📝 Latest: $COMMIT_MSG"
+          echo "👤 Author: $COMMIT_AUTHOR"
+
+          # Analyze changed files (last commit)
+          echo ""
+          echo "📁 Changed areas:"
+          AREAS=""
+
+          # Count changes by area
+          UI_CHANGES=$(git diff --name-only HEAD~1 2>/dev/null | grep -c "^src/components\|^src/app.*page\|\.tsx$" || echo "0")
+          API_CHANGES=$(git diff --name-only HEAD~1 2>/dev/null | grep -c "^src/app/api\|route\.ts$" || echo "0")
+          LIB_CHANGES=$(git diff --name-only HEAD~1 2>/dev/null | grep -c "^src/lib/" || echo "0")
+          TEST_CHANGES=$(git diff --name-only HEAD~1 2>/dev/null | grep -c "^tests/\|\.test\." || echo "0")
+          CI_CHANGES=$(git diff --name-only HEAD~1 2>/dev/null | grep -c "^\.github/\|^scripts/" || echo "0")
+          DB_CHANGES=$(git diff --name-only HEAD~1 2>/dev/null | grep -c "^supabase/\|migration" || echo "0")
+
+          [[ $UI_CHANGES -gt 0 ]] && AREAS="$AREAS ui($UI_CHANGES)"
+          [[ $API_CHANGES -gt 0 ]] && AREAS="$AREAS api($API_CHANGES)"
+          [[ $LIB_CHANGES -gt 0 ]] && AREAS="$AREAS lib($LIB_CHANGES)"
+          [[ $TEST_CHANGES -gt 0 ]] && AREAS="$AREAS tests($TEST_CHANGES)"
+          [[ $CI_CHANGES -gt 0 ]] && AREAS="$AREAS ci($CI_CHANGES)"
+          [[ $DB_CHANGES -gt 0 ]] && AREAS="$AREAS db($DB_CHANGES)"
+
+          echo "   $AREAS"
+
+          # Generate tips for AI agents based on what's changed
+          echo ""
+          echo "💡 Tips for AI agents working on this branch:"
+
+          if [[ $DB_CHANGES -gt 0 ]]; then
+            echo "   • Database changes detected - remember RLS policies and SECURITY DEFINER"
+            echo "   • Use IF EXISTS for DROP statements"
+            echo "   • Check household_id scoping"
+          fi
+
+          if [[ $API_CHANGES -gt 0 ]]; then
+            echo "   • API changes - use ApiErrors helper for Norwegian error messages"
+            echo "   • Check rate limiting for expensive operations"
+            echo "   • Validate auth with createClient() from @/lib/supabase/server"
+          fi
+
+          if [[ $UI_CHANGES -gt 0 ]]; then
+            echo "   • UI changes - use useLanguage() for i18n, not hardcoded strings"
+            echo "   • Check demo mode compatibility (useDataSource hook)"
+            echo "   • Touch targets should be 44px+ for mobile"
+          fi
+
+          if [[ $TEST_CHANGES -gt 0 ]]; then
+            echo "   • Test changes - run 'npm run test:run' to verify"
+            echo "   • Integration tests need mocked Supabase client"
+          fi
+
+          if [[ $CI_CHANGES -gt 0 ]]; then
+            echo "   • CI changes - test locally with 'npx tsx scripts/...'"
+            echo "   • Reviewers should exit 0 (non-blocking), final-verdict decides"
+          fi
+
+          # Count total lines changed
+          LINES_ADDED=$(git diff --shortstat HEAD~1 2>/dev/null | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
+          LINES_REMOVED=$(git diff --shortstat HEAD~1 2>/dev/null | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
+
+          echo ""
+          echo "📊 Stats: +$LINES_ADDED -$LINES_REMOVED lines"
+
+          # Set outputs for webhook
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+          echo "work_type=$WORK_TYPE" >> $GITHUB_OUTPUT
+          echo "commit_msg=$COMMIT_MSG" >> $GITHUB_OUTPUT
+          echo "areas=$AREAS" >> $GITHUB_OUTPUT
+          echo "lines_added=$LINES_ADDED" >> $GITHUB_OUTPUT
+          echo "lines_removed=$LINES_REMOVED" >> $GITHUB_OUTPUT
+
+      - name: Send activity pulse to dashboard
+        if: always()
+        continue-on-error: true
+        run: |
+          # Skip if no webhook URL configured
+          if [ -z "${{ secrets.CI_WEBHOOK_URL }}" ]; then
+            echo "CI_WEBHOOK_URL not set, skipping webhook"
+            exit 0
+          fi
+
+          curl -X POST --max-redirs 0 -s -w "\nHTTP_STATUS: %{http_code}\n" \
+            "${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook" \
+            -H "Content-Type: application/json" \
+            -H "x-ci-secret: ${{ secrets.CI_WEBHOOK_SECRET }}" \
+            -d '{
+              "type": "activity_pulse",
+              "pr_number": ${{ github.event.pull_request.number || 0 }},
+              "pr_title": "${{ github.event.pull_request.title || github.event.head_commit.message }}",
+              "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+              "data": {
+                "branch": "${{ steps.pulse.outputs.branch }}",
+                "work_type": "${{ steps.pulse.outputs.work_type }}",
+                "commit_sha": "${{ github.sha }}",
+                "commit_msg": "${{ steps.pulse.outputs.commit_msg }}",
+                "areas": "${{ steps.pulse.outputs.areas }}",
+                "lines_added": ${{ steps.pulse.outputs.lines_added || 0 }},
+                "lines_removed": ${{ steps.pulse.outputs.lines_removed || 0 }},
+                "actor": "${{ github.actor }}",
+                "event": "${{ github.event_name }}"
+              }
+            }' 2>&1 || true
+
   # ============================================
   # SMART TEST SELECTOR (runs first, decides what to test)
   # ============================================

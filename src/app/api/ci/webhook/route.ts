@@ -26,7 +26,7 @@ function getAdminClient() {
 
 // Event types from CI
 export interface CIEvent {
-  type: 'pr_opened' | 'review_started' | 'review_completed' | 'verdict' | 'labels_applied'
+  type: 'pr_opened' | 'review_started' | 'review_completed' | 'verdict' | 'labels_applied' | 'activity_pulse'
   pr_number: number
   pr_title: string
   timestamp: string
@@ -42,6 +42,16 @@ export interface CIEvent {
     }>
     summary?: string
     confidence?: number
+    // Activity pulse data
+    branch?: string
+    work_type?: 'ai-agent' | 'feature' | 'bugfix' | 'production' | 'development' | 'unknown'
+    commit_sha?: string
+    commit_msg?: string
+    areas?: string  // e.g., "ui(3) api(2) tests(1)"
+    lines_added?: number
+    lines_removed?: number
+    actor?: string
+    event?: string  // 'push' | 'pull_request'
   }
 }
 
