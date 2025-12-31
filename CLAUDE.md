@@ -890,6 +890,67 @@ VERCEL_AUTOMATION_BYPASS_SECRET=xxx                     # Bypass Vercel protecti
 
 **Note:** All model env vars are required - no hardcoded defaults. This ensures you're always using your intended models and prevents silent fallbacks to stale model IDs when you update your secrets.
 
+### Online Models (Web Search)
+
+Append `:online` to any model ID to enable real-time web search:
+
+```typescript
+import { getOnlineModel } from './scripts/ai-config'
+
+// Use for research tasks, checking model availability, latest docs
+const model = getOnlineModel('openai/gpt-4o')  // => 'openai/gpt-4o:online'
+```
+
+See: https://openrouter.ai/docs/guides/routing/model-variants/online
+
+### Activity Pulse (Dashboard Integration)
+
+Every commit triggers an activity pulse with AI-generated context:
+
+```json
+{
+  "type": "activity_pulse",
+  "data": {
+    "branch": "claude/feature-xyz",
+    "work_type": "ai-agent",
+    "areas": "ui(3) api(1)",
+    "tips": ["Check RLS policies...", "Use useLanguage()..."],
+    "agent_context": "This PR adds pickup notifications. Key files are...",
+    "risk_level": "medium",
+    "focus_areas": ["auth", "i18n"],
+    "ai_cost": "0.000123"
+  }
+}
+```
+
+The `agent_context` is designed to be copy-pasted into an AI agent prompt for context continuity.
+
+### Cost Tracking
+
+All AI calls are tracked with per-model cost breakdowns:
+
+```json
+// In final-verdict.json
+{
+  "verdict": "PASS",
+  "total_cost_usd": 0.0542,
+  "model_usage": {
+    "gemini-3-flash-preview": { "calls": 5, "cost_usd": 0.0012 },
+    "claude-sonnet-4.5": { "calls": 1, "cost_usd": 0.0530 }
+  }
+}
+```
+
+### Final Verdict Philosophy
+
+The final verdict AI acts as **project owner** with full judgment authority:
+
+- Uses proportional judgment (minor style → suggest, security issue → block)
+- Checks FINAL state of files, not individual commits
+- Can override selector decisions and run additional tests
+- Considers user impact (busy Norwegian parents)
+- Responds ONLY in English for international team
+
 ### Running Locally
 
 ```bash

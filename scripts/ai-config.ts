@@ -18,6 +18,15 @@
  * - verdict: anthropic/claude-opus-4.5 (best reasoning), google/gemini-3-pro-preview
  * - capable: x-ai/grok-code-fast-1 (faster but less thorough)
  * - fast: google/gemini-2.5-flash-lite (cheapest), x-ai/grok-4.1-fast (2M context)
+ *
+ * ## Online Models (Web Search)
+ *
+ * Append `:online` to any model ID to enable web search:
+ * - "openai/gpt-4o:online" - GPT-4o with web search
+ * - "anthropic/claude-sonnet-4:online" - Claude with web search
+ *
+ * Use getOnlineModel() to safely append :online to a model ID.
+ * See: https://openrouter.ai/docs/guides/routing/model-variants/online
  */
 
 export interface AIModelConfig {
@@ -63,6 +72,57 @@ export const AI_MODELS: AIModelConfig = {
   get test() {
     return getRequiredModel('OPENROUTER_TEST_MODEL', 'test')
   },
+}
+
+/**
+ * Convert a model ID to its :online variant for web search capability.
+ *
+ * @example
+ * getOnlineModel('openai/gpt-4o') // => 'openai/gpt-4o:online'
+ * getOnlineModel('openai/gpt-4o:online') // => 'openai/gpt-4o:online' (idempotent)
+ */
+export function getOnlineModel(model: string): string {
+  if (model.endsWith(':online')) {
+    return model
+  }
+  return `${model}:online`
+}
+
+/**
+ * Check if a model supports the :online variant.
+ * Most OpenRouter models support :online for web search.
+ */
+export function supportsOnline(model: string): boolean {
+  // Most models support :online, but some don't
+  // This is a conservative list - add more as tested
+  const unsupportedPrefixes = [
+    'stability-ai/', // Image models
+    'black-forest-labs/', // Image models
+  ]
+  return !unsupportedPrefixes.some(prefix => model.startsWith(prefix))
+}
+
+/**
+ * Fetch current model availability from OpenRouter API.
+ * Useful for checking if a model exists or getting latest pricing.
+ */
+export async function fetchAvailableModels(): Promise<string[]> {
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/models', {
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      },
+    })
+    if (!response.ok) {
+      console.warn('Could not fetch OpenRouter models:', response.status)
+      return []
+    }
+    const data = await response.json()
+    return (data.data || []).map((m: { id: string }) => m.id)
+  } catch (e) {
+    console.warn('Error fetching OpenRouter models:', e)
+    return []
+  }
 }
 
 // JSON Schemas for structured outputs
