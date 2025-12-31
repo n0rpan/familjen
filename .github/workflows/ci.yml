@@ -148,32 +148,12 @@ jobs:
         run: |
           # Skip if no webhook URL configured
           if [ -z "${{ secrets.CI_WEBHOOK_URL }}" ]; then
-            echo "CI_WEBHOOK_URL not set, skipping webhook"
             exit 0
           fi
 
-          # First, check where the redirect goes (without sending credentials)
-          echo "🔍 Checking for redirects..."
-          REDIRECT_CHECK=$(curl -s -o /dev/null -w "%{http_code}|%{redirect_url}" \
-            -X POST "${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook" \
-            -H "Content-Type: application/json" \
-            -d '{"type":"ping"}' 2>&1 || echo "000|")
-          HTTP_CODE=$(echo "$REDIRECT_CHECK" | cut -d'|' -f1)
-          REDIRECT_URL=$(echo "$REDIRECT_CHECK" | cut -d'|' -f2)
-
-          if [ "$HTTP_CODE" = "301" ] || [ "$HTTP_CODE" = "302" ]; then
-            echo "⚠️  Redirect detected! HTTP $HTTP_CODE"
-            echo "📍 CI_WEBHOOK_URL redirects to: $REDIRECT_URL"
-            echo "💡 Update CI_WEBHOOK_URL secret to: ${REDIRECT_URL%/api/ci/webhook}"
-            # Use the redirect URL for the actual request
-            WEBHOOK_TARGET="${REDIRECT_URL:-${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook}"
-          else
-            WEBHOOK_TARGET="${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook"
-          fi
-
-          echo "📤 Sending pulse to: $WEBHOOK_TARGET"
-          curl -X POST --max-redirs 0 -s -w "\nHTTP_STATUS: %{http_code}\n" \
-            "$WEBHOOK_TARGET" \
+          # --max-redirs 0: Don't follow redirects - security risk to pass credentials to different host
+          curl -X POST --max-redirs 0 -s -w "\nHTTP: %{http_code}\n" \
+            "${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook" \
             -H "Content-Type: application/json" \
             -H "x-ci-secret: ${{ secrets.CI_WEBHOOK_SECRET }}" \
             -d '{
@@ -283,13 +263,8 @@ jobs:
         if: always()
         continue-on-error: true
         run: |
-          # Debug: show the URL being called (without the secret value)
-          echo "Calling webhook at: ${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook"
-
           # --max-redirs 0: Don't follow redirects - security risk to pass credentials to different host
-          # -v: Verbose to stderr to see redirect Location header
-          # -w: Write HTTP status code at the end
-          curl -X POST --max-redirs 0 -v -w "\nHTTP_STATUS: %{http_code}\nREDIRECT_URL: %{redirect_url}\n" \
+          curl -X POST --max-redirs 0 -s -w "\nHTTP: %{http_code}\n" \
             "${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook" \
             -H "Content-Type: application/json" \
             -H "x-ci-secret: ${{ secrets.CI_WEBHOOK_SECRET }}" \
