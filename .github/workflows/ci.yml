@@ -109,8 +109,14 @@ jobs:
         if: always()
         continue-on-error: true
         run: |
+          # Debug: show the URL being called (without the secret value)
+          echo "Calling webhook at: ${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook"
+
           # --max-redirs 0: Don't follow redirects - security risk to pass credentials to different host
-          curl -X POST --max-redirs 0 "${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook" \
+          # -v: Verbose to stderr to see redirect Location header
+          # -w: Write HTTP status code at the end
+          curl -X POST --max-redirs 0 -v -w "\nHTTP_STATUS: %{http_code}\nREDIRECT_URL: %{redirect_url}\n" \
+            "${{ secrets.CI_WEBHOOK_URL }}/api/ci/webhook" \
             -H "Content-Type: application/json" \
             -H "x-ci-secret: ${{ secrets.CI_WEBHOOK_SECRET }}" \
             -d '{
@@ -121,7 +127,7 @@ jobs:
               "data": {
                 "labels": "${{ steps.labeler.outputs.labels }}"
               }
-            }' || true
+            }' 2>&1 || true
 
       - name: Upload PR state
         uses: actions/upload-artifact@v4
