@@ -1485,9 +1485,7 @@ Filter categories:
 
 Users can add external calendar URLs (school calendars, kindergarten schedules) that are synced via AI extraction.
 
-**AI Model:** `google/gemini-2.5-flash-lite` (configurable via `app_settings.openrouter_vision_model`)
-- Context window: 1,048,576 tokens - more than sufficient for large HTML pages
-- Excellent at structured data extraction and Norwegian language understanding
+**AI Model:** Configured via `OPENROUTER_TEST_MODEL` or `OPENROUTER_FAST_MODEL` env vars, or `app_settings.openrouter_vision_model` in database.
 
 **How it works:**
 1. Fetches HTML from the calendar URL
@@ -1495,11 +1493,11 @@ Users can add external calendar URLs (school calendars, kindergarten schedules) 
 3. Cleans HTML (removes scripts, styles, nav, footer) - max 50,000 chars
 4. Sends to AI with Norwegian prompt optimized for school calendars
 5. AI extracts events with dates, times, and event types
-6. Events stored in `external_events` with hash-based deduplication
+6. **LLM-based semantic matching** to track events across syncs (see below)
 
 **Key files:**
 - `src/lib/integrations/document-extraction.ts` - AI extraction logic
-- `src/lib/integrations/calendar-source-sync.ts` - Sync orchestration
+- `src/lib/integrations/calendar-source-sync.ts` - Sync orchestration with LLM matching
 - `src/components/integrations/ManualSourceUrls.tsx` - UI component
 
 **School year inference:**
@@ -1513,6 +1511,59 @@ The prompt dynamically calculates the school year (Aug-Jul cycle):
 - "Ferie" = holiday period
 - "Dugnad" = parent volunteer activity
 - "Elevene slutter kl. 11.00" = early dismissal
+
+### LLM-Powered Calendar Sync
+
+Calendar source sync uses three LLM-powered features for accurate event tracking:
+
+**1. Semantic Event Matching (`matchEventsWithLLM`)**
+
+AI extraction is non-deterministic - the same event can be extracted with different titles between syncs (e.g., "Fri (Helligdag)" vs "Helligdag"). Instead of hash-based matching (which would cause false "removed" notifications), we use LLM semantic matching:
+
+```
+Extracted: "Helligdag" on 2025-05-14
+Existing:  "Fri (Helligdag)" on 2025-05-14
+→ LLM recognizes these as the same event (confidence: 0.95)
+```
+
+**Key features:**
+- 1:1 matching constraint (each event matches at most one other)
+- Confidence threshold of 0.7 for matches
+- Detects date/time changes on matched events
+- Falls back to hash matching if LLM unavailable
+
+**2. Extraction Validation (`validateExtractedEvents`)**
+
+Second LLM pass catches obvious extraction errors:
+- Wrong school year (e.g., "Vinterferie" extracted for July instead of February)
+- Impossible dates (30. February)
+- Duplicate events
+- Mismatched event types
+
+If corrections are identified, they're applied before sync continues.
+
+**3. Smart Notifications (`generateSmartNotification`)**
+
+Instead of generic "Event removed" messages, LLM generates contextual explanations:
+
+| Change Type | Example Notification |
+|-------------|---------------------|
+| Date moved | "Hendelsen ble flyttet fra 14. mai til 17. mai" |
+| Removed | "Planleggingsdagen ble fjernet fra kalenderen. Sjekk med skolen." |
+| Time changed | "Tidspunkt endret fra 08:00 til 09:00" |
+
+**Database columns for smart notifications:**
+```sql
+event_change_notifications:
+  explanation TEXT       -- AI-generated explanation
+  suggested_action TEXT  -- What the user should do
+  new_title TEXT         -- For title changes
+  new_date DATE          -- For date changes
+  new_time TIME          -- For time changes
+```
+
+**Timeout protection:**
+All LLM API calls use a 30-second timeout (`LLM_TIMEOUT_MS`) to prevent hanging requests from blocking the entire sync process.
 
 ## Demo Mode Architecture
 

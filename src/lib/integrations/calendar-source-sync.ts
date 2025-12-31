@@ -19,6 +19,31 @@ import { isUrlAllowed, truncate, sanitizeString, sanitizeTime } from '@/lib/sani
 import { deduplicateEvents } from './event-deduplication'
 import { formatDateISO } from '@/lib/utils'
 
+// Timeout for LLM API calls (30 seconds)
+const LLM_TIMEOUT_MS = 30000
+
+/**
+ * Fetch with timeout to prevent hanging requests from blocking sync.
+ */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number = LLM_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    })
+    return response
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
 export interface CalendarSource {
   id: string
   household_id: string
@@ -196,7 +221,7 @@ Returner KUN JSON-array:
 Hvis ingen matcher, returner: []`
 
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -436,7 +461,7 @@ Returner JSON:
 Hvis alt ser bra ut: {"isValid": true, "issues": [], "corrections": []}`
 
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -600,7 +625,7 @@ Returner JSON:
 }`
 
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -725,7 +750,10 @@ export async function syncCalendarSource(
     }
 
     // 2. Extract events using AI
-    const model = options.model || 'google/gemini-2.5-flash-lite'
+    const model = options.model || process.env.OPENROUTER_TEST_MODEL || process.env.OPENROUTER_FAST_MODEL
+    if (!model) {
+      throw new Error('No AI model configured. Set OPENROUTER_TEST_MODEL or pass model in options.')
+    }
 
     let childName: string | undefined
     if (source.child_id) {
