@@ -111,23 +111,8 @@ jobs:
             # Build rich context for AI
             FILES_LIST=$(echo "$CHANGED_FILES" | head -20 | tr '\n' ', ')
 
-            # Call OpenRouter for tips AND agent context
-            PROMPT="You are analyzing a commit to Familjen (Norwegian family planning app with Next.js, Supabase, TypeScript).
-
-Branch: $BRANCH
-Commit: $COMMIT_MSG
-Changed files: $FILES_LIST
-Areas affected: $AREAS
-
-Respond with JSON:
-{
-  \"tips\": [\"tip1\", \"tip2\", \"tip3\"],
-  \"agent_context\": \"A 2-3 sentence summary an AI agent should know when continuing this work\",
-  \"risk_level\": \"low|medium|high\",
-  \"focus_areas\": [\"area1\", \"area2\"]
-}
-
-Tips should be specific and actionable (not generic). Focus on Familjen patterns: RLS policies, i18n (useLanguage), demo mode, household_id scoping."
+            # Call OpenRouter for tips AND agent context (single line to avoid YAML parsing issues)
+            PROMPT="You are analyzing a commit to Familjen (Norwegian family planning app with Next.js, Supabase, TypeScript). Branch: $BRANCH. Commit: $COMMIT_MSG. Changed files: $FILES_LIST. Areas: $AREAS. Respond with JSON: {\"tips\":[\"tip1\",\"tip2\",\"tip3\"],\"agent_context\":\"A 2-3 sentence summary for AI agent continuity\",\"risk_level\":\"low|medium|high\",\"focus_areas\":[\"area1\",\"area2\"]}. Tips should be specific and actionable. Focus on Familjen patterns: RLS policies, i18n (useLanguage), demo mode, household_id scoping."
 
             RESPONSE=$(curl -s --max-time 15 "https://openrouter.ai/api/v1/chat/completions" \
               -H "Authorization: Bearer $OPENROUTER_API_KEY" \
