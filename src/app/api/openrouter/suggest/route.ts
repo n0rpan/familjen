@@ -302,13 +302,19 @@ export async function POST(request: Request) {
 
 KRITISK VIKTIG: Hvis familien har allergier eller matrestriksjoner, må du ALDRI foreslå retter som inneholder disse ingrediensene. Dette er et helsekrav.
 
+FORMATTERING:
+- Navn skal starte med en passende mat-emoji (🍝🍕🍔🌮🍗🥗🍲🐟🥩🍳 osv.)
+- Navn skal ha stor forbokstav og være beskrivende (f.eks. "🍝 Kremet pasta med kylling" ikke bare "pasta")
+- Beskrivelsen skal være appetittvekkende og gi konkrete detaljer (f.eks. "Saftig kyllingfilet i kremet saus med sopp og purre, servert med nykokt tagliatelle")
+- Bruk norske matnavn og uttrykksmåter
+
 Svar ALLTID i gyldig JSON-format med denne strukturen:
 {
   "suggestions": [
     {
       "day": "YYYY-MM-DD",
-      "name": "Oppskriftsnavn",
-      "description": "Kort beskrivelse av retten",
+      "name": "🍕 Hjemmelaget pizza med skinke og sopp",
+      "description": "Sprø bunn med tomat, ost, skinke og fersk sopp. Perfekt fredagskos for hele familien.",
       "ingredients": [{"item": "ingrediens", "amount": "mengde"}],
       "is_quick": true/false,
       "is_kid_friendly": true/false
@@ -626,13 +632,19 @@ async function handleDemoAIRequest(
 
 KRITISK VIKTIG: Familien har skalldyrallergi - ALDRI foreslå retter med skalldyr, reker, krabbe, hummer, etc.
 
+FORMATTERING:
+- Navn skal starte med en passende mat-emoji (🍝🍕🍔🌮🍗🥗🍲🐟🥩🍳 osv.)
+- Navn skal ha stor forbokstav og være beskrivende (f.eks. "🍝 Kremet pasta med kylling" ikke bare "pasta")
+- Beskrivelsen skal være appetittvekkende og gi konkrete detaljer
+- Bruk norske matnavn og uttrykksmåter
+
 Svar ALLTID i gyldig JSON-format med denne strukturen:
 {
   "suggestions": [
     {
       "day": "YYYY-MM-DD",
-      "name": "Oppskriftsnavn",
-      "description": "Kort beskrivelse av retten",
+      "name": "🍕 Hjemmelaget pizza med skinke og sopp",
+      "description": "Sprø bunn med tomat, ost, skinke og fersk sopp. Perfekt fredagskos for hele familien.",
       "ingredients": [{"item": "ingrediens", "amount": "mengde"}],
       "is_quick": true/false,
       "is_kid_friendly": true/false

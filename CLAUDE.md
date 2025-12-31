@@ -155,6 +155,7 @@ Key interfaces:
 | `/api/auth/google` | Start Google OAuth for login (shows familjen.eu) |
 | `/api/auth/google/callback` | Handle Google OAuth callback |
 | `/api/openrouter/suggest` | AI meal suggestions |
+| `/api/openrouter/check-shopping-duplicate` | Semantic shopping duplicate detection |
 | `/api/openrouter/models` | Available AI models |
 | `/api/calendar/auth` | Start Google OAuth for calendar |
 | `/api/calendar/callback` | Calendar OAuth callback |
@@ -1987,6 +1988,7 @@ When Redis env vars are not set:
 | `calendarSync` | 30/min | 60s |
 | `spondSync` | 10/min | 60s |
 | `urlFetch` | 10/min | 60s |
+| `shoppingDuplicateCheck` | 30/min | 60s |
 
 ### Demo Mode Limits
 

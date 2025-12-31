@@ -47,6 +47,8 @@ export const RATE_LIMITS = {
   urlFetch: { limit: 10, windowMs: 60 * 1000 },
   // CI webhook - moderate, 60/minute (each PR can generate several events)
   ciWebhook: { limit: 60, windowMs: 60 * 1000 },
+  // Shopping duplicate check - higher limit as it's called on keystroke with debounce
+  shoppingDuplicateCheck: { limit: 30, windowMs: 60 * 1000 },
 } as const
 
 // Demo mode rate limits - stricter to prevent abuse

@@ -90,19 +90,23 @@ async function evaluateDuplicatesWithLLM(
     return []
   }
 
+  // Sanitize event data to prevent prompt injection
+  const sanitize = (s: string | null | undefined) =>
+    s ? s.replace(/["\n\r]/g, ' ').trim().slice(0, 200) : ''
+
   // Build the prompt with all event pairs
   const pairsDescription = pairs.map((pair, index) => {
     const eventA = pair.eventA
     const eventB = pair.eventB
     return `Pair ${index + 1}:
   Event A (ID: ${eventA.id}):
-    - Title: "${eventA.title}"
+    - Title: "${sanitize(eventA.title)}"
     - Date: ${eventA.event_date}${eventA.end_date ? ` to ${eventA.end_date}` : ''}
     - Time: ${eventA.event_time || 'All day'}
     - Type: ${eventA.event_type || 'Unknown'}
 
   Event B (ID: ${eventB.id}):
-    - Title: "${eventB.title}"
+    - Title: "${sanitize(eventB.title)}"
     - Date: ${eventB.event_date}${eventB.end_date ? ` to ${eventB.end_date}` : ''}
     - Time: ${eventB.event_time || 'All day'}
     - Type: ${eventB.event_type || 'Unknown'}`
@@ -112,18 +116,27 @@ async function evaluateDuplicatesWithLLM(
 
 These events come from different sources (schools, kindergartens, sports clubs, etc.) and often describe the same event with slightly different wording.
 
-Common patterns:
-- "Vinterferie" and "Ferie uke 8" are the same (winter break)
-- "Planleggingsdag" and "Planl.dag lærerne" are the same (teacher planning day)
-- "Høstferie" and "Høstferie uke 40" are the same
-- "Foreldremøte" and "Foreldremøte 1. klasse" might be the same if same date
-- Events on the same date with similar meaning but different wording
+CRITICAL - WATCH FOR CONTRADICTIONS (these are NOT duplicates):
+- "SFO åpent i høstferien" (SFO OPEN) vs "Høstferie" (holiday/closed) = DIFFERENT! One says OPEN, the other implies CLOSED
+- "åpent" (open) vs "stengt" (closed) = OPPOSITE meanings, never duplicates
+- "Fri" (day off) vs "åpent" (open) = CONTRADICTIONS
+- "SFO stengt" vs "Stengt barnehage" = Same meaning (both closed), likely duplicates
+- If one event says something is AVAILABLE/OPEN and another implies CLOSED/HOLIDAY, they are NOT duplicates!
+
+Common VALID duplicate patterns:
+- "Vinterferie" and "Ferie uke 8" = same (winter break, both imply closed)
+- "Planleggingsdag" and "Planl.dag" = same (teacher planning day)
+- "Høstferie" and "Høstferie uke 40" = same (fall break)
+- "Stengt" and "Fri" and "Ferie" = similar (all mean closed/off)
+- "SFO stengt" and "Stengt barnehage" = same if same date (both mean closed)
+- "Juleferie" and "Skolefri" = similar (both mean school closed for Christmas)
+- "Karneval" from two sources on same date = same event
 
 Consider:
-- Semantic similarity (not just string matching)
+- SEMANTIC MEANING first - understand what the event actually says
+- "åpent" (open) is the OPPOSITE of "stengt/ferie/fri" (closed)
 - Date proximity (±1 day could be same event)
-- Norwegian language variations
-- Abbreviations and expanded forms
+- Norwegian abbreviations: "Planl." = "Planlegging", "bhg" = "barnehage"
 
 Respond with a JSON array of evaluations.`
 
@@ -131,14 +144,23 @@ Respond with a JSON array of evaluations.`
 
 ${pairsDescription}
 
+REMEMBER:
+- If one says "åpent" (open) and the other implies "stengt/ferie/fri" (closed) → NOT duplicates!
+- "SFO åpent i høstferien" is NOT the same as "Høstferie" - one says OPEN, one implies CLOSED
+- "Juleferie" and "Skolefri" ARE similar (both mean school closed)
+- Focus on MEANING, not just word overlap
+
 For each pair, respond with:
 - isDuplicate: true/false
 - confidence: 0.0-1.0 (how confident you are)
-- reason: Brief Norwegian explanation for the user
+- reason: Brief explanation IN NORWEGIAN for the user (e.g. "Samme arrangement, ulik kilde")
+
+IMPORTANT: The "reason" field MUST be in Norwegian as this is shown directly to Norwegian users.
 
 Respond ONLY with a JSON array like:
 [
   {"eventAId": "...", "eventBId": "...", "isDuplicate": true, "confidence": 0.95, "reason": "Samme vinterferie, ulik formulering"},
+  {"eventAId": "...", "eventBId": "...", "isDuplicate": false, "confidence": 0.9, "reason": "Motsetninger: en sier åpent, den andre betyr stengt"},
   ...
 ]`
 
