@@ -15,6 +15,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
+import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealtimeSubscription'
 import { formatDateISO } from '@/lib/utils'
 import type { Pickup, PickupWithDetails, Child, HouseholdMember } from '@/lib/types'
 
@@ -112,6 +113,17 @@ export function usePickups(options: UsePickupsOptions = {}): UsePickupsReturn {
       }
     }
   }, [isDemo, supabase, household?.id, startDateStr, endDateStr, currentFetchKey])
+
+  // Subscribe to realtime changes for instant sync between parents
+  useRealtimeSubscription<Pickup>({
+    table: 'pickups',
+    filter: household?.id ? createHouseholdFilter(household.id) : undefined,
+    enabled: !isDemo && !!household?.id,
+    onAny: useCallback(() => {
+      // Refetch when any pickup change is detected from another client
+      fetchData()
+    }, [fetchData]),
+  })
 
   // Fetch when household or date range changes
   useEffect(() => {

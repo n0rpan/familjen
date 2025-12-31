@@ -15,6 +15,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
+import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealtimeSubscription'
 import { formatDateISO } from '@/lib/utils'
 import type { Meal, MealWithRecipe, Recipe } from '@/lib/types'
 
@@ -110,6 +111,17 @@ export function useMeals(options: UseMealsOptions = {}): UseMealsReturn {
       }
     }
   }, [isDemo, supabase, household?.id, startDateStr, endDateStr, currentFetchKey])
+
+  // Subscribe to realtime changes for instant sync between parents
+  useRealtimeSubscription<Meal>({
+    table: 'meals',
+    filter: household?.id ? createHouseholdFilter(household.id) : undefined,
+    enabled: !isDemo && !!household?.id,
+    onAny: useCallback(() => {
+      // Refetch when any meal change is detected from another client
+      fetchData()
+    }, [fetchData]),
+  })
 
   // Fetch when household or date range changes
   useEffect(() => {

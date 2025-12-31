@@ -21,6 +21,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
+import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealtimeSubscription'
 import { formatDateISO } from '@/lib/utils'
 import { createChildTaskSchema } from '@/lib/schemas'
 import { queueChange, updateQueuedInsert, removeQueuedInsert } from '@/lib/offline-queue'
@@ -119,6 +120,17 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
       }
     }
   }, [isDemo, supabase, household?.id, startDateStr, endDateStr, currentFetchKey])
+
+  // Subscribe to realtime changes for instant sync between parents
+  useRealtimeSubscription<ChildTask>({
+    table: 'child_tasks',
+    filter: household?.id ? createHouseholdFilter(household.id) : undefined,
+    enabled: !isDemo && !!household?.id,
+    onAny: useCallback(() => {
+      // Refetch when any task change is detected from another client
+      fetchData()
+    }, [fetchData]),
+  })
 
   // Fetch when household or date range changes
   useEffect(() => {
