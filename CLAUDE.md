@@ -1485,7 +1485,7 @@ Filter categories:
 
 Users can add external calendar URLs (school calendars, kindergarten schedules) that are synced via AI extraction.
 
-**AI Model:** Configured via `OPENROUTER_TEST_MODEL` or `OPENROUTER_FAST_MODEL` env vars, or `app_settings.openrouter_vision_model` in database.
+**AI Model:** Configured via `app_settings.openrouter_vision_model` in database (managed from Admin panel).
 
 **How it works:**
 1. Fetches HTML from the calendar URL
