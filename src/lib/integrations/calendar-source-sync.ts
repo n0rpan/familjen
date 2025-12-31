@@ -5,8 +5,8 @@
  * with proper update/delete detection and removal notifications.
  *
  * Key insight: AI extraction is non-deterministic. The same event can be
- * extracted with slightly different titles between syncs. We use LLM verification
- * to check if "removed" events are actually still present with different wording.
+ * extracted with slightly different titles between syncs. We use LLM-based
+ * semantic matching for ALL event matching - not just removal verification.
  */
 
 import { SupabaseClient } from '@supabase/supabase-js'
@@ -41,6 +41,7 @@ export interface SyncResult {
     contentLength?: number
     model?: string
     firstError?: string
+    matchingMethod?: 'llm' | 'hash'
   }
 }
 
@@ -66,19 +67,17 @@ interface LinkedTask {
 
 /**
  * Generate a stable hash for an event based on its key properties.
- * This allows us to identify the same event across syncs even if details change slightly.
+ * Used as fallback when LLM matching is unavailable.
  */
 export function generateEventHash(
   sourceUrlId: string,
   date: string,
   title: string
 ): string {
-  // Normalize title: lowercase, remove extra spaces, normalize common terms
   const normalizedTitle = title
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim()
-    // Normalize common Norwegian word variations (e.g., "Vinterferie" → "ferie")
     .replace(/\w*ferie\b/gi, 'ferie')
     .replace(/\w*fri\b/gi, 'fri')
 
@@ -86,95 +85,94 @@ export function generateEventHash(
   return createHash('sha256').update(input).digest('hex').slice(0, 16)
 }
 
-interface RemovalVerification {
-  removedEventId: string
-  matchedNewEventId: string | null  // ID of the new event this "removal" actually matches
-  isActuallyRemoved: boolean
-  reason: string
+interface EventMatch {
+  extractedIndex: number
+  existingId: string
+  confidence: number
+}
+
+interface MatchingResult {
+  matches: EventMatch[]
+  unmatchedExtractedIndices: number[]
+  unmatchedExistingIds: string[]
 }
 
 /**
- * Use LLM to verify if "removed" events are actually removed or just extracted with different wording.
- * This prevents false positive removal notifications due to AI extraction variation.
+ * Use LLM to semantically match extracted events to existing events.
+ * This handles AI extraction variation like "Fri (Helligdag)" vs "Helligdag".
  */
-async function verifyRemovalsWithLLM(
-  potentiallyRemovedEvents: ExternalEvent[],
-  newlyCreatedEvents: Array<{ id: string; title: string; event_date: string; end_date: string | null }>,
+async function matchEventsWithLLM(
+  extractedEvents: ExtractedEvent[],
+  existingEvents: ExternalEvent[],
   model: string
-): Promise<RemovalVerification[]> {
-  if (potentiallyRemovedEvents.length === 0) return []
+): Promise<MatchingResult> {
+  const result: MatchingResult = {
+    matches: [],
+    unmatchedExtractedIndices: [],
+    unmatchedExistingIds: [],
+  }
+
+  if (extractedEvents.length === 0) {
+    result.unmatchedExistingIds = existingEvents.map(e => e.id)
+    return result
+  }
+
+  if (existingEvents.length === 0) {
+    result.unmatchedExtractedIndices = extractedEvents.map((_, i) => i)
+    return result
+  }
 
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) {
-    // If no API key, assume all removals are real (conservative approach)
-    console.warn('[CalendarSourceSync] No OPENROUTER_API_KEY, skipping removal verification')
-    return potentiallyRemovedEvents.map(event => ({
-      removedEventId: event.id,
-      matchedNewEventId: null,
-      isActuallyRemoved: true,
-      reason: 'Ingen API-nøkkel for verifisering',
-    }))
+    console.warn('[CalendarSourceSync] No OPENROUTER_API_KEY, falling back to hash matching')
+    return fallbackToHashMatching(extractedEvents, existingEvents)
   }
 
-  // Find potential matches based on date proximity (±3 days)
-  const pairsToCheck: Array<{ removed: ExternalEvent; newEvent: typeof newlyCreatedEvents[0] }> = []
+  // Build event descriptions for LLM
+  const extractedDesc = extractedEvents.map((e, i) =>
+    `E${i + 1}: "${e.title}" on ${e.date}${e.endDate ? ` to ${e.endDate}` : ''}${e.time ? ` at ${e.time}` : ''}`
+  ).join('\n')
 
-  for (const removed of potentiallyRemovedEvents) {
-    const removedDate = new Date(removed.event_date)
+  const existingDesc = existingEvents.map((e, i) =>
+    `D${i + 1}: "${e.title}" on ${e.event_date}${e.end_date ? ` to ${e.end_date}` : ''}${e.event_time ? ` at ${e.event_time}` : ''} [ID: ${e.id}]`
+  ).join('\n')
 
-    for (const newEvent of newlyCreatedEvents) {
-      const newDate = new Date(newEvent.event_date)
-      const daysDiff = Math.abs((removedDate.getTime() - newDate.getTime()) / (1000 * 60 * 60 * 24))
+  const systemPrompt = `Du er ekspert på å matche kalenderhendelser fra norske skoler og barnehager.
 
-      if (daysDiff <= 3) {
-        pairsToCheck.push({ removed, newEvent })
-      }
-    }
-  }
+Oppgaven din er å finne hvilke nylig ekstraherte hendelser (E1, E2, ...) som matcher eksisterende hendelser i databasen (D1, D2, ...).
 
-  // If no pairs with date proximity, all removals are real
-  if (pairsToCheck.length === 0) {
-    return potentiallyRemovedEvents.map(event => ({
-      removedEventId: event.id,
-      matchedNewEventId: null,
-      isActuallyRemoved: true,
-      reason: 'Ingen liknende hendelser funnet',
-    }))
-  }
+TO HENDELSER MATCHER HVIS:
+- De er på samme dato (eller innenfor 1-2 dager hvis det er en feil)
+- De beskriver samme ting, selv med ulik formulering:
+  • "Fri (Helligdag)" = "Helligdag" = "Fridag"
+  • "Påskeferie" = "Påske ferie" = "Ferie (påske)"
+  • "Vinterferie" = "Ferie uke 8" = "Vinterferieuke"
+  • "Planleggingsdag" = "Planl.dag" = "Kursdag for lærere"
+  • "SFO stengt" = "Stengt SFO" = "Ingen SFO"
+  • "Foreldremøte" = "Møte for foreldre"
 
-  // Build prompt for LLM
-  const pairsDescription = pairsToCheck.map((pair, index) => {
-    const r = pair.removed
-    const n = pair.newEvent
-    return `Pair ${index + 1}:
-  OLD (might be removed): "${r.title}" on ${r.event_date}${r.end_date ? ` to ${r.end_date}` : ''}
-  NEW (just extracted): "${n.title}" on ${n.event_date}${n.end_date ? ` to ${n.end_date}` : ''}`
-  }).join('\n\n')
+VIKTIG:
+- Hver ekstrahert hendelse kan kun matche ÉN eksisterende hendelse
+- Hver eksisterende hendelse kan kun matches av ÉN ekstrahert hendelse
+- Hvis du er usikker, ikke match (la den være umatched)`
 
-  const systemPrompt = `Du er ekspert på norske skolekalendere og barnehagerutiner.
+  const userPrompt = `Match disse hendelsene:
 
-Oppgaven din er å avgjøre om en "fjernet" hendelse faktisk er den samme som en ny hendelse, bare med litt annen formulering fra AI-ekstraksjon.
+NYLIG EKSTRAHERT FRA NETTSIDE:
+${extractedDesc}
 
-Vanlige varianter:
-- "Fri (Helligdag)" og "Helligdag" er SAMME hendelse
-- "Påskeferie" og "Påske ferie" er SAMME hendelse
-- "Vinterferie" og "Ferie uke 8" er SAMME hendelse
-- "Planleggingsdag" og "Planl.dag" er SAMME hendelse
-- "Stengt SFO" og "SFO stengt" er SAMME hendelse
+EKSISTERENDE I DATABASE:
+${existingDesc}
 
-Svar med JSON for hvert par.`
-
-  const userPrompt = `Sjekk om disse "fjernede" hendelsene faktisk matcher noen av de nye hendelsene:
-
-${pairsDescription}
-
-For hvert par, svar:
-- pairIndex: tallet (1, 2, 3...)
-- isSameEvent: true hvis de er samme hendelse med ulik formulering
+Returner JSON med matches. For hver match, oppgi:
+- extractedIndex: tallet fra E (1, 2, 3...)
+- existingIndex: tallet fra D (1, 2, 3...)
 - confidence: 0.0-1.0
 
-Svar KUN med JSON-array:
-[{"pairIndex": 1, "isSameEvent": true, "confidence": 0.95}, ...]`
+Returner KUN JSON-array, ingen annen tekst:
+[{"extractedIndex": 1, "existingIndex": 2, "confidence": 0.95}, ...]
+
+Hvis ingen matcher, returner tom array: []`
 
   try {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -183,7 +181,7 @@ Svar KUN med JSON-array:
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'https://familjen.eu',
-        'X-Title': 'Familjen Removal Verification',
+        'X-Title': 'Familjen Event Matching',
       },
       body: JSON.stringify({
         model,
@@ -192,31 +190,21 @@ Svar KUN med JSON-array:
           { role: 'user', content: userPrompt },
         ],
         temperature: 0.1,
-        max_tokens: 1000,
+        max_tokens: 2000,
       }),
     })
 
     if (!response.ok) {
-      console.error('[CalendarSourceSync] LLM verification error:', response.status)
-      // On error, assume all removals are real (conservative)
-      return potentiallyRemovedEvents.map(event => ({
-        removedEventId: event.id,
-        matchedNewEventId: null,
-        isActuallyRemoved: true,
-        reason: 'Verifikasjon feilet',
-      }))
+      console.error('[CalendarSourceSync] LLM matching error:', response.status)
+      return fallbackToHashMatching(extractedEvents, existingEvents)
     }
 
     const data = await response.json()
     const content = data.choices?.[0]?.message?.content
 
     if (!content) {
-      return potentiallyRemovedEvents.map(event => ({
-        removedEventId: event.id,
-        matchedNewEventId: null,
-        isActuallyRemoved: true,
-        reason: 'Ingen svar fra AI',
-      }))
+      console.error('[CalendarSourceSync] No content in LLM response')
+      return fallbackToHashMatching(extractedEvents, existingEvents)
     }
 
     // Parse JSON
@@ -225,67 +213,145 @@ Svar KUN med JSON-array:
       jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
     }
 
-    let llmResults: Array<{ pairIndex: number; isSameEvent: boolean; confidence: number }>
+    let llmMatches: Array<{ extractedIndex: number; existingIndex: number; confidence: number }>
     try {
-      llmResults = JSON.parse(jsonStr)
+      const parsed = JSON.parse(jsonStr)
+      if (!Array.isArray(parsed)) {
+        console.error('[CalendarSourceSync] LLM response is not an array')
+        return fallbackToHashMatching(extractedEvents, existingEvents)
+      }
+      llmMatches = parsed
     } catch {
-      return potentiallyRemovedEvents.map(event => ({
-        removedEventId: event.id,
-        matchedNewEventId: null,
-        isActuallyRemoved: true,
-        reason: 'Kunne ikke tolke AI-svar',
-      }))
+      console.error('[CalendarSourceSync] Failed to parse LLM response')
+      return fallbackToHashMatching(extractedEvents, existingEvents)
     }
 
-    // Build result for each potentially removed event
-    const matchedRemovedIds = new Map<string, string>() // removedId -> newEventId
+    // Process matches, ensuring 1:1 mapping
+    const matchedExtractedIndices = new Set<number>()
+    const matchedExistingIds = new Set<string>()
 
-    for (const llmResult of llmResults) {
-      if (llmResult.isSameEvent && llmResult.confidence >= 0.8) {
-        const pair = pairsToCheck[llmResult.pairIndex - 1]
-        if (pair) {
-          matchedRemovedIds.set(pair.removed.id, pair.newEvent.id)
-        }
+    // Sort by confidence descending to prioritize best matches
+    llmMatches.sort((a, b) => (b.confidence || 0) - (a.confidence || 0))
+
+    for (const match of llmMatches) {
+      const extractedIdx = match.extractedIndex - 1 // Convert to 0-indexed
+      const existingIdx = match.existingIndex - 1
+
+      // Validate indices
+      if (extractedIdx < 0 || extractedIdx >= extractedEvents.length) continue
+      if (existingIdx < 0 || existingIdx >= existingEvents.length) continue
+
+      // Skip if already matched (1:1 constraint)
+      if (matchedExtractedIndices.has(extractedIdx)) continue
+      if (matchedExistingIds.has(existingEvents[existingIdx].id)) continue
+
+      // Only accept high confidence matches
+      if ((match.confidence || 0) >= 0.7) {
+        result.matches.push({
+          extractedIndex: extractedIdx,
+          existingId: existingEvents[existingIdx].id,
+          confidence: match.confidence,
+        })
+        matchedExtractedIndices.add(extractedIdx)
+        matchedExistingIds.add(existingEvents[existingIdx].id)
       }
     }
 
-    return potentiallyRemovedEvents.map(event => {
-      const matchedNewId = matchedRemovedIds.get(event.id)
-      if (matchedNewId) {
-        return {
-          removedEventId: event.id,
-          matchedNewEventId: matchedNewId,
-          isActuallyRemoved: false,
-          reason: 'Samme hendelse med ulik formulering',
-        }
+    // Find unmatched
+    for (let i = 0; i < extractedEvents.length; i++) {
+      if (!matchedExtractedIndices.has(i)) {
+        result.unmatchedExtractedIndices.push(i)
       }
-      return {
-        removedEventId: event.id,
-        matchedNewEventId: null,
-        isActuallyRemoved: true,
-        reason: 'Hendelse fjernet fra kalenderkilde',
+    }
+
+    for (const existing of existingEvents) {
+      if (!matchedExistingIds.has(existing.id)) {
+        result.unmatchedExistingIds.push(existing.id)
       }
-    })
+    }
+
+    console.log(`[CalendarSourceSync] LLM matching: ${result.matches.length} matches, ${result.unmatchedExtractedIndices.length} new, ${result.unmatchedExistingIds.length} potentially removed`)
+
+    return result
   } catch (error) {
-    console.error('[CalendarSourceSync] LLM verification exception:', error)
-    return potentiallyRemovedEvents.map(event => ({
-      removedEventId: event.id,
-      matchedNewEventId: null,
-      isActuallyRemoved: true,
-      reason: 'Verifikasjon feilet',
-    }))
+    console.error('[CalendarSourceSync] LLM matching exception:', error)
+    return fallbackToHashMatching(extractedEvents, existingEvents)
   }
 }
 
 /**
+ * Fallback to hash-based matching when LLM is unavailable.
+ */
+function fallbackToHashMatching(
+  extractedEvents: ExtractedEvent[],
+  existingEvents: ExternalEvent[]
+): MatchingResult {
+  const result: MatchingResult = {
+    matches: [],
+    unmatchedExtractedIndices: [],
+    unmatchedExistingIds: [],
+  }
+
+  // Build hash map of existing events
+  const existingByHash = new Map<string, ExternalEvent>()
+  for (const event of existingEvents) {
+    if (event.source_event_hash) {
+      existingByHash.set(event.source_event_hash, event)
+    }
+  }
+
+  const matchedExistingIds = new Set<string>()
+
+  // Match extracted events by hash
+  for (let i = 0; i < extractedEvents.length; i++) {
+    const extracted = extractedEvents[i]
+    // We need source_url_id for hash, but we don't have it here
+    // Use a placeholder - this is why hash matching is inferior
+    const hash = generateEventHash('temp', extracted.date, extracted.title)
+
+    // Try to find by normalized title + date
+    let found = false
+    for (const existing of existingEvents) {
+      if (matchedExistingIds.has(existing.id)) continue
+
+      const existingHash = generateEventHash('temp', existing.event_date, existing.title)
+      if (hash === existingHash) {
+        result.matches.push({
+          extractedIndex: i,
+          existingId: existing.id,
+          confidence: 1.0,
+        })
+        matchedExistingIds.add(existing.id)
+        found = true
+        break
+      }
+    }
+
+    if (!found) {
+      result.unmatchedExtractedIndices.push(i)
+    }
+  }
+
+  // Find unmatched existing
+  for (const existing of existingEvents) {
+    if (!matchedExistingIds.has(existing.id)) {
+      result.unmatchedExistingIds.push(existing.id)
+    }
+  }
+
+  return result
+}
+
+/**
  * Sync a calendar source, handling updates and deletions properly.
+ * Uses LLM-based semantic matching for robust event tracking.
  */
 export async function syncCalendarSource(
   supabase: SupabaseClient,
   source: CalendarSource,
   options: {
     model?: string
-    fetchContent?: () => Promise<string>  // Optional override for testing
+    fetchContent?: () => Promise<string>
   } = {}
 ): Promise<SyncResult> {
   const result: SyncResult = {
@@ -299,9 +365,7 @@ export async function syncCalendarSource(
     duplicateSuggestionsCreated: 0,
   }
 
-  // Track newly created events for deduplication and removal verification
   const newEventIds: string[] = []
-  const newlyCreatedEvents: Array<{ id: string; title: string; event_date: string; end_date: string | null }> = []
 
   try {
     // 1. Fetch content from source
@@ -309,7 +373,6 @@ export async function syncCalendarSource(
     if (options.fetchContent) {
       content = await options.fetchContent()
     } else {
-      // SSRF protection: validate URL before fetching
       if (!isUrlAllowed(source.url)) {
         throw new Error('URL not allowed: blocked domain or protocol')
       }
@@ -332,7 +395,6 @@ export async function syncCalendarSource(
     // 2. Extract events using AI
     const model = options.model || 'google/gemini-2.5-flash-lite'
 
-    // Get child name if linked
     let childName: string | undefined
     if (source.child_id) {
       const { data: child } = await supabase
@@ -355,139 +417,102 @@ export async function syncCalendarSource(
       model,
     }
 
-    // 3. Get existing events for this source
+    // 3. Get ALL existing events for this source
     const { data: existingEvents } = await supabase
       .from('external_events')
-      .select('id, source_event_hash, title, event_date, end_date, event_time, event_type, description, child_id, linked_task_id')
+      .select('id, source_url_id, source_event_hash, title, event_date, end_date, event_time, event_type, description, child_id, linked_task_id')
       .eq('source_url_id', source.id)
 
-    const existingByHash = new Map<string, ExternalEvent>()
-    for (const event of (existingEvents || [])) {
-      if (event.source_event_hash) {
-        existingByHash.set(event.source_event_hash, event as ExternalEvent)
+    const existingList = (existingEvents || []) as ExternalEvent[]
+
+    // 4. Use LLM to match extracted events to existing events
+    const matchingResult = await matchEventsWithLLM(extractedEvents, existingList, model)
+    result.debug!.matchingMethod = process.env.OPENROUTER_API_KEY ? 'llm' : 'hash'
+
+    // 5. Process matches - UPDATE existing events
+    for (const match of matchingResult.matches) {
+      const extracted = extractedEvents[match.extractedIndex]
+      const hash = generateEventHash(source.id, extracted.date, extracted.title)
+
+      const eventData = {
+        source_event_hash: hash,
+        title: truncate(sanitizeString(extracted.title), 200),
+        event_date: extracted.date,
+        end_date: extracted.endDate || null,
+        event_time: sanitizeTime(extracted.time),
+        event_type: extracted.eventType,
+        description: truncate(sanitizeString(extracted.description), 2000),
+        raw_data: { confidence: extracted.confidence, extracted_at: new Date().toISOString(), match_confidence: match.confidence },
+      }
+
+      const { error } = await supabase
+        .from('external_events')
+        .update(eventData)
+        .eq('id', match.existingId)
+
+      if (error) {
+        console.error(`[CalendarSourceSync] Update error:`, error.message)
+        if (!result.debug!.firstError) {
+          result.debug!.firstError = `Update: ${error.message}`
+        }
+      } else {
+        result.eventsUpdated++
       }
     }
 
-    // 4. Process extracted events - upsert
-    const processedHashes = new Set<string>()
+    // 6. Process unmatched extracted events - INSERT as new
+    for (const idx of matchingResult.unmatchedExtractedIndices) {
+      const extracted = extractedEvents[idx]
+      const hash = generateEventHash(source.id, extracted.date, extracted.title)
 
-    for (const event of extractedEvents) {
-      const hash = generateEventHash(source.id, event.date, event.title)
-      processedHashes.add(hash)
-
-      const existing = existingByHash.get(hash)
-
-      // Sanitize event data before inserting
       const eventData = {
         source_url_id: source.id,
         source_event_hash: hash,
         external_id: `source_${source.id}_${hash}`,
-        title: truncate(sanitizeString(event.title), 200),
-        event_date: event.date,
-        end_date: event.endDate || null,
-        event_time: sanitizeTime(event.time),
-        event_type: event.eventType,
-        description: truncate(sanitizeString(event.description), 2000),
+        title: truncate(sanitizeString(extracted.title), 200),
+        event_date: extracted.date,
+        end_date: extracted.endDate || null,
+        event_time: sanitizeTime(extracted.time),
+        event_type: extracted.eventType,
+        description: truncate(sanitizeString(extracted.description), 2000),
         child_id: source.child_id,
-        raw_data: { confidence: event.confidence, extracted_at: new Date().toISOString() },
+        raw_data: { confidence: extracted.confidence, extracted_at: new Date().toISOString() },
       }
 
-      if (existing) {
-        // Update existing event
-        const { error } = await supabase
-          .from('external_events')
-          .update(eventData)
-          .eq('id', existing.id)
+      const { data: insertedEvent, error } = await supabase
+        .from('external_events')
+        .insert(eventData)
+        .select('id')
+        .single()
 
-        if (error) {
-          console.error(`[CalendarSourceSync] Update error:`, error.message)
-          if (!result.debug!.firstError) {
-            result.debug!.firstError = `Update: ${error.message}`
-          }
-        } else {
-          result.eventsUpdated++
+      if (error) {
+        console.error(`[CalendarSourceSync] Insert error:`, error.message)
+        if (!result.debug!.firstError) {
+          result.debug!.firstError = `Insert: ${error.message}`
         }
-      } else {
-        // Insert new event and capture the ID for deduplication
-        const { data: insertedEvent, error } = await supabase
-          .from('external_events')
-          .insert(eventData)
-          .select('id')
-          .single()
-
-        if (error) {
-          console.error(`[CalendarSourceSync] Insert error:`, error.message)
-          if (!result.debug!.firstError) {
-            result.debug!.firstError = `Insert: ${error.message}`
-          }
-        } else if (insertedEvent) {
-          result.eventsCreated++
-          newEventIds.push(insertedEvent.id)
-          newlyCreatedEvents.push({
-            id: insertedEvent.id,
-            title: eventData.title || event.title,  // Fallback to original if sanitization returned null
-            event_date: eventData.event_date,
-            end_date: eventData.end_date,
-          })
-        }
+      } else if (insertedEvent) {
+        result.eventsCreated++
+        newEventIds.push(insertedEvent.id)
       }
     }
 
-    // 5. Find potentially removed events (in DB but not in current extraction)
-    const potentiallyRemovedEvents: ExternalEvent[] = []
-    for (const [hash, event] of existingByHash) {
-      if (!processedHashes.has(hash)) {
-        // Only consider removal if event is in the future (don't notify about past events)
-        const eventDate = new Date(event.event_date)
-        const today = new Date()
-        today.setHours(0, 0, 0, 0)
+    // 7. Process unmatched existing events - these are REMOVED
+    // Only notify for future events
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
 
-        if (eventDate >= today) {
-          potentiallyRemovedEvents.push(event)
-        }
+    for (const existingId of matchingResult.unmatchedExistingIds) {
+      const event = existingList.find(e => e.id === existingId)
+      if (!event) continue
+
+      const eventDate = new Date(event.event_date)
+      if (eventDate < today) {
+        // Past event - just delete silently
+        await supabase.from('external_events').delete().eq('id', event.id)
+        continue
       }
-    }
 
-    // 5.5. Verify removals with LLM - this prevents false positives from AI extraction variation
-    // (e.g., "Fri (Helligdag)" vs "Helligdag" are the same event, just extracted differently)
-    let actuallyRemovedEvents: ExternalEvent[] = []
-
-    if (potentiallyRemovedEvents.length > 0 && newlyCreatedEvents.length > 0) {
-      // Use LLM to verify which events are actually removed vs just renamed
-      const verificationResults = await verifyRemovalsWithLLM(
-        potentiallyRemovedEvents,
-        newlyCreatedEvents,
-        model
-      )
-
-      // Process verification results
-      for (const verification of verificationResults) {
-        const event = potentiallyRemovedEvents.find(e => e.id === verification.removedEventId)
-        if (!event) continue
-
-        if (verification.isActuallyRemoved) {
-          // Event is truly removed - add to list for notification
-          actuallyRemovedEvents.push(event)
-        } else {
-          // Event is not actually removed - just extracted with different title
-          // Delete the old event silently (the new event already exists with the new title)
-          await supabase
-            .from('external_events')
-            .delete()
-            .eq('id', event.id)
-
-          console.log(`[CalendarSourceSync] Silently removed "${event.title}" - matched by new event`)
-        }
-      }
-    } else {
-      // No new events to compare with, or no potentially removed events
-      // All potentially removed events are actually removed
-      actuallyRemovedEvents = potentiallyRemovedEvents
-    }
-
-    // 6. Handle actually removed events - create notifications and delete
-    for (const event of actuallyRemovedEvents) {
-      // Get linked task info if any
+      // Future event - notify user and delete
       let linkedTask: LinkedTask | null = null
       if (event.linked_task_id) {
         const { data } = await supabase
@@ -498,15 +523,14 @@ export async function syncCalendarSource(
         linkedTask = data as LinkedTask | null
       }
 
-      // Get child name for notification
-      let childName: string | null = null
+      let childNameForNotif: string | null = null
       if (event.child_id) {
         const { data: child } = await supabase
           .from('children')
           .select('name')
           .eq('id', event.child_id)
           .single()
-        childName = child?.name || null
+        childNameForNotif = child?.name || null
       }
 
       // Create removal notification
@@ -523,7 +547,7 @@ export async function syncCalendarSource(
           original_time: event.event_time,
           original_description: event.description,
           child_id: event.child_id,
-          child_name: childName,
+          child_name: childNameForNotif,
           deleted_task_id: linkedTask?.id || null,
           deleted_task_type: linkedTask?.task_type || null,
           deleted_task_title: linkedTask?.title || null,
@@ -536,22 +560,15 @@ export async function syncCalendarSource(
 
       // Delete linked task if any
       if (linkedTask) {
-        await supabase
-          .from('child_tasks')
-          .delete()
-          .eq('id', linkedTask.id)
+        await supabase.from('child_tasks').delete().eq('id', linkedTask.id)
       }
 
       // Delete the event
-      await supabase
-        .from('external_events')
-        .delete()
-        .eq('id', event.id)
-
+      await supabase.from('external_events').delete().eq('id', event.id)
       result.eventsRemoved++
     }
 
-    // 7. Update sync status
+    // 8. Update sync status
     await supabase
       .from('external_source_urls')
       .update({
@@ -561,14 +578,13 @@ export async function syncCalendarSource(
       })
       .eq('id', source.id)
 
-    // 8. Run deduplication on newly created events (non-blocking - don't fail sync if AI fails)
+    // 9. Run deduplication on newly created events
     if (newEventIds.length > 0) {
       try {
         const dedupeResult = await deduplicateEvents(supabase, source.household_id, newEventIds)
         result.duplicatesAutoMerged = dedupeResult.autoMerged
         result.duplicateSuggestionsCreated = dedupeResult.suggestionsCreated
       } catch (dedupeError) {
-        // Log but don't fail the sync - events are already saved
         console.error('[CalendarSourceSync] Deduplication failed (non-blocking):', dedupeError)
       }
     }
@@ -578,7 +594,6 @@ export async function syncCalendarSource(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
 
-    // Update sync status with error
     await supabase
       .from('external_source_urls')
       .update({
@@ -601,7 +616,6 @@ export async function syncAllCalendarSources(
   householdId: string,
   options: { model?: string } = {}
 ): Promise<{ sources: Array<{ id: string; name: string; result: SyncResult }> }> {
-  // Get all sources for household with auto_sync enabled
   const { data: sources, error } = await supabase
     .from('external_source_urls')
     .select('*')
@@ -638,7 +652,6 @@ export async function acceptCalendarEvent(
     taskType?: 'bring' | 'appointment' | 'reminder' | 'other'
   } = {}
 ): Promise<{ taskId: string | null; error?: string }> {
-  // Get the event
   const { data: event, error: eventError } = await supabase
     .from('external_events')
     .select('*, source_url:external_source_urls(household_id)')
@@ -654,7 +667,6 @@ export async function acceptCalendarEvent(
     return { taskId: null, error: 'Household not found' }
   }
 
-  // Create child task
   const { data: task, error: taskError } = await supabase
     .from('child_tasks')
     .insert({
@@ -674,7 +686,6 @@ export async function acceptCalendarEvent(
     return { taskId: null, error: taskError?.message || 'Failed to create task' }
   }
 
-  // Link the event to the task
   await supabase
     .from('external_events')
     .update({ linked_task_id: task.id })
