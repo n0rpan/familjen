@@ -90,19 +90,23 @@ async function evaluateDuplicatesWithLLM(
     return []
   }
 
+  // Sanitize event data to prevent prompt injection
+  const sanitize = (s: string | null | undefined) =>
+    s ? s.replace(/["\n\r]/g, ' ').trim().slice(0, 200) : ''
+
   // Build the prompt with all event pairs
   const pairsDescription = pairs.map((pair, index) => {
     const eventA = pair.eventA
     const eventB = pair.eventB
     return `Pair ${index + 1}:
   Event A (ID: ${eventA.id}):
-    - Title: "${eventA.title}"
+    - Title: "${sanitize(eventA.title)}"
     - Date: ${eventA.event_date}${eventA.end_date ? ` to ${eventA.end_date}` : ''}
     - Time: ${eventA.event_time || 'All day'}
     - Type: ${eventA.event_type || 'Unknown'}
 
   Event B (ID: ${eventB.id}):
-    - Title: "${eventB.title}"
+    - Title: "${sanitize(eventB.title)}"
     - Date: ${eventB.event_date}${eventB.end_date ? ` to ${eventB.end_date}` : ''}
     - Time: ${eventB.event_time || 'All day'}
     - Type: ${eventB.event_type || 'Unknown'}`
@@ -149,7 +153,9 @@ REMEMBER:
 For each pair, respond with:
 - isDuplicate: true/false
 - confidence: 0.0-1.0 (how confident you are)
-- reason: Brief Norwegian explanation for the user
+- reason: Brief explanation IN NORWEGIAN for the user (e.g. "Samme arrangement, ulik kilde")
+
+IMPORTANT: The "reason" field MUST be in Norwegian as this is shown directly to Norwegian users.
 
 Respond ONLY with a JSON array like:
 [

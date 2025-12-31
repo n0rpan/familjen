@@ -140,7 +140,8 @@ export function ShoppingPageContent() {
     if (duplicateCheckTimer.current) {
       clearTimeout(duplicateCheckTimer.current)
     }
-    if (text.length < 2) {
+    // Require at least 3 chars to avoid too many LLM calls
+    if (text.length < 3) {
       setDuplicateWarning(null)
       return
     }
@@ -197,7 +198,7 @@ export function ShoppingPageContent() {
       } catch {
         setDuplicateWarning(null)
       }
-    }, 500) // Longer debounce for LLM calls
+    }, 800) // 800ms debounce to reduce LLM costs
   }, [isDemo, lists])
 
   const handleItemTextChange = useCallback((listId: string, text: string) => {

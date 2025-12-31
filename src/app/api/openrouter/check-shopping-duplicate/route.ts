@@ -18,10 +18,10 @@ import { z } from 'zod'
 const requestSchema = z.object({
   newItem: z.string().min(1).max(200),
   existingItems: z.array(z.object({
-    id: z.string(),
-    name: z.string(),
-    quantity: z.string().nullable().optional(),
-  })).max(100),
+    id: z.string().max(100),
+    name: z.string().min(1).max(200),
+    quantity: z.string().max(50).nullable().optional(),
+  })).max(50), // Limit to 50 items to prevent prompt bloat
 })
 
 export interface DuplicateMatch {
@@ -74,22 +74,32 @@ export async function POST(request: Request) {
       return NextResponse.json({ matches: [], suggestion: null } as CheckDuplicateResponse)
     }
 
-    // Get model from settings
+    // Get model from settings - no fallback, admin must configure
     const { data: modelSetting } = await supabase
       .from('app_settings')
       .select('value')
       .eq('key', 'openrouter_model')
       .single()
 
-    const model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
-
+    const model = modelSetting?.value
     const apiKey = process.env.OPENROUTER_API_KEY
-    if (!apiKey) {
+
+    // Skip if no model configured or no API key
+    if (!model || !apiKey) {
       return NextResponse.json({ matches: [], suggestion: null } as CheckDuplicateResponse)
     }
 
+    // Sanitize inputs to prevent prompt injection
+    const sanitize = (s: string) => s.replace(/["\n\r]/g, ' ').trim()
+    const sanitizedNewItem = sanitize(newItem)
+    const sanitizedItems = existingItems.map(item => ({
+      ...item,
+      name: sanitize(item.name),
+      quantity: item.quantity ? sanitize(item.quantity) : null,
+    }))
+
     // Build the prompt
-    const existingList = existingItems
+    const existingList = sanitizedItems
       .map((item, i) => `${i + 1}. "${item.name}"${item.quantity ? ` (${item.quantity})` : ''}`)
       .join('\n')
 
@@ -121,7 +131,7 @@ Svar i JSON-format:
     const userPrompt = `Handlelisten inneholder:
 ${existingList}
 
-Nytt element som skal legges til: "${newItem}"
+Nytt element som skal legges til: "${sanitizedNewItem}"
 
 Er dette allerede på listen? Svar i JSON.`
 

@@ -121,15 +121,32 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
     }
   }, [isDemo, supabase, household?.id, startDateStr, endDateStr, currentFetchKey])
 
+  // Debounced refetch for realtime - prevents thundering herd when multiple changes come in
+  const realtimeRefetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const debouncedRefetch = useCallback(() => {
+    if (realtimeRefetchTimer.current) {
+      clearTimeout(realtimeRefetchTimer.current)
+    }
+    realtimeRefetchTimer.current = setTimeout(() => {
+      fetchData()
+    }, 300) // 300ms debounce for realtime changes
+  }, [fetchData])
+
+  // Cleanup debounce timer
+  useEffect(() => {
+    return () => {
+      if (realtimeRefetchTimer.current) {
+        clearTimeout(realtimeRefetchTimer.current)
+      }
+    }
+  }, [])
+
   // Subscribe to realtime changes for instant sync between parents
   useRealtimeSubscription<ChildTask>({
     table: 'child_tasks',
     filter: household?.id ? createHouseholdFilter(household.id) : undefined,
     enabled: !isDemo && !!household?.id,
-    onAny: useCallback(() => {
-      // Refetch when any task change is detected from another client
-      fetchData()
-    }, [fetchData]),
+    onAny: debouncedRefetch,
   })
 
   // Fetch when household or date range changes
