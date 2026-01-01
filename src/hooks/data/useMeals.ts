@@ -199,6 +199,7 @@ export function useMeals(options: UseMealsOptions = {}): UseMealsReturn {
           date,
           recipe_id: recipeId,
           custom_meal: customMeal,
+          notes: null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }

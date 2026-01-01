@@ -219,6 +219,11 @@ export function usePickups(options: UsePickupsOptions = {}): UsePickupsReturn {
           child_id: childId,
           date,
           picker_id: pickerId,
+          notes: null,
+          synced_to_calendar: false,
+          calendar_event_id: null,
+          sync_to_work_calendar: false,
+          work_calendar_event_id: null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }
