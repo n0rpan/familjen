@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 /**
  * Service role client for admin operations (bypasses RLS)
  * Only use server-side for:
- * - Updating user metadata (app_metadata.is_admin)
+ * - Updating user metadata (app_metadata.is_admin, household_id)
  * - Admin-level database operations
  */
 export function createAdminClient() {
@@ -23,9 +23,18 @@ export function createAdminClient() {
 }
 
 /**
- * Update user's app_metadata.is_admin based on allowed_emails table
+ * Sync user metadata to JWT app_metadata for fast access without DB lookups
+ * Stores: is_admin, household_id
+ *
+ * Call this:
+ * - On login (auth callback)
+ * - When user joins/leaves a household
  */
-export async function syncUserAdminStatus(userId: string, email: string): Promise<boolean> {
+export async function syncUserMetadata(
+  userId: string,
+  email: string,
+  householdId: string | null
+): Promise<{ isAdmin: boolean; householdId: string | null }> {
   const adminClient = createAdminClient()
 
   // Check if user is admin in allowed_emails
@@ -37,15 +46,26 @@ export async function syncUserAdminStatus(userId: string, email: string): Promis
 
   const isAdmin = allowedEmail?.is_admin === true
 
-  // Update user's app_metadata
+  // Update user's app_metadata with both admin status and household_id
   const { error } = await adminClient.auth.admin.updateUserById(userId, {
-    app_metadata: { is_admin: isAdmin },
+    app_metadata: {
+      is_admin: isAdmin,
+      household_id: householdId,
+    },
   })
 
   if (error) {
-    console.error('Failed to update user admin status:', error)
-    return false
+    console.error('Failed to update user metadata:', error)
+    throw error
   }
 
-  return isAdmin
+  return { isAdmin, householdId }
+}
+
+/**
+ * @deprecated Use syncUserMetadata instead
+ */
+export async function syncUserAdminStatus(userId: string, email: string): Promise<boolean> {
+  const result = await syncUserMetadata(userId, email, null)
+  return result.isAdmin
 }

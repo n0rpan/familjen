@@ -7,6 +7,9 @@
  * External events are synced from integrations like Spond, MyKid, etc.
  * These are read-only in the app (modifications happen via local overrides).
  *
+ * PERFORMANCE: This hook supports deferred loading to not block initial render.
+ * External events are "nice to have" not critical - pickups and meals matter more.
+ *
  * Loading state is derived to avoid UI flash:
  * - householdLoading: waiting for household to load
  * - needsFetch: household loaded but fetch for current params not done
@@ -16,14 +19,24 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
+import { useHouseholdId } from './useHousehold'
 import { formatDateISO } from '@/lib/utils'
 import type { ExternalEvent } from '@/lib/types'
+
+// Default delay for deferred loading (ms)
+const DEFAULT_DEFER_MS = 300
 
 export interface UseExternalEventsOptions {
   /** Start date for filtering (inclusive) */
   startDate?: Date
   /** End date for filtering (inclusive) */
   endDate?: Date
+  /**
+   * Defer initial fetch by this many ms after component mount.
+   * Improves startup performance by loading external events after core data.
+   * Set to 0 or false to disable deferral. Default: 300ms
+   */
+  deferMs?: number | false
 }
 
 export interface UseExternalEventsReturn {
@@ -37,14 +50,17 @@ export interface UseExternalEventsReturn {
  * Hook to get external events with optional filtering by date range
  */
 export function useExternalEvents(options: UseExternalEventsOptions = {}): UseExternalEventsReturn {
-  const { startDate, endDate } = options
+  const { startDate, endDate, deferMs = DEFAULT_DEFER_MS } = options
   const { isDemo, supabase, demoState } = useDataSource()
-  const { household, loading: householdLoading } = useHousehold()
+  // Use JWT-based household ID for faster access
+  const householdId = useHouseholdId()
+  const { loading: householdLoading } = useHousehold()
 
   const [events, setEvents] = useState<ExternalEvent[]>([])
   const [isFetching, setIsFetching] = useState(false)
   const [lastFetchKey, setLastFetchKey] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [isDeferralComplete, setIsDeferralComplete] = useState(deferMs === false || deferMs === 0)
 
   // Track abort controller for cleanup
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -54,12 +70,26 @@ export function useExternalEvents(options: UseExternalEventsOptions = {}): UseEx
 
   // Memoize fetch key to prevent unnecessary re-renders
   const currentFetchKey = useMemo(
-    () => `${household?.id}-${startDateStr}-${endDateStr}`,
-    [household?.id, startDateStr, endDateStr]
+    () => `${householdId}-${startDateStr}-${endDateStr}`,
+    [householdId, startDateStr, endDateStr]
   )
 
+  // Handle deferral - delay fetch to not block initial render
+  useEffect(() => {
+    if (deferMs === false || deferMs === 0) {
+      setIsDeferralComplete(true)
+      return
+    }
+
+    const timer = setTimeout(() => {
+      setIsDeferralComplete(true)
+    }, deferMs)
+
+    return () => clearTimeout(timer)
+  }, [deferMs])
+
   const fetchData = useCallback(async () => {
-    if (isDemo || !supabase || !household?.id) return
+    if (isDemo || !supabase || !householdId) return
 
     // Abort any pending request
     abortControllerRef.current?.abort()
@@ -70,28 +100,12 @@ export function useExternalEvents(options: UseExternalEventsOptions = {}): UseEx
     setError(null)
 
     try {
-      // Get integration IDs for this household
-      const { data: integrations } = await supabase
-        .from('external_integrations')
-        .select('id')
-        .eq('household_id', household.id)
-
-      // Check if request was aborted
-      if (signal.aborted) return
-
-      if (!integrations || integrations.length === 0) {
-        setEvents([])
-        setLastFetchKey(currentFetchKey)
-        setIsFetching(false)
-        return
-      }
-
-      const integrationIds = integrations.map(i => i.id)
-
+      // Single optimized query: join through integration to filter by household
+      // This replaces 2 sequential queries with 1
       let query = supabase
         .from('external_events')
-        .select('*, integration:external_integrations(service, display_name, household_id)')
-        .in('integration_id', integrationIds)
+        .select('*, integration:external_integrations!inner(id, service, display_name, household_id)')
+        .eq('integration.household_id', householdId)
         .eq('is_hidden', false)
 
       if (startDateStr) {
@@ -125,11 +139,11 @@ export function useExternalEvents(options: UseExternalEventsOptions = {}): UseEx
         setIsFetching(false)
       }
     }
-  }, [isDemo, supabase, household?.id, startDateStr, endDateStr, currentFetchKey])
+  }, [isDemo, supabase, householdId, startDateStr, endDateStr, currentFetchKey])
 
-  // Fetch when household or date range changes
+  // Fetch when household or date range changes (only after deferral complete)
   useEffect(() => {
-    if (!isDemo && household?.id && lastFetchKey !== currentFetchKey) {
+    if (!isDemo && householdId && lastFetchKey !== currentFetchKey && isDeferralComplete) {
       fetchData()
     }
 
@@ -137,7 +151,7 @@ export function useExternalEvents(options: UseExternalEventsOptions = {}): UseEx
     return () => {
       abortControllerRef.current?.abort()
     }
-  }, [isDemo, household?.id, lastFetchKey, currentFetchKey, fetchData])
+  }, [isDemo, householdId, lastFetchKey, currentFetchKey, isDeferralComplete, fetchData])
 
   // Demo mode: return demo data with filtering
   if (isDemo && demoState) {
@@ -155,9 +169,9 @@ export function useExternalEvents(options: UseExternalEventsOptions = {}): UseEx
     }
   }
 
-  // Derive loading state
-  const needsFetch = !!household?.id && lastFetchKey !== currentFetchKey && !isFetching
-  const loading = householdLoading || needsFetch || isFetching
+  // Derive loading state (account for deferral)
+  const needsFetch = !!householdId && lastFetchKey !== currentFetchKey && !isFetching && isDeferralComplete
+  const loading = householdLoading || needsFetch || isFetching || !isDeferralComplete
 
   return {
     events,

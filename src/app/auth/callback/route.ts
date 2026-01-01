@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { syncUserAdminStatus, createAdminClient } from '@/lib/supabase/admin'
+import { syncUserMetadata, createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 import { LANGUAGE_COOKIE_NAME, COOKIE_MAX_AGE } from '@/lib/i18n/cookie.server'
 import { isValidLanguage } from '@/lib/i18n/cookie'
@@ -38,21 +38,22 @@ export async function GET(request: Request) {
             })
         }
 
-        // Sync is_admin to user's app_metadata (JWT claims)
-        // This allows middleware to check admin status without DB lookup
-        try {
-          await syncUserAdminStatus(user.id, user.email)
-        } catch (err) {
-          // Non-fatal: admin status will be checked via DB as fallback
-          console.error('Failed to sync admin status to JWT:', err)
-        }
-
-        // Load user's language preference and set cookie
-        const { data: member } = await supabase
+        // Load user's membership info (household_id + language preference)
+        // This data is cached in JWT to avoid DB lookups on every page load
+        const { data: member } = await adminClient
           .from('household_members')
-          .select('language_preference')
+          .select('household_id, language_preference')
           .eq('user_id', user.id)
           .single()
+
+        // Sync is_admin and household_id to user's app_metadata (JWT claims)
+        // This allows pages to access household without DB lookup
+        try {
+          await syncUserMetadata(user.id, user.email, member?.household_id || null)
+        } catch (err) {
+          // Non-fatal: will fall back to DB lookup
+          console.error('Failed to sync user metadata to JWT:', err)
+        }
 
         const response = NextResponse.redirect(`${origin}${next}`)
 
