@@ -278,7 +278,13 @@ export const WeekGrid = memo(function WeekGrid({
           <colgroup>
             <col className="w-24" />
             {weekDates.map((_, i) => (
-              <col key={i} style={needsScroll ? { minWidth: '100px' } : undefined} />
+              <col
+                key={i}
+                style={needsScroll
+                  ? { minWidth: '100px' }  // Scrollable: fixed minimum width
+                  : { width: `${(100 - 25) / weekDates.length}%` }  // Non-scroll: fill remaining 75% evenly
+                }
+              />
             ))}
           </colgroup>
           <thead>
