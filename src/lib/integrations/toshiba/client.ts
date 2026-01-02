@@ -664,12 +664,19 @@ export class ToshibaClient {
     const temp = Math.max(5, Math.min(30, temperature))
 
     // Detect 8°C mode: if current temperature is below 17, AC is in special low-temp mode
-    // In this mode, we need to add +16 offset when writing
+    // HEATING_8C = 0x04 in MeritA. To exit this mode, send MeritA = 0x00 (OFF)
     const isIn8CMode = currentTemperature !== undefined && currentTemperature < 17
-    const encodedTemp = isIn8CMode ? temp + 16 : temp
 
-    this.log('Setting temperature:', temp, 'for device:', acId, isIn8CMode ? '(8°C mode, encoded as ' + encodedTemp + ')' : '')
-    await this.sendCommand(acId, { temperature: encodedTemp })
+    if (isIn8CMode) {
+      // When exiting 8°C mode, send meritA: 0x00 to disable HEATING_8C feature
+      // Temperature encoding also needs +16 offset when in 8°C mode
+      const encodedTemp = temp + 16
+      this.log('Exiting 8°C mode: setting temperature', temp, 'encoded as', encodedTemp, 'with meritA=0 for device:', acId)
+      await this.sendCommand(acId, { temperature: encodedTemp, meritA: 0x00 })
+    } else {
+      this.log('Setting temperature:', temp, 'for device:', acId)
+      await this.sendCommand(acId, { temperature: temp })
+    }
   }
 
   /**
@@ -776,6 +783,7 @@ export class ToshibaClient {
     temperature?: number
     fanSpeed?: ToshibaFanSpeed
     swingMode?: ToshibaSwingMode
+    meritA?: number  // 0x00 = OFF, 0x04 = HEATING_8C, etc.
     pure?: 'ON' | 'OFF'
   }): string {
     // 19-byte state array, initialized to 'ff' (unchanged)
@@ -797,6 +805,9 @@ export class ToshibaClient {
     if (options.swingMode !== undefined) {
       state[STATE_OFFSETS_WRITE.SWING] = SWING_ENCODE[options.swingMode]
     }
+    if (options.meritA !== undefined) {
+      state[STATE_OFFSETS_WRITE.MERIT_A] = options.meritA.toString(16).padStart(2, '0')
+    }
     if (options.pure !== undefined) {
       state[STATE_OFFSETS_WRITE.PURE] = PURE_ENCODE[options.pure]
     }
@@ -813,6 +824,7 @@ export class ToshibaClient {
     temperature?: number
     fanSpeed?: ToshibaFanSpeed
     swingMode?: ToshibaSwingMode
+    meritA?: number
     pure?: 'ON' | 'OFF'
   }): Promise<void> {
     const deviceUniqueId = this.getDeviceUniqueId(acId)
