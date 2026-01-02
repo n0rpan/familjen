@@ -283,12 +283,12 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4"
+      className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:p-4"
       style={{ background: 'rgba(0, 0, 0, 0.5)' }}
       onClick={onClose}
     >
       <div
-        className="w-full sm:max-w-md max-h-[85vh] sm:max-h-[90vh] flex flex-col rounded-t-2xl sm:rounded-2xl"
+        className="w-full sm:max-w-md max-h-[calc(100dvh-80px)] sm:max-h-[90vh] flex flex-col rounded-t-2xl sm:rounded-2xl"
         style={{ background: 'var(--card)' }}
         onClick={e => e.stopPropagation()}
       >

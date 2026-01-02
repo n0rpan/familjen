@@ -86,17 +86,20 @@ export async function POST(request: NextRequest) {
             content: [
               {
                 type: 'text',
-                text: `Analyze this image of a product/gift item for a wishlist.
+                text: `Analyser dette bildet av et produkt/gaveønske for en ønskeliste.
 
-Extract the following information in JSON format:
+Ekstraher følgende informasjon på NORSK i JSON-format:
 {
-  "name": "Product name (be specific, e.g., 'LEGO Star Wars Millennium Falcon' not just 'LEGO')",
-  "description": "Brief description of the product (1-2 sentences, include key features like size, color, material)",
-  "price": <number or null if not visible>
+  "name": "Produktnavn (vær spesifikk, f.eks. 'LEGO Star Wars Millennium Falcon' ikke bare 'LEGO')",
+  "description": "Kort beskrivelse av produktet på norsk (1-2 setninger, inkluder viktige egenskaper som størrelse, farge, materiale)",
+  "price": <tall uten valutasymbol, eller null hvis ikke synlig>
 }
 
-If you cannot determine a field, use null.
-Respond ONLY with valid JSON, no additional text.`,
+Pris-formater å se etter: "kr 500", "500,-", "500 kr", "NOK 500", "499,00", "fra 299".
+Returner KUN tallet uten "kr", "NOK" eller ",-".
+
+Hvis du ikke kan finne et felt, bruk null.
+Svar KUN med gyldig JSON, ingen tilleggstekst.`,
               },
               {
                 type: 'image_url',
