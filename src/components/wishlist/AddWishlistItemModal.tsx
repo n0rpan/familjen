@@ -289,7 +289,7 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
       onClick={onClose}
     >
       <div
-        className="w-full sm:max-w-md max-h-[calc(100dvh-80px)] sm:max-h-[90vh] flex flex-col rounded-t-2xl sm:rounded-2xl"
+        className="w-full sm:max-w-md max-h-[calc(100dvh-140px)] sm:max-h-[90vh] flex flex-col rounded-t-2xl sm:rounded-2xl overflow-hidden"
         style={{ background: 'var(--card)' }}
         onClick={e => e.stopPropagation()}
       >
@@ -509,7 +509,7 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
         </div>
 
         {/* Footer - fixed at bottom */}
-        <div className="flex-shrink-0 p-4 border-t safe-area-bottom" style={{ borderColor: 'var(--border)' }}>
+        <div className="flex-shrink-0 p-4 border-t safe-area-bottom" style={{ borderColor: 'var(--border)', background: 'var(--card)' }}>
           {saveError && (
             <p className="text-sm mb-3 p-3 rounded-lg" style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444' }}>
               {saveError}
