@@ -818,8 +818,25 @@ export class ToshibaClient {
       }
     }
 
+    // Check if device is in "8°C mode" (low temp mode) by reading current state
+    // In this mode, temperature values have +16 offset
+    const cachedDevice = this.deviceCache[acId]
+    let adjustedOptions = { ...options }
+
+    if (options.temperature !== undefined && cachedDevice?.currentStateHex) {
+      const currentTempByte = cachedDevice.currentStateHex.slice(STATE_OFFSETS_READ.TEMP * 2, STATE_OFFSETS_READ.TEMP * 2 + 2)
+      const currentTempValue = parseInt(currentTempByte, 16)
+      const isIn8CMode = currentTempValue > 30
+
+      if (isIn8CMode) {
+        // In 8°C mode, temperatures need +16 offset when writing
+        this.log('Device in 8°C mode, applying +16 offset for temperature write:', options.temperature, '→', options.temperature + 16)
+        adjustedOptions.temperature = options.temperature + 16
+      }
+    }
+
     const targetId = this.getDeviceUniqueId(acId)!
-    const stateHex = this.buildCommandState(options)
+    const stateHex = this.buildCommandState(adjustedOptions)
 
     const message = {
       sourceId: this.deviceId,
