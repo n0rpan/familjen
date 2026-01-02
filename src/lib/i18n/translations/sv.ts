@@ -913,6 +913,7 @@ export const sv: TranslationStrings = {
     syncDevices: 'Synkronisera enheter',
     syncing: 'Synkroniserar...',
     syncingDevices: 'Uppdaterar enheter...',
+    dataOutdated: 'Data kan vara föråldrad',
     syncSuccess: 'Enheter synkroniserade',
     syncFailed: 'Synkronisering misslyckades',
     sync: 'Synk',

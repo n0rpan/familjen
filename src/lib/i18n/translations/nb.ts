@@ -914,6 +914,7 @@ export const nb: TranslationStrings = {
     syncDevices: 'Synkroniser enheter',
     syncing: 'Synkroniserer...',
     syncingDevices: 'Oppdaterer enheter...',
+    dataOutdated: 'Data kan være utdatert',
     syncSuccess: 'Enheter synkronisert',
     syncFailed: 'Synkronisering feilet',
     sync: 'Synk',

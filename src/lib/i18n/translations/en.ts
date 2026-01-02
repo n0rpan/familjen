@@ -913,6 +913,7 @@ export const en: TranslationStrings = {
     syncDevices: 'Sync devices',
     syncing: 'Syncing...',
     syncingDevices: 'Updating devices...',
+    dataOutdated: 'Data may be outdated',
     syncSuccess: 'Devices synced',
     syncFailed: 'Sync failed',
     sync: 'Sync',

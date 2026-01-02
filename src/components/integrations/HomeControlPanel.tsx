@@ -89,6 +89,14 @@ interface HomeControlPanelProps {
   showSettingsLink?: boolean
 }
 
+// Allowed home control services (defense-in-depth validation)
+const ALLOWED_SERVICES = ['somfy', 'toshiba', 'melcloud'] as const
+type AllowedService = typeof ALLOWED_SERVICES[number]
+
+function isAllowedService(service: string): service is AllowedService {
+  return ALLOWED_SERVICES.includes(service as AllowedService)
+}
+
 const UI_CLASS_ICONS: Record<string, React.ReactNode> = {
   ExteriorScreen: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -303,6 +311,11 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
       // Sync each stale account based on its service type
       await Promise.allSettled(
         staleAccounts.map(async (account) => {
+          // Defense-in-depth: validate service before constructing endpoint
+          if (!isAllowedService(account.service)) {
+            console.warn(`[HomeControl] Unknown service type: ${account.service}`)
+            return
+          }
           const endpoint = `/api/home-control/${account.service}/devices?accountId=${account.id}`
           try {
             const response = await fetch(endpoint)
@@ -871,6 +884,18 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
       })
     : ''
 
+  // Check if any account has stale data (>30 min) - shows warning indicator
+  const STALE_WARNING_THRESHOLD_MS = 30 * 60 * 1000 // 30 minutes
+  const hasStaleData = useMemo(() => {
+    if (accounts.length === 0) return false
+    const now = Date.now()
+    return accounts.some(account => {
+      if (!account.last_sync_at) return true // Never synced = stale
+      const lastSyncTime = new Date(account.last_sync_at).getTime()
+      return now - lastSyncTime > STALE_WARNING_THRESHOLD_MS
+    })
+  }, [accounts])
+
   return (
     <div className="space-y-4">
       {/* Error Toast */}
@@ -889,15 +914,28 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
       )}
 
       {/* Last Updated Indicator */}
-      {(lastUpdatedText || isSyncing) && (
-        <div className="flex items-center justify-end gap-2 text-xs" style={{ color: 'var(--muted)' }}>
+      {(lastUpdatedText || isSyncing || hasStaleData) && (
+        <div
+          className="flex items-center justify-end gap-2 text-xs"
+          style={{ color: hasStaleData && !isSyncing ? 'var(--color-honey)' : 'var(--muted)' }}
+        >
           {(isRefreshing || isSyncing) && (
             <span className="loading-spinner" style={{ width: 12, height: 12, borderWidth: 1.5 }} />
+          )}
+          {/* Stale warning icon */}
+          {hasStaleData && !isSyncing && !isRefreshing && (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
           )}
           <span>
             {isSyncing
               ? (t.homeControl?.syncingDevices || 'Oppdaterer enheter...')
-              : `${t.homeControl?.lastUpdated || 'Oppdatert'}: ${lastUpdatedText}`
+              : hasStaleData && !lastUpdatedText
+                ? (t.homeControl?.dataOutdated || 'Data kan være utdatert')
+                : `${t.homeControl?.lastUpdated || 'Oppdatert'}: ${lastUpdatedText}`
             }
           </span>
         </div>

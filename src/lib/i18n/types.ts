@@ -939,6 +939,7 @@ export interface TranslationStrings {
     syncDevices: string
     syncing: string
     syncingDevices: string
+    dataOutdated: string
     syncSuccess: string
     syncFailed: string
     sync: string
