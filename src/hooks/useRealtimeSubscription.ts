@@ -14,6 +14,9 @@ export interface RealtimeEvent<T = Record<string, unknown>> {
   timestamp: number
 }
 
+// Default delay for deferred subscriptions (ms)
+const DEFAULT_DEFER_MS = 500
+
 interface UseRealtimeSubscriptionOptions<T> {
   table: string
   schema?: string
@@ -23,6 +26,12 @@ interface UseRealtimeSubscriptionOptions<T> {
   onDelete?: (oldRecord: T) => void
   onAny?: (event: RealtimeEvent<T>) => void
   enabled?: boolean
+  /**
+   * Defer subscription setup by this many ms after component mount.
+   * Improves startup performance by not setting up WebSocket immediately.
+   * Set to 0 or false to disable deferral. Default: 500ms
+   */
+  deferMs?: number | false
 }
 
 interface UseRealtimeSubscriptionResult {
@@ -40,6 +49,7 @@ export function useRealtimeSubscription<T extends object>({
   onDelete,
   onAny,
   enabled = true,
+  deferMs = DEFAULT_DEFER_MS,
 }: UseRealtimeSubscriptionOptions<T>): UseRealtimeSubscriptionResult {
   // Stable ID for this hook instance - prevents creating new channels on every effect run
   const instanceId = useId()
@@ -48,9 +58,24 @@ export function useRealtimeSubscription<T extends object>({
   const [lastEvent, setLastEvent] = useState<RealtimeEvent | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isVisible, setIsVisible] = useState(true)
+  const [isDeferralComplete, setIsDeferralComplete] = useState(deferMs === false || deferMs === 0)
 
   const channelRef = useRef<RealtimeChannel | null>(null)
   const supabaseRef = useRef(createClient())
+
+  // Handle deferral - delay subscription setup to not block initial render
+  useEffect(() => {
+    if (deferMs === false || deferMs === 0) {
+      setIsDeferralComplete(true)
+      return
+    }
+
+    const timer = setTimeout(() => {
+      setIsDeferralComplete(true)
+    }, deferMs)
+
+    return () => clearTimeout(timer)
+  }, [deferMs])
 
   // Pause subscriptions when page is hidden to save battery/data
   useEffect(() => {
@@ -121,8 +146,8 @@ export function useRealtimeSubscription<T extends object>({
       }
     }
 
-    // Only subscribe when enabled AND visible (pause when backgrounded)
-    if (!enabled || !isVisible) {
+    // Only subscribe when enabled AND visible AND deferral complete
+    if (!enabled || !isVisible || !isDeferralComplete) {
       // Clean up existing subscription if we're pausing
       cleanupExisting().then(() => {
         if (isActive) {
@@ -209,7 +234,7 @@ export function useRealtimeSubscription<T extends object>({
       setIsConnected(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- instanceId from useId() is stable for component lifetime
-  }, [table, schema, filter, enabled, isVisible, handleChange])
+  }, [table, schema, filter, enabled, isVisible, isDeferralComplete, handleChange])
 
   return {
     isConnected,

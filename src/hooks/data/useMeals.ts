@@ -6,6 +6,10 @@
  * Abstracts meal data fetching and mutations for both demo and production modes.
  * Supports week-based filtering for week planner views.
  *
+ * PERFORMANCE: Uses optimistic updates for instant UI feedback.
+ * When a parent sets a meal, the UI updates immediately while
+ * the server sync happens in the background. Rollback on failure.
+ *
  * Loading state is derived to avoid UI flash:
  * - householdLoading: waiting for household to load
  * - needsFetch: household loaded but fetch for current params not done
@@ -14,8 +18,9 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useDataSource } from './useDataSource'
-import { useHousehold } from './useHousehold'
+import { useHousehold, useHouseholdId } from './useHousehold'
 import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealtimeSubscription'
+import { generateTempId, isTempId } from '@/hooks/useOptimisticMutation'
 import { formatDateISO } from '@/lib/utils'
 import type { Meal, MealWithRecipe, Recipe } from '@/lib/types'
 
@@ -32,7 +37,9 @@ export interface UseMealsReturn {
   meals: MealWithRecipe[]
   loading: boolean
   error: string | null
-  /** Update a meal (create, update, or delete) */
+  /** Whether an optimistic update is syncing to server */
+  isSyncing: boolean
+  /** Update a meal (create, update, or delete) - instant with optimistic update */
   updateMeal: (date: string, recipeId: string | null, customMeal: string | null) => Promise<void>
   refetch: () => void
 }
@@ -43,27 +50,32 @@ export interface UseMealsReturn {
 export function useMeals(options: UseMealsOptions = {}): UseMealsReturn {
   const { startDate, endDate, recipes = [] } = options
   const { isDemo, supabase, demoState, demoMutations } = useDataSource()
-  const { household, loading: householdLoading } = useHousehold()
+  // Use JWT-based household ID for faster access
+  const householdId = useHouseholdId()
+  const { loading: householdLoading } = useHousehold()
 
   const [meals, setMeals] = useState<Meal[]>([])
   const [isFetching, setIsFetching] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
   const [lastFetchKey, setLastFetchKey] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   // Track abort controller for cleanup
   const abortControllerRef = useRef<AbortController | null>(null)
+  // Track pending optimistic updates for rollback
+  const pendingUpdatesRef = useRef<Map<string, Meal | null>>(new Map())
 
   const startDateStr = startDate ? formatDateISO(startDate) : null
   const endDateStr = endDate ? formatDateISO(endDate) : null
 
   // Memoize fetch key to prevent unnecessary re-renders
   const currentFetchKey = useMemo(
-    () => `${household?.id}-${startDateStr}-${endDateStr}`,
-    [household?.id, startDateStr, endDateStr]
+    () => `${householdId}-${startDateStr}-${endDateStr}`,
+    [householdId, startDateStr, endDateStr]
   )
 
   const fetchData = useCallback(async () => {
-    if (isDemo || !supabase || !household?.id) return
+    if (isDemo || !supabase || !householdId) return
 
     // Abort any pending request
     abortControllerRef.current?.abort()
@@ -77,7 +89,7 @@ export function useMeals(options: UseMealsOptions = {}): UseMealsReturn {
       let query = supabase
         .from('meals')
         .select('*, recipe:recipes(*)')
-        .eq('household_id', household.id)
+        .eq('household_id', householdId)
 
       if (startDateStr) {
         query = query.gte('date', startDateStr)
@@ -110,7 +122,7 @@ export function useMeals(options: UseMealsOptions = {}): UseMealsReturn {
         setIsFetching(false)
       }
     }
-  }, [isDemo, supabase, household?.id, startDateStr, endDateStr, currentFetchKey])
+  }, [isDemo, supabase, householdId, startDateStr, endDateStr, currentFetchKey])
 
   // Debounced refetch for realtime - prevents thundering herd when multiple changes come in
   const realtimeRefetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -135,14 +147,14 @@ export function useMeals(options: UseMealsOptions = {}): UseMealsReturn {
   // Subscribe to realtime changes for instant sync between parents
   useRealtimeSubscription<Meal>({
     table: 'meals',
-    filter: household?.id ? createHouseholdFilter(household.id) : undefined,
-    enabled: !isDemo && !!household?.id,
+    filter: householdId ? createHouseholdFilter(householdId) : undefined,
+    enabled: !isDemo && !!householdId,
     onAny: debouncedRefetch,
   })
 
   // Fetch when household or date range changes
   useEffect(() => {
-    if (!isDemo && household?.id && lastFetchKey !== currentFetchKey) {
+    if (!isDemo && householdId && lastFetchKey !== currentFetchKey) {
       fetchData()
     }
 
@@ -150,9 +162,10 @@ export function useMeals(options: UseMealsOptions = {}): UseMealsReturn {
     return () => {
       abortControllerRef.current?.abort()
     }
-  }, [isDemo, household?.id, lastFetchKey, currentFetchKey, fetchData])
+  }, [isDemo, householdId, lastFetchKey, currentFetchKey, fetchData])
 
-  // Update meal mutation
+  // Update meal mutation with OPTIMISTIC UPDATE
+  // UI updates instantly, server sync happens in background
   const updateMeal = useCallback(async (
     date: string,
     recipeId: string | null,
@@ -163,53 +176,115 @@ export function useMeals(options: UseMealsOptions = {}): UseMealsReturn {
       return
     }
 
-    if (!supabase || !household?.id) return
+    if (!supabase || !householdId) return
 
+    const existingMeal = meals.find(m => m.date === date)
+
+    // 1. OPTIMISTIC UPDATE - instant UI feedback
+    if (recipeId || customMeal) {
+      if (existingMeal) {
+        // Update existing meal optimistically
+        pendingUpdatesRef.current.set(date, existingMeal)
+        setMeals(prev => prev.map(m =>
+          m.date === date
+            ? { ...m, recipe_id: recipeId, custom_meal: customMeal }
+            : m
+        ))
+      } else {
+        // Insert new meal optimistically with temp ID
+        pendingUpdatesRef.current.set(date, null) // null = was insert
+        const tempMeal: Meal = {
+          id: generateTempId(),
+          household_id: householdId,
+          date,
+          recipe_id: recipeId,
+          custom_meal: customMeal,
+          notes: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }
+        setMeals(prev => [...prev, tempMeal])
+      }
+    } else {
+      // Delete optimistically
+      if (existingMeal) {
+        pendingUpdatesRef.current.set(date, existingMeal)
+        setMeals(prev => prev.filter(m => m.date !== date))
+      }
+    }
+
+    // 2. SYNC TO SERVER in background
+    setIsSyncing(true)
     try {
-      // Check if meal exists for this date
-      const { data: existing } = await supabase
-        .from('meals')
-        .select('id')
-        .eq('household_id', household.id)
-        .eq('date', date)
-        .single()
-
-      if (existing) {
+      if (existingMeal && !isTempId(existingMeal.id)) {
         if (recipeId || customMeal) {
           // Update
-          await supabase
+          const { error } = await supabase
             .from('meals')
             .update({
               recipe_id: recipeId,
               custom_meal: customMeal,
+              updated_at: new Date().toISOString(),
             })
-            .eq('id', existing.id)
+            .eq('id', existingMeal.id)
+          if (error) throw error
         } else {
           // Delete
-          await supabase
+          const { error } = await supabase
             .from('meals')
             .delete()
-            .eq('id', existing.id)
+            .eq('id', existingMeal.id)
+          if (error) throw error
         }
       } else if (recipeId || customMeal) {
         // Insert
-        await supabase
+        const { data, error } = await supabase
           .from('meals')
           .insert({
-            household_id: household.id,
+            household_id: householdId,
             date,
             recipe_id: recipeId,
             custom_meal: customMeal,
           })
+          .select()
+          .single()
+        if (error) throw error
+
+        // Replace temp ID with real ID
+        if (data) {
+          setMeals(prev => prev.map(m =>
+            m.date === date && isTempId(m.id)
+              ? { ...m, id: data.id }
+              : m
+          ))
+        }
       }
 
-      // Refetch
-      await fetchData()
+      // Success - clear pending update
+      pendingUpdatesRef.current.delete(date)
     } catch (err) {
       console.error('Error updating meal:', err)
+
+      // 3. ROLLBACK on failure
+      const originalMeal = pendingUpdatesRef.current.get(date)
+      if (originalMeal === null) {
+        // Was an insert - remove the optimistic entry
+        setMeals(prev => prev.filter(m => !(m.date === date && isTempId(m.id))))
+      } else if (originalMeal) {
+        // Was an update or delete - restore original
+        setMeals(prev => {
+          const withoutCurrent = prev.filter(m => m.date !== date)
+          return [...withoutCurrent, originalMeal]
+        })
+      }
+      pendingUpdatesRef.current.delete(date)
+
+      setError(err instanceof Error ? err.message : 'Kunne ikke lagre')
       throw err
+    } finally {
+      setIsSyncing(false)
     }
-  }, [isDemo, supabase, household?.id, demoMutations, fetchData])
+  }, [isDemo, supabase, householdId, demoMutations, meals])
 
   // Hydrate meals with recipe details
   const mealsWithRecipes = useMemo((): MealWithRecipe[] => {
@@ -242,19 +317,21 @@ export function useMeals(options: UseMealsOptions = {}): UseMealsReturn {
       meals: mealsWithRecipes,
       loading: false,
       error: null,
+      isSyncing: false,
       updateMeal,
       refetch: () => {}, // No-op in demo
     }
   }
 
   // Derive loading state
-  const needsFetch = !!household?.id && lastFetchKey !== currentFetchKey && !isFetching
+  const needsFetch = !!householdId && lastFetchKey !== currentFetchKey && !isFetching
   const loading = householdLoading || needsFetch || isFetching
 
   return {
     meals: mealsWithRecipes,
     loading,
     error,
+    isSyncing,
     updateMeal,
     refetch: fetchData,
   }

@@ -4,13 +4,13 @@ import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useEffect, useState, useMemo, useCallback } from 'react'
-import { User } from '@supabase/supabase-js'
 import { useTranslation } from '@/lib/i18n/context'
 import { TransitionLink } from './TransitionLink'
 import { usePrefetchRoutes, KEY_ROUTES, SECONDARY_ROUTES } from '@/hooks/usePrefetchRoutes'
 import { useIsDemo } from '@/lib/demo/context'
 import { clearAllCache } from '@/lib/cache'
 import { clearAllChanges } from '@/lib/offline-queue'
+import { useAuthState } from '@/hooks/useAuthState'
 
 // Notification badge component
 function NotificationBadge({ count }: { count: number }) {
@@ -130,8 +130,8 @@ function HomeControlIcon() {
 
 export function Header() {
   const pathname = usePathname()
-  const [user, setUser] = useState<User | null>(null)
-  const [isAdmin, setIsAdmin] = useState(false)
+  // Use JWT-based auth state for instant access (no API call)
+  const { user, isAdmin, householdId } = useAuthState()
   const [hasHomeControl, setHasHomeControl] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
@@ -179,59 +179,60 @@ export function Header() {
     setNotificationCount(count || 0)
   }, [supabase])
 
+  // Check home control accounts (deferred - not critical for initial render)
   useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      setUser(user)
-
-      // Check admin status from JWT app_metadata (set during login by syncUserAdminStatus)
-      // This avoids RLS-related issues with querying allowed_emails
-      setIsAdmin(user?.app_metadata?.is_admin === true)
-
-      // Check if user has home control accounts
-      if (user) {
-        const { data: accounts } = await supabase
-          .rpc('get_household_home_control_accounts')
-        setHasHomeControl(accounts && accounts.length > 0)
-
-        // Fetch notification count
-        fetchNotificationCount()
-      }
+    if (!user || !householdId) {
+      setHasHomeControl(false)
+      return
     }
-    getUser()
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-      // Check admin status from JWT app_metadata
-      setIsAdmin(session?.user?.app_metadata?.is_admin === true)
+    // Defer this check to not block initial render
+    const timeoutId = setTimeout(async () => {
+      const { data: accounts } = await supabase
+        .rpc('get_household_home_control_accounts')
+      setHasHomeControl(accounts && accounts.length > 0)
+    }, 100)
 
-      // Refresh notification count on auth change
-      if (session?.user) {
-        fetchNotificationCount()
-      } else {
-        setNotificationCount(0)
-      }
-    })
+    return () => clearTimeout(timeoutId)
+  }, [user, householdId, supabase])
 
-    // Subscribe to notification changes for real-time updates
-    const notificationChannel = supabase
-      .channel('notification-count')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'event_change_notifications',
-        },
-        () => fetchNotificationCount()
-      )
-      .subscribe()
+  // Fetch notifications and set up realtime subscription (deferred)
+  useEffect(() => {
+    if (!user) {
+      setNotificationCount(0)
+      return
+    }
+
+    // Defer notification fetch to not block initial render
+    const timeoutId = setTimeout(() => {
+      fetchNotificationCount()
+    }, 200)
+
+    // Subscribe to notification changes for real-time updates (deferred more)
+    let notificationChannel: ReturnType<typeof supabase.channel> | null = null
+    const subscriptionTimeout = setTimeout(() => {
+      notificationChannel = supabase
+        .channel('notification-count')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'event_change_notifications',
+          },
+          () => fetchNotificationCount()
+        )
+        .subscribe()
+    }, 500)
 
     return () => {
-      subscription.unsubscribe()
-      notificationChannel.unsubscribe()
+      clearTimeout(timeoutId)
+      clearTimeout(subscriptionTimeout)
+      if (notificationChannel) {
+        notificationChannel.unsubscribe()
+      }
     }
-  }, [supabase, fetchNotificationCount])
+  }, [user, supabase, fetchNotificationCount])
 
   const handleLogout = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault()

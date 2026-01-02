@@ -175,6 +175,36 @@ export async function setCache<T>(key: string, data: T, retryCount = 0): Promise
 }
 
 /**
+ * Delete a specific cache entry by key
+ * Use when cached data is known to be stale (e.g., membership revoked)
+ */
+export async function deleteCache(key: string, retryCount = 0): Promise<void> {
+  try {
+    const db = await openDB()
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite')
+      const store = tx.objectStore(STORE_NAME)
+
+      // Handle transaction abort (connection issue)
+      tx.onabort = () => reject(tx.error)
+
+      const request = store.delete(key)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve()
+    })
+  } catch (error) {
+    // If it's a recoverable error and we haven't retried yet, reset and retry
+    if (isRecoverableError(error) && retryCount < 1) {
+      console.log('[Cache] Recoverable error, resetting connection and retrying:', error)
+      resetConnection()
+      return deleteCache(key, retryCount + 1)
+    }
+    console.warn('[Cache] Failed to delete cache:', error)
+  }
+}
+
+/**
  * Clear all cache entries for a household
  * Use when user logs out or switches household
  */

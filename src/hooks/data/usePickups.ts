@@ -6,6 +6,10 @@
  * Abstracts pickup data fetching and mutations for both demo and production modes.
  * Supports week-based filtering for week planner views.
  *
+ * PERFORMANCE: Uses optimistic updates for instant UI feedback.
+ * When a parent assigns a pickup, the UI updates immediately while
+ * the server sync happens in the background. Rollback on failure.
+ *
  * Loading state is derived to avoid UI flash:
  * - householdLoading: waiting for household to load
  * - needsFetch: household loaded but fetch for current params not done
@@ -14,8 +18,9 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useDataSource } from './useDataSource'
-import { useHousehold } from './useHousehold'
+import { useHousehold, useHouseholdId } from './useHousehold'
 import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealtimeSubscription'
+import { generateTempId, isTempId } from '@/hooks/useOptimisticMutation'
 import { formatDateISO } from '@/lib/utils'
 import type { Pickup, PickupWithDetails, Child, HouseholdMember } from '@/lib/types'
 
@@ -34,7 +39,9 @@ export interface UsePickupsReturn {
   pickups: PickupWithDetails[]
   loading: boolean
   error: string | null
-  /** Update a pickup (create, update, or delete) */
+  /** Whether an optimistic update is syncing to server */
+  isSyncing: boolean
+  /** Update a pickup (create, update, or delete) - instant with optimistic update */
   updatePickup: (childId: string, date: string, pickerId: string | null, time?: string | null) => Promise<void>
   refetch: () => void
 }
@@ -45,27 +52,32 @@ export interface UsePickupsReturn {
 export function usePickups(options: UsePickupsOptions = {}): UsePickupsReturn {
   const { startDate, endDate, children = [], members = [] } = options
   const { isDemo, supabase, demoState, demoMutations } = useDataSource()
-  const { household, loading: householdLoading } = useHousehold()
+  // Use JWT-based household ID for faster access
+  const householdId = useHouseholdId()
+  const { loading: householdLoading } = useHousehold()
 
   const [pickups, setPickups] = useState<Pickup[]>([])
   const [isFetching, setIsFetching] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
   const [lastFetchKey, setLastFetchKey] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   // Track abort controller for cleanup
   const abortControllerRef = useRef<AbortController | null>(null)
+  // Track pending optimistic updates for rollback
+  const pendingUpdatesRef = useRef<Map<string, Pickup | null>>(new Map())
 
   const startDateStr = startDate ? formatDateISO(startDate) : null
   const endDateStr = endDate ? formatDateISO(endDate) : null
 
   // Memoize fetch key to prevent unnecessary re-renders
   const currentFetchKey = useMemo(
-    () => `${household?.id}-${startDateStr}-${endDateStr}`,
-    [household?.id, startDateStr, endDateStr]
+    () => `${householdId}-${startDateStr}-${endDateStr}`,
+    [householdId, startDateStr, endDateStr]
   )
 
   const fetchData = useCallback(async () => {
-    if (isDemo || !supabase || !household?.id) return
+    if (isDemo || !supabase || !householdId) return
 
     // Abort any pending request
     abortControllerRef.current?.abort()
@@ -79,7 +91,7 @@ export function usePickups(options: UsePickupsOptions = {}): UsePickupsReturn {
       let query = supabase
         .from('pickups')
         .select('*')
-        .eq('household_id', household.id)
+        .eq('household_id', householdId)
 
       if (startDateStr) {
         query = query.gte('date', startDateStr)
@@ -97,7 +109,23 @@ export function usePickups(options: UsePickupsOptions = {}): UsePickupsReturn {
 
       if (fetchError) throw fetchError
 
-      setPickups(data || [])
+      // Merge server data with any pending optimistic updates
+      // This ensures optimistic changes aren't lost during refetch
+      let mergedData = data || []
+      pendingUpdatesRef.current.forEach((originalPickup, key) => {
+        const [childId, date] = key.split('|')
+        // Keep optimistic version if still pending
+        const serverVersion = mergedData.find(p => p.child_id === childId && p.date === date)
+        if (!serverVersion && originalPickup === null) {
+          // Optimistic insert not yet on server - keep the temp version
+          const tempPickup = pickups.find(p => p.child_id === childId && p.date === date && isTempId(p.id))
+          if (tempPickup) {
+            mergedData = [...mergedData, tempPickup]
+          }
+        }
+      })
+
+      setPickups(mergedData)
       setLastFetchKey(currentFetchKey)
     } catch (err) {
       // Ignore abort errors
@@ -112,7 +140,7 @@ export function usePickups(options: UsePickupsOptions = {}): UsePickupsReturn {
         setIsFetching(false)
       }
     }
-  }, [isDemo, supabase, household?.id, startDateStr, endDateStr, currentFetchKey])
+  }, [isDemo, supabase, householdId, startDateStr, endDateStr, currentFetchKey, pickups])
 
   // Debounced refetch for realtime - prevents thundering herd when multiple changes come in
   const realtimeRefetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -137,14 +165,14 @@ export function usePickups(options: UsePickupsOptions = {}): UsePickupsReturn {
   // Subscribe to realtime changes for instant sync between parents
   useRealtimeSubscription<Pickup>({
     table: 'pickups',
-    filter: household?.id ? createHouseholdFilter(household.id) : undefined,
-    enabled: !isDemo && !!household?.id,
+    filter: householdId ? createHouseholdFilter(householdId) : undefined,
+    enabled: !isDemo && !!householdId,
     onAny: debouncedRefetch,
   })
 
   // Fetch when household or date range changes
   useEffect(() => {
-    if (!isDemo && household?.id && lastFetchKey !== currentFetchKey) {
+    if (!isDemo && householdId && lastFetchKey !== currentFetchKey) {
       fetchData()
     }
 
@@ -152,9 +180,10 @@ export function usePickups(options: UsePickupsOptions = {}): UsePickupsReturn {
     return () => {
       abortControllerRef.current?.abort()
     }
-  }, [isDemo, household?.id, lastFetchKey, currentFetchKey, fetchData])
+  }, [isDemo, householdId, lastFetchKey, currentFetchKey, fetchData])
 
-  // Update pickup mutation
+  // Update pickup mutation with OPTIMISTIC UPDATE
+  // UI updates instantly, server sync happens in background
   const updatePickup = useCallback(async (
     childId: string,
     date: string,
@@ -166,51 +195,116 @@ export function usePickups(options: UsePickupsOptions = {}): UsePickupsReturn {
       return
     }
 
-    if (!supabase || !household?.id) return
+    if (!supabase || !householdId) return
 
+    const updateKey = `${childId}|${date}`
+    const existingPickup = pickups.find(p => p.child_id === childId && p.date === date)
+
+    // 1. OPTIMISTIC UPDATE - instant UI feedback
+    if (pickerId) {
+      if (existingPickup) {
+        // Update existing pickup optimistically
+        pendingUpdatesRef.current.set(updateKey, existingPickup)
+        setPickups(prev => prev.map(p =>
+          p.child_id === childId && p.date === date
+            ? { ...p, picker_id: pickerId }
+            : p
+        ))
+      } else {
+        // Insert new pickup optimistically with temp ID
+        pendingUpdatesRef.current.set(updateKey, null) // null = was insert
+        const tempPickup: Pickup = {
+          id: generateTempId(),
+          household_id: householdId,
+          child_id: childId,
+          date,
+          picker_id: pickerId,
+          notes: null,
+          synced_to_calendar: false,
+          calendar_event_id: null,
+          sync_to_work_calendar: false,
+          work_calendar_event_id: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }
+        setPickups(prev => [...prev, tempPickup])
+      }
+    } else {
+      // Delete optimistically
+      if (existingPickup) {
+        pendingUpdatesRef.current.set(updateKey, existingPickup)
+        setPickups(prev => prev.filter(p => !(p.child_id === childId && p.date === date)))
+      }
+    }
+
+    // 2. SYNC TO SERVER in background
+    setIsSyncing(true)
     try {
-      // Check if pickup exists
-      const { data: existing } = await supabase
-        .from('pickups')
-        .select('id')
-        .eq('household_id', household.id)
-        .eq('child_id', childId)
-        .eq('date', date)
-        .single()
-
-      if (existing) {
+      if (existingPickup && !isTempId(existingPickup.id)) {
         if (pickerId) {
           // Update
-          await supabase
+          const { error } = await supabase
             .from('pickups')
-            .update({ picker_id: pickerId })
-            .eq('id', existing.id)
+            .update({ picker_id: pickerId, updated_at: new Date().toISOString() })
+            .eq('id', existingPickup.id)
+          if (error) throw error
         } else {
           // Delete
-          await supabase
+          const { error } = await supabase
             .from('pickups')
             .delete()
-            .eq('id', existing.id)
+            .eq('id', existingPickup.id)
+          if (error) throw error
         }
       } else if (pickerId) {
         // Insert
-        await supabase
+        const { data, error } = await supabase
           .from('pickups')
           .insert({
-            household_id: household.id,
+            household_id: householdId,
             child_id: childId,
             date,
             picker_id: pickerId,
           })
+          .select()
+          .single()
+        if (error) throw error
+
+        // Replace temp ID with real ID
+        if (data) {
+          setPickups(prev => prev.map(p =>
+            p.child_id === childId && p.date === date && isTempId(p.id)
+              ? { ...p, id: data.id }
+              : p
+          ))
+        }
       }
 
-      // Refetch
-      await fetchData()
+      // Success - clear pending update
+      pendingUpdatesRef.current.delete(updateKey)
     } catch (err) {
       console.error('Error updating pickup:', err)
+
+      // 3. ROLLBACK on failure
+      const originalPickup = pendingUpdatesRef.current.get(updateKey)
+      if (originalPickup === null) {
+        // Was an insert - remove the optimistic entry
+        setPickups(prev => prev.filter(p => !(p.child_id === childId && p.date === date && isTempId(p.id))))
+      } else if (originalPickup) {
+        // Was an update or delete - restore original
+        setPickups(prev => {
+          const withoutCurrent = prev.filter(p => !(p.child_id === childId && p.date === date))
+          return [...withoutCurrent, originalPickup]
+        })
+      }
+      pendingUpdatesRef.current.delete(updateKey)
+
+      setError(err instanceof Error ? err.message : 'Kunne ikke lagre')
       throw err
+    } finally {
+      setIsSyncing(false)
     }
-  }, [isDemo, supabase, household?.id, demoMutations, fetchData])
+  }, [isDemo, supabase, householdId, demoMutations, pickups])
 
   // Hydrate pickups with child and picker details
   const pickupsWithDetails = useMemo((): PickupWithDetails[] => {
@@ -238,19 +332,21 @@ export function usePickups(options: UsePickupsOptions = {}): UsePickupsReturn {
       pickups: pickupsWithDetails,
       loading: false,
       error: null,
+      isSyncing: false,
       updatePickup,
       refetch: () => {}, // No-op in demo
     }
   }
 
   // Derive loading state
-  const needsFetch = !!household?.id && lastFetchKey !== currentFetchKey && !isFetching
+  const needsFetch = !!householdId && lastFetchKey !== currentFetchKey && !isFetching
   const loading = householdLoading || needsFetch || isFetching
 
   return {
     pickups: pickupsWithDetails,
     loading,
     error,
+    isSyncing,
     updatePickup,
     refetch: fetchData,
   }

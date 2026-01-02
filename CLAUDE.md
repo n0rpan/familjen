@@ -1989,6 +1989,87 @@ if (!hasAuthCookie(request)) {
 }
 ```
 
+### JWT-Based Household Access
+
+Household ID is synced to the JWT `app_metadata` on login for instant access without async calls:
+
+```typescript
+// src/hooks/useAuthState.ts - instant access from JWT
+export function useAuthState(): AuthState {
+  // Uses getSession() from local storage (fast, no network)
+  const householdId = session?.user?.app_metadata?.household_id
+}
+
+// src/hooks/data/useHousehold.ts - fast access
+export function useHouseholdId(): string | null {
+  const { householdId } = useAuthState()  // Instant from JWT
+  return householdId
+}
+```
+
+**Security:** RLS policies on Supabase validate household_id server-side. The JWT value is for client-side optimization only - all data access goes through Supabase which enforces proper authorization.
+
+### IndexedDB Caching (Stale-While-Revalidate)
+
+Household data is cached in IndexedDB with 5-minute TTL for instant cold starts:
+
+```typescript
+// src/lib/cache.ts
+const CACHE_TTL_MS = 5 * 60 * 1000  // 5 minutes
+
+// Read from cache, then fetch fresh in background
+const cached = await getCache<HouseholdData>(cacheKey)
+if (cached && !isStale(cached)) {
+  setData(cached)  // Instant render
+}
+fetchFresh().then(setData)  // Update in background
+```
+
+**Cache Invalidation:** Cache is cleared on logout and account deletion to prevent stale data access after access revocation:
+
+```typescript
+// Called on logout/delete account
+await Promise.all([
+  clearAllCache(),    // Clear IndexedDB
+  clearAllChanges(),  // Clear offline queue
+])
+await supabase.auth.signOut()
+```
+
+### Optimistic Updates with Rollback
+
+Mutations (pickups, meals) update UI instantly with automatic rollback on server error:
+
+```typescript
+// src/hooks/useOptimisticMutation.ts
+const { mutate, isSyncing } = useOptimisticMutation({
+  mutationFn: async (data) => await supabase.from('pickups').upsert(data),
+  onOptimisticUpdate: (data) => setPickups(prev => [...prev, data]),
+  onRollback: (data) => setPickups(prev => prev.filter(p => p.id !== data.id)),
+})
+
+// Temp IDs for optimistic inserts
+const tempId = generateTempId()  // "temp-{timestamp}-{random}"
+// After server confirms, replace temp ID with real ID
+```
+
+**Key files:**
+- `src/hooks/useOptimisticMutation.ts` - Generic optimistic mutation hook
+- `src/hooks/data/usePickups.ts` - Pickup mutations with optimistic updates
+- `src/hooks/data/useMeals.ts` - Meal mutations with optimistic updates
+
+### Deferred Realtime Subscriptions
+
+Realtime subscriptions are deferred to not block initial render:
+
+```typescript
+// src/hooks/useRealtimeSubscription.ts
+useRealtimeSubscription({
+  table: 'pickups',
+  deferMs: 500,  // Wait 500ms after mount before subscribing
+})
+```
+
 ### Component Memoization
 
 Key patterns used for performance:

@@ -4,6 +4,7 @@ import { useMemo, useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useWeekData, useHousehold, getTodaySummaryFromWeekData } from '@/hooks/data'
+import { usePrefetchAdjacentWeeks } from '@/hooks/usePrefetchAdjacentWeeks'
 import { HomePageContent } from '@/components/home/HomePageContent'
 import { TransitionLink } from '@/components/TransitionLink'
 import { useLanguage } from '@/lib/i18n/context'
@@ -19,6 +20,14 @@ export default function HomePage() {
   // Use the unified data hooks - they work for both demo and production
   const weekData = useWeekData()
   const { household, currentMember, loading: householdLoading } = useHousehold()
+
+  // Prefetch adjacent weeks for instant navigation to /uke
+  usePrefetchAdjacentWeeks({
+    householdId: household?.id || null,
+    weekOffset: 0, // Home page always shows current week
+    loading: weekData.loading || householdLoading,
+    enabled: !isDemo, // Only prefetch in production
+  })
 
   // Auth state management for production mode
   const [authChecked, setAuthChecked] = useState(isDemo)

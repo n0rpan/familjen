@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Child, HouseholdMember, Household, ChildColor, SettingsCacheData } from '@/lib/types'
 import { getCachedSettingsData, getSettingsCacheKey } from '@/lib/prefetch/fetchers'
-import { setCache } from '@/lib/cache'
+import { setCache, clearAllCache } from '@/lib/cache'
+import { clearAllChanges } from '@/lib/offline-queue'
 import { CHILD_COLORS } from '@/lib/colors'
 import { User } from '@supabase/supabase-js'
 import { useLanguage } from '@/lib/i18n/context'
@@ -594,6 +595,12 @@ export function SettingsPageContent() {
         showMessage('error', t.errors.deleteFailed)
         return
       }
+
+      // Clear local caches before logout to prevent stale data
+      await Promise.all([
+        clearAllCache(),
+        clearAllChanges(),
+      ]).catch(() => {})
 
       // Sign out and redirect to login
       await supabase.auth.signOut()
