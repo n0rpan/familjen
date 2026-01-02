@@ -663,20 +663,10 @@ export class ToshibaClient {
     // Allow extended range (5-30°C)
     const temp = Math.max(5, Math.min(30, temperature))
 
-    // Detect if currently in 8°C mode
+    // Detect if currently in 8°C mode (for exiting only - entering not yet supported)
     const isCurrentlyIn8CMode = currentTemperature !== undefined && currentTemperature < 17
-    // Determine if target temp requires 8°C mode
-    const needsToEnter8CMode = temp < 17
-    const needsToExit8CMode = isCurrentlyIn8CMode && temp >= 17
 
-    // Debug log always (temporary for debugging 8°C mode)
-    console.log('[ToshibaClient] Temperature change:', { temp, currentTemperature, isCurrentlyIn8CMode, needsToEnter8CMode, needsToExit8CMode })
-
-    if (needsToEnter8CMode) {
-      // Enter or stay in 8°C mode: send HEATING_8C (0x04) + actual temp
-      console.log('[ToshibaClient] Entering 8°C mode: temp=', temp, 'meritA=0x04')
-      await this.sendCommand(acId, { temperature: temp, meritA: 0x04 })
-    } else if (needsToExit8CMode) {
+    if (isCurrentlyIn8CMode) {
       // Exit 8°C mode: send OFF (0x00) + normal temp
       this.log('Exiting 8°C mode: setting temperature', temp, 'with meritA=0x00 for device:', acId)
       await this.sendCommand(acId, { temperature: temp, meritA: 0x00 })
@@ -851,9 +841,6 @@ export class ToshibaClient {
 
     const targetId = this.getDeviceUniqueId(acId)!
     const stateHex = this.buildCommandState(options)
-
-    // Debug log always (temporary)
-    console.log('[ToshibaClient] Sending command - options:', JSON.stringify(options), 'stateHex:', stateHex)
 
     const message = {
       sourceId: this.deviceId,
