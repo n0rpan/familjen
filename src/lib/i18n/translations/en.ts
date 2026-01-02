@@ -47,6 +47,7 @@ export const en: TranslationStrings = {
     day: 'day',
     days: 'days',
     week: 'Week',
+    upcomingDays: 'Upcoming days',
     month: 'Month',
     year: 'Year',
     dismiss: 'Dismiss',

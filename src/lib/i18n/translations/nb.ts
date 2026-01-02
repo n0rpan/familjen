@@ -47,6 +47,7 @@ export const nb: TranslationStrings = {
     day: 'dag',
     days: 'dager',
     week: 'Uke',
+    upcomingDays: 'Kommende dager',
     month: 'Måned',
     year: 'År',
     dismiss: 'Avvis',

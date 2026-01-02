@@ -47,6 +47,7 @@ export const sv: TranslationStrings = {
     day: 'dag',
     days: 'dagar',
     week: 'Vecka',
+    upcomingDays: 'Kommande dagar',
     month: 'Månad',
     year: 'År',
     dismiss: 'Avvisa',

@@ -55,6 +55,7 @@ export interface TranslationStrings {
     day: string
     days: string
     week: string
+    upcomingDays: string
     month: string
     year: string
     dismiss: string
