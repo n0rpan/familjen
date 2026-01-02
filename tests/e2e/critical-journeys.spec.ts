@@ -353,12 +353,23 @@ test.describe('Mobile Viewport', () => {
     await page.goto('/uke')
     await page.waitForLoadState('networkidle')
 
-    // Should not have horizontal scroll
-    const hasHorizontalScroll = await page.evaluate(() => {
-      return document.documentElement.scrollWidth > document.documentElement.clientWidth
+    // Week page with 7 days SHOULD have horizontal scroll for readability
+    // This is intentional - cramming 7 columns into 390px makes them unreadable
+    const weekGrid = page.locator('[class*="overflow-x-auto"]')
+    await expect(weekGrid, 'Week grid should have horizontal scroll container').toBeVisible()
+
+    // Verify columns are readable width (at least 80px each)
+    const columnWidths = await page.evaluate(() => {
+      const cols = document.querySelectorAll('table colgroup col')
+      return Array.from(cols).slice(1).map(col => {
+        const style = (col as HTMLElement).style.minWidth
+        return style ? parseInt(style, 10) : 0
+      })
     })
 
-    expect(hasHorizontalScroll).toBeFalsy()
+    // All day columns should have minimum width for readability
+    const hasReadableColumns = columnWidths.length > 0 && columnWidths.every(w => w >= 80)
+    expect(hasReadableColumns, 'Week columns should be at least 80px wide for readability').toBeTruthy()
 
     // Navigation should be accessible
     await expect(page.locator('nav')).toBeVisible()

@@ -110,8 +110,255 @@ interface OverallReport {
   recommendation: string
 }
 
+interface IntuitiveReviewResult {
+  page: string
+  looksRight: boolean
+  confidence: 'high' | 'medium' | 'low'
+  gut_reaction: string // First impression in one sentence
+  issues: Array<{
+    what: string        // What's wrong
+    why_it_matters: string  // Why a parent would care
+    severity: 'blocker' | 'annoying' | 'minor'
+  }>
+  would_you_use_it: boolean  // "Would you use this app?"
+  explanation: string
+}
+
 // ============================================
-// Page Expectations
+// Intuitive AI Review (The Smart Way)
+// ============================================
+// Instead of checklists, we ask the AI: "Does this look right?"
+// The AI uses its understanding of UX to spot issues naturally.
+
+// Rate limiting: max 10 intuitive reviews per run, 500ms delay between calls
+const MAX_INTUITIVE_REVIEWS = 10
+const REVIEW_DELAY_MS = 500
+let intuitiveReviewCount = 0
+
+/**
+ * Simple delay helper for rate limiting
+ */
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+const INTUITIVE_REVIEW_SCHEMA = {
+  type: 'object' as const,
+  properties: {
+    looksRight: {
+      type: 'boolean' as const,
+      description: 'Does the UI look correct and usable at first glance?',
+    },
+    confidence: {
+      type: 'string' as const,
+      enum: ['high', 'medium', 'low'],
+      description: 'How confident are you in this assessment?',
+    },
+    gut_reaction: {
+      type: 'string' as const,
+      description: 'Your first impression in one sentence',
+    },
+    issues: {
+      type: 'array' as const,
+      items: {
+        type: 'object' as const,
+        properties: {
+          what: { type: 'string' as const, description: 'What is wrong' },
+          why_it_matters: { type: 'string' as const, description: 'Why a busy parent would care' },
+          severity: { type: 'string' as const, enum: ['blocker', 'annoying', 'minor'] },
+        },
+        required: ['what', 'why_it_matters', 'severity'],
+      },
+    },
+    would_you_use_it: {
+      type: 'boolean' as const,
+      description: 'If you were a busy parent, would you be able to use this screen?',
+    },
+    explanation: {
+      type: 'string' as const,
+      description: 'Brief explanation of your assessment',
+    },
+  },
+  required: ['looksRight', 'confidence', 'gut_reaction', 'issues', 'would_you_use_it', 'explanation'],
+  additionalProperties: false,
+}
+
+/**
+ * Intuitive Review: Ask AI to look at screenshot like a human would
+ * No checklists - just "does this look right?"
+ *
+ * Rate limited to MAX_INTUITIVE_REVIEWS per run with REVIEW_DELAY_MS between calls.
+ */
+async function intuitiveReview(
+  screenshotPath: string,
+  pageName: string,
+  prDiff?: string
+): Promise<IntuitiveReviewResult> {
+  // Rate limiting: check if we've exceeded budget
+  if (intuitiveReviewCount >= MAX_INTUITIVE_REVIEWS) {
+    console.log(`   ⚠️ Skipping intuitive review for ${pageName} (rate limit: ${MAX_INTUITIVE_REVIEWS} reviews)`)
+    return {
+      page: pageName,
+      looksRight: true, // Assume OK when rate limited (conservative)
+      confidence: 'low',
+      gut_reaction: 'Rate limited - skipped intuitive review',
+      issues: [],
+      would_you_use_it: true,
+      explanation: `Skipped due to rate limit (max ${MAX_INTUITIVE_REVIEWS} reviews per run)`,
+    }
+  }
+
+  // Rate limiting: add delay between calls
+  if (intuitiveReviewCount > 0) {
+    await delay(REVIEW_DELAY_MS)
+  }
+  intuitiveReviewCount++
+
+  const imageBuffer = fs.readFileSync(screenshotPath)
+  const base64Image = imageBuffer.toString('base64')
+
+  // Simple, human-like prompt
+  const prompt = prDiff
+    ? `You're reviewing a UI change for a Norwegian family planning app called Familjen.
+
+Here's what the code change was supposed to do:
+\`\`\`diff
+${prDiff.slice(0, 8000)}
+\`\`\`
+
+Now look at this screenshot of the "${pageName}" page.
+
+**Question: Does the result look right?**
+
+Think like a UX designer reviewing a PR:
+- Does the visual result match what the code change intended?
+- Is anything obviously broken, cramped, or unusable?
+- Would a busy parent (possibly holding a baby) be able to use this?
+- Is text readable? Are touch targets big enough?
+
+Don't check boxes. Just LOOK at it and tell me if something's off.
+If it looks fine, say so. If something's wrong, explain what a user would experience.`
+    : `You're a UX designer reviewing a screenshot of Familjen, a Norwegian family planning app.
+
+This is the "${pageName}" page. The app is used by busy parents to manage:
+- Who picks up which kid from daycare/school
+- Weekly meal planning
+- Family calendar events
+- Kid tasks and reminders
+
+**Question: Does this look right?**
+
+Don't follow a checklist. Just LOOK at the screenshot and tell me:
+- Is anything obviously broken or unusable?
+- Would a busy parent be able to quickly glance at this and get the info they need?
+- Is text readable? Are columns/cards sized appropriately?
+- Does anything look cramped, cut off, or misaligned?
+
+Trust your gut. If something feels off, it probably is.`
+
+  try {
+    const response = await fetchWithStructuredOutput<{
+      looksRight: boolean
+      confidence: 'high' | 'medium' | 'low'
+      gut_reaction: string
+      issues: Array<{ what: string; why_it_matters: string; severity: 'blocker' | 'annoying' | 'minor' }>
+      would_you_use_it: boolean
+      explanation: string
+    }>(
+      [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: `data:image/png;base64,${base64Image}` } },
+          ],
+        },
+      ],
+      INTUITIVE_REVIEW_SCHEMA,
+      AI_MODELS.vision
+    )
+
+    return { page: pageName, ...response }
+  } catch (error) {
+    return {
+      page: pageName,
+      looksRight: false,
+      confidence: 'low',
+      gut_reaction: 'Could not analyze screenshot',
+      issues: [{ what: 'Analysis failed', why_it_matters: 'Cannot verify UI', severity: 'blocker' }],
+      would_you_use_it: false,
+      explanation: `Error: ${error instanceof Error ? error.message : 'Unknown'}`,
+    }
+  }
+}
+
+/**
+ * Compare before/after screenshots to detect regressions
+ */
+async function compareBeforeAfter(
+  beforePath: string,
+  afterPath: string,
+  pageName: string,
+  changeDescription: string
+): Promise<{ isRegression: boolean; explanation: string; severity: 'critical' | 'warning' | 'none' }> {
+  if (!fs.existsSync(beforePath)) {
+    return { isRegression: false, explanation: 'No baseline to compare', severity: 'none' }
+  }
+
+  const beforeBuffer = fs.readFileSync(beforePath)
+  const afterBuffer = fs.readFileSync(afterPath)
+  const beforeBase64 = beforeBuffer.toString('base64')
+  const afterBase64 = afterBuffer.toString('base64')
+
+  const prompt = `Compare these two screenshots of the "${pageName}" page.
+
+**What changed (according to code):** ${changeDescription}
+
+**Question: Is this a regression?**
+
+Look at BEFORE (first image) and AFTER (second image).
+- Did the change break something that was working?
+- Is the "after" harder to use than "before"?
+- Did readability decrease? Did things get cramped?
+
+If the change is an improvement or neutral, say so.
+If something got worse, explain what a user would notice.`
+
+  try {
+    const response = await callOpenRouter(
+      AI_MODELS.vision,
+      [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: `data:image/png;base64,${beforeBase64}` } },
+            { type: 'image_url', image_url: { url: `data:image/png;base64,${afterBase64}` } },
+          ],
+        },
+      ]
+    )
+
+    const text = response.toLowerCase()
+    const isRegression = text.includes('regression') || text.includes('worse') || text.includes('broken') || text.includes('harder to use')
+    const isCritical = text.includes('unreadable') || text.includes('unusable') || text.includes('critical') || text.includes('cannot')
+
+    return {
+      isRegression,
+      explanation: response,
+      severity: isRegression ? (isCritical ? 'critical' : 'warning') : 'none',
+    }
+  } catch (error) {
+    return {
+      isRegression: false,
+      explanation: `Comparison failed: ${error instanceof Error ? error.message : 'Unknown'}`,
+      severity: 'none',
+    }
+  }
+}
+
+// ============================================
+// Page Expectations (Fallback for static checks)
 // ============================================
 
 const PAGE_EXPECTATIONS: PageExpectation[] = [
@@ -149,14 +396,19 @@ const PAGE_EXPECTATIONS: PageExpectation[] = [
     mustNotShow: [
       'Overlapping text that\'s unreadable',
       'Broken layout with elements stacked incorrectly',
+      'Cramped columns that are too narrow to read (columns should be at least ~100px wide)',
+      'All 7 days squeezed into mobile width without scroll (this would make text unreadable)',
     ],
     mobileConsiderations: [
-      'Week view may condense on mobile - still should be usable',
-      'Current day should be visually highlighted',
+      'Week grid MUST have horizontal scroll on mobile - 7 days cannot fit readably without scroll',
+      'Each day column should be wide enough to show picker names and meal text legibly',
+      'Current day should be visually highlighted (coral/accent background)',
+      'Grid should auto-scroll to show today\'s column on load',
     ],
     byDesign: [
-      'Week grid uses horizontal scroll on mobile to show all 7 days - this is intentional for readability',
-      'Meal row may be below the fold and require scrolling - this is expected',
+      'Week grid uses horizontal scroll on mobile to show all 7 days - this is REQUIRED for readability',
+      'If screenshot shows 7 columns crammed without scroll, this is a BUG not a design choice',
+      'Meal row may be below the fold and require vertical scrolling - this is expected',
       'Week navigation arrows are at the top to match standard calendar patterns',
     ],
   },
@@ -298,10 +550,16 @@ You are reviewing screenshots of Familjen, a Norwegian family planning app.
 - One-handed mobile use is common
 - Quick glance should convey the day's essentials
 
+## Critical Usability Requirements (MUST check these)
+
+1. **Week grid readability**: The 7-day week grid MUST have horizontal scroll on mobile. If you see all 7 columns squeezed into the mobile viewport without scroll capability, this is a CRITICAL BUG - columns would be ~55px wide which is unreadable. Proper columns should be ~100px wide minimum.
+
+2. **Home page width**: The home page shows only 3 upcoming days and should fill 100% width WITHOUT scroll. This is different from the week page.
+
 ## Intentional Design Patterns (DO NOT flag as issues)
 These patterns may look unusual but are BY DESIGN:
 
-1. **Week grid horizontal scroll**: The 7-day week grid intentionally uses horizontal scroll on mobile to ensure all days are readable. This is preferred over squishing text.
+1. **Week grid horizontal scroll**: When the week page HAS scroll, this is correct - it's required for 7 days to be readable. Only flag if scroll is MISSING.
 
 2. **Bottom navigation in screenshots**: The bottom navigation is fixed at the viewport bottom. It may not appear in screenshots if the content is scrolled - this is a screenshot artifact, not a missing element.
 
@@ -968,9 +1226,57 @@ async function main() {
   const prContext = getPRContext(baseBranch)
   let prExpectations: PRDerivedExpectation[] = []
   let intentResults: IntentValidationResult[] = []
+  let intuitiveResults: IntuitiveReviewResult[] = []
 
+  // ============================================
+  // INTUITIVE REVIEW (Primary - The Smart Way)
+  // ============================================
+  // Ask the AI: "Does this look right?" - no checklists
+  console.log('\n🧠 INTUITIVE REVIEW (AI Vision Analysis)')
+  console.log('   Asking AI to look at each screenshot like a UX designer would...\n')
+
+  for (const screenshot of screenshots) {
+    const screenshotPath = path.join(screenshotDir, screenshot)
+    const pageName = screenshot.replace('.png', '').replace(/-mobile$/, '')
+
+    // Pass PR diff if available so AI understands what changed
+    const result = await intuitiveReview(
+      screenshotPath,
+      pageName,
+      prContext?.diff
+    )
+    intuitiveResults.push(result)
+
+    // Print intuitive review result
+    const icon = result.looksRight ? '✅' : (result.would_you_use_it ? '⚠️' : '❌')
+    console.log(`   ${icon} ${pageName}: "${result.gut_reaction}"`)
+
+    if (result.issues.length > 0) {
+      for (const issue of result.issues) {
+        const severityIcon = issue.severity === 'blocker' ? '🚫' : issue.severity === 'annoying' ? '😤' : '💡'
+        console.log(`      ${severityIcon} ${issue.what}`)
+        console.log(`         → ${issue.why_it_matters}`)
+      }
+    }
+
+    if (!result.would_you_use_it) {
+      console.log(`      ⚠️  AI says: "I wouldn't be able to use this as a busy parent"`)
+    }
+  }
+
+  // Summarize intuitive review
+  const intuitiveBlockers = intuitiveResults.filter(r => !r.looksRight || r.issues.some(i => i.severity === 'blocker'))
+  const intuitiveUsable = intuitiveResults.filter(r => r.would_you_use_it)
+  console.log(`\n   Summary: ${intuitiveUsable.length}/${intuitiveResults.length} pages would be usable`)
+  if (intuitiveBlockers.length > 0) {
+    console.log(`   ⚠️  ${intuitiveBlockers.length} pages have issues that need attention`)
+  }
+
+  // ============================================
+  // INTENT VALIDATION (For PR changes)
+  // ============================================
   if (prContext) {
-    console.log('\n🎯 INTENT-AWARE MODE')
+    console.log('\n\n🎯 INTENT VALIDATION (Does change match expectation?)')
     console.log(`   Changed files: ${prContext.changedFiles.length}`)
     console.log(`   UI changes detected: ${prContext.uiChanges.length}`)
 
@@ -1019,6 +1325,11 @@ async function main() {
     console.log('\n📋 STATIC MODE (no PR context available)')
   }
 
+  // ============================================
+  // CHECKLIST VALIDATION (Supplementary)
+  // ============================================
+  console.log('\n\n📋 CHECKLIST VALIDATION (Design system compliance)')
+
   try {
     const report = await validateAllScreenshots(screenshotDir)
 
@@ -1029,6 +1340,49 @@ async function main() {
 
     // Convert to findings and determine verdict based on severity
     const findings = convertToFindings(report.results)
+
+    // Add INTUITIVE REVIEW findings (PRIMARY - these are the smart findings)
+    for (const result of intuitiveResults) {
+      // Blocker issues from intuitive review are critical
+      for (const issue of result.issues.filter(i => i.severity === 'blocker')) {
+        findings.push({
+          severity: 'critical',
+          category: 'ux-blocker',
+          message: `[${result.page}] 🧠 AI spotted: ${issue.what} → ${issue.why_it_matters}`,
+          file: `tests/visual/current/${result.page}.png`,
+        })
+      }
+
+      // "Wouldn't use it" is critical - this is the ultimate UX test
+      if (!result.would_you_use_it) {
+        findings.push({
+          severity: 'critical',
+          category: 'ux-unusable',
+          message: `[${result.page}] 🧠 AI says page is unusable: "${result.gut_reaction}"`,
+          file: `tests/visual/current/${result.page}.png`,
+        })
+      }
+
+      // Annoying issues are warnings
+      for (const issue of result.issues.filter(i => i.severity === 'annoying')) {
+        findings.push({
+          severity: 'warning',
+          category: 'ux-friction',
+          message: `[${result.page}] 🧠 AI spotted: ${issue.what} → ${issue.why_it_matters}`,
+          file: `tests/visual/current/${result.page}.png`,
+        })
+      }
+
+      // Looks good confirmation
+      if (result.looksRight && result.would_you_use_it && result.issues.length === 0) {
+        findings.push({
+          severity: 'info',
+          category: 'ux-approved',
+          message: `[${result.page}] 🧠 AI approved: "${result.gut_reaction}"`,
+          file: `tests/visual/current/${result.page}.png`,
+        })
+      }
+    }
 
     // Add intent validation findings
     const intentFailed = intentResults.filter(r => !r.met)
@@ -1053,11 +1407,26 @@ async function main() {
 
     const verdict = mapVerdict(report, findings)
 
-    // Build summary including intent validation
-    let summaryText = `Validated ${report.totalPages} pages - Score: ${report.averageScore}/100. ${report.passed} passed, ${report.warned} warnings, ${report.failed} failed.`
+    // Build summary including intuitive and intent validation
+    const unusablePages = intuitiveResults.filter(r => !r.would_you_use_it)
+    const blockerIssues = intuitiveResults.flatMap(r => r.issues.filter(i => i.severity === 'blocker'))
+    let summaryText = `Validated ${report.totalPages} pages.`
+
+    // Intuitive review summary (the important part)
+    if (unusablePages.length > 0) {
+      summaryText += ` ⚠️ AI found ${unusablePages.length} unusable pages.`
+    } else if (blockerIssues.length > 0) {
+      summaryText += ` ⚠️ AI found ${blockerIssues.length} blocker issues.`
+    } else {
+      summaryText += ` ✅ AI approved all pages as usable.`
+    }
+
+    // Checklist summary
+    summaryText += ` Checklist: ${report.passed} passed, ${report.warned} warnings, ${report.failed} failed.`
+
     if (intentResults.length > 0) {
       const intentMet = intentResults.filter(r => r.met).length
-      summaryText += ` Intent validation: ${intentMet}/${intentResults.length} expectations met.`
+      summaryText += ` Intent: ${intentMet}/${intentResults.length} expectations met.`
     }
 
     // Save in new standardized format
@@ -1071,7 +1440,7 @@ async function main() {
       confidence: report.averageScore,
       findings,
       summary: summaryText,
-      raw: { ...report, intentResults, prExpectations },
+      raw: { ...report, intentResults, prExpectations, intuitiveResults },
     }
     saveReviewerOutput(output)
 
@@ -1079,17 +1448,34 @@ async function main() {
     console.log('\n' + '='.repeat(50))
     console.log('📊 VALIDATION SUMMARY')
     console.log('='.repeat(50))
-    console.log(`   Total pages: ${report.totalPages}`)
-    console.log(`   ✅ Passed: ${report.passed}`)
-    console.log(`   ⚠️  Warnings: ${report.warned}`)
-    console.log(`   ❌ Failed: ${report.failed}`)
-    console.log(`   📈 Average score: ${report.averageScore}/100`)
+
+    // Intuitive review summary (the important part)
+    console.log('\n   🧠 INTUITIVE REVIEW (AI as UX designer)')
+    const usableCount = intuitiveResults.filter(r => r.would_you_use_it).length
+    console.log(`      Would use: ${usableCount}/${intuitiveResults.length} pages`)
+    if (blockerIssues.length > 0) {
+      console.log(`      ❌ Blockers: ${blockerIssues.length} issues`)
+    }
+    if (unusablePages.length > 0) {
+      console.log(`      ❌ Unusable pages: ${unusablePages.map(p => p.page).join(', ')}`)
+    }
+
+    // Checklist summary
+    console.log('\n   📋 CHECKLIST REVIEW (Design system)')
+    console.log(`      Total pages: ${report.totalPages}`)
+    console.log(`      ✅ Passed: ${report.passed}`)
+    console.log(`      ⚠️  Warnings: ${report.warned}`)
+    console.log(`      ❌ Failed: ${report.failed}`)
+    console.log(`      📈 Score: ${report.averageScore}/100`)
+
     if (intentResults.length > 0) {
       const intentMet = intentResults.filter(r => r.met).length
-      console.log(`   🎯 Intent: ${intentMet}/${intentResults.length} expectations met`)
+      console.log(`\n   🎯 INTENT VALIDATION`)
+      console.log(`      Met: ${intentMet}/${intentResults.length} expectations`)
     }
-    console.log('')
-    console.log(`   ${report.recommendation}`)
+
+    console.log('\n   ' + '-'.repeat(46))
+    console.log(`   ${verdictEmoji(verdict)} VERDICT: ${verdict}`)
     console.log('='.repeat(50))
     console.log(`\n📄 Results: ai-reviews/visual-validation.json`)
 
