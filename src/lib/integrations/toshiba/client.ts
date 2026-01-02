@@ -536,10 +536,9 @@ export class ToshibaClient {
     const modeByte = getByte(STATE_OFFSETS_READ.MODE)
     const operationMode = MODE_MAP[modeByte] ?? null
 
-    // Target temperature: API stores temperature doubled (for 0.5° precision)
-    // e.g., 16°C is stored as 32, 15.5°C as 31
+    // Target temperature: hex value is the temperature
     const tempByte = getByte(STATE_OFFSETS_READ.TEMP)
-    const targetTemperature = tempByte ? parseInt(tempByte, 16) / 2 : null
+    const targetTemperature = tempByte ? parseInt(tempByte, 16) : null
 
     // Fan speed
     const fanByte = getByte(STATE_OFFSETS_READ.FAN)
@@ -741,10 +740,7 @@ export class ToshibaClient {
       state[STATE_OFFSETS_WRITE.MODE] = MODE_ENCODE[options.mode]
     }
     if (options.temperature !== undefined) {
-      // API expects temperature doubled (for 0.5° precision)
-      // e.g., to set 16°C, we send 32 (0x20)
-      const tempDoubled = Math.round(options.temperature * 2)
-      state[STATE_OFFSETS_WRITE.TEMP] = tempDoubled.toString(16).padStart(2, '0')
+      state[STATE_OFFSETS_WRITE.TEMP] = options.temperature.toString(16).padStart(2, '0')
     }
     if (options.fanSpeed !== undefined) {
       state[STATE_OFFSETS_WRITE.FAN] = FAN_ENCODE[options.fanSpeed]
