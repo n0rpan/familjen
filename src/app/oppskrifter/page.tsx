@@ -184,11 +184,11 @@ export default function RecipesPage() {
       {!showForm && (
         <button
           onClick={() => setShowForm(true)}
-          className="fixed bottom-24 right-4 z-40 sm:hidden w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+          className="fixed bottom-24 right-4 z-40 sm:hidden w-14 h-14 rounded-full flex items-center justify-center transition-all hover:scale-105 active:scale-95"
           style={{
             background: 'var(--accent)',
             color: 'white',
-            boxShadow: '0 4px 12px rgba(232, 120, 109, 0.4)',
+            boxShadow: '0 4px 12px color-mix(in srgb, var(--accent) 40%, transparent)',
           }}
           aria-label={t.recipes.addRecipe}
         >

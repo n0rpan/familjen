@@ -1891,9 +1891,9 @@ export default function WeekEditPage() {
             disabled={aiLoading}
             className="flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-medium transition-all hover:scale-[1.02] min-h-[44px]"
             style={{
-              background: 'linear-gradient(135deg, var(--color-honey) 0%, #C9A05B 100%)',
+              background: 'linear-gradient(135deg, var(--color-honey) 0%, color-mix(in srgb, var(--color-honey) 80%, #000) 100%)',
               color: 'white',
-              boxShadow: '0 2px 8px rgba(229, 186, 115, 0.3)',
+              boxShadow: '0 2px 8px color-mix(in srgb, var(--color-honey) 30%, transparent)',
             }}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

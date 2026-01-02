@@ -216,7 +216,13 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
 
   const loadData = useCallback(async () => {
     try {
-      const { data: accountData } = await supabase.rpc('get_household_home_control_accounts')
+      const { data: accountData, error: accountError } = await supabase.rpc('get_household_home_control_accounts')
+
+      if (accountError) {
+        console.error('[HomeControl] Failed to fetch accounts:', accountError)
+        showError(t.homeControl.syncFailed)
+        return
+      }
 
       if (accountData && accountData.length > 0) {
         // Store accounts for grouping display (includes sync status for smart refresh)
@@ -311,24 +317,32 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
 
     try {
       // Sync each stale account based on its service type
-      await Promise.allSettled(
+      const results = await Promise.allSettled(
         staleAccounts.map(async (account) => {
           // Defense-in-depth: validate service before constructing endpoint
           if (!isAllowedService(account.service)) {
-            console.warn(`[HomeControl] Unknown service type: ${account.service}`)
-            return
+            throw new Error(`Unknown service type: ${account.service}`)
           }
           const endpoint = `/api/home-control/${account.service}/devices?accountId=${account.id}`
-          try {
-            const response = await fetch(endpoint)
-            if (!response.ok) {
-              console.warn(`[HomeControl] Sync failed for ${account.service}:`, await response.text())
-            }
-          } catch (err) {
-            console.warn(`[HomeControl] Network error syncing ${account.service}:`, err)
+          const response = await fetch(endpoint)
+          if (!response.ok) {
+            const errorText = await response.text()
+            throw new Error(`${account.service}: ${errorText}`)
           }
+          return { account: account.display_name, service: account.service }
         })
       )
+
+      // Log sync results for debugging
+      const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+      const succeeded = results.filter((r): r is PromiseFulfilledResult<{ account: string; service: string }> => r.status === 'fulfilled')
+
+      if (succeeded.length > 0) {
+        console.log(`[HomeControl] Synced ${succeeded.length} accounts:`, succeeded.map(r => r.value.account).join(', '))
+      }
+      if (failed.length > 0) {
+        console.warn(`[HomeControl] Failed to sync ${failed.length} accounts:`, failed.map(r => r.reason?.message || r.reason).join('; '))
+      }
 
       // Reload data after sync
       await loadData()
@@ -915,8 +929,8 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
         </div>
       )}
 
-      {/* Last Updated Indicator */}
-      {(lastUpdatedText || isSyncing || hasStaleData) && (
+      {/* Last Updated Indicator with Refresh Button */}
+      {(lastUpdatedText || isSyncing || hasStaleData || accounts.length > 0) && (
         <div
           className="flex items-center justify-end gap-2 text-xs"
           style={{ color: hasStaleData && !isSyncing ? 'var(--color-honey)' : 'var(--muted)' }}
@@ -940,6 +954,22 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
                 : `${t.homeControl?.lastUpdated || 'Oppdatert'}: ${lastUpdatedText}`
             }
           </span>
+          {/* Manual refresh button */}
+          {!isSyncing && !isRefreshing && accounts.length > 0 && (
+            <button
+              onClick={() => syncStaleAccounts(accounts.map(a => ({ ...a, last_sync_at: null })))}
+              className="p-1 rounded hover:bg-[var(--sand)] transition-colors"
+              title={t.homeControl?.sync || 'Synk'}
+              aria-label={t.homeControl?.sync || 'Synk'}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                <path d="M3 3v5h5"/>
+                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                <path d="M16 21h5v-5"/>
+              </svg>
+            </button>
+          )}
         </div>
       )}
 
