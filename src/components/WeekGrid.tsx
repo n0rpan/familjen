@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, memo, useState, useCallback } from 'react'
+import { useMemo, memo, useState, useCallback, useRef, useEffect } from 'react'
 import {
   getWeekDates,
   getWeekStart,
@@ -243,18 +243,41 @@ export const WeekGrid = memo(function WeekGrid({
   // Check if event is a school closure
   const isSchoolClosure = (event: ExternalEvent) => event.event_type === 'school_closure'
 
+  // Calculate minimum width for scrollable week view (full 7 days)
+  // Home page (showFromToday) shows ~3 days at 100% width, no scroll needed
+  // Week page shows all 7 days and needs horizontal scroll with readable columns
+  const needsScroll = !showFromToday && weekDates.length > 4
+  const tableMinWidth = needsScroll ? 96 + (weekDates.length * 100) : undefined // 96px label + 100px per day
+
+  // Scroll to today's column on mount for week view
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!needsScroll || !scrollContainerRef.current) return
+
+    // Find today's index in weekDates
+    const todayIndex = weekDates.findIndex(date => isToday(date))
+    if (todayIndex === -1) return
+
+    // Calculate scroll position: label width (96px) + columns before today
+    const scrollPosition = todayIndex * 100 // Each column is ~100px
+    scrollContainerRef.current.scrollLeft = scrollPosition
+  }, [needsScroll, weekDates])
+
   return (
     <div
       className="rounded-2xl overflow-hidden"
       style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
     >
-      {/* Grid - always 100% width, no horizontal scroll needed */}
-      <div>
-        <table className="w-full table-fixed">
+      {/* Grid - scrollable for full week view, 100% width for home page */}
+      <div ref={scrollContainerRef} className={needsScroll ? 'overflow-x-auto' : ''}>
+        <table
+          className="w-full table-fixed"
+          style={tableMinWidth ? { minWidth: `${tableMinWidth}px` } : undefined}
+        >
           <colgroup>
             <col className="w-24" />
             {weekDates.map((_, i) => (
-              <col key={i} />
+              <col key={i} style={needsScroll ? { minWidth: '100px' } : undefined} />
             ))}
           </colgroup>
           <thead>
