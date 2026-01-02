@@ -1149,8 +1149,8 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
                                 {isOn && device.target_temperature !== null && (
                                   <div className="flex items-center gap-1">
                                     <button
-                                      onClick={() => controlToshibaDevice(device, 'temperature', Math.max(TEMPERATURE.MIN, device.target_temperature! - 1))}
-                                      disabled={isControlling || device.target_temperature <= TEMPERATURE.MIN}
+                                      onClick={() => controlToshibaDevice(device, 'temperature', Math.max(TEMPERATURE.MIN_8C_MODE, device.target_temperature! - 1))}
+                                      disabled={isControlling || device.target_temperature <= TEMPERATURE.MIN_8C_MODE}
                                       className="w-9 h-9 rounded-lg flex items-center justify-center disabled:opacity-40 transition-colors"
                                       style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
                                       aria-label={t.homeControl?.decreaseTemp || 'Decrease temperature'}

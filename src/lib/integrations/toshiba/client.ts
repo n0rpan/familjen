@@ -656,23 +656,30 @@ export class ToshibaClient {
 
   /**
    * Set target temperature.
-   * Supports temperatures below the normal MIN (17°C) by using the +16 offset encoding.
+   * Supports temperatures below 17°C by using 8°C mode (HEATING_8C).
    * @param currentTemperature - Current temperature from database (used to detect 8°C mode)
    */
   async setTemperature(acId: string, temperature: number, currentTemperature?: number): Promise<void> {
     // Allow extended range (5-30°C)
     const temp = Math.max(5, Math.min(30, temperature))
 
-    // Detect 8°C mode: if current temperature is below 17, AC is in special low-temp mode
-    // HEATING_8C = 0x04 in MeritA. To exit this mode, send MeritA = 0x00 (OFF)
-    const isIn8CMode = currentTemperature !== undefined && currentTemperature < 17
+    // Detect if currently in 8°C mode
+    const isCurrentlyIn8CMode = currentTemperature !== undefined && currentTemperature < 17
+    // Determine if target temp requires 8°C mode
+    const needsToEnter8CMode = temp < 17
+    const needsToExit8CMode = isCurrentlyIn8CMode && temp >= 17
 
-    if (isIn8CMode) {
-      // When exiting 8°C mode, send meritA: 0x00 to disable HEATING_8C feature
-      // Use normal temperature encoding since we're leaving 8°C mode
-      this.log('Exiting 8°C mode: setting temperature', temp, 'with meritA=0 for device:', acId)
+    if (needsToEnter8CMode) {
+      // Enter or stay in 8°C mode: send HEATING_8C (0x04) + temp with +16 offset
+      const encodedTemp = temp + 16
+      this.log('Entering/staying in 8°C mode: setting temperature', temp, 'encoded as', encodedTemp, 'with meritA=0x04 for device:', acId)
+      await this.sendCommand(acId, { temperature: encodedTemp, meritA: 0x04 })
+    } else if (needsToExit8CMode) {
+      // Exit 8°C mode: send OFF (0x00) + normal temp
+      this.log('Exiting 8°C mode: setting temperature', temp, 'with meritA=0x00 for device:', acId)
       await this.sendCommand(acId, { temperature: temp, meritA: 0x00 })
     } else {
+      // Normal mode: just set temperature
       this.log('Setting temperature:', temp, 'for device:', acId)
       await this.sendCommand(acId, { temperature: temp })
     }
