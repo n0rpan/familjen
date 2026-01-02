@@ -213,7 +213,7 @@ export function useWishlists(): UseWishlistsReturn {
       console.error('Error updating item:', err)
       throw err
     }
-  }, [isDemo, supabase, fetchData])
+  }, [isDemo, supabase, fetchData, items])
 
   // Delete item mutation
   const deleteItem = useCallback(async (itemId: string) => {

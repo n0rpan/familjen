@@ -97,6 +97,10 @@ function isAllowedService(service: string): service is AllowedService {
   return ALLOWED_SERVICES.includes(service as AllowedService)
 }
 
+// Stale data thresholds (outside component to avoid dependency issues)
+const STALE_SYNC_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes - triggers background sync
+const STALE_WARNING_THRESHOLD_MS = 30 * 60 * 1000 // 30 minutes - shows warning to user
+
 const UI_CLASS_ICONS: Record<string, React.ReactNode> = {
   ExteriorScreen: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -289,14 +293,12 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
   }, [supabase, showError, t.homeControl.syncFailed])
 
   // Smart sync: only refresh from external APIs if last sync is stale (> 5 minutes)
-  const STALE_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
-
   const syncStaleAccounts = useCallback(async (accountList: HomeControlAccount[]) => {
     const now = Date.now()
     const staleAccounts = accountList.filter(account => {
       if (!account.last_sync_at) return true // Never synced
       const lastSyncTime = new Date(account.last_sync_at).getTime()
-      return now - lastSyncTime > STALE_THRESHOLD_MS
+      return now - lastSyncTime > STALE_SYNC_THRESHOLD_MS
     })
 
     if (staleAccounts.length === 0) {
@@ -700,6 +702,27 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
 
   const hasDevices = devices.length > 0 || groups.length > 0
 
+  // Check if any account has stale data (>30 min) - shows warning indicator
+  // Must be before early returns to satisfy rules-of-hooks
+  const hasStaleData = useMemo(() => {
+    if (accounts.length === 0) return false
+    const now = Date.now()
+    return accounts.some(account => {
+      if (!account.last_sync_at) return true // Never synced = stale
+      const lastSyncTime = new Date(account.last_sync_at).getTime()
+      return now - lastSyncTime > STALE_WARNING_THRESHOLD_MS
+    })
+  }, [accounts])
+
+  // Format last updated text - must be before early returns
+  const lastUpdatedText = lastUpdated
+    ? formatLastUpdated(lastUpdated, {
+        justNow: t.homeControl?.justNow || 'Akkurat nå',
+        minutesAgo: t.homeControl?.minutesAgo || '{count} min siden',
+        hoursAgo: t.homeControl?.hoursAgo || '{count} timer siden',
+      })
+    : ''
+
   if (loading) {
     return (
       <div className="animate-pulse space-y-4">
@@ -874,27 +897,6 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
       </div>
     )
   }
-
-  // Format last updated text
-  const lastUpdatedText = lastUpdated
-    ? formatLastUpdated(lastUpdated, {
-        justNow: t.homeControl?.justNow || 'Akkurat nå',
-        minutesAgo: t.homeControl?.minutesAgo || '{count} min siden',
-        hoursAgo: t.homeControl?.hoursAgo || '{count} timer siden',
-      })
-    : ''
-
-  // Check if any account has stale data (>30 min) - shows warning indicator
-  const STALE_WARNING_THRESHOLD_MS = 30 * 60 * 1000 // 30 minutes
-  const hasStaleData = useMemo(() => {
-    if (accounts.length === 0) return false
-    const now = Date.now()
-    return accounts.some(account => {
-      if (!account.last_sync_at) return true // Never synced = stale
-      const lastSyncTime = new Date(account.last_sync_at).getTime()
-      return now - lastSyncTime > STALE_WARNING_THRESHOLD_MS
-    })
-  }, [accounts])
 
   return (
     <div className="space-y-4">
