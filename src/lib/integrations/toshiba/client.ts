@@ -781,8 +781,9 @@ export class ToshibaClient {
       state[STATE_OFFSETS_WRITE.MODE] = MODE_ENCODE[options.mode]
     }
     if (options.temperature !== undefined) {
-      // Toshiba API uses +16 offset for temperatures below MIN (17°C)
-      const encodedTemp = options.temperature < 17 ? options.temperature + 16 : options.temperature
+      // Toshiba API expects temperature + 16 offset for ALL temperatures when writing
+      // e.g., to set 17°C, send 33 (0x21); to set 16°C, send 32 (0x20)
+      const encodedTemp = options.temperature + 16
       state[STATE_OFFSETS_WRITE.TEMP] = encodedTemp.toString(16).padStart(2, '0')
     }
     if (options.fanSpeed !== undefined) {
