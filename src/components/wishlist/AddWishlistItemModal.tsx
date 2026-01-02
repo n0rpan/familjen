@@ -289,7 +289,7 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
       onClick={onClose}
     >
       <div
-        className="w-full sm:max-w-md max-h-[calc(100dvh-140px)] sm:max-h-[90vh] flex flex-col rounded-t-2xl sm:rounded-2xl overflow-hidden"
+        className="w-full sm:max-w-md max-h-[85vh] sm:max-h-[90vh] mb-20 sm:mb-0 flex flex-col rounded-t-2xl sm:rounded-2xl overflow-hidden"
         style={{ background: 'var(--card)' }}
         onClick={e => e.stopPropagation()}
       >
