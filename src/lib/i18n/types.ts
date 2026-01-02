@@ -893,6 +893,14 @@ export interface TranslationStrings {
     noDevices: string
     noDevicesDesc: string
     goToSettings: string
+    // Empty state integration cards
+    emptyStateIntro: string
+    somfyIntegration: string
+    somfyDesc: string
+    toshibaIntegration: string
+    toshibaDesc: string
+    melcloudIntegration: string
+    melcloudDesc: string
     allUp: string
     allDown: string
     stop: string
@@ -930,6 +938,7 @@ export interface TranslationStrings {
     partialFailure: string
     syncDevices: string
     syncing: string
+    syncingDevices: string
     syncSuccess: string
     syncFailed: string
     sync: string
