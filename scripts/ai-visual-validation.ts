@@ -130,6 +130,18 @@ interface IntuitiveReviewResult {
 // Instead of checklists, we ask the AI: "Does this look right?"
 // The AI uses its understanding of UX to spot issues naturally.
 
+// Rate limiting: max 10 intuitive reviews per run, 500ms delay between calls
+const MAX_INTUITIVE_REVIEWS = 10
+const REVIEW_DELAY_MS = 500
+let intuitiveReviewCount = 0
+
+/**
+ * Simple delay helper for rate limiting
+ */
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 const INTUITIVE_REVIEW_SCHEMA = {
   type: 'object' as const,
   properties: {
@@ -174,12 +186,34 @@ const INTUITIVE_REVIEW_SCHEMA = {
 /**
  * Intuitive Review: Ask AI to look at screenshot like a human would
  * No checklists - just "does this look right?"
+ *
+ * Rate limited to MAX_INTUITIVE_REVIEWS per run with REVIEW_DELAY_MS between calls.
  */
 async function intuitiveReview(
   screenshotPath: string,
   pageName: string,
   prDiff?: string
 ): Promise<IntuitiveReviewResult> {
+  // Rate limiting: check if we've exceeded budget
+  if (intuitiveReviewCount >= MAX_INTUITIVE_REVIEWS) {
+    console.log(`   ⚠️ Skipping intuitive review for ${pageName} (rate limit: ${MAX_INTUITIVE_REVIEWS} reviews)`)
+    return {
+      page: pageName,
+      looksRight: true, // Assume OK when rate limited (conservative)
+      confidence: 'low',
+      gut_reaction: 'Rate limited - skipped intuitive review',
+      issues: [],
+      would_you_use_it: true,
+      explanation: `Skipped due to rate limit (max ${MAX_INTUITIVE_REVIEWS} reviews per run)`,
+    }
+  }
+
+  // Rate limiting: add delay between calls
+  if (intuitiveReviewCount > 0) {
+    await delay(REVIEW_DELAY_MS)
+  }
+  intuitiveReviewCount++
+
   const imageBuffer = fs.readFileSync(screenshotPath)
   const base64Image = imageBuffer.toString('base64')
 

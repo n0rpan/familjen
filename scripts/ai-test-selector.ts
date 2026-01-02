@@ -766,8 +766,10 @@ async function main() {
     let finalDecision = { ...decision }
 
     // Apply hard rules - LLM cannot skip these
-    const hardRule = hardRules[decision.test]
-    if (hardRule === true && !decision.run) {
+    // Explicitly check if key exists and is true (avoids undefined confusion)
+    const testName = decision.test as keyof typeof hardRules
+    const isHardRuled = testName in hardRules && hardRules[testName] === true
+    if (isHardRuled && !decision.run) {
       console.log(`   🔒 ${decision.test}: FORCED ON by hard rule (LLM wanted to skip, but this is a UI/API change)`)
       finalDecision = {
         ...decision,
@@ -778,7 +780,6 @@ async function main() {
 
     // Check if we can skip based on last green run
     // BUT: hard rules cannot be skipped by incremental logic
-    const isHardRuled = hardRules[decision.test] === true
     if (finalDecision.run && prState && !isHardRuled) {
       const relevantFiles = getRelevantFiles(decision.test, changedFiles)
       const skipCheck = canSkipTest(prState, decision.test, relevantFiles)

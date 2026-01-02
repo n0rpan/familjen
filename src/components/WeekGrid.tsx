@@ -254,8 +254,9 @@ export const WeekGrid = memo(function WeekGrid({
   useEffect(() => {
     if (!needsScroll || !scrollContainerRef.current) return
 
-    // Find today's index in weekDates
-    const todayIndex = weekDates.findIndex(date => isToday(date))
+    // Find today's index in weekDates (compare by date string to avoid closure issues)
+    const todayStr = formatDateISO(new Date())
+    const todayIndex = weekDates.findIndex(date => formatDateISO(date) === todayStr)
     if (todayIndex === -1) return
 
     // Calculate scroll position: label width (96px) + columns before today
