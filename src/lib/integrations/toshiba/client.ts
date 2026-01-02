@@ -491,10 +491,36 @@ export class ToshibaClient {
 
   /**
    * Get all devices mapped to our format.
+   * Fetches accurate state from getDeviceState API for reliable temperature readings.
    */
   async getMappedDevices(): Promise<MappedToshibaDevice[]> {
     const devices = await this.getDevices()
-    return devices.map(device => this.mapDeviceToDb(device))
+
+    // Fetch accurate state for each device to get reliable temperature values
+    // The hex state decoding can be unreliable for target temperature
+    const mappedDevices = await Promise.all(
+      devices.map(async (device) => {
+        const mapped = this.mapDeviceToDb(device)
+
+        // Try to get accurate state from API
+        try {
+          const state = await this.getDeviceState(device.Id)
+          if (state) {
+            // Override with accurate values from API
+            mapped.targetTemperature = state.ACSetpointTemperature ?? mapped.targetTemperature
+            mapped.currentTemperature = state.ACIndoorTemperature ?? mapped.currentTemperature
+            mapped.outdoorTemperature = state.ACOutdoorTemperature ?? mapped.outdoorTemperature
+            this.log('Got accurate state for', device.Name, '- target:', state.ACSetpointTemperature, 'indoor:', state.ACIndoorTemperature)
+          }
+        } catch (err) {
+          this.log('Failed to get device state for', device.Name, '- using hex decoded values:', err)
+        }
+
+        return mapped
+      })
+    )
+
+    return mappedDevices
   }
 
   /**
