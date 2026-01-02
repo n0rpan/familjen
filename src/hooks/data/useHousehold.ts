@@ -5,12 +5,16 @@
  *
  * Abstracts household data fetching for both demo and production modes.
  * In demo mode, returns demo household data.
- * In production, uses JWT for household_id (fast) and fetches details from DB.
+ * In production, fetches membership from DB (source of truth).
  *
  * PERFORMANCE: This hook is optimized for fast startup:
- * 1. Gets household_id from JWT (instant, no network)
- * 2. Fetches household details only when needed
+ * 1. Uses JWT household_id as cache hint (instant, no network)
+ * 2. Fetches actual membership from server (source of truth)
  * 3. Caches results in IndexedDB for instant subsequent loads
+ *
+ * SECURITY: Server is always the source of truth for membership.
+ * JWT household_id is only used as a cache hint for instant display.
+ * If user was moved to different household, server returns correct data.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
@@ -52,25 +56,20 @@ export function useHousehold(): UseHouseholdReturn {
   const fetchData = useCallback(async (skipCache = false) => {
     if (isDemo || !supabase || !user) return
 
-    // If no household in JWT, user needs to create/join one
-    if (!jwtHouseholdId) {
-      setLoading(false)
-      return
-    }
-
     setError(null)
 
     try {
       // Try to load from cache first (instant)
-      if (!skipCache) {
+      // Use JWT household_id as cache hint - if it matches, show cached data instantly
+      if (!skipCache && jwtHouseholdId) {
         const cached = await getCached<CachedHouseholdData>(HOUSEHOLD_CACHE_KEY)
         if (cached && isCacheFresh(cached, HOUSEHOLD_CACHE_MAX_AGE)) {
-          // Verify cached data matches current household
+          // Verify cached data matches JWT hint
           if (cached.data.household.id === jwtHouseholdId) {
             setHousehold(cached.data.household)
             setCurrentMember(cached.data.currentMember)
             setLoading(false)
-            // Still fetch fresh data in background
+            // Still fetch fresh data in background to verify/update
             fetchFreshData()
             return
           }
@@ -85,14 +84,14 @@ export function useHousehold(): UseHouseholdReturn {
     }
 
     async function fetchFreshData() {
-      if (!supabase || !user || !jwtHouseholdId) return
+      if (!supabase || !user) return
 
-      // Fetch member and household in a single query using JWT household_id
+      // Query by user_id ONLY - server is source of truth for membership
+      // Don't gate on JWT household_id which can be stale
       const { data: member, error: memberError } = await supabase
         .from('household_members')
         .select('*, household:households(*)')
         .eq('user_id', user.id)
-        .eq('household_id', jwtHouseholdId)
         .single()
 
       if (memberError) {
@@ -162,7 +161,11 @@ export function useHousehold(): UseHouseholdReturn {
 
 /**
  * Hook to get just the household ID (for components that only need the ID)
- * Uses JWT directly for instant access - no DB call needed
+ * Uses JWT directly for instant access - no DB call needed.
+ *
+ * SECURITY: This value is used as a hint for queries. Supabase RLS policies
+ * validate actual permissions server-side. If JWT is stale, queries may
+ * return empty results, but data access is always properly authorized.
  */
 export function useHouseholdId(): string | null {
   const { householdId, loading } = useAuthState()
