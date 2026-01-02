@@ -51,11 +51,26 @@ export const TOSHIBA_UI = {
 
 /**
  * Temperature range
+ * Note: Toshiba supports 8°C mode (HEATING_8C) for temps below 17°C
+ * In 8°C mode, temperatures are stored with +16 offset internally
  */
 export const TEMPERATURE = {
+  /** Minimum temp in normal mode */
   MIN: 17,
+  /** Minimum temp in 8°C mode (for cabin heating etc) */
+  MIN_8C_MODE: 5,
   MAX: 30,
-  STEP: 0.5,
+  STEP: 1,
   /** Default temperature when not specified */
   DEFAULT: 22,
+  /** Threshold below which 8°C mode is required */
+  LOW_TEMP_THRESHOLD: 17,
+} as const
+
+/**
+ * Merit A feature flags
+ */
+export const MERIT_A = {
+  OFF: 0x00,
+  HEATING_8C: 0x04,
 } as const

@@ -108,6 +108,7 @@ async function handleControl(body: ControlRequest, supabase: SupabaseClient) {
   // Validate value based on command
   if (command === 'temperature') {
     const temp = Number(value)
+    // Note: 8°C mode (temps below 17) is a known limitation - not yet supported
     if (isNaN(temp) || temp < TEMPERATURE_LIMITS.MIN || temp > TEMPERATURE_LIMITS.MAX) {
       return NextResponse.json(
         { success: false, error: `Temperature must be between ${TEMPERATURE_LIMITS.MIN} and ${TEMPERATURE_LIMITS.MAX}` },
@@ -160,10 +161,20 @@ async function handleControl(body: ControlRequest, supabase: SupabaseClient) {
     )
   }
 
+  // Validate turnOn temperature if provided
+  if (command === 'turnOn' && temperature !== undefined) {
+    if (temperature < TEMPERATURE_LIMITS.MIN || temperature > TEMPERATURE_LIMITS.MAX) {
+      return NextResponse.json(
+        { success: false, error: `Temperature must be between ${TEMPERATURE_LIMITS.MIN} and ${TEMPERATURE_LIMITS.MAX}` },
+        { status: 400 }
+      )
+    }
+  }
+
   // SECURITY: Verify device belongs to this account
   const { data: device, error: deviceError } = await supabase
     .from('toshiba_ac_devices')
-    .select('id')
+    .select('id, target_temperature')
     .eq('account_id', accountId)
     .eq('ac_id', acId)
     .single()
@@ -189,7 +200,8 @@ async function handleControl(body: ControlRequest, supabase: SupabaseClient) {
       break
 
     case 'temperature':
-      await client.setTemperature(acId, Number(value))
+      // Pass current temperature so client can detect 8°C mode
+      await client.setTemperature(acId, Number(value), device.target_temperature ?? undefined)
       await supabase.rpc('update_toshiba_device_state', {
         p_device_id: device.id,
         p_target_temperature: Number(value),

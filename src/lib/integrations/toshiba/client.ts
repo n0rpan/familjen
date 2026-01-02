@@ -491,10 +491,45 @@ export class ToshibaClient {
 
   /**
    * Get all devices mapped to our format.
+   * Fetches accurate state from getDeviceState API for reliable temperature readings.
    */
   async getMappedDevices(): Promise<MappedToshibaDevice[]> {
     const devices = await this.getDevices()
-    return devices.map(device => this.mapDeviceToDb(device))
+
+    // Fetch accurate state for each device to get reliable temperature values
+    // The hex state decoding can be unreliable for target temperature
+    const mappedDevices = await Promise.all(
+      devices.map(async (device) => {
+        const mapped = this.mapDeviceToDb(device)
+
+        // Try to get accurate state from API
+        try {
+          const state = await this.getDeviceState(device.Id)
+          if (state) {
+            // Handle temperature offset: Toshiba API adds +16 to temperatures below MIN (17°C)
+            // So 16°C is returned as 32, 15°C as 31, etc.
+            let targetTemp = state.ACSetpointTemperature
+            if (targetTemp != null && targetTemp > 30) {
+              // Decode the offset: subtract 16 to get actual temperature
+              targetTemp = targetTemp - 16
+              this.log('Decoded low temp offset for', device.Name, ':', state.ACSetpointTemperature, '→', targetTemp)
+            }
+
+            // Override with accurate values from API
+            mapped.targetTemperature = targetTemp ?? mapped.targetTemperature
+            mapped.currentTemperature = state.ACIndoorTemperature ?? mapped.currentTemperature
+            mapped.outdoorTemperature = state.ACOutdoorTemperature ?? mapped.outdoorTemperature
+            this.log('Got accurate state for', device.Name, '- target:', targetTemp, 'indoor:', state.ACIndoorTemperature)
+          }
+        } catch (err) {
+          this.log('Failed to get device state for', device.Name, '- using hex decoded values:', err)
+        }
+
+        return mapped
+      })
+    )
+
+    return mappedDevices
   }
 
   /**
@@ -537,8 +572,13 @@ export class ToshibaClient {
     const operationMode = MODE_MAP[modeByte] ?? null
 
     // Target temperature: hex value is the temperature
+    // Note: Toshiba API adds +16 offset for temps below MIN (17°C)
     const tempByte = getByte(STATE_OFFSETS_READ.TEMP)
-    const targetTemperature = tempByte ? parseInt(tempByte, 16) : null
+    let targetTemperature = tempByte ? parseInt(tempByte, 16) : null
+    if (targetTemperature != null && targetTemperature > 30) {
+      // Decode the offset: subtract 16 to get actual temperature
+      targetTemperature = targetTemperature - 16
+    }
 
     // Fan speed
     const fanByte = getByte(STATE_OFFSETS_READ.FAN)
@@ -616,12 +656,25 @@ export class ToshibaClient {
 
   /**
    * Set target temperature.
+   * Supports temperatures below 17°C by using 8°C mode (HEATING_8C).
+   * @param currentTemperature - Current temperature from database (used to detect 8°C mode)
    */
-  async setTemperature(acId: string, temperature: number): Promise<void> {
-    // Clamp to valid range
-    const temp = Math.max(17, Math.min(30, temperature))
-    this.log('Setting temperature:', temp, 'for device:', acId)
-    await this.sendCommand(acId, { temperature: temp })
+  async setTemperature(acId: string, temperature: number, currentTemperature?: number): Promise<void> {
+    // Allow extended range (5-30°C)
+    const temp = Math.max(5, Math.min(30, temperature))
+
+    // Detect if currently in 8°C mode (for exiting only - entering not yet supported)
+    const isCurrentlyIn8CMode = currentTemperature !== undefined && currentTemperature < 17
+
+    if (isCurrentlyIn8CMode) {
+      // Exit 8°C mode: send OFF (0x00) + normal temp
+      this.log('Exiting 8°C mode: setting temperature', temp, 'with meritA=0x00 for device:', acId)
+      await this.sendCommand(acId, { temperature: temp, meritA: 0x00 })
+    } else {
+      // Normal mode: just set temperature
+      this.log('Setting temperature:', temp, 'for device:', acId)
+      await this.sendCommand(acId, { temperature: temp })
+    }
   }
 
   /**
@@ -660,7 +713,7 @@ export class ToshibaClient {
     await this.sendCommand(acId, {
       power: 'ON',
       mode,
-      temperature: temperature ? Math.max(17, Math.min(30, temperature)) : undefined,
+      temperature: temperature ? Math.max(5, Math.min(30, temperature)) : undefined,
     })
   }
 
@@ -728,6 +781,7 @@ export class ToshibaClient {
     temperature?: number
     fanSpeed?: ToshibaFanSpeed
     swingMode?: ToshibaSwingMode
+    meritA?: number  // 0x00 = OFF, 0x04 = HEATING_8C, etc.
     pure?: 'ON' | 'OFF'
   }): string {
     // 19-byte state array, initialized to 'ff' (unchanged)
@@ -740,6 +794,7 @@ export class ToshibaClient {
       state[STATE_OFFSETS_WRITE.MODE] = MODE_ENCODE[options.mode]
     }
     if (options.temperature !== undefined) {
+      // Send temperature as-is (no offset needed for writing)
       state[STATE_OFFSETS_WRITE.TEMP] = options.temperature.toString(16).padStart(2, '0')
     }
     if (options.fanSpeed !== undefined) {
@@ -747,6 +802,9 @@ export class ToshibaClient {
     }
     if (options.swingMode !== undefined) {
       state[STATE_OFFSETS_WRITE.SWING] = SWING_ENCODE[options.swingMode]
+    }
+    if (options.meritA !== undefined) {
+      state[STATE_OFFSETS_WRITE.MERIT_A] = options.meritA.toString(16).padStart(2, '0')
     }
     if (options.pure !== undefined) {
       state[STATE_OFFSETS_WRITE.PURE] = PURE_ENCODE[options.pure]
@@ -764,6 +822,7 @@ export class ToshibaClient {
     temperature?: number
     fanSpeed?: ToshibaFanSpeed
     swingMode?: ToshibaSwingMode
+    meritA?: number
     pure?: 'ON' | 'OFF'
   }): Promise<void> {
     const deviceUniqueId = this.getDeviceUniqueId(acId)
@@ -775,6 +834,10 @@ export class ToshibaClient {
         throw new ToshibaError(`Device not found in cache: ${acId}. Call getDevices() first.`)
       }
     }
+
+    // Note: 8°C mode temperature offset is handled in setTemperature() method
+    // which receives the current temperature from the database
+    const cachedDevice = this.deviceCache[acId]
 
     const targetId = this.getDeviceUniqueId(acId)!
     const stateHex = this.buildCommandState(options)
@@ -791,7 +854,6 @@ export class ToshibaClient {
     await this.sendAmqpMessage(message)
 
     // Update cached state if we know the current state
-    const cachedDevice = this.deviceCache[acId]
     if (cachedDevice?.currentStateHex) {
       // Merge new values into cached state
       const currentState = cachedDevice.currentStateHex

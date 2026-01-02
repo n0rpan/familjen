@@ -1163,7 +1163,11 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
                                       {device.target_temperature}°
                                     </span>
                                     <button
-                                      onClick={() => controlToshibaDevice(device, 'temperature', Math.min(TEMPERATURE.MAX, device.target_temperature! + 1))}
+                                      onClick={() => controlToshibaDevice(device, 'temperature',
+                                        device.target_temperature! < TEMPERATURE.MIN
+                                          ? TEMPERATURE.MIN
+                                          : Math.min(TEMPERATURE.MAX, device.target_temperature! + 1)
+                                      )}
                                       disabled={isControlling || device.target_temperature >= TEMPERATURE.MAX}
                                       className="w-9 h-9 rounded-lg flex items-center justify-center disabled:opacity-40 transition-colors"
                                       style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
