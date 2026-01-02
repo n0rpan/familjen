@@ -506,11 +506,20 @@ export class ToshibaClient {
         try {
           const state = await this.getDeviceState(device.Id)
           if (state) {
+            // Handle temperature offset: Toshiba API adds +16 to temperatures below MIN (17°C)
+            // So 16°C is returned as 32, 15°C as 31, etc.
+            let targetTemp = state.ACSetpointTemperature
+            if (targetTemp != null && targetTemp > 30) {
+              // Decode the offset: subtract 16 to get actual temperature
+              targetTemp = targetTemp - 16
+              this.log('Decoded low temp offset for', device.Name, ':', state.ACSetpointTemperature, '→', targetTemp)
+            }
+
             // Override with accurate values from API
-            mapped.targetTemperature = state.ACSetpointTemperature ?? mapped.targetTemperature
+            mapped.targetTemperature = targetTemp ?? mapped.targetTemperature
             mapped.currentTemperature = state.ACIndoorTemperature ?? mapped.currentTemperature
             mapped.outdoorTemperature = state.ACOutdoorTemperature ?? mapped.outdoorTemperature
-            this.log('Got accurate state for', device.Name, '- target:', state.ACSetpointTemperature, 'indoor:', state.ACIndoorTemperature)
+            this.log('Got accurate state for', device.Name, '- target:', targetTemp, 'indoor:', state.ACIndoorTemperature)
           }
         } catch (err) {
           this.log('Failed to get device state for', device.Name, '- using hex decoded values:', err)
@@ -563,8 +572,13 @@ export class ToshibaClient {
     const operationMode = MODE_MAP[modeByte] ?? null
 
     // Target temperature: hex value is the temperature
+    // Note: Toshiba API adds +16 offset for temps below MIN (17°C)
     const tempByte = getByte(STATE_OFFSETS_READ.TEMP)
-    const targetTemperature = tempByte ? parseInt(tempByte, 16) : null
+    let targetTemperature = tempByte ? parseInt(tempByte, 16) : null
+    if (targetTemperature != null && targetTemperature > 30) {
+      // Decode the offset: subtract 16 to get actual temperature
+      targetTemperature = targetTemperature - 16
+    }
 
     // Fan speed
     const fanByte = getByte(STATE_OFFSETS_READ.FAN)
@@ -642,10 +656,11 @@ export class ToshibaClient {
 
   /**
    * Set target temperature.
+   * Supports temperatures below the normal MIN (17°C) by using the +16 offset encoding.
    */
   async setTemperature(acId: string, temperature: number): Promise<void> {
-    // Clamp to valid range
-    const temp = Math.max(17, Math.min(30, temperature))
+    // Allow extended range (5-30°C), encode temps below 17 with +16 offset
+    const temp = Math.max(5, Math.min(30, temperature))
     this.log('Setting temperature:', temp, 'for device:', acId)
     await this.sendCommand(acId, { temperature: temp })
   }
@@ -686,7 +701,7 @@ export class ToshibaClient {
     await this.sendCommand(acId, {
       power: 'ON',
       mode,
-      temperature: temperature ? Math.max(17, Math.min(30, temperature)) : undefined,
+      temperature: temperature ? Math.max(5, Math.min(30, temperature)) : undefined,
     })
   }
 
@@ -766,7 +781,9 @@ export class ToshibaClient {
       state[STATE_OFFSETS_WRITE.MODE] = MODE_ENCODE[options.mode]
     }
     if (options.temperature !== undefined) {
-      state[STATE_OFFSETS_WRITE.TEMP] = options.temperature.toString(16).padStart(2, '0')
+      // Toshiba API uses +16 offset for temperatures below MIN (17°C)
+      const encodedTemp = options.temperature < 17 ? options.temperature + 16 : options.temperature
+      state[STATE_OFFSETS_WRITE.TEMP] = encodedTemp.toString(16).padStart(2, '0')
     }
     if (options.fanSpeed !== undefined) {
       state[STATE_OFFSETS_WRITE.FAN] = FAN_ENCODE[options.fanSpeed]
