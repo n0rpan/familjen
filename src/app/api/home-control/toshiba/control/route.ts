@@ -161,6 +161,16 @@ async function handleControl(body: ControlRequest, supabase: SupabaseClient) {
     )
   }
 
+  // Validate turnOn temperature if provided
+  if (command === 'turnOn' && temperature !== undefined) {
+    if (temperature < TEMPERATURE_LIMITS.MIN || temperature > TEMPERATURE_LIMITS.MAX) {
+      return NextResponse.json(
+        { success: false, error: `Temperature must be between ${TEMPERATURE_LIMITS.MIN} and ${TEMPERATURE_LIMITS.MAX}` },
+        { status: 400 }
+      )
+    }
+  }
+
   // SECURITY: Verify device belongs to this account
   const { data: device, error: deviceError } = await supabase
     .from('toshiba_ac_devices')
