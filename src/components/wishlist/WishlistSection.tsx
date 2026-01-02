@@ -13,6 +13,7 @@ interface WishlistSectionProps {
   personName: string
   householdId: string
   showShareLink?: boolean
+  onItemCountChange?: (delta: number) => void
 }
 
 interface ShareToken {
@@ -27,6 +28,7 @@ export const WishlistSection = memo(function WishlistSection({
   personName,
   householdId,
   showShareLink = true,
+  onItemCountChange,
 }: WishlistSectionProps) {
   const { t } = useLanguage()
   const supabase = useMemo(() => createClient(), [])
@@ -35,7 +37,8 @@ export const WishlistSection = memo(function WishlistSection({
   const [shareToken, setShareToken] = useState<ShareToken | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeOccasion, setActiveOccasion] = useState<WishlistOccasion>('general')
+  // null means show all items (no filter)
+  const [activeOccasion, setActiveOccasion] = useState<WishlistOccasion | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
 
@@ -86,8 +89,9 @@ export const WishlistSection = memo(function WishlistSection({
     fetchData()
   }, [supabase, householdId, personId, personType, t])
 
-  // Filter items by active occasion
+  // Filter items by active occasion (null = show all)
   const filteredItems = useMemo(() => {
+    if (activeOccasion === null) return items
     return items.filter(item => item.occasion === activeOccasion)
   }, [items, activeOccasion])
 
@@ -189,7 +193,8 @@ export const WishlistSection = memo(function WishlistSection({
     }
 
     setItems(prev => prev.filter(item => item.id !== itemId))
-  }, [supabase, t])
+    onItemCountChange?.(-1)
+  }, [supabase, t, onItemCountChange])
 
   // Get status badge
   const getStatusBadge = (item: WishlistItem) => {
@@ -273,6 +278,20 @@ export const WishlistSection = memo(function WishlistSection({
 
       {/* Occasion tabs */}
       <div className="flex gap-2 overflow-x-auto pb-2">
+        {/* All tab */}
+        <button
+          onClick={() => setActiveOccasion(null)}
+          className="px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors"
+          style={{
+            background: activeOccasion === null ? 'var(--accent)' : 'var(--sand)',
+            color: activeOccasion === null ? 'white' : 'var(--foreground)',
+          }}
+        >
+          {t.common.all || 'Alle'}
+          {items.length > 0 && (
+            <span className="ml-1.5 opacity-75">({items.length})</span>
+          )}
+        </button>
         {WISHLIST_OCCASIONS.map(occasion => (
           <button
             key={occasion}
@@ -435,9 +454,16 @@ export const WishlistSection = memo(function WishlistSection({
         personId={personId}
         personType={personType}
         householdId={householdId}
-        defaultOccasion={activeOccasion}
+        defaultOccasion={activeOccasion || 'general'}
         onItemAdded={(newItem) => {
-          setItems(prev => [newItem, ...prev.filter(i => i.id !== newItem.id)])
+          setItems(prev => {
+            const isUpdate = prev.some(i => i.id === newItem.id)
+            if (!isUpdate) {
+              // New item added - notify parent of count change
+              onItemCountChange?.(1)
+            }
+            return [newItem, ...prev.filter(i => i.id !== newItem.id)]
+          })
         }}
       />
     </div>

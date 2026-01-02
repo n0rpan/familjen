@@ -106,6 +106,13 @@ export const WishlistOverview = memo(function WishlistOverview({
     setExpandedPerson(prev => prev === personId ? null : personId)
   }, [])
 
+  const handleItemCountChange = useCallback((personId: string, delta: number) => {
+    setItemCounts(prev => ({
+      ...prev,
+      [personId]: Math.max(0, (prev[personId] || 0) + delta),
+    }))
+  }, [])
+
   if (loading) {
     return (
       <div className="animate-pulse space-y-4">
@@ -195,6 +202,7 @@ export const WishlistOverview = memo(function WishlistOverview({
                     personName={person.name}
                     householdId={householdId}
                     showShareLink={true}
+                    onItemCountChange={(delta) => handleItemCountChange(person.id, delta)}
                   />
                 </div>
               </div>

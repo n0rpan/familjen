@@ -10,12 +10,6 @@ export const maxDuration = 30
 
 const OPENROUTER_TIMEOUT_MS = 25000 // 25 seconds (leave buffer for maxDuration)
 
-interface AnalysisResult {
-  name: string | null
-  description: string | null
-  price: number | null
-}
-
 // Language-specific prompts for AI image analysis
 const PROMPTS: Record<Language, string> = {
   nb: `Analyser dette bildet av et produkt/gaveønske for en ønskeliste.
@@ -91,7 +85,8 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (!member) {
-      return ApiErrors.forbidden()
+      // User is authenticated but not in any household - data integrity issue
+      return ApiErrors.internal({ internalMessage: 'Authenticated user has no household membership' })
     }
 
     // Run parallel queries for household API key and vision model setting
@@ -202,13 +197,25 @@ export async function POST(request: NextRequest) {
         jsonStr = jsonStr.slice(0, -3)
       }
 
-      const result: AnalysisResult = JSON.parse(jsonStr.trim())
+      const result = JSON.parse(jsonStr.trim())
+
+      // Validate and sanitize response
+      // AI might return price as string - parse it to number
+      let price: number | null = null
+      if (result.price != null) {
+        const parsed = typeof result.price === 'string'
+          ? parseFloat(result.price)
+          : result.price
+        // Only use if it's a valid finite number
+        if (typeof parsed === 'number' && Number.isFinite(parsed)) {
+          price = parsed
+        }
+      }
 
       return NextResponse.json({
-        name: result.name ?? null,
-        description: result.description ?? null,
-        // Use ?? to preserve price=0 (|| would return null for 0)
-        price: result.price ?? null,
+        name: typeof result.name === 'string' ? result.name : null,
+        description: typeof result.description === 'string' ? result.description : null,
+        price,
       })
     } catch {
       console.error('Failed to parse AI response:', content)
