@@ -399,7 +399,7 @@ export async function GET(request: Request) {
       for (const sourceUrl of sourceUrls) {
         // Check if sync is due
         const lastSync = sourceUrl.last_sync_at ? new Date(sourceUrl.last_sync_at) : null
-        const syncDueDays = sourceUrl.sync_frequency_days || 7
+        const syncDueDays = sourceUrl.sync_frequency_days || 1  // Default to daily sync
         const syncDue = !lastSync || (now.getTime() - lastSync.getTime()) > (syncDueDays * 24 * 60 * 60 * 1000)
 
         if (!syncDue) continue

@@ -30,6 +30,7 @@ interface WeekGridProps {
   recipes?: Recipe[]  // For meal selector dropdown
   weekStart?: Date | string  // May be serialized as string from server
   editable?: boolean
+  showFromToday?: boolean  // Only show today and upcoming days (for home page overview)
   onPickupChange?: (childId: string, date: string, pickerId: string | null) => void
   onMealChange?: (date: string, mealName: string | null, recipeId?: string) => void
   onRequestAISuggestion?: (date: string) => void  // Per-day AI suggestion
@@ -56,6 +57,7 @@ export const WeekGrid = memo(function WeekGrid({
   recipes = [],
   weekStart: providedWeekStart,
   editable = false,
+  showFromToday = false,
   onPickupChange,
   onMealChange,
   onRequestAISuggestion,
@@ -91,7 +93,20 @@ export const WeekGrid = memo(function WeekGrid({
     return providedWeekStart instanceof Date ? providedWeekStart : new Date(providedWeekStart)
   }, [providedWeekStart])
 
-  const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart])
+  // Get week dates, optionally filtering past days for home page view
+  const weekDates = useMemo(() => {
+    const allDates = getWeekDates(weekStart)
+    if (!showFromToday) return allDates
+
+    // Filter to only show today and future days
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return allDates.filter(date => {
+      const d = new Date(date)
+      d.setHours(0, 0, 0, 0)
+      return d >= today
+    })
+  }, [weekStart, showFromToday])
 
   // Create lookup maps for quick access
   const pickupMap = useMemo(() => {

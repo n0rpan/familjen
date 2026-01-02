@@ -17,7 +17,7 @@
  * - Optimistic updates show immediately with temp IDs (temp-{timestamp})
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
 import { createWishlistItemSchema, updateWishlistItemSchema } from '@/lib/schemas'
@@ -45,6 +45,12 @@ export function useWishlists(): UseWishlistsReturn {
   const [isFetching, setIsFetching] = useState(false)
   const [initialFetchDone, setInitialFetchDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Ref to track current items for offline conflict detection (avoids callback dependency)
+  const itemsRef = useRef<WishlistItem[]>(items)
+  useEffect(() => {
+    itemsRef.current = items
+  }, [items])
 
   const fetchData = useCallback(async () => {
     if (isDemo || !supabase || !household?.id) return
@@ -189,7 +195,8 @@ export function useWishlists(): UseWishlistsReturn {
       } else {
         // For real items, queue a separate update operation
         // Include original updated_at for conflict detection during sync
-        const existingItem = items.find(i => i.id === itemId)
+        // Use ref to avoid dependency on items array (prevents unnecessary re-renders)
+        const existingItem = itemsRef.current.find(i => i.id === itemId)
         await queueChange({
           table: 'wishlist_items',
           operation: 'update',

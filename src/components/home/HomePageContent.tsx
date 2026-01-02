@@ -221,11 +221,11 @@ export function HomePageContent({
       {/* Recent Photos */}
       {recentPhotos.length > 0 && <RecentPhotos photos={recentPhotos} />}
 
-      {/* Week Grid */}
+      {/* Upcoming Days */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
-            {t.common.week}
+            {t.common.upcomingDays}
           </h2>
           <TransitionLink
             href={getHref('/uke')}
@@ -246,6 +246,7 @@ export function HomePageContent({
           childTasks={childTasks}
           holidays={holidays}
           weekStart={weekStart}
+          showFromToday={true}
         />
       </div>
     </div>

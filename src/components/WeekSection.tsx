@@ -40,6 +40,7 @@ interface WeekSectionProps {
   childTasks: ChildTask[]
   holidays: Holiday[]
   weekStart: Date
+  showFromToday?: boolean  // Only show today and upcoming days
 }
 
 export function WeekSection({
@@ -53,6 +54,7 @@ export function WeekSection({
   childTasks,
   holidays,
   weekStart,
+  showFromToday = false,
 }: WeekSectionProps) {
   const { t } = useLanguage()
   const router = useRouter()
@@ -394,6 +396,7 @@ export function WeekSection({
         childTasks={childTasks}
         holidays={holidays}
         weekStart={weekStart}
+        showFromToday={showFromToday}
         onEventClick={handleMemberEventClick}
         onHouseholdEventClick={handleHouseholdEventClick}
         onExternalEventClick={handleExternalEventClick}

@@ -247,7 +247,7 @@ export const ManualSourceUrls = memo(function ManualSourceUrls({
         url_type: newType,
         child_id: newChildId,
         auto_sync: true,
-        sync_frequency_days: 7,
+        sync_frequency_days: 1,  // Sync daily by default
       })
 
     if (error) {

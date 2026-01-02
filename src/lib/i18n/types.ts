@@ -55,6 +55,7 @@ export interface TranslationStrings {
     day: string
     days: string
     week: string
+    upcomingDays: string
     month: string
     year: string
     dismiss: string
@@ -892,6 +893,14 @@ export interface TranslationStrings {
     noDevices: string
     noDevicesDesc: string
     goToSettings: string
+    // Empty state integration cards
+    emptyStateIntro: string
+    somfyIntegration: string
+    somfyDesc: string
+    toshibaIntegration: string
+    toshibaDesc: string
+    melcloudIntegration: string
+    melcloudDesc: string
     allUp: string
     allDown: string
     stop: string
@@ -929,6 +938,8 @@ export interface TranslationStrings {
     partialFailure: string
     syncDevices: string
     syncing: string
+    syncingDevices: string
+    dataOutdated: string
     syncSuccess: string
     syncFailed: string
     sync: string

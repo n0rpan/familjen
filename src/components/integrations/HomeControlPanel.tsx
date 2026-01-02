@@ -77,14 +77,36 @@ interface MelCloudDeviceInGroup {
 
 interface HomeControlAccount {
   id: string
+  service: string
   display_name: string
   account_email: string | null
+  last_sync_at: string | null
+  last_sync_status: string
 }
 
 interface HomeControlPanelProps {
   compact?: boolean
   showSettingsLink?: boolean
 }
+
+// Allowed home control services with endpoint mapping (defense-in-depth)
+const ALLOWED_SERVICES = ['somfy', 'toshiba', 'melcloud'] as const
+type AllowedService = typeof ALLOWED_SERVICES[number]
+
+// Static endpoint mapping prevents any string interpolation attacks
+const SERVICE_ENDPOINTS: Record<AllowedService, string> = {
+  somfy: '/api/home-control/somfy/devices',
+  toshiba: '/api/home-control/toshiba/devices',
+  melcloud: '/api/home-control/melcloud/devices',
+}
+
+function isAllowedService(service: string): service is AllowedService {
+  return ALLOWED_SERVICES.includes(service as AllowedService)
+}
+
+// Stale data thresholds (outside component to avoid dependency issues)
+const STALE_SYNC_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes - triggers background sync
+const STALE_WARNING_THRESHOLD_MS = 30 * 60 * 1000 // 30 minutes - shows warning to user
 
 const UI_CLASS_ICONS: Record<string, React.ReactNode> = {
   ExteriorScreen: (
@@ -136,6 +158,10 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
   const [toshibaDevicesInGroups, setToshibaDevicesInGroups] = useState<ToshibaDeviceInGroup[]>([])
   const [melcloudDevicesInGroups, setMelcloudDevicesInGroups] = useState<MelCloudDeviceInGroup[]>([])
   const [loading, setLoading] = useState(true)
+
+  // Smart refresh state - track if we've done initial sync check
+  const initialSyncDoneRef = useRef(false)
+  const [isSyncing, setIsSyncing] = useState(false)
 
   // Control state
   const [controllingDevice, setControllingDevice] = useState<string | null>(null)
@@ -197,14 +223,25 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
 
   const loadData = useCallback(async () => {
     try {
-      const { data: accountData } = await supabase.rpc('get_household_home_control_accounts')
+      // SECURITY: This RPC uses SECURITY DEFINER and filters by get_user_household_id()
+      // Users can only access accounts belonging to their own household
+      const { data: accountData, error: accountError } = await supabase.rpc('get_household_home_control_accounts')
+
+      if (accountError) {
+        console.error('[HomeControl] Failed to fetch accounts:', accountError)
+        showError(t.homeControl.syncFailed)
+        return
+      }
 
       if (accountData && accountData.length > 0) {
-        // Store accounts for grouping display
-        setAccounts(accountData.map((a: { id: string; display_name: string; account_email: string | null }) => ({
+        // Store accounts for grouping display (includes sync status for smart refresh)
+        setAccounts(accountData.map((a: { id: string; service: string; display_name: string; account_email: string | null; last_sync_at: string | null; last_sync_status: string }) => ({
           id: a.id,
+          service: a.service,
           display_name: a.display_name,
           account_email: a.account_email,
+          last_sync_at: a.last_sync_at,
+          last_sync_status: a.last_sync_status,
         })))
 
         const accountIds = accountData.map((a: { id: string }) => a.id)
@@ -270,9 +307,74 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
     }
   }, [supabase, showError, t.homeControl.syncFailed])
 
+  // Smart sync: only refresh from external APIs if last sync is stale (> 5 minutes)
+  // SECURITY: Account IDs come from RPC get_household_home_control_accounts which filters by household.
+  // API endpoints (/api/home-control/*/devices) validate ownership via RLS when fetching credentials.
+  const syncStaleAccounts = useCallback(async (accountList: HomeControlAccount[]) => {
+    const now = Date.now()
+    const staleAccounts = accountList.filter(account => {
+      if (!account.last_sync_at) return true // Never synced
+      const lastSyncTime = new Date(account.last_sync_at).getTime()
+      return now - lastSyncTime > STALE_SYNC_THRESHOLD_MS
+    })
+
+    if (staleAccounts.length === 0) {
+      console.log('[HomeControl] All accounts are fresh, skipping API sync')
+      return
+    }
+
+    console.log(`[HomeControl] Syncing ${staleAccounts.length} stale accounts`)
+    setIsSyncing(true)
+
+    try {
+      // Sync each stale account based on its service type
+      const results = await Promise.allSettled(
+        staleAccounts.map(async (account) => {
+          // Defense-in-depth: validate service and use static endpoint mapping
+          if (!isAllowedService(account.service)) {
+            throw new Error(`Unknown service type: ${account.service}`)
+          }
+          // Use static endpoint mapping instead of string interpolation
+          const baseEndpoint = SERVICE_ENDPOINTS[account.service]
+          const endpoint = `${baseEndpoint}?accountId=${encodeURIComponent(account.id)}`
+          const response = await fetch(endpoint)
+          if (!response.ok) {
+            const errorText = await response.text()
+            throw new Error(`${account.service}: ${errorText}`)
+          }
+          return { account: account.display_name, service: account.service }
+        })
+      )
+
+      // Log sync results for debugging
+      const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+      const succeeded = results.filter((r): r is PromiseFulfilledResult<{ account: string; service: AllowedService }> => r.status === 'fulfilled')
+
+      if (succeeded.length > 0) {
+        console.log(`[HomeControl] Synced ${succeeded.length} accounts:`, succeeded.map(r => r.value.account).join(', '))
+      }
+      if (failed.length > 0) {
+        console.warn(`[HomeControl] Failed to sync ${failed.length} accounts:`, failed.map(r => r.reason?.message || r.reason).join('; '))
+      }
+
+      // Reload data after sync
+      await loadData()
+    } finally {
+      setIsSyncing(false)
+    }
+  }, [loadData])
+
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  // Trigger smart sync on initial load (only once)
+  useEffect(() => {
+    if (!loading && accounts.length > 0 && !initialSyncDoneRef.current) {
+      initialSyncDoneRef.current = true
+      syncStaleAccounts(accounts)
+    }
+  }, [loading, accounts, syncStaleAccounts])
 
   // Poll for device state updates every 30 seconds when page is visible
   const { lastUpdated, isPolling: isRefreshing } = useVisiblePolling({
@@ -627,6 +729,27 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
 
   const hasDevices = devices.length > 0 || groups.length > 0
 
+  // Check if any account has stale data (>30 min) - shows warning indicator
+  // Must be before early returns to satisfy rules-of-hooks
+  const hasStaleData = useMemo(() => {
+    if (accounts.length === 0) return false
+    const now = Date.now()
+    return accounts.some(account => {
+      if (!account.last_sync_at) return true // Never synced = stale
+      const lastSyncTime = new Date(account.last_sync_at).getTime()
+      return now - lastSyncTime > STALE_WARNING_THRESHOLD_MS
+    })
+  }, [accounts])
+
+  // Format last updated text - must be before early returns
+  const lastUpdatedText = lastUpdated
+    ? formatLastUpdated(lastUpdated, {
+        justNow: t.homeControl?.justNow || 'Akkurat nå',
+        minutesAgo: t.homeControl?.minutesAgo || '{count} min siden',
+        hoursAgo: t.homeControl?.hoursAgo || '{count} timer siden',
+      })
+    : ''
+
   if (loading) {
     return (
       <div className="animate-pulse space-y-4">
@@ -685,42 +808,122 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
   if (!hasDevices) {
     return (
       <div
-        className="rounded-2xl p-6 text-center"
+        className="rounded-2xl p-6"
         style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
       >
-        <div
-          className="w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-4"
-          style={{ background: 'rgba(213, 186, 124, 0.2)' }}
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2">
-            <rect x="3" y="3" width="18" height="18" rx="2"/>
-            <line x1="9" y1="3" x2="9" y2="21"/>
-          </svg>
+        {/* Header */}
+        <div className="text-center mb-6">
+          <div
+            className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
+            style={{ background: 'rgba(213, 186, 124, 0.15)' }}
+          >
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="1.5">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold mb-1" style={{ color: 'var(--foreground)' }}>
+            {t.homeControl.noDevices}
+          </h3>
+          <p className="text-sm" style={{ color: 'var(--muted)' }}>
+            {t.homeControl.noDevicesDesc}
+          </p>
         </div>
-        <h3 className="font-medium mb-1" style={{ color: 'var(--foreground)' }}>
-          {t.homeControl.noDevices}
-        </h3>
-        <p className="text-sm mb-4" style={{ color: 'var(--muted)' }}>
-          {t.homeControl.noDevicesDesc}
+
+        {/* Integration cards */}
+        <p className="text-xs font-medium mb-3 uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
+          {t.homeControl.emptyStateIntro}
         </p>
+        <div className="space-y-2 mb-6">
+          {/* Somfy */}
+          <div
+            className="flex items-center gap-3 p-3 rounded-xl"
+            style={{ background: 'color-mix(in srgb, var(--foreground) 3%, transparent)' }}
+          >
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+              style={{ background: 'rgba(126, 182, 196, 0.2)' }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-sky)" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <line x1="9" y1="3" x2="9" y2="21"/>
+              </svg>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-medium text-sm" style={{ color: 'var(--foreground)' }}>
+                {t.homeControl.somfyIntegration}
+              </p>
+              <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                {t.homeControl.somfyDesc}
+              </p>
+            </div>
+          </div>
+
+          {/* Toshiba AC */}
+          <div
+            className="flex items-center gap-3 p-3 rounded-xl"
+            style={{ background: 'color-mix(in srgb, var(--foreground) 3%, transparent)' }}
+          >
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+              style={{ background: 'rgba(232, 120, 109, 0.2)' }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-coral)" strokeWidth="2">
+                <rect x="2" y="4" width="20" height="12" rx="2"/>
+                <path d="M6 20v-4"/>
+                <path d="M18 20v-4"/>
+                <path d="M6 10h12"/>
+                <path d="M6 13h12"/>
+              </svg>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-medium text-sm" style={{ color: 'var(--foreground)' }}>
+                {t.homeControl.toshibaIntegration}
+              </p>
+              <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                {t.homeControl.toshibaDesc}
+              </p>
+            </div>
+          </div>
+
+          {/* MelCloud */}
+          <div
+            className="flex items-center gap-3 p-3 rounded-xl"
+            style={{ background: 'color-mix(in srgb, var(--foreground) 3%, transparent)' }}
+          >
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+              style={{ background: 'rgba(142, 184, 156, 0.2)' }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-sage)" strokeWidth="2">
+                <rect x="2" y="4" width="20" height="12" rx="2"/>
+                <path d="M6 20v-4"/>
+                <path d="M18 20v-4"/>
+                <path d="M6 10h12"/>
+                <path d="M6 13h12"/>
+              </svg>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-medium text-sm" style={{ color: 'var(--foreground)' }}>
+                {t.homeControl.melcloudIntegration}
+              </p>
+              <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                {t.homeControl.melcloudDesc}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* CTA Button */}
         <TransitionLink
           href="/innstillinger"
-          className="btn btn-primary text-sm"
+          className="btn btn-primary w-full justify-center"
         >
           {t.homeControl.goToSettings}
         </TransitionLink>
       </div>
     )
   }
-
-  // Format last updated text
-  const lastUpdatedText = lastUpdated
-    ? formatLastUpdated(lastUpdated, {
-        justNow: t.homeControl?.justNow || 'Akkurat nå',
-        minutesAgo: t.homeControl?.minutesAgo || '{count} min siden',
-        hoursAgo: t.homeControl?.hoursAgo || '{count} timer siden',
-      })
-    : ''
 
   return (
     <div className="space-y-4">
@@ -739,13 +942,47 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
         </div>
       )}
 
-      {/* Last Updated Indicator */}
-      {lastUpdatedText && (
-        <div className="flex items-center justify-end gap-2 text-xs" style={{ color: 'var(--muted)' }}>
-          {isRefreshing && (
+      {/* Last Updated Indicator with Refresh Button */}
+      {(lastUpdatedText || isSyncing || hasStaleData || accounts.length > 0) && (
+        <div
+          className="flex items-center justify-end gap-2 text-xs"
+          style={{ color: hasStaleData && !isSyncing ? 'var(--color-honey)' : 'var(--muted)' }}
+        >
+          {(isRefreshing || isSyncing) && (
             <span className="loading-spinner" style={{ width: 12, height: 12, borderWidth: 1.5 }} />
           )}
-          <span>{t.homeControl?.lastUpdated || 'Oppdatert'}: {lastUpdatedText}</span>
+          {/* Stale warning icon */}
+          {hasStaleData && !isSyncing && !isRefreshing && (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+          )}
+          <span>
+            {isSyncing
+              ? (t.homeControl?.syncingDevices || 'Oppdaterer enheter...')
+              : hasStaleData && !lastUpdatedText
+                ? (t.homeControl?.dataOutdated || 'Data kan være utdatert')
+                : `${t.homeControl?.lastUpdated || 'Oppdatert'}: ${lastUpdatedText}`
+            }
+          </span>
+          {/* Manual refresh button */}
+          {!isSyncing && !isRefreshing && accounts.length > 0 && (
+            <button
+              onClick={() => syncStaleAccounts(accounts.map(a => ({ ...a, last_sync_at: null })))}
+              className="p-1 rounded hover:bg-[var(--sand)] transition-colors"
+              title={t.homeControl?.sync || 'Synk'}
+              aria-label={t.homeControl?.sync || 'Synk'}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                <path d="M3 3v5h5"/>
+                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                <path d="M16 21h5v-5"/>
+              </svg>
+            </button>
+          )}
         </div>
       )}
 

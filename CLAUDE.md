@@ -116,6 +116,7 @@ This codebase uses `children` as a prop name for household children (kids), not 
 | `/feed` | Feed - Messages, photos, reminders from integrations |
 | `/oppskrifter` | Recipe management |
 | `/handleliste` | Shopping list with AI categorization |
+| `/styring` | Home control - Somfy screens, Toshiba/MelCloud AC devices |
 | `/innstillinger` | Settings - Profile, household, members, children |
 | `/admin` | Admin panel - User management, AI settings, calendar |
 | `/login` | Authentication page |
@@ -134,6 +135,7 @@ This codebase uses `children` as a prop name for household children (kids), not 
 | `MealSelector` | Recipe/custom meal dropdown |
 | `AISuggestionModal` | AI meal suggestion interface |
 | `Header` | Navigation with user menu |
+| `HomeControlPanel` | Somfy/Toshiba/MelCloud device control with smart refresh |
 | `WishlistSection` | Wishlist display with occasion tabs, share links |
 | `AddWishlistItemModal` | Add/edit wishlist item with AI image analysis |
 
