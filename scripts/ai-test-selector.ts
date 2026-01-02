@@ -748,11 +748,38 @@ async function main() {
   let testsToSkip = 0
   let estimatedSavings = 0
 
+  // SAFEGUARD: Hard rules that override LLM decisions
+  // The LLM can be too aggressive about skipping - these rules ensure critical tests run
+  const impact = quickImpactCheck(changedFiles)
+  const hardRules: Record<string, boolean> = {
+    // Visual validation MUST run for component changes (UI bugs need visual testing)
+    'visual-validation': impact.affectsComponents || categories.pages.length > 0,
+    // E2E tests MUST run for page/component changes (user flows need testing)
+    'e2e-tests': impact.affectsComponents || categories.pages.length > 0,
+    // API tests MUST run for API changes
+    'api-tests': impact.affectsApi,
+    // Migration review MUST run for migration changes
+    'migration-review': impact.affectsMigrations,
+  }
+
   for (const decision of llmResponse.decisions) {
     let finalDecision = { ...decision }
 
+    // Apply hard rules - LLM cannot skip these
+    const hardRule = hardRules[decision.test]
+    if (hardRule === true && !decision.run) {
+      console.log(`   🔒 ${decision.test}: FORCED ON by hard rule (LLM wanted to skip, but this is a UI/API change)`)
+      finalDecision = {
+        ...decision,
+        run: true,
+        reason: `${decision.reason}. [OVERRIDE: Hard rule requires this test for component/API changes]`,
+      }
+    }
+
     // Check if we can skip based on last green run
-    if (decision.run && prState) {
+    // BUT: hard rules cannot be skipped by incremental logic
+    const isHardRuled = hardRules[decision.test] === true
+    if (finalDecision.run && prState && !isHardRuled) {
       const relevantFiles = getRelevantFiles(decision.test, changedFiles)
       const skipCheck = canSkipTest(prState, decision.test, relevantFiles)
 
