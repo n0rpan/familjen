@@ -670,10 +670,10 @@ export class ToshibaClient {
     const needsToExit8CMode = isCurrentlyIn8CMode && temp >= 17
 
     if (needsToEnter8CMode) {
-      // Enter or stay in 8°C mode: send HEATING_8C (0x04) + temp with +16 offset
-      const encodedTemp = temp + 16
-      this.log('Entering/staying in 8°C mode: setting temperature', temp, 'encoded as', encodedTemp, 'with meritA=0x04 for device:', acId)
-      await this.sendCommand(acId, { temperature: encodedTemp, meritA: 0x04 })
+      // Enter or stay in 8°C mode: send HEATING_8C (0x04) + actual temp
+      // The AC handles the +16 offset internally when in 8°C mode
+      this.log('Entering/staying in 8°C mode: setting temperature', temp, 'with meritA=0x04 for device:', acId)
+      await this.sendCommand(acId, { temperature: temp, meritA: 0x04 })
     } else if (needsToExit8CMode) {
       // Exit 8°C mode: send OFF (0x00) + normal temp
       this.log('Exiting 8°C mode: setting temperature', temp, 'with meritA=0x00 for device:', acId)
