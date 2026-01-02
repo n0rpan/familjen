@@ -244,6 +244,8 @@ export interface MappedToshibaDevice {
 // Temperature limits for Toshiba AC
 export const TEMPERATURE_LIMITS = {
   MIN: 17,
+  /** Minimum temp in 8°C mode (for cabin heating) */
+  MIN_8C_MODE: 5,
   MAX: 30,
   STEP: 0.5,
 } as const

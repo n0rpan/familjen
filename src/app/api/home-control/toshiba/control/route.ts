@@ -108,9 +108,10 @@ async function handleControl(body: ControlRequest, supabase: SupabaseClient) {
   // Validate value based on command
   if (command === 'temperature') {
     const temp = Number(value)
-    if (isNaN(temp) || temp < TEMPERATURE_LIMITS.MIN || temp > TEMPERATURE_LIMITS.MAX) {
+    // Allow temps down to MIN_8C_MODE (5°C) for cabin heating / 8°C mode
+    if (isNaN(temp) || temp < TEMPERATURE_LIMITS.MIN_8C_MODE || temp > TEMPERATURE_LIMITS.MAX) {
       return NextResponse.json(
-        { success: false, error: `Temperature must be between ${TEMPERATURE_LIMITS.MIN} and ${TEMPERATURE_LIMITS.MAX}` },
+        { success: false, error: `Temperature must be between ${TEMPERATURE_LIMITS.MIN_8C_MODE} and ${TEMPERATURE_LIMITS.MAX}` },
         { status: 400 }
       )
     }
