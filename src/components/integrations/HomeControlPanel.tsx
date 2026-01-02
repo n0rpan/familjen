@@ -89,9 +89,16 @@ interface HomeControlPanelProps {
   showSettingsLink?: boolean
 }
 
-// Allowed home control services (defense-in-depth validation)
+// Allowed home control services with endpoint mapping (defense-in-depth)
 const ALLOWED_SERVICES = ['somfy', 'toshiba', 'melcloud'] as const
 type AllowedService = typeof ALLOWED_SERVICES[number]
+
+// Static endpoint mapping prevents any string interpolation attacks
+const SERVICE_ENDPOINTS: Record<AllowedService, string> = {
+  somfy: '/api/home-control/somfy/devices',
+  toshiba: '/api/home-control/toshiba/devices',
+  melcloud: '/api/home-control/melcloud/devices',
+}
 
 function isAllowedService(service: string): service is AllowedService {
   return ALLOWED_SERVICES.includes(service as AllowedService)
@@ -216,6 +223,8 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
 
   const loadData = useCallback(async () => {
     try {
+      // SECURITY: This RPC uses SECURITY DEFINER and filters by get_user_household_id()
+      // Users can only access accounts belonging to their own household
       const { data: accountData, error: accountError } = await supabase.rpc('get_household_home_control_accounts')
 
       if (accountError) {
@@ -299,6 +308,8 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
   }, [supabase, showError, t.homeControl.syncFailed])
 
   // Smart sync: only refresh from external APIs if last sync is stale (> 5 minutes)
+  // SECURITY: Account IDs come from RPC get_household_home_control_accounts which filters by household.
+  // API endpoints (/api/home-control/*/devices) validate ownership via RLS when fetching credentials.
   const syncStaleAccounts = useCallback(async (accountList: HomeControlAccount[]) => {
     const now = Date.now()
     const staleAccounts = accountList.filter(account => {
@@ -319,11 +330,13 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
       // Sync each stale account based on its service type
       const results = await Promise.allSettled(
         staleAccounts.map(async (account) => {
-          // Defense-in-depth: validate service before constructing endpoint
+          // Defense-in-depth: validate service and use static endpoint mapping
           if (!isAllowedService(account.service)) {
             throw new Error(`Unknown service type: ${account.service}`)
           }
-          const endpoint = `/api/home-control/${account.service}/devices?accountId=${account.id}`
+          // Use static endpoint mapping instead of string interpolation
+          const baseEndpoint = SERVICE_ENDPOINTS[account.service]
+          const endpoint = `${baseEndpoint}?accountId=${encodeURIComponent(account.id)}`
           const response = await fetch(endpoint)
           if (!response.ok) {
             const errorText = await response.text()
@@ -335,7 +348,7 @@ export function HomeControlPanel({ compact = false, showSettingsLink = true }: H
 
       // Log sync results for debugging
       const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
-      const succeeded = results.filter((r): r is PromiseFulfilledResult<{ account: string; service: string }> => r.status === 'fulfilled')
+      const succeeded = results.filter((r): r is PromiseFulfilledResult<{ account: string; service: AllowedService }> => r.status === 'fulfilled')
 
       if (succeeded.length > 0) {
         console.log(`[HomeControl] Synced ${succeeded.length} accounts:`, succeeded.map(r => r.value.account).join(', '))

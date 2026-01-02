@@ -56,6 +56,12 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
 
   const [tasks, setTasks] = useState<ChildTask[]>([])
   const [isFetching, setIsFetching] = useState(false)
+
+  // Ref to track current tasks for offline conflict detection (avoids re-renders)
+  const tasksRef = useRef<ChildTask[]>(tasks)
+  useEffect(() => {
+    tasksRef.current = tasks
+  }, [tasks])
   const [lastFetchKey, setLastFetchKey] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -272,7 +278,8 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
       } else {
         // For real items, queue a separate update operation
         // Include original updated_at for conflict detection during sync
-        const existingTask = tasks.find(t => t.id === taskId)
+        // Use ref to avoid re-renders from tasks dependency
+        const existingTask = tasksRef.current.find(t => t.id === taskId)
         await queueChange({
           table: 'child_tasks',
           operation: 'update',
