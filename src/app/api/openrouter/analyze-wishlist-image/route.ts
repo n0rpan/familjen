@@ -85,8 +85,8 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (!member) {
-      // User is authenticated but not in any household - data integrity issue
-      return ApiErrors.internal({ internalMessage: 'Authenticated user has no household membership' })
+      // User is authenticated but hasn't joined/created a household yet
+      return ApiErrors.forbidden()
     }
 
     // Run parallel queries for household API key and vision model setting

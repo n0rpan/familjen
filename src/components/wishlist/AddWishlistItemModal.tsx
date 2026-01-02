@@ -169,10 +169,10 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
       const result = await response.json()
 
       // Fill in extracted data (only if field is empty)
-      // Use != null to handle price=0 correctly
-      if (result.name && !name) setName(result.name)
-      if (result.description && !description) setDescription(result.description)
-      if (result.price != null && !price) setPrice(result.price.toString())
+      // Use explicit === '' checks for clarity (price=0 from AI should fill empty field)
+      if (result.name && name === '') setName(result.name)
+      if (result.description && description === '') setDescription(result.description)
+      if (result.price != null && price === '') setPrice(result.price.toString())
 
       setAiMessage(t.wishlists.imageAnalyzed)
     } catch (error) {
