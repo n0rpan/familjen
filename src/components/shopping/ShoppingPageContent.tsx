@@ -821,7 +821,7 @@ export function ShoppingPageContent() {
         itemCounts={itemCounts}
       />
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-2">
         {finalLists.map(list => {
           // Apply filter to items
           const filteredItems = getFilteredItems(list.items)

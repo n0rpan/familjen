@@ -16,7 +16,7 @@
   --color-coral-dark: #D4635A;
   --color-sage: #8BA888;
   --color-sky: #7EB6C4;
-  --color-honey: #E5B95E;
+  --color-honey: #E5BA73;
 
   /* Semantic */
   --background: var(--color-cream);
@@ -222,12 +222,13 @@ input:focus, select:focus, textarea:focus {
 .btn-secondary {
   background: var(--card);
   color: var(--foreground);
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--muted);
+  font-weight: 500;
 }
 
 .btn-secondary:hover {
   background: var(--card-hover);
-  border-color: var(--muted);
+  border-color: var(--foreground);
 }
 
 /* Input styling */

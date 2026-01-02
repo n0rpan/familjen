@@ -171,13 +171,33 @@ export default function RecipesPage() {
             </p>
           )}
         </div>
+        {/* Desktop button - hidden on mobile when form is closed */}
         <button
           onClick={() => setShowForm(!showForm)}
-          className="btn btn-primary self-start sm:self-auto"
+          className={`btn btn-primary self-start sm:self-auto ${showForm ? '' : 'hidden sm:inline-flex'}`}
         >
           {showForm ? t.common.cancel : `+ ${t.recipes.addRecipe}`}
         </button>
       </div>
+
+      {/* Mobile FAB - only visible on mobile when form is not shown */}
+      {!showForm && (
+        <button
+          onClick={() => setShowForm(true)}
+          className="fixed bottom-24 right-4 z-40 sm:hidden w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+          style={{
+            background: 'var(--accent)',
+            color: 'white',
+            boxShadow: '0 4px 12px rgba(232, 120, 109, 0.4)',
+          }}
+          aria-label={t.recipes.addRecipe}
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+        </button>
+      )}
 
       {/* Filter tabs */}
       {recipes.length > 0 && (

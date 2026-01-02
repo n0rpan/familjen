@@ -1889,11 +1889,11 @@ export default function WeekEditPage() {
           <button
             onClick={fetchAISuggestions}
             disabled={aiLoading}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all hover:scale-[1.02]"
+            className="flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-medium transition-all hover:scale-[1.02] min-h-[44px]"
             style={{
-              background: 'linear-gradient(135deg, var(--color-honey) 0%, #D4A84B 100%)',
+              background: 'linear-gradient(135deg, var(--color-honey) 0%, #C9A05B 100%)',
               color: 'white',
-              boxShadow: '0 2px 8px rgba(229, 185, 94, 0.3)',
+              boxShadow: '0 2px 8px rgba(229, 186, 115, 0.3)',
             }}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
