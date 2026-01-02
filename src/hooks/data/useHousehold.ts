@@ -16,7 +16,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useDataSource } from './useDataSource'
 import { useAuthState } from '../useAuthState'
-import { getCached, setCache, isCacheFresh } from '@/lib/cache'
+import { getCached, setCache, isCacheFresh, deleteCache } from '@/lib/cache'
 import type { Household, HouseholdMember } from '@/lib/types'
 
 // Cache household data for 5 minutes
@@ -97,8 +97,11 @@ export function useHousehold(): UseHouseholdReturn {
 
       if (memberError) {
         if (memberError.code === 'PGRST116') {
-          // No membership found - JWT might be stale
-          // User needs to re-login or create household
+          // No membership found - user's access was revoked or JWT is stale
+          // Clear cached data to prevent showing stale household info
+          setHousehold(null)
+          setCurrentMember(null)
+          await deleteCache(HOUSEHOLD_CACHE_KEY)
           setLoading(false)
           return
         }
