@@ -243,22 +243,14 @@ export const WeekGrid = memo(function WeekGrid({
   // Check if event is a school closure
   const isSchoolClosure = (event: ExternalEvent) => event.event_type === 'school_closure'
 
-  // Calculate dynamic min-width based on number of days shown
-  // Label column ~100px + each day column ~90px
-  const tableMinWidth = useMemo(() => {
-    const labelColumnWidth = 100
-    const dayColumnWidth = 90
-    return labelColumnWidth + (weekDates.length * dayColumnWidth)
-  }, [weekDates.length])
-
   return (
     <div
       className="rounded-2xl overflow-hidden"
       style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
     >
-      {/* Grid - ensure full width with proper column distribution */}
-      <div className="overflow-x-auto -mx-px">
-        <table className="w-full table-fixed" style={{ minWidth: `${tableMinWidth}px` }}>
+      {/* Grid - always 100% width, no horizontal scroll needed */}
+      <div>
+        <table className="w-full table-fixed">
           <colgroup>
             <col className="w-24" />
             {weekDates.map((_, i) => (
