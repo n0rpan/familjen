@@ -669,10 +669,9 @@ export class ToshibaClient {
 
     if (isIn8CMode) {
       // When exiting 8°C mode, send meritA: 0x00 to disable HEATING_8C feature
-      // Temperature encoding also needs +16 offset when in 8°C mode
-      const encodedTemp = temp + 16
-      this.log('Exiting 8°C mode: setting temperature', temp, 'encoded as', encodedTemp, 'with meritA=0 for device:', acId)
-      await this.sendCommand(acId, { temperature: encodedTemp, meritA: 0x00 })
+      // Use normal temperature encoding since we're leaving 8°C mode
+      this.log('Exiting 8°C mode: setting temperature', temp, 'with meritA=0 for device:', acId)
+      await this.sendCommand(acId, { temperature: temp, meritA: 0x00 })
     } else {
       this.log('Setting temperature:', temp, 'for device:', acId)
       await this.sendCommand(acId, { temperature: temp })
