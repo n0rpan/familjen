@@ -669,6 +669,8 @@ export class ToshibaClient {
     const needsToEnter8CMode = temp < 17
     const needsToExit8CMode = isCurrentlyIn8CMode && temp >= 17
 
+    this.log('Temperature change:', { temp, currentTemperature, isCurrentlyIn8CMode, needsToEnter8CMode, needsToExit8CMode })
+
     if (needsToEnter8CMode) {
       // Enter or stay in 8°C mode: send HEATING_8C (0x04) + actual temp
       // The AC handles the +16 offset internally when in 8°C mode
@@ -849,6 +851,8 @@ export class ToshibaClient {
 
     const targetId = this.getDeviceUniqueId(acId)!
     const stateHex = this.buildCommandState(options)
+
+    this.log('Sending command - options:', JSON.stringify(options), 'stateHex:', stateHex)
 
     const message = {
       sourceId: this.deviceId,
