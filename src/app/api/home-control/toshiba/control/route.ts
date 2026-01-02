@@ -163,7 +163,7 @@ async function handleControl(body: ControlRequest, supabase: SupabaseClient) {
   // SECURITY: Verify device belongs to this account
   const { data: device, error: deviceError } = await supabase
     .from('toshiba_ac_devices')
-    .select('id')
+    .select('id, target_temperature')
     .eq('account_id', accountId)
     .eq('ac_id', acId)
     .single()
@@ -189,7 +189,8 @@ async function handleControl(body: ControlRequest, supabase: SupabaseClient) {
       break
 
     case 'temperature':
-      await client.setTemperature(acId, Number(value))
+      // Pass current temperature so client can detect 8°C mode
+      await client.setTemperature(acId, Number(value), device.target_temperature ?? undefined)
       await supabase.rpc('update_toshiba_device_state', {
         p_device_id: device.id,
         p_target_temperature: Number(value),

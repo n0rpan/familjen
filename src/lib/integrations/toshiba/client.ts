@@ -657,12 +657,19 @@ export class ToshibaClient {
   /**
    * Set target temperature.
    * Supports temperatures below the normal MIN (17°C) by using the +16 offset encoding.
+   * @param currentTemperature - Current temperature from database (used to detect 8°C mode)
    */
-  async setTemperature(acId: string, temperature: number): Promise<void> {
-    // Allow extended range (5-30°C), encode temps below 17 with +16 offset
+  async setTemperature(acId: string, temperature: number, currentTemperature?: number): Promise<void> {
+    // Allow extended range (5-30°C)
     const temp = Math.max(5, Math.min(30, temperature))
-    this.log('Setting temperature:', temp, 'for device:', acId)
-    await this.sendCommand(acId, { temperature: temp })
+
+    // Detect 8°C mode: if current temperature is below 17, AC is in special low-temp mode
+    // In this mode, we need to add +16 offset when writing
+    const isIn8CMode = currentTemperature !== undefined && currentTemperature < 17
+    const encodedTemp = isIn8CMode ? temp + 16 : temp
+
+    this.log('Setting temperature:', temp, 'for device:', acId, isIn8CMode ? '(8°C mode, encoded as ' + encodedTemp + ')' : '')
+    await this.sendCommand(acId, { temperature: encodedTemp })
   }
 
   /**
@@ -818,25 +825,12 @@ export class ToshibaClient {
       }
     }
 
-    // Check if device is in "8°C mode" (low temp mode) by reading current state
-    // In this mode, temperature values have +16 offset
+    // Note: 8°C mode temperature offset is handled in setTemperature() method
+    // which receives the current temperature from the database
     const cachedDevice = this.deviceCache[acId]
-    let adjustedOptions = { ...options }
-
-    if (options.temperature !== undefined && cachedDevice?.currentStateHex) {
-      const currentTempByte = cachedDevice.currentStateHex.slice(STATE_OFFSETS_READ.TEMP * 2, STATE_OFFSETS_READ.TEMP * 2 + 2)
-      const currentTempValue = parseInt(currentTempByte, 16)
-      const isIn8CMode = currentTempValue > 30
-
-      if (isIn8CMode) {
-        // In 8°C mode, temperatures need +16 offset when writing
-        this.log('Device in 8°C mode, applying +16 offset for temperature write:', options.temperature, '→', options.temperature + 16)
-        adjustedOptions.temperature = options.temperature + 16
-      }
-    }
 
     const targetId = this.getDeviceUniqueId(acId)!
-    const stateHex = this.buildCommandState(adjustedOptions)
+    const stateHex = this.buildCommandState(options)
 
     const message = {
       sourceId: this.deviceId,
