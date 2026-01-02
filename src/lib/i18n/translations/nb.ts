@@ -71,6 +71,7 @@ export const nb: TranslationStrings = {
     demoMode: 'Demomodus',
     viewOnly: 'Kun visning',
     external: 'Ekstern',
+    all: 'Alle',
   },
 
   // Date/Time

@@ -71,6 +71,7 @@ export const sv: TranslationStrings = {
     demoMode: 'Demoläge',
     viewOnly: 'Endast visning',
     external: 'Extern',
+    all: 'Alla',
   },
 
   // Date/Time

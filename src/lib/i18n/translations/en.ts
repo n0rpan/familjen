@@ -71,6 +71,7 @@ export const en: TranslationStrings = {
     demoMode: 'Demo mode',
     viewOnly: 'View only',
     external: 'External',
+    all: 'All',
   },
 
   // Date/Time

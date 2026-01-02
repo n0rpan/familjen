@@ -79,6 +79,7 @@ export interface TranslationStrings {
     demoMode: string
     viewOnly: string
     external: string
+    all: string
   }
 
   // Date/Time
