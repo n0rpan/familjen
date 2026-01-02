@@ -819,6 +819,7 @@ export interface TranslationStrings {
     changeImage: string
     removeImage: string
     uploadImage: string
+    processingImage: string
     analyzing: string
     analyzeImage: string
     imageAnalyzed: string

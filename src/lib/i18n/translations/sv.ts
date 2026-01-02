@@ -800,6 +800,7 @@ export const sv: TranslationStrings = {
     changeImage: 'Byt bild',
     removeImage: 'Ta bort bild',
     uploadImage: 'Ladda upp bild',
+    processingImage: 'Bearbetar bild...',
     analyzing: 'Analyserar bild...',
     analyzeImage: 'Analysera med AI',
     imageAnalyzed: 'AI har fyllt i information från bilden',

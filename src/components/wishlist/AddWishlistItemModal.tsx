@@ -168,10 +168,11 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
 
       const result = await response.json()
 
-      // Fill in extracted data
+      // Fill in extracted data (only if field is empty)
+      // Use != null to handle price=0 correctly
       if (result.name && !name) setName(result.name)
       if (result.description && !description) setDescription(result.description)
-      if (result.price && !price) setPrice(result.price.toString())
+      if (result.price != null && !price) setPrice(result.price.toString())
 
       setAiMessage(t.wishlists.imageAnalyzed)
     } catch (error) {
@@ -317,7 +318,7 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
                 style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
               >
                 <div className="w-6 h-6 border-2 border-current border-t-transparent rounded-full animate-spin" style={{ color: 'var(--accent)' }} />
-                <span className="text-sm" style={{ color: 'var(--muted)' }}>Behandler bilde...</span>
+                <span className="text-sm" style={{ color: 'var(--muted)' }}>{t.wishlists.processingImage}</span>
               </div>
             ) : imagePreview ? (
               <div className="relative">

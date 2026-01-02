@@ -800,6 +800,7 @@ export const en: TranslationStrings = {
     changeImage: 'Change image',
     removeImage: 'Remove image',
     uploadImage: 'Upload image',
+    processingImage: 'Processing image...',
     analyzing: 'Analyzing image...',
     analyzeImage: 'Analyze with AI',
     imageAnalyzed: 'AI has filled in information from the image',

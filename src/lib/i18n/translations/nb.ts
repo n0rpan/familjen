@@ -800,6 +800,7 @@ export const nb: TranslationStrings = {
     changeImage: 'Bytt bilde',
     removeImage: 'Fjern bilde',
     uploadImage: 'Last opp bilde',
+    processingImage: 'Behandler bilde...',
     analyzing: 'Analyserer bilde...',
     analyzeImage: 'Analyser med AI',
     imageAnalyzed: 'AI har fylt ut informasjon fra bildet',
