@@ -850,7 +850,6 @@ export class ToshibaClient {
     await this.sendAmqpMessage(message)
 
     // Update cached state if we know the current state
-    const cachedDevice = this.deviceCache[acId]
     if (cachedDevice?.currentStateHex) {
       // Merge new values into cached state
       const currentState = cachedDevice.currentStateHex
