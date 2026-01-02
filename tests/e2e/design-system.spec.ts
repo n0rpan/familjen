@@ -95,13 +95,17 @@ test.describe('Design System - Touch Targets', () => {
 test.describe('Design System - No Horizontal Scroll', () => {
   test.use({ viewport: { width: 390, height: 844 } }) // iPhone 14 Pro
 
-  for (const route of ROUTES) {
+  // Week page (/uke) intentionally has horizontal scroll for 7-day grid readability
+  // It uses overflow-x-auto on the grid container, not document-level scroll
+  const ROUTES_WITHOUT_SCROLL = ROUTES.filter(r => r.path !== '/uke')
+
+  for (const route of ROUTES_WITHOUT_SCROLL) {
     test(`${route.name}: no horizontal overflow on mobile`, async ({ page, context }) => {
       await setupTestFixture(context, page, { childCount: 2, memberCount: 2, withPickups: true })
       await page.goto(route.path)
       await page.waitForLoadState('networkidle')
 
-      // Check for horizontal scroll
+      // Check for horizontal scroll at document level
       const hasHorizontalScroll = await page.evaluate(() => {
         return document.documentElement.scrollWidth > document.documentElement.clientWidth
       })
@@ -109,6 +113,23 @@ test.describe('Design System - No Horizontal Scroll', () => {
       expect(hasHorizontalScroll, 'Page should not have horizontal scroll on mobile').toBeFalsy()
     })
   }
+
+  // Week page: verify scroll is CONTAINED within the grid (not document-level)
+  test('Week: horizontal scroll is contained within grid only', async ({ page, context }) => {
+    await setupTestFixture(context, page, { childCount: 2, memberCount: 2, withPickups: true })
+    await page.goto('/uke')
+    await page.waitForLoadState('networkidle')
+
+    // Document should NOT have horizontal scroll (scroll is contained in grid)
+    const hasDocumentScroll = await page.evaluate(() => {
+      return document.documentElement.scrollWidth > document.documentElement.clientWidth
+    })
+    expect(hasDocumentScroll, 'Document should not scroll - only the week grid should').toBeFalsy()
+
+    // Week grid container should have overflow-x-auto for internal scrolling
+    const gridHasScroll = await page.locator('[class*="overflow-x-auto"]').isVisible()
+    expect(gridHasScroll, 'Week grid should have contained horizontal scroll').toBeTruthy()
+  })
 })
 
 test.describe('Design System - Typography', () => {

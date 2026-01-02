@@ -149,14 +149,19 @@ const PAGE_EXPECTATIONS: PageExpectation[] = [
     mustNotShow: [
       'Overlapping text that\'s unreadable',
       'Broken layout with elements stacked incorrectly',
+      'Cramped columns that are too narrow to read (columns should be at least ~100px wide)',
+      'All 7 days squeezed into mobile width without scroll (this would make text unreadable)',
     ],
     mobileConsiderations: [
-      'Week view may condense on mobile - still should be usable',
-      'Current day should be visually highlighted',
+      'Week grid MUST have horizontal scroll on mobile - 7 days cannot fit readably without scroll',
+      'Each day column should be wide enough to show picker names and meal text legibly',
+      'Current day should be visually highlighted (coral/accent background)',
+      'Grid should auto-scroll to show today\'s column on load',
     ],
     byDesign: [
-      'Week grid uses horizontal scroll on mobile to show all 7 days - this is intentional for readability',
-      'Meal row may be below the fold and require scrolling - this is expected',
+      'Week grid uses horizontal scroll on mobile to show all 7 days - this is REQUIRED for readability',
+      'If screenshot shows 7 columns crammed without scroll, this is a BUG not a design choice',
+      'Meal row may be below the fold and require vertical scrolling - this is expected',
       'Week navigation arrows are at the top to match standard calendar patterns',
     ],
   },
@@ -298,10 +303,16 @@ You are reviewing screenshots of Familjen, a Norwegian family planning app.
 - One-handed mobile use is common
 - Quick glance should convey the day's essentials
 
+## Critical Usability Requirements (MUST check these)
+
+1. **Week grid readability**: The 7-day week grid MUST have horizontal scroll on mobile. If you see all 7 columns squeezed into the mobile viewport without scroll capability, this is a CRITICAL BUG - columns would be ~55px wide which is unreadable. Proper columns should be ~100px wide minimum.
+
+2. **Home page width**: The home page shows only 3 upcoming days and should fill 100% width WITHOUT scroll. This is different from the week page.
+
 ## Intentional Design Patterns (DO NOT flag as issues)
 These patterns may look unusual but are BY DESIGN:
 
-1. **Week grid horizontal scroll**: The 7-day week grid intentionally uses horizontal scroll on mobile to ensure all days are readable. This is preferred over squishing text.
+1. **Week grid horizontal scroll**: When the week page HAS scroll, this is correct - it's required for 7 days to be readable. Only flag if scroll is MISSING.
 
 2. **Bottom navigation in screenshots**: The bottom navigation is fixed at the viewport bottom. It may not appear in screenshots if the content is scrolled - this is a screenshot artifact, not a missing element.
 
