@@ -14,11 +14,16 @@
  * - user.app_metadata.household_id
  *
  * The household_id is synced to JWT during login (see auth/callback/route.ts)
+ *
+ * IMPLEMENTATION: Uses reference counting to manage the auth subscription.
+ * - First component to mount creates the subscription
+ * - Last component to unmount cleans up the subscription
+ * - Handles React Strict Mode double-mount correctly
  */
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { User, Session } from '@supabase/supabase-js'
+import type { User, Session, Subscription } from '@supabase/supabase-js'
 
 export interface AuthState {
   /** Current user (null if not logged in) */
@@ -45,7 +50,11 @@ let globalAuthState: AuthState = {
   email: null,
 }
 let globalListeners: Set<() => void> = new Set()
-let isInitialized = false
+
+// Reference counting for subscription management
+let subscriberCount = 0
+let authSubscription: Subscription | null = null
+let supabaseClient: ReturnType<typeof createClient> | null = null
 
 function notifyListeners() {
   globalListeners.forEach(listener => listener())
@@ -64,6 +73,49 @@ function extractAuthState(session: Session | null): AuthState {
 }
 
 /**
+ * Initialize the auth subscription (called when first subscriber mounts)
+ */
+function initializeAuth() {
+  if (authSubscription) return // Already initialized
+
+  supabaseClient = createClient()
+
+  // Get initial session from local storage (fast, no network)
+  supabaseClient.auth.getSession().then(({ data: { session } }) => {
+    globalAuthState = extractAuthState(session)
+    notifyListeners()
+  })
+
+  // Listen for auth changes
+  const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((_event, session) => {
+    globalAuthState = extractAuthState(session)
+    notifyListeners()
+  })
+
+  authSubscription = subscription
+}
+
+/**
+ * Cleanup the auth subscription (called when last subscriber unmounts)
+ */
+function cleanupAuth() {
+  if (authSubscription) {
+    authSubscription.unsubscribe()
+    authSubscription = null
+  }
+  supabaseClient = null
+  // Reset to loading state so next initialization works correctly
+  globalAuthState = {
+    user: null,
+    session: null,
+    loading: true,
+    householdId: null,
+    isAdmin: false,
+    email: null,
+  }
+}
+
+/**
  * Hook to access auth state without making API calls
  *
  * Uses Supabase's onAuthStateChange listener which reads from local storage
@@ -71,7 +123,6 @@ function extractAuthState(session: Session | null): AuthState {
  */
 export function useAuthState(): AuthState {
   const [, forceUpdate] = useState({})
-  const supabase = useMemo(() => createClient(), [])
 
   // Subscribe to global auth state changes
   useEffect(() => {
@@ -82,27 +133,24 @@ export function useAuthState(): AuthState {
     }
   }, [])
 
-  // Initialize auth state (only once globally)
+  // Manage auth subscription with reference counting
   useEffect(() => {
-    if (isInitialized) return
-    isInitialized = true
+    subscriberCount++
 
-    // Get initial session from local storage (fast, no network)
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      globalAuthState = extractAuthState(session)
-      notifyListeners()
-    })
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      globalAuthState = extractAuthState(session)
-      notifyListeners()
-    })
+    // First subscriber initializes the auth subscription
+    if (subscriberCount === 1) {
+      initializeAuth()
+    }
 
     return () => {
-      subscription.unsubscribe()
+      subscriberCount--
+
+      // Last subscriber cleans up the auth subscription
+      if (subscriberCount === 0) {
+        cleanupAuth()
+      }
     }
-  }, [supabase])
+  }, [])
 
   return globalAuthState
 }
