@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { WeekGrid } from '@/components/WeekGrid'
-import { formatDateISO, getWeekStart, addDays, formatWeekHeaderLocalized, type Holiday } from '@/lib/utils'
+import { formatDateISO, getWeekStart, addDays, formatWeekHeaderLocalized, getWeekdayIndex, type Holiday } from '@/lib/utils'
 import type { Child, HouseholdMember, PickupWithDetails, MealWithRecipe, Household, Recipe, MealSuggestion, MemberEvent, MemberEventType, HouseholdEvent, ChildTask, ChildTaskType, RecipeIngredient, Pickup, Meal, ExternalEvent, WeekCacheData } from '@/lib/types'
 import { TransitionLink } from '@/components/TransitionLink'
 import dynamic from 'next/dynamic'
@@ -520,9 +520,7 @@ export default function WeekEditPage() {
       const picker = members.find(m => m.id === newRecord.picker_id)
       if (child && picker) {
         const dateObj = new Date(newRecord.date)
-        // getDay() returns 0=Sun,1=Mon,...,6=Sat but weekdays array is Mon-Sun
-        const dayIndex = (dateObj.getDay() + 6) % 7
-        const dayName = t.date.weekdays[dayIndex]
+        const dayName = t.date.weekdays[getWeekdayIndex(dateObj)]
         realtime.showToast(
           `${realtime.getMemberName(updatedBy)} satt ${picker.short_name || picker.name} til henting av ${child.name} ${dayName}`,
           'info'
@@ -558,9 +556,7 @@ export default function WeekEditPage() {
     if (realtime && newRecord && !realtime.isOwnChange(updatedBy)) {
       const mealName = newRecord.custom_meal || 'middag'
       const dateObj = new Date(newRecord.date)
-      // getDay() returns 0=Sun,1=Mon,...,6=Sat but weekdays array is Mon-Sun
-      const dayIndex = (dateObj.getDay() + 6) % 7
-      const dayName = t.date.weekdays[dayIndex]
+      const dayName = t.date.weekdays[getWeekdayIndex(dateObj)]
       realtime.showToast(
         `${realtime.getMemberName(updatedBy)} endret ${dayName} til ${mealName}`,
         'info'
@@ -751,9 +747,7 @@ export default function WeekEditPage() {
         const picker = members.find(m => m.id === pickerId)
         if (child && picker) {
           const dateObj = new Date(date)
-          // getDay() returns 0=Sun,1=Mon,...,6=Sat but weekdays array is Mon-Sun
-          const dayIndex = (dateObj.getDay() + 6) % 7
-          const dayName = t.date.weekdays[dayIndex]
+          const dayName = t.date.weekdays[getWeekdayIndex(dateObj)]
           notifyPickupAssigned(child.name, dayName, pickerId)
         }
       }
@@ -1044,9 +1038,7 @@ export default function WeekEditPage() {
         const eventMember = members.find(m => m.id === eventForm.member_id)
         if (eventMember && eventId) {
           const dateObj = new Date(eventForm.date)
-          // getDay() returns 0=Sun,1=Mon,...,6=Sat but weekdays array is Mon-Sun
-          const dayIndex = (dateObj.getDay() + 6) % 7
-          const dayName = t.date.weekdays[dayIndex]
+          const dayName = t.date.weekdays[getWeekdayIndex(dateObj)]
           // Notify all members except the one the event is about
           const otherMemberIds = members
             .filter(m => m.id !== eventForm.member_id)
