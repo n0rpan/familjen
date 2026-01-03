@@ -22,6 +22,12 @@ import { formatDateISO } from '@/lib/utils'
 // Timeout for LLM API calls (30 seconds)
 const LLM_TIMEOUT_MS = 30000
 
+// Safety thresholds to prevent false deletions from extraction failures
+// These mirror the thresholds in deletion-handler.ts for consistency
+const MIN_EVENTS_FOR_DELETION_CHECK = 1 // At least some events must be extracted
+const MAX_DELETION_RATIO = 0.5 // Skip deletion if >50% would be removed (likely extraction error)
+const MAX_ABSOLUTE_DELETIONS = 10 // Skip deletion if >10 events would be removed
+
 /**
  * Fetch with timeout to prevent hanging requests from blocking sync.
  */
@@ -73,6 +79,9 @@ export interface SyncResult {
     firstError?: string
     matchingMethod?: 'llm' | 'hash'
     validationRan?: boolean
+    deletionSkipped?: boolean
+    wouldHaveDeleted?: number
+    deletionRatio?: number
   }
 }
 
@@ -154,8 +163,10 @@ async function matchEventsWithLLM(
   }
 
   if (extractedEvents.length === 0) {
-    result.unmatchedExistingIds = existingEvents.map(e => e.id)
-    return result
+    // SAFETY: If extraction returned no events, don't mark existing events for deletion.
+    // This is likely an extraction failure, not actual removal of all events.
+    console.warn('[CalendarSourceSync] No events extracted - skipping deletion check to prevent false removals')
+    return result  // Return empty result - no matches, no unmatched
   }
 
   if (existingEvents.length === 0) {
@@ -932,6 +943,51 @@ export async function syncCalendarSource(
     // 8. Process unmatched existing events - REMOVED
     const today = new Date()
     today.setHours(0, 0, 0, 0)
+
+    // Count future events that would be deleted
+    const futureUnmatchedIds = matchingResult.unmatchedExistingIds.filter(id => {
+      const event = existingList.find(e => e.id === id)
+      if (!event) return false
+      const eventDate = new Date(event.event_date)
+      return eventDate >= today
+    })
+
+    // SAFETY CHECK: Prevent mass deletions from extraction failures
+    // This mirrors the safety thresholds in deletion-handler.ts
+    const totalExisting = existingList.length
+    const wouldDelete = futureUnmatchedIds.length
+
+    if (wouldDelete > 0 && totalExisting > 0) {
+      const deletionRatio = wouldDelete / totalExisting
+
+      if (deletionRatio > MAX_DELETION_RATIO || wouldDelete > MAX_ABSOLUTE_DELETIONS) {
+        console.warn(
+          `[CalendarSourceSync] SAFETY: Skipping deletion for ${source.display_name}: ` +
+          `${wouldDelete}/${totalExisting} events would be deleted (${(deletionRatio * 100).toFixed(0)}%). ` +
+          `This looks like an extraction error. Extracted ${result.eventsFound} events this run.`
+        )
+        // Skip deletion entirely - don't remove any events
+        // Update sync status to indicate partial success
+        await supabase
+          .from('external_source_urls')
+          .update({
+            last_sync_at: new Date().toISOString(),
+            last_sync_status: 'partial',
+            last_sync_error: `Skipped deletion: ${wouldDelete} events would be removed (safety check)`,
+          })
+          .eq('id', source.id)
+
+        // Still return success but note the skipped deletions
+        result.success = true
+        result.debug = {
+          ...result.debug,
+          deletionSkipped: true,
+          wouldHaveDeleted: wouldDelete,
+          deletionRatio: deletionRatio,
+        }
+        return result
+      }
+    }
 
     for (const existingId of matchingResult.unmatchedExistingIds) {
       const event = existingList.find(e => e.id === existingId)
