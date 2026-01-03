@@ -464,6 +464,13 @@ export const en: TranslationStrings = {
     restoreAnyway: 'Add anyway',
     showAllNotifications: 'Show all {count} notifications',
     showFewerNotifications: 'Show fewer',
+    dismissAll: 'Dismiss all',
+    restoreAll: 'Restore all',
+    confirmRestoreAll: 'This will restore {count} events. Continue?',
+    restoringAll: 'Restoring...',
+    dismissingAll: 'Dismissing...',
+    allDismissed: 'All notifications dismissed',
+    allRestored: '{count} events restored',
     // Reminder card
     overdue: 'Overdue',
     // Message card

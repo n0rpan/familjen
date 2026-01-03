@@ -464,6 +464,13 @@ export const nb: TranslationStrings = {
     restoreAnyway: 'Legg til likevel',
     showAllNotifications: 'Vis alle {count} varsler',
     showFewerNotifications: 'Vis færre',
+    dismissAll: 'Avvis alle',
+    restoreAll: 'Legg til alle',
+    confirmRestoreAll: 'Dette vil gjenopprette {count} hendelser. Vil du fortsette?',
+    restoringAll: 'Gjenoppretter...',
+    dismissingAll: 'Avviser...',
+    allDismissed: 'Alle varsler avvist',
+    allRestored: '{count} hendelser gjenopprettet',
     // Reminder card
     overdue: 'Forfalt',
     // Message card

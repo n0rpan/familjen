@@ -1515,6 +1515,8 @@ external_events (
   id, integration_id, external_id,
   title, event_date, end_date, event_time, end_time,
   event_type,  -- 'birthday', 'school_class', 'school_absence', 'school_closure'
+  is_restored,  -- true for manually restored events (integration_id null)
+  restored_from_notification_id,  -- links back to event_change_notifications
   raw_data
 )
 

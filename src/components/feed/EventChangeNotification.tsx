@@ -1,7 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useLanguage } from '@/lib/i18n/context'
 import { getLocale } from '@/lib/utils'
 
@@ -25,13 +24,19 @@ export interface EventNotification {
   created_at: string
 }
 
-interface Props {
+interface CardProps {
   notification: EventNotification
-  onDismiss: (id: string) => void
-  onRestore: (id: string, success: boolean, message?: string) => void
+  onDismiss: (id: string) => Promise<boolean>
+  onRestore: (id: string) => Promise<{ success: boolean; eventId?: string; error?: string }>
+  isAnimatingOut: boolean
 }
 
-export function EventChangeNotificationCard({ notification, onDismiss, onRestore }: Props) {
+export function EventChangeNotificationCard({
+  notification,
+  onDismiss,
+  onRestore,
+  isAnimatingOut,
+}: CardProps) {
   const [loading, setLoading] = useState(false)
   const { t, language } = useLanguage()
 
@@ -51,14 +56,27 @@ export function EventChangeNotificationCard({ notification, onDismiss, onRestore
   const isRemoved = notification.change_type === 'removed'
   const accentColor = isRemoved ? 'var(--color-coral)' : 'var(--color-honey)'
   const accentBg = isRemoved ? 'rgba(239, 137, 118, 0.2)' : 'rgba(219, 185, 108, 0.2)'
-  const cardBg = notification.status === 'unread'
-    ? (isRemoved ? 'rgba(239, 137, 118, 0.1)' : 'rgba(219, 185, 108, 0.1)')
-    : 'var(--card)'
+  const cardBg =
+    notification.status === 'unread'
+      ? isRemoved
+        ? 'rgba(239, 137, 118, 0.1)'
+        : 'rgba(219, 185, 108, 0.1)'
+      : 'var(--card)'
 
   const getChangeIcon = () => {
     if (isRemoved) {
       return (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
           <circle cx="12" cy="12" r="10" />
           <line x1="15" y1="9" x2="9" y2="15" />
           <line x1="9" y1="9" x2="15" y2="15" />
@@ -66,7 +84,17 @@ export function EventChangeNotificationCard({ notification, onDismiss, onRestore
       )
     }
     return (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <svg
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
         <circle cx="12" cy="12" r="10" />
         <line x1="12" y1="8" x2="12" y2="12" />
         <line x1="12" y1="16" x2="12.01" y2="16" />
@@ -96,14 +124,7 @@ export function EventChangeNotificationCard({ notification, onDismiss, onRestore
   const handleDismiss = async () => {
     setLoading(true)
     try {
-      const supabase = createClient()
-      await supabase
-        .from('event_change_notifications')
-        .update({ status: 'dismissed' })
-        .eq('id', notification.id)
-      onDismiss(notification.id)
-    } catch (error) {
-      console.error('Error dismissing notification:', error)
+      await onDismiss(notification.id)
     } finally {
       setLoading(false)
     }
@@ -118,23 +139,7 @@ export function EventChangeNotificationCard({ notification, onDismiss, onRestore
 
     setLoading(true)
     try {
-      const supabase = createClient()
-      const { error } = await supabase.rpc('restore_removed_event', {
-        p_notification_id: notification.id,
-      })
-
-      if (error) {
-        console.error('Error restoring event:', error)
-        onRestore(notification.id, false, error.message)
-        return
-      }
-
-      // Success feedback
-      const successMessage = t.feed.eventRestoredSuccess.replace('{title}', notification.original_title)
-      onRestore(notification.id, true, successMessage)
-    } catch (error) {
-      console.error('Error restoring event:', error)
-      onRestore(notification.id, false)
+      await onRestore(notification.id)
     } finally {
       setLoading(false)
     }
@@ -150,7 +155,9 @@ export function EventChangeNotificationCard({ notification, onDismiss, onRestore
 
   return (
     <article
-      className="card p-4 border-l-4"
+      className={`card p-4 border-l-4 transition-all duration-300 ${
+        isAnimatingOut ? 'opacity-0 scale-95 -translate-x-2' : 'opacity-100 scale-100 translate-x-0'
+      }`}
       style={{
         borderLeftColor: accentColor,
         background: cardBg,
@@ -191,29 +198,49 @@ export function EventChangeNotificationCard({ notification, onDismiss, onRestore
       </div>
 
       {/* Event details */}
-      <div
-        className="p-3 rounded-lg mb-3"
-        style={{ background: 'var(--background)' }}
-      >
+      <div className="p-3 rounded-lg mb-3" style={{ background: 'var(--background)' }}>
         <p className="font-medium" style={{ color: 'var(--foreground)' }}>
           {notification.original_title}
         </p>
         <div className="flex flex-wrap gap-2 mt-2 text-sm" style={{ color: 'var(--muted)' }}>
           <span className="flex items-center gap-1">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
               <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
               <line x1="16" y1="2" x2="16" y2="6" />
               <line x1="8" y1="2" x2="8" y2="6" />
               <line x1="3" y1="10" x2="21" y2="10" />
             </svg>
             <time dateTime={notification.original_date}>{formatDate(notification.original_date)}</time>
-            {notification.original_end_date && notification.original_end_date !== notification.original_date && (
-              <> - <time dateTime={notification.original_end_date}>{formatDate(notification.original_end_date)}</time></>
-            )}
+            {notification.original_end_date &&
+              notification.original_end_date !== notification.original_date && (
+                <>
+                  {' '}
+                  -{' '}
+                  <time dateTime={notification.original_end_date}>
+                    {formatDate(notification.original_end_date)}
+                  </time>
+                </>
+              )}
           </span>
           {notification.original_time && (
             <span className="flex items-center gap-1">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden="true"
+              >
                 <circle cx="12" cy="12" r="10" />
                 <polyline points="12 6 12 12 16 14" />
               </svg>
@@ -222,7 +249,15 @@ export function EventChangeNotificationCard({ notification, onDismiss, onRestore
           )}
           {notification.child_name && (
             <span className="flex items-center gap-1">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden="true"
+              >
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                 <circle cx="12" cy="7" r="4" />
               </svg>
@@ -263,71 +298,210 @@ export function EventChangeNotificationCard({ notification, onDismiss, onRestore
 
 interface NotificationListProps {
   notifications: EventNotification[]
-  onUpdate: () => void
+  onDismiss: (id: string) => Promise<boolean>
+  onRestore: (id: string) => Promise<{ success: boolean; eventId?: string; error?: string }>
+  onDismissAll: () => Promise<{ success: boolean; count: number }>
+  onRestoreAll: () => Promise<{ success: boolean; count: number; eventIds?: string[] }>
+  syncing?: boolean
 }
 
 const COLLAPSE_THRESHOLD = 5
+/** Animation duration in milliseconds for fade-out transitions */
+const ANIMATION_DURATION_MS = 300
 
-export function EventChangeNotificationList({ notifications, onUpdate }: NotificationListProps) {
-  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
+export function EventChangeNotificationList({
+  notifications,
+  onDismiss,
+  onRestore,
+  onDismissAll,
+  onRestoreAll,
+  syncing = false,
+}: NotificationListProps) {
   const [expanded, setExpanded] = useState(false)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [animatingOutIds, setAnimatingOutIds] = useState<Set<string>>(new Set())
   const { t } = useLanguage()
 
-  const handleDismiss = useCallback((id: string) => {
-    setDismissedIds((prev) => new Set(prev).add(id))
-    onUpdate()
-  }, [onUpdate])
+  // Track which notifications are visible (not yet animated out)
+  const visibleNotifications = notifications.filter(
+    (n) =>
+      (n.status === 'unread' || n.status === 'read') && !animatingOutIds.has(n.id)
+  )
 
-  const handleRestore = useCallback((id: string, success: boolean, message?: string) => {
-    setDismissedIds((prev) => new Set(prev).add(id))
-    if (success && message) {
-      setSuccessMessage(message)
-      // Clear success message after 3 seconds
+  const pendingCount = visibleNotifications.length
+
+  // Handle single dismiss with animation
+  const handleDismiss = useCallback(
+    async (id: string) => {
+      // Start animation
+      setAnimatingOutIds((prev) => new Set(prev).add(id))
+
+      // Wait for animation then call actual dismiss
+      await new Promise((resolve) => setTimeout(resolve, ANIMATION_DURATION_MS))
+      const success = await onDismiss(id)
+
+      if (!success) {
+        // Rollback animation if failed
+        setAnimatingOutIds((prev) => {
+          const next = new Set(prev)
+          next.delete(id)
+          return next
+        })
+      }
+
+      return success
+    },
+    [onDismiss]
+  )
+
+  // Handle single restore with animation
+  const handleRestore = useCallback(
+    async (id: string) => {
+      // Start animation
+      setAnimatingOutIds((prev) => new Set(prev).add(id))
+
+      // Wait for animation then call actual restore
+      await new Promise((resolve) => setTimeout(resolve, ANIMATION_DURATION_MS))
+      const result = await onRestore(id)
+
+      if (result.success) {
+        const notification = notifications.find((n) => n.id === id)
+        if (notification) {
+          const msg = t.feed.eventRestoredSuccess.replace('{title}', notification.original_title)
+          setSuccessMessage(msg)
+          setTimeout(() => setSuccessMessage(null), 3000)
+        }
+      } else {
+        // Rollback animation if failed
+        setAnimatingOutIds((prev) => {
+          const next = new Set(prev)
+          next.delete(id)
+          return next
+        })
+      }
+
+      return result
+    },
+    [onRestore, notifications, t.feed.eventRestoredSuccess]
+  )
+
+  // Handle dismiss all with animation
+  const handleDismissAll = useCallback(async () => {
+    // Animate all out
+    const ids = visibleNotifications.map((n) => n.id)
+    setAnimatingOutIds(new Set(ids))
+
+    // Wait for animation
+    await new Promise((resolve) => setTimeout(resolve, ANIMATION_DURATION_MS))
+
+    const result = await onDismissAll()
+
+    if (result.success) {
+      setSuccessMessage(t.feed.allDismissed)
       setTimeout(() => setSuccessMessage(null), 3000)
+    } else {
+      // Rollback
+      setAnimatingOutIds(new Set())
     }
-    onUpdate()
-  }, [onUpdate])
+  }, [visibleNotifications, onDismissAll, t.feed.allDismissed])
 
-  const visibleNotifications = notifications.filter((n) => !dismissedIds.has(n.id))
+  // Handle restore all with confirmation and animation
+  const handleRestoreAll = useCallback(async () => {
+    // Confirmation dialog
+    const confirmMessage = t.feed.confirmRestoreAll.replace('{count}', String(pendingCount))
+    if (!window.confirm(confirmMessage)) {
+      return
+    }
 
-  if (visibleNotifications.length === 0) {
+    // Animate all out
+    const ids = visibleNotifications.map((n) => n.id)
+    setAnimatingOutIds(new Set(ids))
+
+    // Wait for animation
+    await new Promise((resolve) => setTimeout(resolve, ANIMATION_DURATION_MS))
+
+    const result = await onRestoreAll()
+
+    if (result.success) {
+      const msg = t.feed.allRestored.replace('{count}', String(result.count))
+      setSuccessMessage(msg)
+      setTimeout(() => setSuccessMessage(null), 3000)
+    } else {
+      // Rollback
+      setAnimatingOutIds(new Set())
+    }
+  }, [visibleNotifications, pendingCount, onRestoreAll, t.feed.confirmRestoreAll, t.feed.allRestored])
+
+  if (pendingCount === 0 && !successMessage) {
     return null
   }
 
-  const shouldCollapse = visibleNotifications.length > COLLAPSE_THRESHOLD && !expanded
+  const shouldCollapse = pendingCount > COLLAPSE_THRESHOLD && !expanded
   const displayNotifications = shouldCollapse
     ? visibleNotifications.slice(0, COLLAPSE_THRESHOLD)
     : visibleNotifications
 
   return (
     <section className="space-y-3" aria-labelledby="calendar-changes-heading">
-      <h2
-        id="calendar-changes-heading"
-        className="text-lg font-semibold"
-        style={{ color: 'var(--foreground)' }}
-      >
-        {t.feed.calendarChanges}
-        {visibleNotifications.length > 0 && (
-          <span
-            className="ml-2 px-2 py-0.5 text-xs rounded-full"
-            style={{ background: 'var(--color-coral)', color: 'white' }}
-            aria-label={`${visibleNotifications.length} notifications`}
-          >
-            {visibleNotifications.length}
-          </span>
+      {/* Header with batch actions */}
+      <div className="flex items-center justify-between gap-2">
+        <h2
+          id="calendar-changes-heading"
+          className="text-lg font-semibold"
+          style={{ color: 'var(--foreground)' }}
+        >
+          {t.feed.calendarChanges}
+          {pendingCount > 0 && (
+            <span
+              className="ml-2 px-2 py-0.5 text-xs rounded-full"
+              style={{ background: 'var(--color-coral)', color: 'white' }}
+              aria-label={`${pendingCount} notifications`}
+            >
+              {pendingCount}
+            </span>
+          )}
+        </h2>
+
+        {/* Batch action buttons */}
+        {pendingCount > 1 && (
+          <div className="flex gap-2">
+            <button
+              onClick={handleRestoreAll}
+              disabled={syncing}
+              className="btn btn-secondary text-xs px-3 py-1.5"
+              title={t.feed.restoreAll}
+            >
+              {syncing ? t.feed.restoringAll : t.feed.restoreAll}
+            </button>
+            <button
+              onClick={handleDismissAll}
+              disabled={syncing}
+              className="btn btn-secondary text-xs px-3 py-1.5"
+              title={t.feed.dismissAll}
+            >
+              {syncing ? t.feed.dismissingAll : t.feed.dismissAll}
+            </button>
+          </div>
         )}
-      </h2>
+      </div>
 
       {/* Success feedback toast */}
       {successMessage && (
         <div
-          className="p-3 rounded-lg flex items-center gap-2"
+          className="p-3 rounded-lg flex items-center gap-2 transition-opacity duration-300"
           style={{ background: 'rgba(142, 197, 158, 0.2)', color: 'var(--color-sage)' }}
           role="status"
           aria-live="polite"
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            aria-hidden="true"
+          >
             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
             <polyline points="22 4 12 14.01 9 11.01" />
           </svg>
@@ -335,17 +509,21 @@ export function EventChangeNotificationList({ notifications, onUpdate }: Notific
         </div>
       )}
 
-      {displayNotifications.map((notification) => (
-        <EventChangeNotificationCard
-          key={notification.id}
-          notification={notification}
-          onDismiss={handleDismiss}
-          onRestore={handleRestore}
-        />
-      ))}
+      {/* Notification cards */}
+      <div className="space-y-3">
+        {displayNotifications.map((notification) => (
+          <EventChangeNotificationCard
+            key={notification.id}
+            notification={notification}
+            onDismiss={handleDismiss}
+            onRestore={handleRestore}
+            isAnimatingOut={animatingOutIds.has(notification.id)}
+          />
+        ))}
+      </div>
 
       {/* Show more/less button */}
-      {visibleNotifications.length > COLLAPSE_THRESHOLD && (
+      {pendingCount > COLLAPSE_THRESHOLD && (
         <button
           onClick={() => setExpanded(!expanded)}
           className="w-full py-2 text-sm font-medium rounded-lg"
@@ -353,8 +531,10 @@ export function EventChangeNotificationList({ notifications, onUpdate }: Notific
         >
           {expanded
             ? t.feed.showFewerNotifications
-            : t.feed.showAllNotifications.replace('{count}', String(visibleNotifications.length - COLLAPSE_THRESHOLD))
-          }
+            : t.feed.showAllNotifications.replace(
+                '{count}',
+                String(pendingCount - COLLAPSE_THRESHOLD)
+              )}
         </button>
       )}
     </section>

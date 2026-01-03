@@ -330,7 +330,13 @@ export interface ExternalEventLocalOverrides {
 
 export interface ExternalEvent {
   id: string
-  integration_id: string
+  /**
+   * Source of the event. Three valid states:
+   * 1. integration_id set - Event synced from an integration (Spond, Kidplan, etc.)
+   * 2. source_url_id set (integration_id null) - Event from URL-based calendar source
+   * 3. is_restored=true (integration_id null, source_url_id null) - Manually restored event
+   */
+  integration_id: string | null
   child_id: string | null
   external_id: string
   external_group_id: string | null
@@ -343,6 +349,8 @@ export interface ExternalEvent {
   location: string | null
   event_type: string | null
   is_hidden: boolean
+  is_restored: boolean  // True for manually restored events
+  restored_from_notification_id: string | null  // Links back to notification
   user_notes: string | null
   local_overrides: ExternalEventLocalOverrides | null  // User local edits
   created_at: string

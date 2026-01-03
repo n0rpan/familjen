@@ -53,9 +53,15 @@ export interface FeedPageContentProps {
   // Callbacks (optional - for mutations)
   onToggleReminder?: (id: string, completed: boolean) => void
   onSync?: () => Promise<void>
-  onNotificationUpdate?: () => void
   onDeduplicate?: () => Promise<DeduplicationResult | null>
   onDuplicatesUpdate?: () => void
+
+  // Notification callbacks (optimistic updates)
+  onDismissNotification?: (id: string) => Promise<boolean>
+  onRestoreNotification?: (id: string) => Promise<{ success: boolean; eventId?: string; error?: string }>
+  onDismissAllNotifications?: () => Promise<{ success: boolean; count: number }>
+  onRestoreAllNotifications?: () => Promise<{ success: boolean; count: number; eventIds?: string[] }>
+  notificationsSyncing?: boolean
 
   // Demo mode
   isDemo?: boolean
@@ -73,9 +79,13 @@ export function FeedPageContent({
   initialFilter = 'all',
   onToggleReminder,
   onSync,
-  onNotificationUpdate,
   onDeduplicate,
   onDuplicatesUpdate,
+  onDismissNotification,
+  onRestoreNotification,
+  onDismissAllNotifications,
+  onRestoreAllNotifications,
+  notificationsSyncing = false,
   isDemo = false,
 }: FeedPageContentProps) {
   const { t, language } = useLanguage()
@@ -383,7 +393,11 @@ export function FeedPageContent({
       {!isDemo && notifications.length > 0 && activeFilter === 'all' && (
         <EventChangeNotificationList
           notifications={notifications}
-          onUpdate={onNotificationUpdate || (() => {})}
+          onDismiss={onDismissNotification || (async () => false)}
+          onRestore={onRestoreNotification || (async () => ({ success: false }))}
+          onDismissAll={onDismissAllNotifications || (async () => ({ success: false, count: 0 }))}
+          onRestoreAll={onRestoreAllNotifications || (async () => ({ success: false, count: 0 }))}
+          syncing={notificationsSyncing}
         />
       )}
 
