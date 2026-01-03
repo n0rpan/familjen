@@ -306,7 +306,8 @@ interface NotificationListProps {
 }
 
 const COLLAPSE_THRESHOLD = 5
-const ANIMATION_DURATION = 300
+/** Animation duration in milliseconds for fade-out transitions */
+const ANIMATION_DURATION_MS = 300
 
 export function EventChangeNotificationList({
   notifications,
@@ -336,7 +337,7 @@ export function EventChangeNotificationList({
       setAnimatingOutIds((prev) => new Set(prev).add(id))
 
       // Wait for animation then call actual dismiss
-      await new Promise((resolve) => setTimeout(resolve, ANIMATION_DURATION))
+      await new Promise((resolve) => setTimeout(resolve, ANIMATION_DURATION_MS))
       const success = await onDismiss(id)
 
       if (!success) {
@@ -360,7 +361,7 @@ export function EventChangeNotificationList({
       setAnimatingOutIds((prev) => new Set(prev).add(id))
 
       // Wait for animation then call actual restore
-      await new Promise((resolve) => setTimeout(resolve, ANIMATION_DURATION))
+      await new Promise((resolve) => setTimeout(resolve, ANIMATION_DURATION_MS))
       const result = await onRestore(id)
 
       if (result.success) {
@@ -391,7 +392,7 @@ export function EventChangeNotificationList({
     setAnimatingOutIds(new Set(ids))
 
     // Wait for animation
-    await new Promise((resolve) => setTimeout(resolve, ANIMATION_DURATION))
+    await new Promise((resolve) => setTimeout(resolve, ANIMATION_DURATION_MS))
 
     const result = await onDismissAll()
 
@@ -417,7 +418,7 @@ export function EventChangeNotificationList({
     setAnimatingOutIds(new Set(ids))
 
     // Wait for animation
-    await new Promise((resolve) => setTimeout(resolve, ANIMATION_DURATION))
+    await new Promise((resolve) => setTimeout(resolve, ANIMATION_DURATION_MS))
 
     const result = await onRestoreAll()
 

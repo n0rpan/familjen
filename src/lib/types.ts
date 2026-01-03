@@ -330,7 +330,13 @@ export interface ExternalEventLocalOverrides {
 
 export interface ExternalEvent {
   id: string
-  integration_id: string | null  // Nullable for restored events
+  /**
+   * Source of the event. Three valid states:
+   * 1. integration_id set - Event synced from an integration (Spond, Kidplan, etc.)
+   * 2. source_url_id set (integration_id null) - Event from URL-based calendar source
+   * 3. is_restored=true (integration_id null, source_url_id null) - Manually restored event
+   */
+  integration_id: string | null
   child_id: string | null
   external_id: string
   external_group_id: string | null

@@ -32,7 +32,10 @@ export interface UseEventNotificationsReturn {
   // Manual refresh (for initial load)
   refresh: () => Promise<void>
 
-  // Set notifications from external source (e.g., useFeed)
+  /**
+   * Set notifications from external source (e.g., useFeed).
+   * Validates input is an array of valid EventNotification objects.
+   */
   setNotifications: (notifications: EventNotification[]) => void
 }
 
@@ -42,17 +45,41 @@ export interface UseEventNotificationsReturn {
 export function useEventNotifications(
   initialNotifications: EventNotification[] = []
 ): UseEventNotificationsReturn {
-  const [notifications, setNotifications] = useState<EventNotification[]>(initialNotifications)
+  const [notifications, setNotificationsInternal] = useState<EventNotification[]>(initialNotifications)
   const [loading, setLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  /**
+   * Validated setter for notifications.
+   * Ensures input is an array of objects with required fields.
+   */
+  const setNotifications = useCallback((newNotifications: EventNotification[]) => {
+    if (!Array.isArray(newNotifications)) {
+      console.error('setNotifications: expected array, got', typeof newNotifications)
+      return
+    }
+    // Validate each notification has required fields
+    const valid = newNotifications.filter((n) => {
+      if (!n || typeof n !== 'object') return false
+      if (typeof n.id !== 'string' || !n.id) return false
+      if (!['unread', 'read', 'restored', 'dismissed'].includes(n.status)) return false
+      return true
+    })
+    if (valid.length !== newNotifications.length) {
+      console.warn(
+        `setNotifications: filtered ${newNotifications.length - valid.length} invalid notifications`
+      )
+    }
+    setNotificationsInternal(valid)
+  }, [])
 
   // Sync initial notifications when they change
   useEffect(() => {
     if (initialNotifications.length > 0) {
       setNotifications(initialNotifications)
     }
-  }, [initialNotifications])
+  }, [initialNotifications, setNotifications])
 
   const supabase = useMemo(() => createClient(), [])
 
@@ -68,7 +95,7 @@ export function useEventNotifications(
   const dismiss = useCallback(
     async (id: string): Promise<boolean> => {
       // Optimistic: immediately update local state
-      setNotifications((prev) =>
+      setNotificationsInternal((prev) =>
         prev.map((n) => (n.id === id ? { ...n, status: 'dismissed' as const } : n))
       )
 
@@ -80,7 +107,7 @@ export function useEventNotifications(
 
         if (updateError) {
           // Rollback on error
-          setNotifications((prev) =>
+          setNotificationsInternal((prev) =>
             prev.map((n) => (n.id === id ? { ...n, status: 'unread' as const } : n))
           )
           setError(updateError.message)
@@ -90,7 +117,7 @@ export function useEventNotifications(
         return true
       } catch (err) {
         // Rollback on error
-        setNotifications((prev) =>
+        setNotificationsInternal((prev) =>
           prev.map((n) => (n.id === id ? { ...n, status: 'unread' as const } : n))
         )
         setError(err instanceof Error ? err.message : 'Failed to dismiss')
@@ -108,7 +135,7 @@ export function useEventNotifications(
       id: string
     ): Promise<{ success: boolean; eventId?: string; error?: string }> => {
       // Optimistic: immediately update local state
-      setNotifications((prev) =>
+      setNotificationsInternal((prev) =>
         prev.map((n) => (n.id === id ? { ...n, status: 'restored' as const } : n))
       )
 
@@ -119,7 +146,7 @@ export function useEventNotifications(
 
         if (rpcError) {
           // Rollback on error
-          setNotifications((prev) =>
+          setNotificationsInternal((prev) =>
             prev.map((n) => (n.id === id ? { ...n, status: 'unread' as const } : n))
           )
           return { success: false, error: rpcError.message }
@@ -128,7 +155,7 @@ export function useEventNotifications(
         return { success: true, eventId: data as string }
       } catch (err) {
         // Rollback on error
-        setNotifications((prev) =>
+        setNotificationsInternal((prev) =>
           prev.map((n) => (n.id === id ? { ...n, status: 'unread' as const } : n))
         )
         const errorMsg = err instanceof Error ? err.message : 'Failed to restore'
@@ -151,7 +178,7 @@ export function useEventNotifications(
     }
 
     // Optimistic: immediately update all
-    setNotifications((prev) =>
+    setNotificationsInternal((prev) =>
       prev.map((n) =>
         activeIds.includes(n.id) ? { ...n, status: 'dismissed' as const } : n
       )
@@ -163,7 +190,7 @@ export function useEventNotifications(
 
       if (rpcError) {
         // Rollback on error
-        setNotifications((prev) =>
+        setNotificationsInternal((prev) =>
           prev.map((n) =>
             activeIds.includes(n.id) ? { ...n, status: 'unread' as const } : n
           )
@@ -175,7 +202,7 @@ export function useEventNotifications(
       return { success: true, count: data as number }
     } catch (err) {
       // Rollback on error
-      setNotifications((prev) =>
+      setNotificationsInternal((prev) =>
         prev.map((n) =>
           activeIds.includes(n.id) ? { ...n, status: 'unread' as const } : n
         )
@@ -204,7 +231,7 @@ export function useEventNotifications(
     }
 
     // Optimistic: immediately update all
-    setNotifications((prev) =>
+    setNotificationsInternal((prev) =>
       prev.map((n) =>
         activeIds.includes(n.id) ? { ...n, status: 'restored' as const } : n
       )
@@ -216,7 +243,7 @@ export function useEventNotifications(
 
       if (rpcError) {
         // Rollback on error
-        setNotifications((prev) =>
+        setNotificationsInternal((prev) =>
           prev.map((n) =>
             activeIds.includes(n.id) ? { ...n, status: 'unread' as const } : n
           )
@@ -233,7 +260,7 @@ export function useEventNotifications(
       }
     } catch (err) {
       // Rollback on error
-      setNotifications((prev) =>
+      setNotificationsInternal((prev) =>
         prev.map((n) =>
           activeIds.includes(n.id) ? { ...n, status: 'unread' as const } : n
         )
@@ -265,7 +292,7 @@ export function useEventNotifications(
         return
       }
 
-      setNotifications((data || []) as EventNotification[])
+      setNotificationsInternal((data || []) as EventNotification[])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load notifications')
     } finally {

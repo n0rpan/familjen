@@ -28,6 +28,11 @@ CREATE INDEX IF NOT EXISTS idx_external_events_restored
   ON external_events(is_restored)
   WHERE is_restored = true;
 
+-- Index for tracing restoration history (debugging and future features)
+CREATE INDEX IF NOT EXISTS idx_external_events_restored_notification
+  ON external_events(restored_from_notification_id)
+  WHERE restored_from_notification_id IS NOT NULL;
+
 -- ============================================================================
 -- 2. Update restore_removed_event to create external_events
 -- ============================================================================
