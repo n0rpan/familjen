@@ -520,7 +520,9 @@ export default function WeekEditPage() {
       const picker = members.find(m => m.id === newRecord.picker_id)
       if (child && picker) {
         const dateObj = new Date(newRecord.date)
-        const dayName = t.date.weekdays[dateObj.getDay()]
+        // getDay() returns 0=Sun,1=Mon,...,6=Sat but weekdays array is Mon-Sun
+        const dayIndex = (dateObj.getDay() + 6) % 7
+        const dayName = t.date.weekdays[dayIndex]
         realtime.showToast(
           `${realtime.getMemberName(updatedBy)} satt ${picker.short_name || picker.name} til henting av ${child.name} ${dayName}`,
           'info'
@@ -556,7 +558,9 @@ export default function WeekEditPage() {
     if (realtime && newRecord && !realtime.isOwnChange(updatedBy)) {
       const mealName = newRecord.custom_meal || 'middag'
       const dateObj = new Date(newRecord.date)
-      const dayName = t.date.weekdays[dateObj.getDay()]
+      // getDay() returns 0=Sun,1=Mon,...,6=Sat but weekdays array is Mon-Sun
+      const dayIndex = (dateObj.getDay() + 6) % 7
+      const dayName = t.date.weekdays[dayIndex]
       realtime.showToast(
         `${realtime.getMemberName(updatedBy)} endret ${dayName} til ${mealName}`,
         'info'
@@ -747,7 +751,9 @@ export default function WeekEditPage() {
         const picker = members.find(m => m.id === pickerId)
         if (child && picker) {
           const dateObj = new Date(date)
-          const dayName = t.date.weekdays[dateObj.getDay()]
+          // getDay() returns 0=Sun,1=Mon,...,6=Sat but weekdays array is Mon-Sun
+          const dayIndex = (dateObj.getDay() + 6) % 7
+          const dayName = t.date.weekdays[dayIndex]
           notifyPickupAssigned(child.name, dayName, pickerId)
         }
       }
@@ -1038,7 +1044,9 @@ export default function WeekEditPage() {
         const eventMember = members.find(m => m.id === eventForm.member_id)
         if (eventMember && eventId) {
           const dateObj = new Date(eventForm.date)
-          const dayName = t.date.weekdays[dateObj.getDay()]
+          // getDay() returns 0=Sun,1=Mon,...,6=Sat but weekdays array is Mon-Sun
+          const dayIndex = (dateObj.getDay() + 6) % 7
+          const dayName = t.date.weekdays[dayIndex]
           // Notify all members except the one the event is about
           const otherMemberIds = members
             .filter(m => m.id !== eventForm.member_id)
