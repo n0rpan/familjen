@@ -42,7 +42,11 @@ CREATE OR REPLACE FUNCTION restore_removed_event(
   p_override_title TEXT DEFAULT NULL,
   p_override_date DATE DEFAULT NULL
 )
-RETURNS UUID AS $$
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
   v_notification event_change_notifications;
   v_household_id UUID;
@@ -106,7 +110,7 @@ BEGIN
 
   RETURN v_event_id;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 -- ============================================================================
 -- 3. Batch dismiss all notifications
@@ -115,7 +119,11 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE OR REPLACE FUNCTION dismiss_all_notifications(
   p_household_id UUID DEFAULT NULL
 )
-RETURNS INT AS $$
+RETURNS INT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
   v_household_id UUID;
   v_count INT;
@@ -152,12 +160,12 @@ BEGIN
   GET DIAGNOSTICS v_count = ROW_COUNT;
   RETURN v_count;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 GRANT EXECUTE ON FUNCTION dismiss_all_notifications(UUID) TO authenticated;
 
 -- ============================================================================
--- 4. Batch restore all notifications
+-- 4. Batch restore all notifications (set-based, not loop)
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION restore_all_notifications(
@@ -166,13 +174,15 @@ CREATE OR REPLACE FUNCTION restore_all_notifications(
 RETURNS TABLE(
   restored_count INT,
   event_ids UUID[]
-) AS $$
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
   v_household_id UUID;
-  v_notification RECORD;
-  v_event_id UUID;
-  v_event_ids UUID[] := ARRAY[]::UUID[];
-  v_count INT := 0;
+  v_event_ids UUID[];
+  v_count INT;
 BEGIN
   -- Get user's household if not provided
   IF p_household_id IS NULL THEN
@@ -196,14 +206,8 @@ BEGIN
     RAISE EXCEPTION 'Not authorized for this household';
   END IF;
 
-  -- Loop through all active notifications and restore them
-  FOR v_notification IN
-    SELECT * FROM event_change_notifications
-    WHERE household_id = v_household_id
-      AND status IN ('unread', 'read')
-    ORDER BY created_at ASC
-  LOOP
-    -- Create restored external_event
+  -- Set-based INSERT: Create all restored events at once
+  WITH inserted_events AS (
     INSERT INTO external_events (
       child_id,
       external_id,
@@ -215,34 +219,43 @@ BEGIN
       is_restored,
       restored_from_notification_id,
       user_notes
-    ) VALUES (
-      v_notification.child_id,
-      'restored-' || v_notification.id::text,
-      v_notification.original_title,
-      v_notification.original_description,
-      v_notification.original_date,
-      v_notification.original_end_date,
-      v_notification.original_time,
-      true,
-      v_notification.id,
-      'Gjenopprettet fra ' || COALESCE(v_notification.source_name, 'ekstern kilde')
     )
-    RETURNING id INTO v_event_id;
+    SELECT
+      n.child_id,
+      'restored-' || n.id::text,
+      n.original_title,
+      n.original_description,
+      n.original_date,
+      n.original_end_date,
+      n.original_time,
+      true,
+      n.id,
+      'Gjenopprettet fra ' || COALESCE(n.source_name, 'ekstern kilde')
+    FROM event_change_notifications n
+    WHERE n.household_id = v_household_id
+      AND n.status IN ('unread', 'read')
+    RETURNING id, restored_from_notification_id
+  )
+  SELECT array_agg(id), count(*)::INT
+  INTO v_event_ids, v_count
+  FROM inserted_events;
 
-    v_event_ids := array_append(v_event_ids, v_event_id);
+  -- Set-based UPDATE: Mark all notifications as restored at once
+  UPDATE event_change_notifications
+  SET status = 'restored',
+      updated_at = now()
+  WHERE household_id = v_household_id
+    AND status IN ('unread', 'read');
 
-    -- Mark notification as restored
-    UPDATE event_change_notifications
-    SET status = 'restored',
-        updated_at = now()
-    WHERE id = v_notification.id;
-
-    v_count := v_count + 1;
-  END LOOP;
+  -- Handle case where no notifications were restored
+  IF v_count IS NULL THEN
+    v_count := 0;
+    v_event_ids := ARRAY[]::UUID[];
+  END IF;
 
   RETURN QUERY SELECT v_count, v_event_ids;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 GRANT EXECUTE ON FUNCTION restore_all_notifications(UUID) TO authenticated;
 
@@ -251,48 +264,23 @@ GRANT EXECUTE ON FUNCTION restore_all_notifications(UUID) TO authenticated;
 -- ============================================================================
 
 -- Restored events should be viewable by household members
--- The existing RLS policy on external_events checks integration/source ownership
--- We need to add a policy for restored events
-
--- First, check if the household owns the restored event
-CREATE OR REPLACE FUNCTION is_restored_event_owner(p_event_id UUID)
-RETURNS BOOLEAN AS $$
-DECLARE
-  v_household_id UUID;
-  v_event_child_household UUID;
-BEGIN
-  -- Get user's household
-  SELECT household_id INTO v_household_id
-  FROM household_members
-  WHERE user_id = auth.uid()
-  LIMIT 1;
-
-  IF v_household_id IS NULL THEN
-    RETURN false;
-  END IF;
-
-  -- Check if the event's child belongs to the user's household
-  SELECT c.household_id INTO v_event_child_household
-  FROM external_events e
-  JOIN children c ON c.id = e.child_id
-  WHERE e.id = p_event_id
-    AND e.is_restored = true;
-
-  RETURN v_event_child_household = v_household_id;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+-- Use direct join instead of function call for better performance
 
 -- Drop and recreate external_events policies to include restored events
 -- (Keeping existing policies, just ensuring restored events are covered)
 
--- Policy for viewing restored events
+-- Policy for viewing restored events (uses direct join for performance)
 DROP POLICY IF EXISTS "View restored events" ON external_events;
 CREATE POLICY "View restored events"
   ON external_events FOR SELECT
   TO authenticated
   USING (
     is_restored = true
-    AND is_restored_event_owner(id)
+    AND child_id IN (
+      SELECT c.id FROM children c
+      JOIN household_members hm ON hm.household_id = c.household_id
+      WHERE hm.user_id = auth.uid()
+    )
   );
 
 -- Policy for updating restored events
@@ -302,7 +290,11 @@ CREATE POLICY "Update restored events"
   TO authenticated
   USING (
     is_restored = true
-    AND is_restored_event_owner(id)
+    AND child_id IN (
+      SELECT c.id FROM children c
+      JOIN household_members hm ON hm.household_id = c.household_id
+      WHERE hm.user_id = auth.uid()
+    )
   );
 
 -- Policy for deleting restored events
@@ -312,7 +304,11 @@ CREATE POLICY "Delete restored events"
   TO authenticated
   USING (
     is_restored = true
-    AND is_restored_event_owner(id)
+    AND child_id IN (
+      SELECT c.id FROM children c
+      JOIN household_members hm ON hm.household_id = c.household_id
+      WHERE hm.user_id = auth.uid()
+    )
   );
 
 -- Policy for inserting restored events (via RPC, but also direct for completeness)
@@ -327,3 +323,6 @@ CREATE POLICY "Insert restored events"
       WHERE c.household_id = get_user_household_id()
     )
   );
+
+-- Drop the now-unused is_restored_event_owner function
+DROP FUNCTION IF EXISTS is_restored_event_owner(UUID);
