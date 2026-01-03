@@ -24,8 +24,7 @@ const LLM_TIMEOUT_MS = 30000
 
 // Safety thresholds to prevent false deletions from extraction failures
 // These mirror the thresholds in deletion-handler.ts for consistency
-const MIN_EVENTS_FOR_DELETION_CHECK = 1 // At least some events must be extracted
-const MAX_DELETION_RATIO = 0.5 // Skip deletion if >50% would be removed (likely extraction error)
+const MAX_DELETION_RATIO = 0.5 // Skip deletion if >50% of future events would be removed
 const MAX_ABSOLUTE_DELETIONS = 10 // Skip deletion if >10 events would be removed
 
 /**
@@ -944,7 +943,11 @@ export async function syncCalendarSource(
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    // Count future events that would be deleted
+    // Count future events (both total and unmatched) for safety check
+    const futureExistingEvents = existingList.filter(e => {
+      const eventDate = new Date(e.event_date)
+      return eventDate >= today
+    })
     const futureUnmatchedIds = matchingResult.unmatchedExistingIds.filter(id => {
       const event = existingList.find(e => e.id === id)
       if (!event) return false
@@ -954,16 +957,16 @@ export async function syncCalendarSource(
 
     // SAFETY CHECK: Prevent mass deletions from extraction failures
     // This mirrors the safety thresholds in deletion-handler.ts
-    const totalExisting = existingList.length
+    const totalFutureExisting = futureExistingEvents.length
     const wouldDelete = futureUnmatchedIds.length
 
-    if (wouldDelete > 0 && totalExisting > 0) {
-      const deletionRatio = wouldDelete / totalExisting
+    if (wouldDelete > 0 && totalFutureExisting > 0) {
+      const deletionRatio = wouldDelete / totalFutureExisting
 
       if (deletionRatio > MAX_DELETION_RATIO || wouldDelete > MAX_ABSOLUTE_DELETIONS) {
         console.warn(
           `[CalendarSourceSync] SAFETY: Skipping deletion for ${source.display_name}: ` +
-          `${wouldDelete}/${totalExisting} events would be deleted (${(deletionRatio * 100).toFixed(0)}%). ` +
+          `${wouldDelete}/${totalFutureExisting} future events would be deleted (${(deletionRatio * 100).toFixed(0)}%). ` +
           `This looks like an extraction error. Extracted ${result.eventsFound} events this run.`
         )
         // Skip deletion entirely - don't remove any events
