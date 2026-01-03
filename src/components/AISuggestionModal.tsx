@@ -3,6 +3,7 @@
 import { useState, useRef, memo } from 'react'
 import type { MealSuggestion, RecipeIngredient } from '@/lib/types'
 import { useLanguage } from '@/lib/i18n/context'
+import { getWeekdayName } from '@/lib/utils'
 
 // Internal type for editable ingredients with stable IDs
 type EditableIngredient = RecipeIngredient & { _id: string }
@@ -46,11 +47,7 @@ export const AISuggestionModal = memo(function AISuggestionModal({
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr)
-    const dayIndex = date.getDay()
-    const weekdaysArray = t.date.weekdays
-    // weekdays[0] is Monday, so we need to map Sunday (0) to weekdays[6]
-    const adjustedIndex = dayIndex === 0 ? 6 : dayIndex - 1
-    return `${weekdaysArray[adjustedIndex]} ${date.getDate()}.${date.getMonth() + 1}`
+    return `${getWeekdayName(date, t)} ${date.getDate()}.${date.getMonth() + 1}`
   }
 
   const handleStartEdit = (suggestion: MealSuggestion) => {
