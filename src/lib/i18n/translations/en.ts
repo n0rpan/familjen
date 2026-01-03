@@ -71,6 +71,7 @@ export const en: TranslationStrings = {
     demoMode: 'Demo mode',
     viewOnly: 'View only',
     external: 'External',
+    all: 'All',
   },
 
   // Date/Time
@@ -800,6 +801,7 @@ export const en: TranslationStrings = {
     changeImage: 'Change image',
     removeImage: 'Remove image',
     uploadImage: 'Upload image',
+    processingImage: 'Processing image...',
     analyzing: 'Analyzing image...',
     analyzeImage: 'Analyze with AI',
     imageAnalyzed: 'AI has filled in information from the image',

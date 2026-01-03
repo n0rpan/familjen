@@ -79,6 +79,7 @@ export interface TranslationStrings {
     demoMode: string
     viewOnly: string
     external: string
+    all: string
   }
 
   // Date/Time
@@ -819,6 +820,7 @@ export interface TranslationStrings {
     changeImage: string
     removeImage: string
     uploadImage: string
+    processingImage: string
     analyzing: string
     analyzeImage: string
     imageAnalyzed: string

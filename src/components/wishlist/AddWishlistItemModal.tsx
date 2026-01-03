@@ -168,10 +168,11 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
 
       const result = await response.json()
 
-      // Fill in extracted data
-      if (result.name && !name) setName(result.name)
-      if (result.description && !description) setDescription(result.description)
-      if (result.price && !price) setPrice(result.price.toString())
+      // Fill in extracted data (only if field is empty)
+      // Use explicit === '' checks for clarity (price=0 from AI should fill empty field)
+      if (result.name && name === '') setName(result.name)
+      if (result.description && description === '') setDescription(result.description)
+      if (result.price != null && price === '') setPrice(result.price.toString())
 
       setAiMessage(t.wishlists.imageAnalyzed)
     } catch (error) {
@@ -283,12 +284,12 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4"
+      className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:p-4"
       style={{ background: 'rgba(0, 0, 0, 0.5)' }}
       onClick={onClose}
     >
       <div
-        className="w-full sm:max-w-md max-h-[85vh] sm:max-h-[90vh] flex flex-col rounded-t-2xl sm:rounded-2xl"
+        className="w-full sm:max-w-md max-h-[85vh] sm:max-h-[90vh] mb-20 sm:mb-0 flex flex-col rounded-t-2xl sm:rounded-2xl overflow-hidden"
         style={{ background: 'var(--card)' }}
         onClick={e => e.stopPropagation()}
       >
@@ -317,7 +318,7 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
                 style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
               >
                 <div className="w-6 h-6 border-2 border-current border-t-transparent rounded-full animate-spin" style={{ color: 'var(--accent)' }} />
-                <span className="text-sm" style={{ color: 'var(--muted)' }}>Behandler bilde...</span>
+                <span className="text-sm" style={{ color: 'var(--muted)' }}>{t.wishlists.processingImage}</span>
               </div>
             ) : imagePreview ? (
               <div className="relative">
@@ -508,7 +509,7 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
         </div>
 
         {/* Footer - fixed at bottom */}
-        <div className="flex-shrink-0 p-4 border-t safe-area-bottom" style={{ borderColor: 'var(--border)' }}>
+        <div className="flex-shrink-0 p-4 border-t safe-area-bottom" style={{ borderColor: 'var(--border)', background: 'var(--card)' }}>
           {saveError && (
             <p className="text-sm mb-3 p-3 rounded-lg" style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444' }}>
               {saveError}
