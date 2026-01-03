@@ -164,7 +164,10 @@ async function matchEventsWithLLM(
   if (extractedEvents.length === 0) {
     // SAFETY: If extraction returned no events, don't mark existing events for deletion.
     // This is likely an extraction failure, not actual removal of all events.
-    console.warn('[CalendarSourceSync] No events extracted - skipping deletion check to prevent false removals')
+    console.warn(
+      `[CalendarSourceSync] No events extracted - skipping deletion check to prevent false removals. ` +
+      `${existingEvents.length} existing events preserved. Model: ${model}`
+    )
     return result  // Return empty result - no matches, no unmatched
   }
 
