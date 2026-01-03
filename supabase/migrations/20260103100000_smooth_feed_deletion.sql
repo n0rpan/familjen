@@ -7,16 +7,16 @@
 -- ============================================================================
 
 -- Add column to mark restored events (won't be deleted on sync)
-ALTER TABLE external_events
+ALTER TABLE public.external_events
   ADD COLUMN IF NOT EXISTS is_restored BOOLEAN NOT NULL DEFAULT false;
 
 -- Track which notification the event was restored from
-ALTER TABLE external_events
-  ADD COLUMN IF NOT EXISTS restored_from_notification_id UUID REFERENCES event_change_notifications(id) ON DELETE SET NULL;
+ALTER TABLE public.external_events
+  ADD COLUMN IF NOT EXISTS restored_from_notification_id UUID REFERENCES public.event_change_notifications(id) ON DELETE SET NULL;
 
 -- Update constraint to allow restored events (no integration_id or source_url_id required)
-ALTER TABLE external_events DROP CONSTRAINT IF EXISTS external_events_source_check;
-ALTER TABLE external_events ADD CONSTRAINT external_events_source_check
+ALTER TABLE public.external_events DROP CONSTRAINT IF EXISTS external_events_source_check;
+ALTER TABLE public.external_events ADD CONSTRAINT external_events_source_check
   CHECK (
     integration_id IS NOT NULL
     OR source_url_id IS NOT NULL
@@ -25,19 +25,19 @@ ALTER TABLE external_events ADD CONSTRAINT external_events_source_check
 
 -- Index for finding restored events
 CREATE INDEX IF NOT EXISTS idx_external_events_restored
-  ON external_events(is_restored)
+  ON public.external_events(is_restored)
   WHERE is_restored = true;
 
 -- Index for tracing restoration history (debugging and future features)
 CREATE INDEX IF NOT EXISTS idx_external_events_restored_notification
-  ON external_events(restored_from_notification_id)
+  ON public.external_events(restored_from_notification_id)
   WHERE restored_from_notification_id IS NOT NULL;
 
 -- ============================================================================
 -- 2. Update restore_removed_event to create external_events
 -- ============================================================================
 
-CREATE OR REPLACE FUNCTION restore_removed_event(
+CREATE OR REPLACE FUNCTION public.restore_removed_event(
   p_notification_id UUID,
   p_override_title TEXT DEFAULT NULL,
   p_override_date DATE DEFAULT NULL
@@ -45,16 +45,16 @@ CREATE OR REPLACE FUNCTION restore_removed_event(
 RETURNS UUID
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = ''
 AS $$
 DECLARE
-  v_notification event_change_notifications;
+  v_notification public.event_change_notifications;
   v_household_id UUID;
   v_event_id UUID;
 BEGIN
   -- Get user's household
   SELECT household_id INTO v_household_id
-  FROM household_members
+  FROM public.household_members
   WHERE user_id = auth.uid()
   LIMIT 1;
 
@@ -64,7 +64,7 @@ BEGIN
 
   -- Get the notification
   SELECT * INTO v_notification
-  FROM event_change_notifications
+  FROM public.event_change_notifications
   WHERE id = p_notification_id
     AND household_id = v_household_id;
 
@@ -77,7 +77,7 @@ BEGIN
   END IF;
 
   -- Create a restored external_event from the notification data
-  INSERT INTO external_events (
+  INSERT INTO public.external_events (
     child_id,
     external_id,
     title,
@@ -103,7 +103,7 @@ BEGIN
   RETURNING id INTO v_event_id;
 
   -- Mark notification as restored
-  UPDATE event_change_notifications
+  UPDATE public.event_change_notifications
   SET status = 'restored',
       updated_at = now()
   WHERE id = p_notification_id;
@@ -116,13 +116,13 @@ $$;
 -- 3. Batch dismiss all notifications
 -- ============================================================================
 
-CREATE OR REPLACE FUNCTION dismiss_all_notifications(
+CREATE OR REPLACE FUNCTION public.dismiss_all_notifications(
   p_household_id UUID DEFAULT NULL
 )
 RETURNS INT
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = ''
 AS $$
 DECLARE
   v_household_id UUID;
@@ -131,7 +131,7 @@ BEGIN
   -- Get user's household if not provided
   IF p_household_id IS NULL THEN
     SELECT household_id INTO v_household_id
-    FROM household_members
+    FROM public.household_members
     WHERE user_id = auth.uid()
     LIMIT 1;
   ELSE
@@ -144,14 +144,14 @@ BEGIN
 
   -- Verify user belongs to this household
   IF NOT EXISTS (
-    SELECT 1 FROM household_members
+    SELECT 1 FROM public.household_members
     WHERE user_id = auth.uid() AND household_id = v_household_id
   ) THEN
     RAISE EXCEPTION 'Not authorized for this household';
   END IF;
 
   -- Dismiss all unread/read notifications
-  UPDATE event_change_notifications
+  UPDATE public.event_change_notifications
   SET status = 'dismissed',
       updated_at = now()
   WHERE household_id = v_household_id
@@ -162,13 +162,13 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION dismiss_all_notifications(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.dismiss_all_notifications(UUID) TO authenticated;
 
 -- ============================================================================
 -- 4. Batch restore all notifications (set-based, not loop)
 -- ============================================================================
 
-CREATE OR REPLACE FUNCTION restore_all_notifications(
+CREATE OR REPLACE FUNCTION public.restore_all_notifications(
   p_household_id UUID DEFAULT NULL
 )
 RETURNS TABLE(
@@ -177,7 +177,7 @@ RETURNS TABLE(
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = ''
 AS $$
 DECLARE
   v_household_id UUID;
@@ -187,7 +187,7 @@ BEGIN
   -- Get user's household if not provided
   IF p_household_id IS NULL THEN
     SELECT household_id INTO v_household_id
-    FROM household_members
+    FROM public.household_members
     WHERE user_id = auth.uid()
     LIMIT 1;
   ELSE
@@ -200,7 +200,7 @@ BEGIN
 
   -- Verify user belongs to this household
   IF NOT EXISTS (
-    SELECT 1 FROM household_members
+    SELECT 1 FROM public.household_members
     WHERE user_id = auth.uid() AND household_id = v_household_id
   ) THEN
     RAISE EXCEPTION 'Not authorized for this household';
@@ -208,7 +208,7 @@ BEGIN
 
   -- Set-based INSERT: Create all restored events at once
   WITH inserted_events AS (
-    INSERT INTO external_events (
+    INSERT INTO public.external_events (
       child_id,
       external_id,
       title,
@@ -231,7 +231,7 @@ BEGIN
       true,
       n.id,
       'Gjenopprettet fra ' || COALESCE(n.source_name, 'ekstern kilde')
-    FROM event_change_notifications n
+    FROM public.event_change_notifications n
     WHERE n.household_id = v_household_id
       AND n.status IN ('unread', 'read')
     RETURNING id, restored_from_notification_id
@@ -241,7 +241,7 @@ BEGIN
   FROM inserted_events;
 
   -- Set-based UPDATE: Mark all notifications as restored at once
-  UPDATE event_change_notifications
+  UPDATE public.event_change_notifications
   SET status = 'restored',
       updated_at = now()
   WHERE household_id = v_household_id
@@ -257,7 +257,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION restore_all_notifications(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.restore_all_notifications(UUID) TO authenticated;
 
 -- ============================================================================
 -- 5. Update RLS policies for restored events
@@ -270,59 +270,59 @@ GRANT EXECUTE ON FUNCTION restore_all_notifications(UUID) TO authenticated;
 -- (Keeping existing policies, just ensuring restored events are covered)
 
 -- Policy for viewing restored events (uses direct join for performance)
-DROP POLICY IF EXISTS "View restored events" ON external_events;
+DROP POLICY IF EXISTS "View restored events" ON public.external_events;
 CREATE POLICY "View restored events"
-  ON external_events FOR SELECT
+  ON public.external_events FOR SELECT
   TO authenticated
   USING (
     is_restored = true
     AND child_id IN (
-      SELECT c.id FROM children c
-      JOIN household_members hm ON hm.household_id = c.household_id
+      SELECT c.id FROM public.children c
+      JOIN public.household_members hm ON hm.household_id = c.household_id
       WHERE hm.user_id = auth.uid()
     )
   );
 
 -- Policy for updating restored events
-DROP POLICY IF EXISTS "Update restored events" ON external_events;
+DROP POLICY IF EXISTS "Update restored events" ON public.external_events;
 CREATE POLICY "Update restored events"
-  ON external_events FOR UPDATE
+  ON public.external_events FOR UPDATE
   TO authenticated
   USING (
     is_restored = true
     AND child_id IN (
-      SELECT c.id FROM children c
-      JOIN household_members hm ON hm.household_id = c.household_id
+      SELECT c.id FROM public.children c
+      JOIN public.household_members hm ON hm.household_id = c.household_id
       WHERE hm.user_id = auth.uid()
     )
   );
 
 -- Policy for deleting restored events
-DROP POLICY IF EXISTS "Delete restored events" ON external_events;
+DROP POLICY IF EXISTS "Delete restored events" ON public.external_events;
 CREATE POLICY "Delete restored events"
-  ON external_events FOR DELETE
+  ON public.external_events FOR DELETE
   TO authenticated
   USING (
     is_restored = true
     AND child_id IN (
-      SELECT c.id FROM children c
-      JOIN household_members hm ON hm.household_id = c.household_id
+      SELECT c.id FROM public.children c
+      JOIN public.household_members hm ON hm.household_id = c.household_id
       WHERE hm.user_id = auth.uid()
     )
   );
 
 -- Policy for inserting restored events (via RPC, but also direct for completeness)
-DROP POLICY IF EXISTS "Insert restored events" ON external_events;
+DROP POLICY IF EXISTS "Insert restored events" ON public.external_events;
 CREATE POLICY "Insert restored events"
-  ON external_events FOR INSERT
+  ON public.external_events FOR INSERT
   TO authenticated
   WITH CHECK (
     is_restored = true
     AND child_id IN (
-      SELECT c.id FROM children c
-      WHERE c.household_id = get_user_household_id()
+      SELECT c.id FROM public.children c
+      WHERE c.household_id = public.get_user_household_id()
     )
   );
 
 -- Drop the now-unused is_restored_event_owner function
-DROP FUNCTION IF EXISTS is_restored_event_owner(UUID);
+DROP FUNCTION IF EXISTS public.is_restored_event_owner(UUID);
