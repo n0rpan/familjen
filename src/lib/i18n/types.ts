@@ -472,6 +472,13 @@ export interface TranslationStrings {
     restoreAnyway: string
     showAllNotifications: string
     showFewerNotifications: string
+    dismissAll: string
+    restoreAll: string
+    confirmRestoreAll: string
+    restoringAll: string
+    dismissingAll: string
+    allDismissed: string
+    allRestored: string
     // Reminder card
     overdue: string
     // Message card

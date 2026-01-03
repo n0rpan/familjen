@@ -47,6 +47,7 @@ export { useHolidays, type UseHolidaysOptions, type UseHolidaysReturn } from './
 
 // Feed
 export { useFeed, type UseFeedReturn } from './useFeed'
+export { useEventNotifications, type UseEventNotificationsReturn } from './useEventNotifications'
 
 // Shopping
 export { useShoppingLists, type ShoppingListWithItems, type UseShoppingListsReturn } from './useShoppingLists'

@@ -464,6 +464,13 @@ export const sv: TranslationStrings = {
     restoreAnyway: 'Lägg till ändå',
     showAllNotifications: 'Visa alla {count} aviseringar',
     showFewerNotifications: 'Visa färre',
+    dismissAll: 'Avvisa alla',
+    restoreAll: 'Återställ alla',
+    confirmRestoreAll: 'Detta kommer återställa {count} händelser. Fortsätta?',
+    restoringAll: 'Återställer...',
+    dismissingAll: 'Avvisar...',
+    allDismissed: 'Alla aviseringar avvisade',
+    allRestored: '{count} händelser återställda',
     // Reminder card
     overdue: 'Försenad',
     // Message card

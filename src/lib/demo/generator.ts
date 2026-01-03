@@ -503,6 +503,8 @@ function generateExternalEvents(): ExternalEvent[] {
       event_type: 'training',
       raw_data: null,
       is_hidden: false,
+      is_restored: false,
+      restored_from_notification_id: null,
       local_overrides: null,
       user_notes: null,
       created_at: new Date().toISOString(),

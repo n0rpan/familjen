@@ -12,6 +12,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useLanguage } from '@/lib/i18n/context'
 import { useFeed } from '@/hooks/data'
+import { useEventNotifications } from '@/hooks/data/useEventNotifications'
 import { FeedPageContent } from '@/components/feed/FeedPageContent'
 import type { FeedFilter } from '@/components/feed/FeedFilters'
 import type { DuplicateSuggestion } from '@/components/feed/DuplicateSuggestions'
@@ -33,7 +34,7 @@ export default function Feed() {
     messages,
     photos,
     reminders,
-    notifications,
+    notifications: feedNotifications,
     integrationChildren,
     integrationStatuses,
     loading,
@@ -43,6 +44,24 @@ export default function Feed() {
     syncIntegrations,
     refetch,
   } = useFeed()
+
+  // Use the event notifications hook for optimistic updates (no refetch needed)
+  const {
+    notifications,
+    dismiss: dismissNotification,
+    restore: restoreNotification,
+    dismissAll: dismissAllNotifications,
+    restoreAll: restoreAllNotifications,
+    syncing: notificationsSyncing,
+    setNotifications,
+  } = useEventNotifications(feedNotifications)
+
+  // Sync notifications when feedNotifications change
+  useEffect(() => {
+    if (feedNotifications.length > 0) {
+      setNotifications(feedNotifications)
+    }
+  }, [feedNotifications, setNotifications])
 
   // Fetch duplicates data
   const fetchDuplicates = useCallback(async () => {
@@ -216,8 +235,12 @@ export default function Feed() {
         onToggleReminder={handleToggleReminder}
         onSync={handleSync}
         onDeduplicate={handleDeduplicate}
-        onNotificationUpdate={refetch}
         onDuplicatesUpdate={fetchDuplicates}
+        onDismissNotification={dismissNotification}
+        onRestoreNotification={restoreNotification}
+        onDismissAllNotifications={dismissAllNotifications}
+        onRestoreAllNotifications={restoreAllNotifications}
+        notificationsSyncing={notificationsSyncing}
         isDemo={isDemo}
       />
     </div>
