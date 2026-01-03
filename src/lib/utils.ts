@@ -78,10 +78,27 @@ export function formatDateISO(date: Date): string {
 
 /**
  * Get the weekday index (0 = Monday, 6 = Sunday) - ISO week style
+ * Converts JavaScript's getDay() (0=Sun, 6=Sat) to ISO format (0=Mon, 6=Sun)
  */
 export function getWeekdayIndex(date: Date): number {
   const day = date.getDay()
   return day === 0 ? 6 : day - 1
+}
+
+/**
+ * Get the localized weekday name for a date
+ * Uses ISO week order (Mon-Sun) from translation strings
+ */
+export function getWeekdayName(date: Date, t: TranslationStrings): string {
+  return t.date.weekdays[getWeekdayIndex(date)]
+}
+
+/**
+ * Get the localized short weekday name for a date
+ * Uses ISO week order (Mon-Sun) from translation strings
+ */
+export function getWeekdayNameShort(date: Date, t: TranslationStrings): string {
+  return t.date.weekdaysShort[getWeekdayIndex(date)]
 }
 
 /**

@@ -15,7 +15,7 @@ import type {
   ParseActionResponse,
 } from '@/app/api/openrouter/parse-action/route'
 import type { MealSuggestion } from '@/lib/types'
-import { formatDateISO } from '@/lib/utils'
+import { formatDateISO, getWeekdayNameShort } from '@/lib/utils'
 import { compressImageToBase64 } from '@/lib/image-compression'
 import { getCachedCategory, setCachedCategory } from '@/lib/shopping-category-cache'
 import type { ShoppingCategory } from '@/lib/constants'
@@ -1292,11 +1292,7 @@ export function UniversalAIInput({
   // Helper to format date for display
   const formatDisplayDate = (dateStr: string) => {
     const date = new Date(dateStr)
-    // t.date.weekdaysShort is Mon-Sun, but getDay() returns 0=Sun, so we need to reorder
-    const monSunDays = t.date?.weekdaysShort || ['Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør', 'Søn']
-    // Convert to Sun-Sat order for getDay()
-    const weekdays = [monSunDays[6], ...monSunDays.slice(0, 6)]
-    return `${weekdays[date.getDay()]} ${date.getDate()}/${date.getMonth() + 1}`
+    return `${getWeekdayNameShort(date, t)} ${date.getDate()}/${date.getMonth() + 1}`
   }
 
   // Execute EDIT operation with disambiguation
