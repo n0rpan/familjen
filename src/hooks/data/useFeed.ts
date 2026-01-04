@@ -78,7 +78,8 @@ export function useFeed(): UseFeedReturn {
   const [integrationChildren, setIntegrationChildren] = useState<IntegrationChild[]>([])
   const [integrationStatuses, setIntegrationStatuses] = useState<IntegrationStatus[]>([])
   const [integrationsEnabled, setIntegrationsEnabled] = useState(true)
-  const [loading, setLoading] = useState(!isDemo)
+  // In demo mode, show loading until demoState is available
+  const [loading, setLoading] = useState(!isDemo || !demoState)
   const [error, setError] = useState<string | null>(null)
 
   // Track photo URL generation session
@@ -428,6 +429,13 @@ export function useFeed(): UseFeedReturn {
     }
   }, [isDemo, householdLoading, household?.id])
 
+  // Update loading state when demo data becomes available
+  useEffect(() => {
+    if (isDemo && demoState) {
+      setLoading(false)
+    }
+  }, [isDemo, demoState])
+
   // Demo mode: return demo data
   if (isDemo && demoState) {
     const demoReminders: FeedReminder[] = tasks
@@ -459,6 +467,24 @@ export function useFeed(): UseFeedReturn {
       refetch: async () => {}, // No-op in demo
       toggleReminder: async () => {}, // No-op in demo
       syncIntegrations: async () => {}, // No-op in demo
+    }
+  }
+
+  // Demo mode initializing: show loading
+  if (isDemo && !demoState) {
+    return {
+      messages: [],
+      photos: [],
+      reminders: [],
+      notifications: [],
+      integrationChildren: [],
+      integrationStatuses: [],
+      loading: true,
+      error: null,
+      integrationsEnabled: true,
+      refetch: async () => {},
+      toggleReminder: async () => {},
+      syncIntegrations: async () => {},
     }
   }
 

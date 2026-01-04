@@ -330,6 +330,23 @@ export function useShoppingLists(): UseShoppingListsReturn {
     }
   }
 
+  // Demo mode initializing: show loading
+  if (isDemo && !demoState) {
+    return {
+      lists: [],
+      loading: true,
+      error: null,
+      addList,
+      updateList,
+      deleteList,
+      addItem,
+      addItemToList,
+      updateItem,
+      deleteItem,
+      refetch: () => {},
+    }
+  }
+
   // Derive loading state
   const shouldFetch = !!household?.id && !initialFetchDone && !isFetching
   const loading = householdLoading || shouldFetch || isFetching

@@ -77,6 +77,16 @@ export function useMembers(): UseMembersReturn {
     }
   }
 
+  // Demo mode initializing: show loading
+  if (isDemo && !demoState) {
+    return {
+      members: [],
+      loading: true,
+      error: null,
+      refetch: () => {},
+    }
+  }
+
   // Derive loading state
   const shouldFetch = !!household?.id && !initialFetchDone && !isFetching
   const loading = householdLoading || shouldFetch || isFetching

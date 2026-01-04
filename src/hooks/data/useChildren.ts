@@ -79,6 +79,16 @@ export function useChildren(): UseChildrenReturn {
     }
   }
 
+  // Demo mode initializing: show loading
+  if (isDemo && !demoState) {
+    return {
+      children: [],
+      loading: true,
+      error: null,
+      refetch: () => {},
+    }
+  }
+
   // Derive loading state:
   // - householdLoading: waiting for household to load
   // - shouldFetch: household has ID but we haven't fetched yet
