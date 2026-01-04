@@ -71,49 +71,30 @@ export function FeedPageWrapper({
   // Generate signed URLs for photos progressively
   // Photos from server have storage_path but no image_url
   useEffect(() => {
-    if (isDemo || !supabase || photos.length === 0) {
-      console.log('[Feed Photos] Skipping URL generation:', { isDemo, hasSupabase: !!supabase, photoCount: photos.length })
-      return
-    }
+    if (isDemo || !supabase || photos.length === 0) return
 
     const photosNeedingUrls = photos.filter(p => p.storage_path && !p.image_url)
-    console.log('[Feed Photos] Photos needing URLs:', photosNeedingUrls.length, 'of', photos.length)
-
-    if (photosNeedingUrls.length === 0) {
-      // Debug: check why no photos need URLs
-      const withUrl = photos.filter(p => p.image_url).length
-      const withPath = photos.filter(p => p.storage_path).length
-      console.log('[Feed Photos] Already have URLs:', withUrl, 'Have storage_path:', withPath)
-      return
-    }
+    if (photosNeedingUrls.length === 0) return
 
     // Process in batches of 5 to avoid overwhelming the API
     const generateUrls = async () => {
       const BATCH_SIZE = 5
       for (let i = 0; i < photosNeedingUrls.length; i += BATCH_SIZE) {
         const batch = photosNeedingUrls.slice(i, i + BATCH_SIZE)
-        console.log('[Feed Photos] Processing batch', i / BATCH_SIZE + 1)
 
         const urlPromises = batch.map(async (photo) => {
           try {
-            const { data, error } = await supabase.storage
+            const { data } = await supabase.storage
               .from('external-photos')
               .createSignedUrl(photo.storage_path, 3600) // 1 hour expiry
 
-            if (error) {
-              console.error('[Feed Photos] Signed URL error for', photo.storage_path, ':', error.message)
-            }
-
             return { id: photo.id, url: data?.signedUrl || null }
-          } catch (err) {
-            console.error('[Feed Photos] Exception for', photo.storage_path, ':', err)
+          } catch {
             return { id: photo.id, url: null }
           }
         })
 
         const results = await Promise.all(urlPromises)
-        const successCount = results.filter(r => r.url).length
-        console.log('[Feed Photos] Batch complete:', successCount, 'of', batch.length, 'succeeded')
 
         // Update photos with signed URLs
         setPhotos(prev => prev.map(p => {
