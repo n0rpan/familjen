@@ -92,7 +92,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       householdId = memberData.household_id
 
       // Sync JWT so next page load is fast (fire-and-forget, don't block render)
-      syncUserMetadata(user.id, user.email!, householdId).catch((err) => {
+      syncUserMetadata(user.id, user.email!, memberData.household_id).catch((err) => {
         console.error('[Home] Failed to sync user metadata:', err)
       })
     }
