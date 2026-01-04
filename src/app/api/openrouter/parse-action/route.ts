@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getUserHousehold } from '@/lib/supabase/household'
 import { validateOrigin } from '@/lib/config'
-import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
+import { checkRateLimit, createRateLimitKey, RATE_LIMITS, isDemoRequest, checkDemoRateLimit } from '@/lib/rate-limit'
 import { extractJSON } from '@/lib/json-extract'
 import { formatDateISO } from '@/lib/utils'
 import { sanitizePromptInput, sanitizePromptArray } from '@/lib/sanitize'
@@ -210,9 +210,37 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
     }
 
-    const supabase = await createClient()
+    // Check if this is a demo mode request
+    const isDemo = isDemoRequest(request)
 
-    // Check authentication
+    // Parse request body early (needed for both demo and production)
+    const body = await request.json()
+    const validation = parseActionSchema.safeParse(body)
+    if (!validation.success) {
+      return NextResponse.json({ error: 'Ugyldig forespørsel' }, { status: 400 })
+    }
+    const { input, image, context } = validation.data
+    const hasImage = Boolean(image)
+
+    // Detect request mode
+    const mode = detectMode(input, hasImage)
+
+    // Demo mode: use global rate limit and skip auth
+    if (isDemo) {
+      const demoRateLimit = await checkDemoRateLimit('aiParseReminders')
+      if (demoRateLimit.limited) {
+        return NextResponse.json(
+          { error: `Demo-modus har nådd grensen. Prøv igjen om ${Math.ceil(demoRateLimit.retryAfter / 60)} minutter.` },
+          { status: 429, headers: { 'Retry-After': String(demoRateLimit.retryAfter) } }
+        )
+      }
+
+      // Demo mode: handle all modes with demo context
+      return handleDemoMode(mode, input, image, context, hasImage)
+    }
+
+    // Production mode: require authentication
+    const supabase = await createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
@@ -227,18 +255,6 @@ export async function POST(request: Request) {
         { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
       )
     }
-
-    // Parse request body
-    const body = await request.json()
-    const validation = parseActionSchema.safeParse(body)
-    if (!validation.success) {
-      return NextResponse.json({ error: 'Ugyldig forespørsel' }, { status: 400 })
-    }
-    const { input, image, context } = validation.data
-    const hasImage = Boolean(image)
-
-    // Detect request mode
-    const mode = detectMode(input, hasImage)
 
     // Get household for all modes
     const { data: household, error: householdError } = await getUserHousehold(supabase)
@@ -756,6 +772,190 @@ interface SearchableData {
   recipes: Array<{ id: string; name: string; description?: string }>
   meals: Array<{ id: string; date: string; meal_name: string }>
   messages: Array<{ id: string; title: string; body: string; date: string; source: string }>
+}
+
+/**
+ * Handle demo mode requests - uses real AI with demo context
+ * This allows demo mode to find real issues in production AI code
+ */
+async function handleDemoMode(
+  mode: RequestMode,
+  input: string,
+  image: string | undefined,
+  context: z.infer<typeof parseActionSchema>['context'],
+  hasImage: boolean
+): Promise<Response> {
+  // Use cheap model for demo to minimize costs
+  const demoModel = 'google/gemini-2.5-flash-lite'
+
+  // For search mode in demo, return mock search results
+  // (no database to query in demo mode)
+  if (mode === 'search') {
+    const searchQuery = input.replace(/^\?+\s*/, '').trim()
+    return NextResponse.json({
+      mode: 'search',
+      answer: `Demo-modus: Søk etter "${searchQuery}" ville søkt i meldinger, oppgaver og hendelser fra barnehage og skole.`,
+      sources: [
+        {
+          type: 'message' as const,
+          title: 'Eksempel melding',
+          excerpt: 'Dette er et eksempel på en melding fra barnehagen.',
+          date: formatDateISO(new Date()),
+          id: 'demo-msg-1',
+        }
+      ],
+    } as SearchResponse)
+  }
+
+  // For suggest mode in demo, use real AI for meal suggestions
+  if (mode === 'suggest') {
+    // Generate week start date
+    const today = new Date()
+    const weekStart = formatDateISO(today)
+
+    // Demo context for meal suggestions
+    const demoMealContext = {
+      allergies: ['gluten', 'nøtter'],
+      childrenAges: [6, 4],
+      weekContext: 'Demo-uke - foreslå familievennlige retter',
+      existingMeals: [],
+      recipes: [
+        { id: 'demo-1', name: 'Pasta Bolognese', is_favorite: true },
+        { id: 'demo-2', name: 'Fiskegrateng', is_favorite: false },
+      ],
+      recentMealNames: ['Taco', 'Pizza'],
+    }
+
+    // Build suggestion prompt
+    const contextStr = JSON.stringify({
+      weekStart,
+      allergies: demoMealContext.allergies,
+      childrenAges: demoMealContext.childrenAges,
+      recipes: demoMealContext.recipes.map(r => ({ id: r.id, name: r.name })),
+      favoriteRecipes: demoMealContext.recipes.filter(r => r.is_favorite),
+      recentMealNames: demoMealContext.recentMealNames,
+      existingMeals: demoMealContext.existingMeals,
+      weekContext: demoMealContext.weekContext,
+      allAllergies: demoMealContext.allergies,
+    }, null, 2)
+
+    const suggestPrompt = `Du er en kreativ matplanlegger for en norsk familie. Foreslå middager for uken.
+
+KONTEKST:
+${contextStr}
+
+Foreslå 3-5 middager som passer familien. Unngå allergier og ta hensyn til barnas alder.
+Returner JSON: { "suggestions": [{ "day": "YYYY-MM-DD", "name": "Rett", "description": "Kort beskrivelse", "ingredients": [{ "item": "ingrediens", "amount": "mengde" }] }] }`
+
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://familjen.eu',
+        },
+        body: JSON.stringify({
+          model: demoModel,
+          messages: [{ role: 'user', content: suggestPrompt }],
+          temperature: 0.7,
+          max_tokens: 2000,
+        }),
+      })
+
+      if (!response.ok) {
+        console.error('Demo suggest API error:', response.status)
+        return NextResponse.json({ error: 'AI-tjenesten er midlertidig utilgjengelig' }, { status: 503 })
+      }
+
+      const data = await response.json()
+      const content = data.choices?.[0]?.message?.content || ''
+      const parsed = extractJSON(content)
+
+      if (!parsed?.suggestions) {
+        return NextResponse.json({
+          mode: 'suggest',
+          suggestions: [],
+        } as SuggestResponse)
+      }
+
+      return NextResponse.json({
+        mode: 'suggest',
+        suggestions: parsed.suggestions,
+      } as SuggestResponse)
+    } catch (error) {
+      console.error('Demo suggest error:', error)
+      return NextResponse.json({ error: 'En feil oppstod ved middagsforslag' }, { status: 500 })
+    }
+  }
+
+  // Action mode: use real AI to parse natural language
+  const currentMember = context.members.find(m => m.isCurrentUser)
+  const systemPrompt = buildSystemPrompt(context)
+  const userPrompt = hasImage
+    ? buildVisionUserPrompt(input, image!, context, currentMember?.name)
+    : buildUserPrompt(input, context, currentMember?.name)
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://familjen.eu',
+      },
+      body: JSON.stringify({
+        model: demoModel,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          hasImage
+            ? {
+                role: 'user',
+                content: [
+                  { type: 'text', text: userPrompt },
+                  { type: 'image_url', image_url: { url: image! } },
+                ],
+              }
+            : { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.3,
+        max_tokens: 2000,
+        response_format: { type: 'json_schema', json_schema: ACTION_PARSE_SCHEMA },
+      }),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('Demo action API error:', response.status, errorText)
+      return NextResponse.json({ error: 'AI-tjenesten er midlertidig utilgjengelig' }, { status: 503 })
+    }
+
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content
+
+    if (!content) {
+      return NextResponse.json({
+        mode: 'action',
+        actions: [],
+      } as ActionResponse)
+    }
+
+    const parsed = extractJSON(content)
+    if (!parsed?.actions || !Array.isArray(parsed.actions)) {
+      return NextResponse.json({
+        mode: 'action',
+        actions: [],
+      } as ActionResponse)
+    }
+
+    return NextResponse.json({
+      mode: 'action',
+      actions: parsed.actions,
+    } as ActionResponse)
+  } catch (error) {
+    console.error('Demo action error:', error)
+    return NextResponse.json({ error: 'En feil oppstod' }, { status: 500 })
+  }
 }
 
 async function handleSearchMode(

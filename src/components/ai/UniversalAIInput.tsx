@@ -181,7 +181,10 @@ export function UniversalAIInput({
 
       const response = await fetch('/api/openrouter/parse-action', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(isDemo && { 'x-demo-mode': 'true' }),
+        },
         body: JSON.stringify(requestBody),
       })
 
