@@ -1,9 +1,7 @@
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
-
-// Prevent static prerendering - this route uses cookies()
-export const dynamic = 'force-dynamic'
+import { connection } from 'next/server'
 
 /**
  * GET /api/admin/integration-debug?householdId=xxx
@@ -12,6 +10,9 @@ export const dynamic = 'force-dynamic'
  * Uses service role to bypass RLS.
  */
 export async function GET(request: Request) {
+  // Opt into dynamic rendering (required for cookies() with cacheComponents)
+  await connection()
+
   try {
     // Verify the user is an admin
     const supabase = await createClient()
