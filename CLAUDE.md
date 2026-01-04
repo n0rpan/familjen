@@ -2287,21 +2287,16 @@ export async function getHouseholdIdFromSession(): Promise<string | null> {
 
   // Fallback: Check database if JWT is stale (user just created/joined household)
   const membership = await queryMembership(user.id)
-  if (membership?.household_id) {
-    // Sync JWT in background (fire-and-forget)
-    syncUserMetadata(user.id, user.email, membership.household_id)
-    return membership.household_id
-  }
-
-  return null
+  return membership?.household_id || null
 }
 ```
 
 **When JWT gets synced:**
 1. On login (`src/app/auth/callback/route.ts`)
 2. On home page load if JWT is stale (`src/app/page.tsx`)
-3. On PPR page load if JWT is stale (`getHouseholdIdFromSession`)
-4. On invite claim (`src/components/settings/SettingsPageContent.tsx`)
+3. On invite claim (`src/components/settings/SettingsPageContent.tsx`)
+
+**Note:** PPR pages use DB fallback but don't sync JWT to avoid race conditions with concurrent requests. The home page handles JWT sync.
 
 **Security:** RLS policies on Supabase validate household_id server-side. The JWT value is for client-side optimization only - all data access goes through Supabase which enforces proper authorization.
 

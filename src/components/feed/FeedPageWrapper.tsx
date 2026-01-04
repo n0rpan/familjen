@@ -68,6 +68,49 @@ export function FeedPageWrapper({
     initialData.notifications as unknown as EventNotification[] || []
   )
 
+  // Generate signed URLs for photos progressively
+  // Photos from server have storage_path but no image_url
+  useEffect(() => {
+    if (isDemo || !supabase || photos.length === 0) return
+
+    const photosNeedingUrls = photos.filter(p => p.storage_path && !p.image_url)
+    if (photosNeedingUrls.length === 0) return
+
+    // Process in batches of 5 to avoid overwhelming the API
+    const generateUrls = async () => {
+      const BATCH_SIZE = 5
+      for (let i = 0; i < photosNeedingUrls.length; i += BATCH_SIZE) {
+        const batch = photosNeedingUrls.slice(i, i + BATCH_SIZE)
+
+        const urlPromises = batch.map(async (photo) => {
+          try {
+            const { data } = await supabase.storage
+              .from('integration-photos')
+              .createSignedUrl(photo.storage_path, 3600) // 1 hour expiry
+
+            return { id: photo.id, url: data?.signedUrl || null }
+          } catch {
+            return { id: photo.id, url: null }
+          }
+        })
+
+        const results = await Promise.all(urlPromises)
+
+        // Update photos with signed URLs
+        setPhotos(prev => prev.map(p => {
+          const result = results.find(r => r.id === p.id)
+          if (result?.url) {
+            return { ...p, image_url: result.url }
+          }
+          return p
+        }))
+      }
+    }
+
+    generateUrls()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Intentionally using photos.length to avoid infinite loop when updating photos with URLs
+  }, [isDemo, supabase, photos.length])
+
   // Integration statuses from initial data
   const integrationStatuses: IntegrationStatus[] = (initialData.integrations || []).map(i => ({
     id: i.id,
