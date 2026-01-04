@@ -1,15 +1,11 @@
 import Link from 'next/link'
-import { connection } from 'next/server'
 
 /**
  * Custom 404 Page
  *
  * Uses default Norwegian text for simplicity.
- * Calls connection() to opt into dynamic rendering (required for layout cookies()).
  */
-export default async function NotFound() {
-  // Opt into dynamic rendering (layout uses cookies())
-  await connection()
+export default function NotFound() {
   return (
     <div className="min-h-[60vh] flex items-center justify-center">
       <div className="text-center max-w-md mx-auto px-4">
