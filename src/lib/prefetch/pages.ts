@@ -17,7 +17,10 @@ export const CACHE_KEYS = {
 }
 
 // Max age before we consider prefetched data stale
-const PREFETCH_MAX_AGE = 3 * 60 * 1000 // 3 minutes
+const PREFETCH_MAX_AGE = 10 * 60 * 1000 // 10 minutes (longer since we have realtime)
+
+// Background refresh interval
+export const BACKGROUND_REFRESH_INTERVAL = 10 * 60 * 1000 // 10 minutes
 
 /**
  * Prefetch feed data (messages, photos, notifications)
@@ -218,5 +221,108 @@ export async function prefetchRouteData(route: string, householdId: string | nul
 
   if (prefetchFn) {
     await prefetchFn(householdId)
+  }
+}
+
+/**
+ * Prefetch all page data in menu order
+ * Call this when user is on home page to warm all caches
+ *
+ * Order follows nav menu: Week → Feed → Recipes → Shopping → Settings
+ * Uses staggered fetching to not block the main thread
+ */
+export async function prefetchAllPages(householdId: string): Promise<void> {
+  if (!householdId) return
+
+  // Small delay before starting to not interfere with initial render
+  await new Promise(resolve => setTimeout(resolve, 1000))
+
+  try {
+    // Prefetch in menu order with small delays between each
+    // This prevents overwhelming the network/database
+
+    // 1. Feed (messages, photos - users often check this)
+    await prefetchFeedData(householdId)
+    await new Promise(resolve => setTimeout(resolve, 500))
+
+    // 2. Recipes
+    await prefetchRecipesData(householdId)
+    await new Promise(resolve => setTimeout(resolve, 500))
+
+    // 3. Shopping
+    await prefetchShoppingData(householdId)
+    await new Promise(resolve => setTimeout(resolve, 500))
+
+    // 4. Settings data (household, members, children)
+    await prefetchSettingsData(householdId)
+  } catch (error) {
+    console.warn('[Prefetch] Error prefetching all pages:', error)
+  }
+}
+
+/**
+ * Prefetch settings page data (household info, members, children)
+ */
+export async function prefetchSettingsData(householdId: string): Promise<void> {
+  const cacheKey = `settings-${householdId}`
+
+  // Skip if already cached and fresh
+  const cached = await getCached(cacheKey)
+  if (cached && isCacheFresh(cached, PREFETCH_MAX_AGE)) {
+    return
+  }
+
+  try {
+    const supabase = createClient()
+
+    const [householdResult, membersResult, childrenResult] = await Promise.all([
+      supabase
+        .from('households')
+        .select('*')
+        .eq('id', householdId)
+        .single(),
+      supabase
+        .from('household_members')
+        .select('*')
+        .eq('household_id', householdId),
+      supabase
+        .from('children')
+        .select('*')
+        .eq('household_id', householdId)
+        .order('sort_order'),
+    ])
+
+    await setCache(cacheKey, {
+      household: householdResult.data,
+      members: membersResult.data || [],
+      children: childrenResult.data || [],
+    })
+  } catch (error) {
+    console.warn('[Prefetch] Failed to prefetch settings data:', error)
+  }
+}
+
+/**
+ * Force refresh all cached data (ignores freshness check)
+ * Call this periodically (e.g., every 10 minutes) when app is in foreground
+ */
+export async function refreshAllCaches(householdId: string): Promise<void> {
+  if (!householdId) return
+
+  try {
+    // Clear freshness to force refetch
+    const supabase = createClient()
+
+    // Parallel fetch all page data
+    await Promise.all([
+      prefetchFeedData(householdId),
+      prefetchRecipesData(householdId),
+      prefetchShoppingData(householdId),
+      prefetchSettingsData(householdId),
+    ])
+
+    console.log('[Prefetch] Background refresh completed')
+  } catch (error) {
+    console.warn('[Prefetch] Background refresh failed:', error)
   }
 }

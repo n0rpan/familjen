@@ -16,7 +16,9 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { usePrefetchAdjacentWeeks } from '@/hooks/usePrefetchAdjacentWeeks'
 import { usePrefetchRoutes, KEY_ROUTES, SECONDARY_ROUTES } from '@/hooks/usePrefetchRoutes'
+import { usePrefetchAllPages } from '@/hooks/usePrefetchAllPages'
 import { formatDateISO, getWeekStart, addDays } from '@/lib/utils'
+import { revalidateWeek } from '@/lib/revalidate'
 
 interface HomeClientInteractionsProps {
   householdId: string
@@ -39,6 +41,13 @@ export function HomeClientInteractions({ householdId, isDemo }: HomeClientIntera
   // Pass empty array in demo mode to skip prefetching
   usePrefetchRoutes(isDemo ? [] : [...KEY_ROUTES, ...SECONDARY_ROUTES])
 
+  // Prefetch ALL page data and set up background refresh (every 10 min)
+  // This ensures instant navigation to any page
+  usePrefetchAllPages({
+    householdId,
+    enabled: !isDemo,
+  })
+
   // Realtime subscriptions for the current week
   useEffect(() => {
     if (isDemo || !supabaseRef.current) return
@@ -49,8 +58,9 @@ export function HomeClientInteractions({ householdId, isDemo }: HomeClientIntera
     const weekStartStr = formatDateISO(weekStart)
     const weekEndStr = formatDateISO(weekEnd)
 
-    // Refresh the page when data changes
+    // Refresh the page when data changes and revalidate cache
     const handleChange = () => {
+      revalidateWeek(householdId, weekStartStr)
       router.refresh()
     }
 
