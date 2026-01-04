@@ -5,6 +5,7 @@ import "./globals.css";
 import { Header } from "@/components/Header";
 import { LanguageProvider } from "@/lib/i18n/context";
 import { getLanguageFromCookieOrBrowser } from "@/lib/i18n/cookie.server";
+import { DEFAULT_LANGUAGE } from "@/lib/i18n/types";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
 import { UpdatePrompt } from "@/components/UpdatePrompt";
 import { AppShell } from "@/components/AppShell";
@@ -13,7 +14,6 @@ import { RealtimeWrapper } from "@/components/RealtimeWrapper";
 import { NavigationProvider } from "@/lib/navigation";
 import { PageContent } from "@/components/PageContent";
 import { DemoWrapper } from "@/components/demo/DemoWrapper";
-import { connection } from "next/server";
 
 // Self-hosted fonts with next/font for better performance (no render-blocking)
 const outfit = Outfit({
@@ -58,42 +58,77 @@ export const viewport: Viewport = {
   themeColor: '#E8786D',
 };
 
-export default async function RootLayout({
+/**
+ * Server component that reads cookies for language detection.
+ * Must be wrapped in Suspense for Next.js 16 cacheComponents compatibility.
+ */
+async function AppContent({ children }: { children: React.ReactNode }) {
+  const language = await getLanguageFromCookieOrBrowser()
+
+  return (
+    <LanguageProvider initialLanguage={language}>
+      <NavigationProvider>
+        <DemoWrapper>
+          <RealtimeWrapper>
+            <OfflineIndicator />
+            <Header />
+            <div className="app-shell-content pt-mobile-header">
+              <AppShell>
+                <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-28 md:pb-6 relative z-0" style={{ viewTransitionName: 'page-content' }}>
+                  <PageContent>
+                    {children}
+                  </PageContent>
+                </main>
+              </AppShell>
+            </div>
+            <UpdatePrompt />
+          </RealtimeWrapper>
+        </DemoWrapper>
+      </NavigationProvider>
+    </LanguageProvider>
+  )
+}
+
+/**
+ * Fallback UI while cookies are being read.
+ * Uses default language for the static shell.
+ */
+function AppContentFallback({ children }: { children: React.ReactNode }) {
+  return (
+    <LanguageProvider initialLanguage={DEFAULT_LANGUAGE}>
+      <NavigationProvider>
+        <DemoWrapper>
+          <RealtimeWrapper>
+            <OfflineIndicator />
+            <Header />
+            <div className="app-shell-content pt-mobile-header">
+              <AppShell>
+                <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-28 md:pb-6 relative z-0" style={{ viewTransitionName: 'page-content' }}>
+                  <PageContent>
+                    {children}
+                  </PageContent>
+                </main>
+              </AppShell>
+            </div>
+            <UpdatePrompt />
+          </RealtimeWrapper>
+        </DemoWrapper>
+      </NavigationProvider>
+    </LanguageProvider>
+  )
+}
+
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Opt into dynamic rendering to allow cookies() access
-  // This is required for Next.js 16 with cacheComponents
-  await connection()
-
-  const language = await getLanguageFromCookieOrBrowser()
-
   return (
-    <html lang={language} className={`${outfit.variable} ${fraunces.variable}`}>
+    <html lang={DEFAULT_LANGUAGE} className={`${outfit.variable} ${fraunces.variable}`}>
       <body className="antialiased grain app-shell font-sans" style={{ background: 'var(--background)' }}>
-        <LanguageProvider initialLanguage={language}>
-          <NavigationProvider>
-            <Suspense fallback={null}>
-              <DemoWrapper>
-                <RealtimeWrapper>
-                  <OfflineIndicator />
-                  <Header />
-                  <div className="app-shell-content pt-mobile-header">
-                    <AppShell>
-                      <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-28 md:pb-6 relative z-0" style={{ viewTransitionName: 'page-content' }}>
-                        <PageContent>
-                          {children}
-                        </PageContent>
-                      </main>
-                    </AppShell>
-                  </div>
-                  <UpdatePrompt />
-                </RealtimeWrapper>
-              </DemoWrapper>
-            </Suspense>
-          </NavigationProvider>
-        </LanguageProvider>
+        <Suspense fallback={<AppContentFallback>{children}</AppContentFallback>}>
+          <AppContent>{children}</AppContent>
+        </Suspense>
         <ServiceWorkerRegistration />
       </body>
     </html>

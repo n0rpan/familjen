@@ -1,17 +1,13 @@
 import Link from 'next/link'
-import { connection } from 'next/server'
 
 /**
  * Custom 404 Page
  *
  * Uses default Norwegian text for simplicity.
- * Must call connection() to opt out of static prerendering since
- * the root layout uses cookies() for language detection.
+ * The root layout handles cookies() inside a Suspense boundary,
+ * so this page can be statically prerendered.
  */
-export default async function NotFound() {
-  // Opt into dynamic rendering - required for Next.js 16 with cacheComponents
-  // because the root layout accesses cookies()
-  await connection()
+export default function NotFound() {
   return (
     <div className="min-h-[60vh] flex items-center justify-center">
       <div className="text-center max-w-md mx-auto px-4">
