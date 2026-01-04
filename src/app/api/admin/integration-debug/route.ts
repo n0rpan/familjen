@@ -2,6 +2,9 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
+// Prevent static prerendering - this route uses cookies()
+export const dynamic = 'force-dynamic'
+
 /**
  * GET /api/admin/integration-debug?householdId=xxx
  *
