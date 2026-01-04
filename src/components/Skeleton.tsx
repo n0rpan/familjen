@@ -718,6 +718,53 @@ export function RecipesPageSkeleton() {
   )
 }
 
+// Styring (Home Control) page loading skeleton
+export function StyringPageSkeleton() {
+  return (
+    <div className="space-y-4 animate-fade-in">
+      {/* Header */}
+      <div className="mb-2">
+        <Skeleton height={32} width={140} borderRadius={12} />
+        <Skeleton height={18} width={280} borderRadius={8} className="mt-2" />
+      </div>
+
+      {/* Control panels */}
+      {[1, 2, 3].map((i) => (
+        <div
+          key={i}
+          className="rounded-2xl p-6"
+          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+        >
+          <div className="flex items-center gap-3 mb-4">
+            <Skeleton width={40} height={40} borderRadius={12} />
+            <div>
+              <Skeleton height={20} width={120} borderRadius={8} className="mb-2" />
+              <Skeleton height={14} width={180} borderRadius={6} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {[1, 2, 3].map((j) => (
+              <div
+                key={j}
+                className="p-4 rounded-xl"
+                style={{ background: 'var(--sand)' }}
+              >
+                <Skeleton height={16} width="60%" borderRadius={6} className="mb-2" />
+                <Skeleton height={12} width="40%" borderRadius={4} />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {/* Settings link */}
+      <div className="text-center pt-2">
+        <Skeleton height={16} width={100} borderRadius={8} className="mx-auto" />
+      </div>
+    </div>
+  )
+}
+
 // =============================================================================
 // PARTIAL SKELETONS - Show real UI, shimmer only for dynamic data
 // These are used when we have no cached data yet (first visit)

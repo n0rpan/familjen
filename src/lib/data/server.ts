@@ -28,6 +28,9 @@ import type {
   HouseholdEvent,
   ExternalEvent,
   DaySummary,
+  AllowedEmail,
+  ShoppingList,
+  ShoppingListItem,
 } from '@/lib/types'
 import { generateDemoState, DEMO_IDS } from '@/lib/demo/generator'
 
@@ -784,4 +787,496 @@ export function getDemoSettingsPageData(): SettingsPageData {
  */
 export function revalidateSettingsCache(householdId: string) {
   revalidateTag(`settings-${householdId}`, 'default')
+}
+
+// ============================================================================
+// Recipes Page Data
+// ============================================================================
+
+export interface RecipesPageData {
+  household: Household | null
+  recipes: Recipe[]
+}
+
+/**
+ * Core recipes data fetcher - uses admin client to bypass RLS
+ */
+async function fetchRecipesDataCore(householdId: string): Promise<RecipesPageData> {
+  const supabase = createAdminClient()
+
+  const [householdResult, recipesResult] = await Promise.all([
+    supabase
+      .from('households')
+      .select('*')
+      .eq('id', householdId)
+      .single(),
+
+    supabase
+      .from('recipes')
+      .select('*')
+      .eq('household_id', householdId)
+      .order('name'),
+  ])
+
+  return {
+    household: householdResult.data,
+    recipes: recipesResult.data || [],
+  }
+}
+
+/**
+ * Cached version of recipes data fetcher
+ */
+function getCachedRecipesData(householdId: string) {
+  return unstable_cache(
+    () => fetchRecipesDataCore(householdId),
+    ['recipes-page-data', householdId],
+    {
+      revalidate: CACHE_TTL,
+      tags: [`household-${householdId}`, `recipes-${householdId}`]
+    }
+  )()
+}
+
+/**
+ * Fetch all data needed for the recipes page
+ */
+export const fetchRecipesPageData = cache(async (householdId: string): Promise<RecipesPageData> => {
+  return getCachedRecipesData(householdId)
+})
+
+/**
+ * Generate demo data for recipes page
+ */
+export function getDemoRecipesPageData(): RecipesPageData {
+  const demoState = generateDemoState()
+
+  return {
+    household: demoState.household,
+    recipes: demoState.recipes,
+  }
+}
+
+/**
+ * Revalidate recipes cache
+ */
+export function revalidateRecipesCache(householdId: string) {
+  revalidateTag(`recipes-${householdId}`, 'default')
+}
+
+// ============================================================================
+// Shopping Page Data
+// ============================================================================
+
+export interface ShoppingListWithItems extends ShoppingList {
+  items: ShoppingListItem[]
+}
+
+export interface ShoppingPageData {
+  household: Household | null
+  lists: ShoppingListWithItems[]
+}
+
+/**
+ * Core shopping data fetcher - uses admin client to bypass RLS
+ */
+async function fetchShoppingDataCore(householdId: string): Promise<ShoppingPageData> {
+  const supabase = createAdminClient()
+
+  const [householdResult, listsResult] = await Promise.all([
+    supabase
+      .from('households')
+      .select('*')
+      .eq('id', householdId)
+      .single(),
+
+    supabase
+      .from('shopping_lists')
+      .select(`
+        *,
+        items:shopping_list_items(*)
+      `)
+      .eq('household_id', householdId)
+      .order('created_at', { ascending: false }),
+  ])
+
+  return {
+    household: householdResult.data,
+    lists: listsResult.data || [],
+  }
+}
+
+/**
+ * Cached version of shopping data fetcher
+ */
+function getCachedShoppingData(householdId: string) {
+  return unstable_cache(
+    () => fetchShoppingDataCore(householdId),
+    ['shopping-page-data', householdId],
+    {
+      revalidate: CACHE_TTL,
+      tags: [`household-${householdId}`, `shopping-${householdId}`]
+    }
+  )()
+}
+
+/**
+ * Fetch all data needed for the shopping page
+ */
+export const fetchShoppingPageData = cache(async (householdId: string): Promise<ShoppingPageData> => {
+  return getCachedShoppingData(householdId)
+})
+
+/**
+ * Generate demo data for shopping page
+ */
+export function getDemoShoppingPageData(): ShoppingPageData {
+  const demoState = generateDemoState()
+
+  return {
+    household: demoState.household,
+    lists: demoState.shoppingLists,
+  }
+}
+
+/**
+ * Revalidate shopping cache
+ */
+export function revalidateShoppingCache(householdId: string) {
+  revalidateTag(`shopping-${householdId}`, 'default')
+}
+
+// ============================================================================
+// Home Control (Styring) Page Data
+// ============================================================================
+
+export interface HomeControlAccount {
+  id: string
+  household_id: string
+  service: 'somfy' | 'toshiba' | 'melcloud'
+  label: string | null
+  last_sync_at: string | null
+  sync_error: string | null
+}
+
+export interface SomfyDevice {
+  id: string
+  account_id: string
+  device_url: string
+  label: string
+  ui_class: string
+  controllable_name: string | null
+  available: boolean
+  position: number | null
+  commands: string[] | null
+  custom_name: string | null
+  favorite: boolean
+  is_hidden: boolean
+}
+
+export interface ToshibaDevice {
+  id: string
+  account_id: string
+  ac_id: string
+  name: string
+  custom_name: string | null
+  power_state: string | null
+  operation_mode: string | null
+  target_temperature: number | null
+  current_temperature: number | null
+  outdoor_temperature: number | null
+}
+
+export interface MelCloudDevice {
+  id: string
+  account_id: string
+  device_id: number
+  building_id: number
+  name: string
+  custom_name: string | null
+  power_state: string | null
+  operation_mode: string | null
+  target_temperature: number | null
+  current_temperature: number | null
+  outdoor_temperature: number | null
+}
+
+export interface HomeControlGroup {
+  id: string
+  household_id: string
+  name: string
+  icon: string | null
+  sort_order: number
+  device_ids: string[]
+  toshiba_device_ids: string[]
+  melcloud_device_ids: string[]
+}
+
+export interface StyringPageData {
+  accounts: HomeControlAccount[]
+  somfyDevices: SomfyDevice[]
+  toshibaDevices: ToshibaDevice[]
+  melcloudDevices: MelCloudDevice[]
+  groups: HomeControlGroup[]
+}
+
+/**
+ * Core styring data fetcher - uses admin client to bypass RLS
+ */
+async function fetchStyringDataCore(householdId: string): Promise<StyringPageData> {
+  const supabase = createAdminClient()
+
+  const [
+    accountsResult,
+    somfyDevicesResult,
+    toshibaDevicesResult,
+    melcloudDevicesResult,
+    groupsResult,
+  ] = await Promise.all([
+    supabase
+      .from('home_control_accounts')
+      .select('id, household_id, service, label, last_sync_at, sync_error')
+      .eq('household_id', householdId),
+
+    supabase
+      .from('somfy_devices')
+      .select('*')
+      .eq('account_id', supabase.from('home_control_accounts').select('id').eq('household_id', householdId)),
+
+    supabase
+      .from('toshiba_devices')
+      .select('*')
+      .eq('account_id', supabase.from('home_control_accounts').select('id').eq('household_id', householdId)),
+
+    supabase
+      .from('melcloud_devices')
+      .select('*')
+      .eq('account_id', supabase.from('home_control_accounts').select('id').eq('household_id', householdId)),
+
+    supabase
+      .from('home_control_groups')
+      .select('*')
+      .eq('household_id', householdId)
+      .order('sort_order'),
+  ])
+
+  // Get account IDs for proper filtering
+  const accountIds = (accountsResult.data || []).map(a => a.id)
+
+  // Re-fetch devices with proper account filtering
+  const [somfyResult, toshibaResult, melcloudResult] = accountIds.length > 0
+    ? await Promise.all([
+        supabase
+          .from('somfy_devices')
+          .select('*')
+          .in('account_id', accountIds),
+        supabase
+          .from('toshiba_devices')
+          .select('*')
+          .in('account_id', accountIds),
+        supabase
+          .from('melcloud_devices')
+          .select('*')
+          .in('account_id', accountIds),
+      ])
+    : [{ data: [] }, { data: [] }, { data: [] }]
+
+  return {
+    accounts: accountsResult.data || [],
+    somfyDevices: somfyResult.data || [],
+    toshibaDevices: toshibaResult.data || [],
+    melcloudDevices: melcloudResult.data || [],
+    groups: groupsResult.data || [],
+  }
+}
+
+/**
+ * Cached version of styring data fetcher
+ */
+function getCachedStyringData(householdId: string) {
+  return unstable_cache(
+    () => fetchStyringDataCore(householdId),
+    ['styring-page-data', householdId],
+    {
+      revalidate: 60, // Shorter cache for device state (60 seconds)
+      tags: [`household-${householdId}`, `styring-${householdId}`]
+    }
+  )()
+}
+
+/**
+ * Fetch all data needed for the styring page
+ */
+export const fetchStyringPageData = cache(async (householdId: string): Promise<StyringPageData> => {
+  return getCachedStyringData(householdId)
+})
+
+/**
+ * Generate demo data for styring page (empty - no demo devices)
+ */
+export function getDemoStyringPageData(): StyringPageData {
+  return {
+    accounts: [],
+    somfyDevices: [],
+    toshibaDevices: [],
+    melcloudDevices: [],
+    groups: [],
+  }
+}
+
+/**
+ * Revalidate styring cache
+ */
+export function revalidateStyringCache(householdId: string) {
+  revalidateTag(`styring-${householdId}`, 'default')
+}
+
+// ============================================================================
+// Admin Page Data
+// ============================================================================
+
+export interface AdminHouseholdData {
+  id: string
+  name: string
+  created_at: string
+  members: Array<{
+    id: string
+    name: string
+    email: string | null
+    is_parent: boolean
+    is_household_admin: boolean
+  }>
+  children: Array<{
+    id: string
+    name: string
+  }>
+}
+
+export interface AdminPageData {
+  isAdmin: boolean
+  households: AdminHouseholdData[]
+  allowedEmails: AllowedEmail[]
+  unmatchedInvites: Array<{
+    id: string
+    sender_email: string
+    calendar_event_id: string
+    calendar_summary: string
+    status: string
+    created_at: string
+  }>
+  auditLogs: Array<{
+    id: string
+    created_at: string
+    actor_email: string
+    action: string
+    target_type: string
+    target_id: string | null
+    target_email: string | null
+    details: Record<string, unknown> | null
+  }>
+}
+
+/**
+ * Core admin data fetcher - uses admin client
+ */
+async function fetchAdminDataCore(): Promise<AdminPageData> {
+  const supabase = createAdminClient()
+
+  const [
+    householdsResult,
+    allowedEmailsResult,
+    unmatchedInvitesResult,
+    auditLogsResult,
+  ] = await Promise.all([
+    supabase
+      .from('households')
+      .select(`
+        id, name, created_at,
+        members:household_members(id, name, email, is_parent, is_household_admin),
+        children:children(id, name)
+      `)
+      .order('created_at', { ascending: false }),
+
+    supabase
+      .from('allowed_emails')
+      .select('*')
+      .order('created_at', { ascending: false }),
+
+    supabase
+      .from('unmatched_calendar_invites')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(50),
+
+    supabase
+      .from('audit_log')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100),
+  ])
+
+  return {
+    isAdmin: true,
+    households: householdsResult.data || [],
+    allowedEmails: allowedEmailsResult.data || [],
+    unmatchedInvites: unmatchedInvitesResult.data || [],
+    auditLogs: auditLogsResult.data || [],
+  }
+}
+
+/**
+ * Cached version of admin data fetcher (short cache for admin data)
+ */
+function getCachedAdminData() {
+  return unstable_cache(
+    () => fetchAdminDataCore(),
+    ['admin-page-data'],
+    {
+      revalidate: 30, // Short cache for admin data (30 seconds)
+      tags: ['admin-data']
+    }
+  )()
+}
+
+/**
+ * Fetch all data needed for the admin page
+ */
+export const fetchAdminPageData = cache(async (): Promise<AdminPageData> => {
+  return getCachedAdminData()
+})
+
+/**
+ * Generate demo data for admin page
+ */
+export function getDemoAdminPageData(): AdminPageData {
+  const demoState = generateDemoState()
+
+  return {
+    isAdmin: true,
+    households: demoState.adminHouseholds.map(h => ({
+      ...h,
+      members: h.members.map((m, i) => ({
+        id: `demo-member-${i}`,
+        name: m.name,
+        email: null,
+        is_parent: true,
+        is_household_admin: i === 0,
+      })),
+      children: h.children.map((c, i) => ({
+        id: `demo-child-${i}`,
+        name: c.name,
+      })),
+    })),
+    allowedEmails: demoState.adminAllowedEmails,
+    unmatchedInvites: [],
+    auditLogs: [],
+  }
+}
+
+/**
+ * Revalidate admin cache
+ */
+export function revalidateAdminCache() {
+  revalidateTag('admin-data', 'default')
 }

@@ -10,11 +10,27 @@
  *     headers: { 'Content-Type': 'application/json' },
  *     body: JSON.stringify({ householdId: '...', weekStart: '2026-01-06' })
  *   })
+ *
+ *   // Or with type-specific revalidation:
+ *   await fetch('/api/revalidate', {
+ *     method: 'POST',
+ *     headers: { 'Content-Type': 'application/json' },
+ *     body: JSON.stringify({ householdId: '...', type: 'recipes' })
+ *   })
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { revalidateHouseholdCache, revalidateWeekCache } from '@/lib/data/server'
+import {
+  revalidateHouseholdCache,
+  revalidateWeekCache,
+  revalidateRecipesCache,
+  revalidateShoppingCache,
+  revalidateSettingsCache,
+  revalidateFeedCache,
+  revalidateStyringCache,
+  revalidateAdminCache,
+} from '@/lib/data/server'
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,7 +43,24 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { householdId, weekStart } = body
+    const { householdId, weekStart, type } = body
+
+    // Admin cache revalidation (special case - no household needed)
+    if (type === 'admin') {
+      // Verify user is admin
+      const { data: allowedEmail } = await supabase
+        .from('allowed_emails')
+        .select('is_admin')
+        .eq('email', user.email?.toLowerCase())
+        .maybeSingle()
+
+      if (!allowedEmail?.is_admin) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+
+      revalidateAdminCache()
+      return NextResponse.json({ revalidated: true })
+    }
 
     if (!householdId) {
       return NextResponse.json({ error: 'householdId required' }, { status: 400 })
@@ -45,13 +78,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    // Revalidate cache
-    if (weekStart) {
-      // Targeted revalidation for specific week
-      revalidateWeekCache(householdId, weekStart)
-    } else {
-      // Revalidate all household data
-      revalidateHouseholdCache(householdId)
+    // Revalidate cache based on type
+    switch (type) {
+      case 'recipes':
+        revalidateRecipesCache(householdId)
+        break
+      case 'shopping':
+        revalidateShoppingCache(householdId)
+        break
+      case 'settings':
+        revalidateSettingsCache(householdId)
+        break
+      case 'feed':
+        revalidateFeedCache(householdId)
+        break
+      case 'styring':
+        revalidateStyringCache(householdId)
+        break
+      default:
+        if (weekStart) {
+          // Targeted revalidation for specific week
+          revalidateWeekCache(householdId, weekStart)
+        } else {
+          // Revalidate all household data
+          revalidateHouseholdCache(householdId)
+        }
     }
 
     return NextResponse.json({ revalidated: true })

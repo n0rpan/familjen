@@ -27,30 +27,39 @@ import {
 } from '@/lib/prefetch/fetchers'
 import { setCache } from '@/lib/cache'
 import type { ShoppingCacheData } from '@/lib/types'
+import type { ShoppingPageData } from '@/lib/data/server'
 
 interface ListWithItems extends ShoppingList {
   items: ShoppingListItem[]
 }
 
-export function ShoppingPageContent() {
+interface ShoppingPageContentProps {
+  initialData?: ShoppingPageData
+  isDemo?: boolean
+}
+
+export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: ShoppingPageContentProps) {
   const { t } = useLanguage()
   const searchParams = useSearchParams()
-  const isDemo = searchParams.get('demo') === 'true'
+  const isDemo = propIsDemo ?? searchParams.get('demo') === 'true'
 
-  // Demo mode: use hooks for data
+  // Track if we have initial data from server (PPR)
+  const hasInitialData = !!initialData
+
+  // Demo mode: use hooks for data (only when no initialData)
   const demoHook = useShoppingLists()
   const { household: demoHousehold } = useHousehold()
 
   // Get effective data based on mode
-  const effectiveLists = isDemo ? demoHook.lists : null
-  const effectiveHousehold = isDemo ? demoHousehold : null
-  const effectiveLoading = isDemo ? demoHook.loading : true
-  const effectiveError = isDemo ? demoHook.error : null
+  const effectiveLists = isDemo && !hasInitialData ? demoHook.lists : null
+  const effectiveHousehold = isDemo && !hasInitialData ? demoHousehold : null
+  const effectiveLoading = isDemo && !hasInitialData ? demoHook.loading : !hasInitialData
+  const effectiveError = isDemo && !hasInitialData ? demoHook.error : null
 
-  const [loading, setLoading] = useState(!isDemo)
+  const [loading, setLoading] = useState(!hasInitialData && !isDemo)
   const [error, setError] = useState<string | null>(null)
-  const [household, setHousehold] = useState<Household | null>(null)
-  const [lists, setLists] = useState<ListWithItems[]>([])
+  const [household, setHousehold] = useState<Household | null>(initialData?.household || null)
+  const [lists, setLists] = useState<ListWithItems[]>(initialData?.lists || [])
   const [newItemText, setNewItemText] = useState<Record<string, string>>({})
   const [newItemQuantity, setNewItemQuantity] = useState<Record<string, string>>({})
   const [viewMode, setViewMode] = useState<ShoppingViewMode>('newest')
