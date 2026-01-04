@@ -366,6 +366,125 @@ export function NavigationSkeleton() {
   )
 }
 
+// Home page skeleton - for PPR streaming fallback
+export function HomePageSkeleton() {
+  return (
+    <div className="space-y-8 animate-fade-in">
+      {/* Status banner skeleton */}
+      <div
+        className="flex items-center gap-3 px-4 py-3 rounded-xl"
+        style={{ background: 'rgba(131, 166, 151, 0.15)' }}
+      >
+        <Skeleton width={20} height={20} borderRadius={4} />
+        <Skeleton height={16} width={180} borderRadius={8} />
+      </div>
+
+      {/* AI input skeleton */}
+      <div
+        className="rounded-2xl p-4"
+        style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+      >
+        <div className="flex items-center gap-3">
+          <Skeleton width={40} height={40} borderRadius={12} />
+          <Skeleton height={18} width="60%" borderRadius={8} />
+        </div>
+      </div>
+
+      {/* Today section skeleton */}
+      <div
+        className="rounded-2xl p-6"
+        style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <Skeleton height={24} width={100} borderRadius={8} />
+          <Skeleton height={16} width={60} borderRadius={6} />
+        </div>
+        <div className="space-y-4">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="flex items-center gap-3">
+              <Skeleton width={36} height={36} borderRadius="50%" />
+              <div className="flex-1">
+                <Skeleton height={16} width="40%" borderRadius={6} className="mb-1" />
+                <Skeleton height={14} width="25%" borderRadius={6} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Week preview skeleton */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <Skeleton height={24} width={140} borderRadius={8} />
+          <Skeleton height={16} width={60} borderRadius={6} />
+        </div>
+        <div className="grid grid-cols-7 gap-2">
+          {[1, 2, 3, 4, 5, 6, 7].map((i) => (
+            <div
+              key={i}
+              className="rounded-xl p-3"
+              style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+            >
+              <Skeleton height={14} width="100%" borderRadius={4} className="mb-2" />
+              <Skeleton height={12} width="80%" borderRadius={4} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Today section skeleton - for Suspense fallback
+export function TodaySkeleton() {
+  return (
+    <div
+      className="rounded-2xl p-6"
+      style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+    >
+      <div className="flex items-center justify-between mb-4">
+        <Skeleton height={24} width={100} borderRadius={8} />
+        <Skeleton height={16} width={60} borderRadius={6} />
+      </div>
+      <div className="space-y-4">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="flex items-center gap-3">
+            <Skeleton width={36} height={36} borderRadius="50%" />
+            <div className="flex-1">
+              <Skeleton height={16} width="40%" borderRadius={6} className="mb-1" />
+              <Skeleton height={14} width="25%" borderRadius={6} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Week preview skeleton - for Suspense fallback
+export function WeekSkeleton() {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <Skeleton height={24} width={140} borderRadius={8} />
+        <Skeleton height={16} width={60} borderRadius={6} />
+      </div>
+      <div className="grid grid-cols-7 gap-2">
+        {[1, 2, 3, 4, 5, 6, 7].map((i) => (
+          <div
+            key={i}
+            className="rounded-xl p-3"
+            style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+          >
+            <Skeleton height={14} width="100%" borderRadius={4} className="mb-2" />
+            <Skeleton height={12} width="80%" borderRadius={4} />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // Recipes page partial skeleton - real title + shimmer for grid
 export function RecipesPagePartialSkeleton({ t }: { t: TranslationStrings }) {
   return (

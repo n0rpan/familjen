@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Enable Partial Prerendering for instant page loads
+  // In Next.js 16, PPR is enabled via cacheComponents
+  cacheComponents: true,
+
   // Disable X-Powered-By header to reduce fingerprinting
   poweredByHeader: false,
 
