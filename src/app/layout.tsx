@@ -85,6 +85,7 @@ async function AppContent({ children }: { children: React.ReactNode }) {
           </RealtimeWrapper>
         </DemoWrapper>
       </NavigationProvider>
+      <ServiceWorkerRegistration />
     </LanguageProvider>
   )
 }
@@ -118,7 +119,6 @@ export default function RootLayout({
         <Suspense fallback={<AppContentFallback />}>
           <AppContent>{children}</AppContent>
         </Suspense>
-        <ServiceWorkerRegistration />
       </body>
     </html>
   );
