@@ -14,7 +14,7 @@
 import { cache } from 'react'
 import { unstable_cache, revalidateTag } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { createAdminClient, syncUserMetadata } from '@/lib/supabase/admin'
 import { formatDateISO, addDays, getWeekStart, getWeekNumber, getWeekStartFromWeekNumber, type Holiday } from '@/lib/utils'
 import type {
   Household,
@@ -445,7 +445,17 @@ export async function getHouseholdIdFromSession(): Promise<string | null> {
       console.error('[getHouseholdIdFromSession] DB error:', dbError.message)
     }
 
-    return memberData?.household_id || null
+    if (memberData?.household_id) {
+      // Sync JWT so next page load is fast (fire-and-forget, don't block render)
+      // Same pattern as home page - direct import, catch errors silently
+      syncUserMetadata(user.id, user.email!, memberData.household_id).catch((err) => {
+        console.error('[getHouseholdIdFromSession] Failed to sync user metadata:', err)
+      })
+
+      return memberData.household_id
+    }
+
+    return null
   } catch (err) {
     console.error('[getHouseholdIdFromSession] Unexpected error:', err)
     return null
