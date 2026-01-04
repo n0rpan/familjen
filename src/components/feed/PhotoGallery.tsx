@@ -98,7 +98,7 @@ export function PhotoGallery({ photos, onPhotoClick }: Props) {
             className="relative aspect-square rounded-xl overflow-hidden group"
             style={{ background: 'var(--background)' }}
           >
-            {/* Photo or placeholder */}
+            {/* Photo or loading shimmer placeholder */}
             {photo.image_url ? (
               // eslint-disable-next-line @next/next/no-img-element -- external dynamic URLs from Supabase storage
               <img
@@ -111,9 +111,17 @@ export function PhotoGallery({ photos, onPhotoClick }: Props) {
               />
             ) : (
               <div
-                className="absolute inset-0 flex items-center justify-center"
+                className="absolute inset-0 flex items-center justify-center overflow-hidden"
                 style={{ background: 'var(--sand)' }}
               >
+                {/* Shimmer animation to indicate loading */}
+                <div
+                  className="absolute inset-0 animate-shimmer"
+                  style={{
+                    background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%)',
+                    backgroundSize: '200% 100%',
+                  }}
+                />
                 <svg
                   width="32"
                   height="32"
@@ -121,7 +129,8 @@ export function PhotoGallery({ photos, onPhotoClick }: Props) {
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="1.5"
-                  style={{ color: 'var(--muted)' }}
+                  style={{ color: 'var(--muted)', opacity: 0.6 }}
+                  className="relative z-10"
                 >
                   <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                   <circle cx="8.5" cy="8.5" r="1.5" />

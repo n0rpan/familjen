@@ -7,27 +7,33 @@ export const COOKIE_MAX_AGE = 60 * 60 * 24 * 365 // 1 year
 
 /**
  * Server-side: Get language from cookie or detect from browser
+ * Returns default language during static prerendering (when cookies() is unavailable)
  */
 export async function getLanguageFromCookieOrBrowser(): Promise<Language> {
-  const cookieStore = await cookies()
-  const cookieLang = cookieStore.get(LANGUAGE_COOKIE_NAME)?.value
+  try {
+    const cookieStore = await cookies()
+    const cookieLang = cookieStore.get(LANGUAGE_COOKIE_NAME)?.value
 
-  // Check if cookie has valid language
-  if (cookieLang && isValidLanguage(cookieLang)) {
-    return cookieLang as Language
-  }
-
-  // Detect from browser Accept-Language header
-  const headersList = await headers()
-  const acceptLanguage = headersList.get('accept-language')
-  if (acceptLanguage) {
-    const detected = detectLanguageFromHeader(acceptLanguage)
-    if (detected) {
-      return detected
+    // Check if cookie has valid language
+    if (cookieLang && isValidLanguage(cookieLang)) {
+      return cookieLang as Language
     }
-  }
 
-  return DEFAULT_LANGUAGE
+    // Detect from browser Accept-Language header
+    const headersList = await headers()
+    const acceptLanguage = headersList.get('accept-language')
+    if (acceptLanguage) {
+      const detected = detectLanguageFromHeader(acceptLanguage)
+      if (detected) {
+        return detected
+      }
+    }
+
+    return DEFAULT_LANGUAGE
+  } catch {
+    // During static prerendering, cookies() throws - return default
+    return DEFAULT_LANGUAGE
+  }
 }
 
 /**

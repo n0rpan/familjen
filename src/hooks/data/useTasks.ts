@@ -376,6 +376,19 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
     }
   }
 
+  // Demo mode initializing: show loading
+  if (isDemo && !demoState) {
+    return {
+      tasks: [],
+      loading: true,
+      error: null,
+      addTask,
+      updateTask,
+      deleteTask,
+      refetch: () => {},
+    }
+  }
+
   // Derive loading state
   const needsFetch = !!household?.id && lastFetchKey !== currentFetchKey && !isFetching
   const loading = householdLoading || needsFetch || isFetching

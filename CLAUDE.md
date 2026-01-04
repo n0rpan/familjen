@@ -105,6 +105,244 @@ This codebase uses `children` as a prop name for household children (kids), not 
 <WeekGrid children={householdChildren} members={members} />
 ```
 
+## Page Performance Patterns
+
+This app uses a multi-layered performance strategy to make every page feel instant for busy parents.
+
+### The Performance Stack
+
+Every page benefits from these layers (in order of user experience):
+
+| Layer | What It Does | User Experience |
+|-------|--------------|-----------------|
+| `loading.tsx` | Shows skeleton instantly on navigation | Immediate feedback |
+| IndexedDB cache | Stores data locally with timestamps | Instant data on repeat visits |
+| Stale-while-revalidate | Shows cached, fetches fresh in background | Never waits for network |
+| Data prefetching | Fetches data on link hover | Next page ready before click |
+| Route prefetching | Prefetches JS bundles on hover | No code loading delay |
+| Realtime subscriptions | Updates data live via websocket | No manual refresh needed |
+
+### Two Page Patterns
+
+#### Pattern 1: PPR (Server-First) - For Static-ish Pages
+
+Use when:
+- Content is mostly read-only
+- Changes are infrequent
+- You want instant shell rendering
+
+**Files needed:**
+```
+src/app/[page]/
+├── page.tsx              # Server component with Suspense
+├── loading.tsx           # Skeleton fallback
+src/components/[page]/
+├── [Page]DataLoader.tsx  # Server component - fetches data
+├── [Page]Content.tsx     # Shared component - renders UI
+└── [Page]ClientInteractions.tsx  # Client component - realtime
+```
+
+**Example: Home Page (`/`)**
+```typescript
+// src/app/page.tsx (Server Component)
+import { Suspense } from 'react'
+import { HomeDataLoader } from '@/components/home/HomeDataLoader'
+import { HomeClientInteractions } from '@/components/home/HomeClientInteractions'
+import { HomePageSkeleton } from '@/components/Skeleton'
+
+export default async function HomePage({ searchParams }: Props) {
+  const params = await searchParams
+  const isDemo = params.demo === 'true'
+  const householdId = await getHouseholdId()
+
+  return (
+    <>
+      <Suspense fallback={<HomePageSkeleton />}>
+        <HomeDataLoader householdId={householdId} isDemo={isDemo} />
+      </Suspense>
+      <HomeClientInteractions householdId={householdId} isDemo={isDemo} />
+    </>
+  )
+}
+
+// src/components/home/HomeDataLoader.tsx (Server Component)
+export async function HomeDataLoader({ householdId, isDemo }: Props) {
+  const data = isDemo
+    ? getDemoHomePageData()
+    : await fetchHomePageData(householdId)
+
+  return <HomePageContent {...data} isDemo={isDemo} />
+}
+
+// src/components/home/HomeClientInteractions.tsx (Client Component)
+'use client'
+export function HomeClientInteractions({ householdId, isDemo }: Props) {
+  const router = useRouter()
+
+  // Realtime subscriptions
+  useEffect(() => {
+    if (isDemo) return
+    const channel = supabase.channel(`home-${householdId}`)
+      .on('postgres_changes', { table: 'pickups' }, () => router.refresh())
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [householdId, isDemo, router])
+
+  return null // This component only sets up subscriptions
+}
+```
+
+#### Pattern 2: Client-First - For Interactive Pages
+
+Use when:
+- Page is heavily interactive (modals, forms, navigation)
+- Has complex state management
+- Already has IndexedDB caching
+
+**Files needed:**
+```
+src/app/[page]/
+├── page.tsx              # Client component with 'use client'
+├── loading.tsx           # Skeleton fallback
+src/hooks/data/
+└── use[Page]Data.ts      # Hook with caching + realtime
+```
+
+**Example: Week Page (`/uke`)**
+```typescript
+// src/app/uke/page.tsx (Client Component)
+'use client'
+
+import { useWeekData } from '@/hooks/data'
+import { WeekPageSkeleton } from '@/components/Skeleton'
+
+export default function WeekPage() {
+  const searchParams = useSearchParams()
+  const isDemo = searchParams.get('demo') === 'true'
+
+  const { data, loading } = useWeekData({ weekOffset: 0 })
+
+  if (loading && !data) {
+    return <WeekPageSkeleton />
+  }
+
+  return <WeekPageContent {...data} isDemo={isDemo} />
+}
+
+// src/hooks/data/useWeekData.ts
+export function useWeekData({ weekOffset }: Options) {
+  const [data, setData] = useState<WeekData | null>(null)
+
+  useEffect(() => {
+    // 1. Check IndexedDB cache first
+    const cached = await getCachedWeekData(householdId, weekOffset)
+    if (cached && isFresh(cached)) {
+      setData(cached)
+      setLoading(false)
+    }
+
+    // 2. Fetch fresh data in background
+    const fresh = await fetchWeekData(householdId, weekOffset)
+    setData(fresh)
+    await setCacheWeekData(householdId, weekOffset, fresh)
+  }, [householdId, weekOffset])
+
+  // 3. Realtime subscriptions
+  useRealtimeSubscription({
+    table: 'pickups',
+    filter: createHouseholdFilter(householdId),
+    onAny: () => refetch(),
+  })
+
+  return { data, loading }
+}
+```
+
+### Adding a New Page (Checklist)
+
+1. **Create `loading.tsx`** - Shows skeleton immediately on navigation
+   ```typescript
+   // src/app/[page]/loading.tsx
+   import { [Page]PageSkeleton } from '@/components/Skeleton'
+   export default function Loading() {
+     return <[Page]PageSkeleton />
+   }
+   ```
+
+2. **Create skeleton component** - Add to `src/components/Skeleton.tsx`
+   ```typescript
+   export function [Page]PageSkeleton() {
+     return (
+       <div className="space-y-6 animate-fade-in">
+         <Skeleton height={32} width={160} borderRadius={12} />
+         {/* Match actual page layout */}
+       </div>
+     )
+   }
+   ```
+
+3. **Add cache key** - In `src/lib/prefetch/pages.ts`
+   ```typescript
+   export const CACHE_KEYS = {
+     [page]: (householdId: string) => `[page]-${householdId}`,
+   }
+   ```
+
+4. **Add prefetch function** - In `src/lib/prefetch/pages.ts`
+   ```typescript
+   export async function prefetch[Page]Data(householdId: string) {
+     const cacheKey = CACHE_KEYS.[page](householdId)
+     const cached = await getCached(cacheKey)
+     if (cached && isCacheFresh(cached, PREFETCH_MAX_AGE)) return
+     // Fetch and cache data
+   }
+
+   export const PREFETCH_MAP: Record<string, (id: string) => Promise<void>> = {
+     '/[page]': prefetch[Page]Data,
+   }
+   ```
+
+5. **Support demo mode** - Check `isDemo` and use demo data
+   ```typescript
+   const isDemo = searchParams.get('demo') === 'true'
+   const data = isDemo ? getDemoData() : await fetchRealData()
+   ```
+
+### Demo Mode Requirements
+
+**CRITICAL:** Demo mode must use the same components as production.
+
+```typescript
+// ✅ CORRECT - Same component for demo and production
+const data = isDemo ? getDemoData() : await fetchRealData()
+return <PageContent {...data} isDemo={isDemo} />
+
+// ❌ WRONG - Different components break E2E tests
+if (isDemo) return <DemoPageContent />
+return <RealPageContent />
+```
+
+**Why:** E2E tests run in demo mode. If demo uses different components, tests won't catch production bugs.
+
+### TransitionLink (Internal Navigation)
+
+Always use `TransitionLink` instead of `next/link` for internal navigation:
+
+```typescript
+import { TransitionLink } from '@/components/TransitionLink'
+
+// ✅ CORRECT - Uses view transitions + prefetching
+<TransitionLink href="/uke">Week</TransitionLink>
+
+// ❌ WRONG - Loses view transitions and prefetching
+<Link href="/uke">Week</Link>
+```
+
+**TransitionLink provides:**
+- View Transitions API for native-feel navigation
+- Route prefetching on hover
+- Data prefetching on hover (via `prefetchRouteData`)
+
 ## File Structure
 
 ### Pages (`src/app/`)

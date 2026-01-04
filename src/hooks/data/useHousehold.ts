@@ -150,6 +150,17 @@ export function useHousehold(): UseHouseholdReturn {
     }
   }
 
+  // Demo mode initializing: show loading
+  if (isDemo && !demoState) {
+    return {
+      household: null,
+      currentMember: null,
+      loading: true,
+      error: null,
+      refetch: () => {},
+    }
+  }
+
   return {
     household,
     currentMember,

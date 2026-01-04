@@ -9,6 +9,7 @@
  */
 
 import { useState, useMemo, useRef, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import { useLanguage } from '@/lib/i18n/context'
 import { FeedFilters, type FeedFilter } from './FeedFilters'
 import { FeedSearch } from './FeedSearch'
@@ -17,8 +18,18 @@ import { PhotoGallery, type FeedPhoto } from './PhotoGallery'
 import { ReminderCard, type FeedReminder } from './ReminderCard'
 import { EventChangeNotificationList, type EventNotification } from './EventChangeNotification'
 import { SyncStatusBanner, type IntegrationStatus } from './SyncStatusBanner'
-import { DuplicateSuggestionsList, type DuplicateSuggestion } from './DuplicateSuggestions'
-import { MergedDuplicatesList, type MergedDuplicate } from './MergedDuplicates'
+import type { DuplicateSuggestion } from './DuplicateSuggestions'
+import type { MergedDuplicate } from './MergedDuplicates'
+
+// Dynamic imports for code splitting - these are rarely shown (only when duplicates exist)
+const DuplicateSuggestionsList = dynamic(
+  () => import('./DuplicateSuggestions').then(mod => mod.DuplicateSuggestionsList),
+  { ssr: false }
+)
+const MergedDuplicatesList = dynamic(
+  () => import('./MergedDuplicates').then(mod => mod.MergedDuplicatesList),
+  { ssr: false }
+)
 
 // Integration children mapping (which children belong to which integrations)
 export interface IntegrationChild {

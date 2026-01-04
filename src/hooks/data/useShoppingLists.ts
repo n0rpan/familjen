@@ -11,10 +11,21 @@
  * - isFetching: actively fetching data
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
+import { getCached, setCache, isCacheFresh } from '@/lib/cache'
+import { CACHE_KEYS } from '@/lib/prefetch/pages'
 import type { ShoppingList, ShoppingListItem } from '@/lib/types'
+
+// Cache max age - 3 minutes (same as prefetch)
+const SHOPPING_CACHE_MAX_AGE = 3 * 60 * 1000
+
+// Cache data structure (matches what prefetch stores)
+interface ShoppingCacheData {
+  lists: ShoppingList[]
+  items: ShoppingListItem[]
+}
 
 export interface ShoppingListWithItems extends ShoppingList {
   items: ShoppingListItem[]
@@ -45,6 +56,7 @@ export function useShoppingLists(): UseShoppingListsReturn {
   const [isFetching, setIsFetching] = useState(false)
   const [initialFetchDone, setInitialFetchDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const cacheCheckedRef = useRef(false)
 
   const fetchData = useCallback(async () => {
     if (isDemo || !supabase || !household?.id) return
@@ -87,6 +99,12 @@ export function useShoppingLists(): UseShoppingListsReturn {
       }))
 
       setLists(listsWithItems)
+
+      // Update cache for next navigation (silent, don't await)
+      setCache<ShoppingCacheData>(CACHE_KEYS.shopping(household.id), {
+        lists: listsData,
+        items: itemsData || [],
+      }).catch(() => {})
     } catch (err) {
       console.error('Error fetching shopping lists:', err)
       setError(err instanceof Error ? err.message : 'Failed to load shopping lists')
@@ -96,11 +114,34 @@ export function useShoppingLists(): UseShoppingListsReturn {
     }
   }, [isDemo, supabase, household?.id])
 
-  // Fetch when household becomes available
+  // Check for prefetched cache and do initial fetch
   useEffect(() => {
-    if (!isDemo && household?.id && !initialFetchDone) {
+    if (isDemo || !household?.id || initialFetchDone || cacheCheckedRef.current) return
+
+    cacheCheckedRef.current = true
+    const hId = household.id
+    const cacheKey = CACHE_KEYS.shopping(hId)
+
+    // Try to use prefetched data first (stale-while-revalidate)
+    getCached<ShoppingCacheData>(cacheKey).then((cached) => {
+      if (cached && isCacheFresh(cached, SHOPPING_CACHE_MAX_AGE)) {
+        // Apply cached data immediately for instant render
+        const listsWithItems = cached.data.lists.map(list => ({
+          ...list,
+          items: cached.data.items.filter(item => item.list_id === list.id),
+        }))
+        setLists(listsWithItems)
+        setInitialFetchDone(true)
+        // Still fetch fresh data in background
+        fetchData()
+      } else {
+        // No cache or stale - fetch fresh
+        fetchData()
+      }
+    }).catch(() => {
+      // Cache error - just fetch normally
       fetchData()
-    }
+    })
   }, [isDemo, household?.id, initialFetchDone, fetchData])
 
   // Add list mutation
@@ -286,6 +327,23 @@ export function useShoppingLists(): UseShoppingListsReturn {
       updateItem,
       deleteItem,
       refetch: () => {}, // No-op in demo
+    }
+  }
+
+  // Demo mode initializing: show loading
+  if (isDemo && !demoState) {
+    return {
+      lists: [],
+      loading: true,
+      error: null,
+      addList,
+      updateList,
+      deleteList,
+      addItem,
+      addItemToList,
+      updateItem,
+      deleteItem,
+      refetch: () => {},
     }
   }
 

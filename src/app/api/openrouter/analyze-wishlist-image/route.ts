@@ -5,7 +5,6 @@ import type { Language } from '@/lib/i18n/types'
 import { ApiErrors, handleApiError } from '@/lib/api-errors'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 
-export const runtime = 'nodejs'
 export const maxDuration = 30
 
 const OPENROUTER_TIMEOUT_MS = 25000 // 25 seconds (leave buffer for maxDuration)

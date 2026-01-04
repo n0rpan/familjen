@@ -12,12 +12,34 @@ import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
 import { useChildren } from './useChildren'
 import { useTasks } from './useTasks'
+import { getCached, setCache, isCacheFresh } from '@/lib/cache'
+import { CACHE_KEYS } from '@/lib/prefetch/pages'
 import type { FeedMessage } from '@/components/feed/MessageCard'
 import type { FeedPhoto } from '@/components/feed/PhotoGallery'
 import type { FeedReminder } from '@/components/feed/ReminderCard'
 import type { EventNotification } from '@/components/feed/EventChangeNotification'
 import type { IntegrationStatus } from '@/components/feed/SyncStatusBanner'
 import type { IntegrationChild } from '@/components/feed/FeedPageContent'
+
+// Cache max age - 3 minutes (same as prefetch)
+const FEED_CACHE_MAX_AGE = 3 * 60 * 1000
+
+// Cache data structure (matches what prefetch stores)
+interface FeedCacheData {
+  integrationsEnabled: boolean
+  integrations?: Array<{
+    id: string
+    service: string
+    display_name: string
+    last_sync_status: string | null
+    last_sync_error: string | null
+    last_sync_at: string | null
+  }>
+  messages?: Array<Record<string, unknown>>
+  integrationChildren?: Array<Record<string, unknown>>
+  photos?: Array<Record<string, unknown>>
+  notifications?: Array<Record<string, unknown>>
+}
 
 export interface UseFeedReturn {
   // Data
@@ -56,7 +78,8 @@ export function useFeed(): UseFeedReturn {
   const [integrationChildren, setIntegrationChildren] = useState<IntegrationChild[]>([])
   const [integrationStatuses, setIntegrationStatuses] = useState<IntegrationStatus[]>([])
   const [integrationsEnabled, setIntegrationsEnabled] = useState(true)
-  const [loading, setLoading] = useState(!isDemo)
+  // In demo mode, show loading until demoState is available
+  const [loading, setLoading] = useState(!isDemo || !demoState)
   const [error, setError] = useState<string | null>(null)
 
   // Track photo URL generation session
@@ -245,6 +268,16 @@ export function useFeed(): UseFeedReturn {
         .limit(20)
 
       setNotifications((notificationsData || []) as EventNotification[])
+
+      // Update cache for next navigation (silent, don't await)
+      setCache<FeedCacheData>(CACHE_KEYS.feed(hId), {
+        integrationsEnabled: true,
+        integrations: integrationsData || [],
+        messages: messagesData || [],
+        integrationChildren: integrationChildrenData || [],
+        photos: photosData || [],
+        notifications: notificationsData || [],
+      }).catch(() => {})
     } catch (err) {
       console.error('Error loading feed data:', err)
       setError(err instanceof Error ? err.message : 'Failed to load feed')
@@ -282,10 +315,109 @@ export function useFeed(): UseFeedReturn {
     await fetchData()
   }, [isDemo, fetchData])
 
-  // Initial fetch for production mode
+  // Check for prefetched cache and do initial fetch
   useEffect(() => {
-    if (!isDemo && household?.id && !householdLoading) {
+    if (isDemo || !household?.id || householdLoading) return
+
+    const hId = household.id
+    const cacheKey = CACHE_KEYS.feed(hId)
+
+    // Try to use prefetched data first (stale-while-revalidate)
+    getCached<FeedCacheData>(cacheKey).then((cached) => {
+      if (cached && isCacheFresh(cached, FEED_CACHE_MAX_AGE)) {
+        // Apply cached data immediately for instant render
+        applyCachedData(cached.data)
+        setLoading(false)
+        // Still fetch fresh data in background
+        fetchData()
+      } else {
+        // No cache or stale - fetch fresh
+        fetchData()
+      }
+    }).catch(() => {
+      // Cache error - just fetch normally
       fetchData()
+    })
+
+    // Helper to apply cached data to state
+    function applyCachedData(data: FeedCacheData) {
+      setIntegrationsEnabled(data.integrationsEnabled)
+
+      if (!data.integrationsEnabled) return
+
+      // Apply integration statuses
+      if (data.integrations) {
+        const statuses: IntegrationStatus[] = data.integrations.map((i) => ({
+          id: i.id,
+          service: i.service as IntegrationStatus['service'],
+          displayName: i.display_name || '',
+          lastSyncStatus: i.last_sync_status,
+          lastSyncError: i.last_sync_error,
+          lastSyncAt: i.last_sync_at,
+        }))
+        setIntegrationStatuses(statuses)
+      }
+
+      // Apply messages
+      if (data.messages) {
+        const msgs: FeedMessage[] = data.messages.map((msg: Record<string, unknown>) => ({
+          id: msg.id as string,
+          integration_id: msg.integration_id as string,
+          child_id: msg.child_id as string | null,
+          external_id: msg.external_id as string,
+          sender_name: msg.sender_name as string | null,
+          title: msg.title as string | null,
+          body: (msg.body as string) || '',
+          message_date: msg.message_date as string,
+          source_type: (msg.source_type || 'message') as string,
+          service: (msg.external_integrations as Record<string, unknown>)?.service as 'spond' | 'kidplan' | 'iskole' | 'mykid',
+          child_name: (msg.children as Record<string, unknown>)?.name as string | null,
+          integration_name: (msg.external_integrations as Record<string, unknown>)?.display_name as string | null,
+          raw_data: msg.raw_data,
+        }))
+        setMessages(msgs)
+      }
+
+      // Apply integration children
+      if (data.integrationChildren) {
+        const ic: IntegrationChild[] = data.integrationChildren.map((item: Record<string, unknown>) => {
+          const childData = item.children as Record<string, unknown> | null
+          return {
+            integrationId: item.integration_id as string,
+            childId: item.child_id as string,
+            childName: childData?.name as string || '',
+            groupName: item.external_group_name as string,
+          }
+        })
+        setIntegrationChildren(ic)
+      }
+
+      // Apply photos (without signed URLs - they'll be generated on fresh fetch)
+      if (data.photos) {
+        const ps: FeedPhoto[] = data.photos
+          .filter((photo: Record<string, unknown>) =>
+            photo.storage_path && !(photo.storage_path as string).startsWith('pending/')
+          )
+          .map((photo: Record<string, unknown>) => ({
+            id: photo.id as string,
+            integration_id: photo.integration_id as string,
+            child_id: photo.child_id as string | null,
+            external_id: photo.external_id as string,
+            title: photo.title as string | null,
+            taken_at: photo.taken_at as string,
+            storage_path: photo.storage_path as string,
+            thumbnail_path: photo.thumbnail_path as string | null,
+            child_name: (photo.children as Record<string, unknown>)?.name as string | null,
+            integration_name: (photo.external_integrations as Record<string, unknown>)?.display_name as string | null,
+            image_url: null, // URLs need to be generated fresh
+          }))
+        setPhotos(ps)
+      }
+
+      // Apply notifications
+      if (data.notifications) {
+        setNotifications(data.notifications as unknown as EventNotification[])
+      }
     }
   }, [isDemo, household?.id, householdLoading, fetchData])
 
@@ -296,6 +428,13 @@ export function useFeed(): UseFeedReturn {
       setLoading(false)
     }
   }, [isDemo, householdLoading, household?.id])
+
+  // Update loading state when demo data becomes available
+  useEffect(() => {
+    if (isDemo && demoState) {
+      setLoading(false)
+    }
+  }, [isDemo, demoState])
 
   // Demo mode: return demo data
   if (isDemo && demoState) {
@@ -328,6 +467,24 @@ export function useFeed(): UseFeedReturn {
       refetch: async () => {}, // No-op in demo
       toggleReminder: async () => {}, // No-op in demo
       syncIntegrations: async () => {}, // No-op in demo
+    }
+  }
+
+  // Demo mode initializing: show loading
+  if (isDemo && !demoState) {
+    return {
+      messages: [],
+      photos: [],
+      reminders: [],
+      notifications: [],
+      integrationChildren: [],
+      integrationStatuses: [],
+      loading: true,
+      error: null,
+      integrationsEnabled: true,
+      refetch: async () => {},
+      toggleReminder: async () => {},
+      syncIntegrations: async () => {},
     }
   }
 

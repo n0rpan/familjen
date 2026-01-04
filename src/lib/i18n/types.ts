@@ -80,6 +80,12 @@ export interface TranslationStrings {
     viewOnly: string
     external: string
     all: string
+    // Relative time
+    lastUpdated: string
+    justNow: string
+    minutesAgo: string
+    hoursAgo: string
+    daysAgo: string
   }
 
   // Date/Time
