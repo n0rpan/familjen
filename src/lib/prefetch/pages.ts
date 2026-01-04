@@ -320,8 +320,6 @@ export async function refreshAllCaches(householdId: string): Promise<void> {
       prefetchShoppingData(householdId),
       prefetchSettingsData(householdId),
     ])
-
-    console.log('[Prefetch] Background refresh completed')
   } catch (error) {
     console.warn('[Prefetch] Background refresh failed:', error)
   }

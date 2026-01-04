@@ -1324,7 +1324,7 @@ export function AdminPageContent({ initialData, currentUserId }: AdminPageConten
               visionOnly
             />
             <p className="text-xs mt-2" style={{ color: 'var(--muted)' }}>
-              {t.admin.visionModelDescription || 'For å analysere bilder og dokumenter'}
+              {t.admin.visionModelDescription}
             </p>
           </div>
         </div>
