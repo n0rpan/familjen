@@ -303,6 +303,11 @@ input:focus, select:focus, textarea:focus {
   animation: shimmer 1.8s ease-in-out infinite;
 }
 
+/* Shimmer for photo loading state */
+.animate-shimmer {
+  animation: shimmer 1.8s ease-in-out infinite;
+}
+
 /* Smooth content reveal - used when skeleton is replaced with real content */
 @keyframes content-reveal {
   from {

@@ -13,6 +13,7 @@ import { RealtimeWrapper } from "@/components/RealtimeWrapper";
 import { NavigationProvider } from "@/lib/navigation";
 import { PageContent } from "@/components/PageContent";
 import { DemoWrapper } from "@/components/demo/DemoWrapper";
+import { connection } from "next/server";
 
 // Self-hosted fonts with next/font for better performance (no render-blocking)
 const outfit = Outfit({
@@ -62,6 +63,10 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Opt into dynamic rendering to allow cookies() access
+  // This is required for Next.js 16 with cacheComponents
+  await connection()
+
   const language = await getLanguageFromCookieOrBrowser()
 
   return (
