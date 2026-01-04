@@ -487,12 +487,195 @@ export function getDemoHomePageData(): HomePageData {
   }
 }
 
+// ============================================================================
+// Feed Page Data
+// ============================================================================
+
+export interface FeedPageData {
+  integrationsEnabled: boolean
+  integrations: Array<{
+    id: string
+    service: string
+    display_name: string
+    last_sync_status: string | null
+    last_sync_error: string | null
+    last_sync_at: string | null
+  }>
+  messages: Array<Record<string, unknown>>
+  photos: Array<Record<string, unknown>>
+  integrationChildren: Array<Record<string, unknown>>
+  notifications: Array<Record<string, unknown>>
+  duplicateSuggestions: Array<Record<string, unknown>>
+  mergedDuplicates: Array<Record<string, unknown>>
+}
+
+/**
+ * Core feed data fetcher - uses admin client to bypass RLS
+ */
+async function fetchFeedDataCore(householdId: string): Promise<FeedPageData> {
+  const supabase = createAdminClient()
+
+  // Check if integrations are enabled
+  const { data: householdData } = await supabase
+    .from('households')
+    .select('external_integrations_enabled')
+    .eq('id', householdId)
+    .single()
+
+  if (!householdData?.external_integrations_enabled) {
+    return {
+      integrationsEnabled: false,
+      integrations: [],
+      messages: [],
+      photos: [],
+      integrationChildren: [],
+      notifications: [],
+      duplicateSuggestions: [],
+      mergedDuplicates: [],
+    }
+  }
+
+  // Parallel fetch all feed data
+  const [
+    integrationsResult,
+    messagesResult,
+    integrationChildrenResult,
+    photosResult,
+    notificationsResult,
+    duplicateSuggestionsResult,
+    mergedDuplicatesResult,
+  ] = await Promise.all([
+    supabase
+      .from('external_integrations')
+      .select('id, service, display_name, last_sync_status, last_sync_error, last_sync_at')
+      .eq('household_id', householdId),
+
+    supabase
+      .from('external_messages')
+      .select(`
+        *,
+        external_integrations!inner(service, display_name, household_id),
+        children(name)
+      `)
+      .eq('external_integrations.household_id', householdId)
+      .order('message_date', { ascending: false })
+      .limit(100),
+
+    supabase
+      .from('external_integration_children')
+      .select(`
+        integration_id,
+        child_id,
+        external_group_name,
+        children(name),
+        external_integrations!inner(household_id)
+      `)
+      .eq('external_integrations.household_id', householdId),
+
+    supabase
+      .from('external_photos')
+      .select(`
+        *,
+        external_integrations!inner(service, display_name, household_id),
+        children(name)
+      `)
+      .eq('external_integrations.household_id', householdId)
+      .gt('expires_at', new Date().toISOString())
+      .order('taken_at', { ascending: false })
+      .limit(50),
+
+    supabase
+      .from('event_change_notifications')
+      .select('*')
+      .eq('household_id', householdId)
+      .in('status', ['unread', 'read'])
+      .order('created_at', { ascending: false })
+      .limit(20),
+
+    supabase
+      .from('event_duplicate_suggestions')
+      .select('*')
+      .eq('household_id', householdId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false }),
+
+    supabase
+      .from('event_duplicate_suggestions')
+      .select('*')
+      .eq('household_id', householdId)
+      .eq('status', 'merged')
+      .order('resolved_at', { ascending: false })
+      .limit(20),
+  ])
+
+  return {
+    integrationsEnabled: true,
+    integrations: integrationsResult.data || [],
+    messages: messagesResult.data || [],
+    photos: photosResult.data || [],
+    integrationChildren: integrationChildrenResult.data || [],
+    notifications: notificationsResult.data || [],
+    duplicateSuggestions: duplicateSuggestionsResult.data || [],
+    mergedDuplicates: mergedDuplicatesResult.data || [],
+  }
+}
+
+/**
+ * Cached version of feed data fetcher
+ */
+function getCachedFeedData(householdId: string) {
+  return unstable_cache(
+    () => fetchFeedDataCore(householdId),
+    ['feed-page-data', householdId],
+    {
+      revalidate: CACHE_TTL,
+      tags: [`household-${householdId}`, `feed-${householdId}`]
+    }
+  )()
+}
+
+/**
+ * Fetch all data needed for the feed page
+ */
+export const fetchFeedPageData = cache(async (householdId: string): Promise<FeedPageData> => {
+  return getCachedFeedData(householdId)
+})
+
+/**
+ * Generate demo data for feed page
+ */
+export function getDemoFeedPageData(): FeedPageData {
+  const demoState = generateDemoState()
+
+  return {
+    integrationsEnabled: true,
+    integrations: [], // Demo doesn't have mock integrations
+    messages: demoState.feedMessages as unknown as Array<Record<string, unknown>> || [],
+    photos: demoState.feedPhotos as unknown as Array<Record<string, unknown>> || [],
+    integrationChildren: [],
+    notifications: [], // Demo doesn't have mock notifications
+    duplicateSuggestions: [],
+    mergedDuplicates: [],
+  }
+}
+
+/**
+ * Revalidate feed cache
+ */
+export function revalidateFeedCache(householdId: string) {
+  revalidateTag(`feed-${householdId}`, 'default')
+}
+
+// ============================================================================
+// Cache Revalidation Helpers
+// ============================================================================
+
 /**
  * Revalidate all cached data for a household
  * Call this after mutations to ensure fresh data on next navigation
  */
 export function revalidateHouseholdCache(householdId: string) {
-  revalidateTag(`household-${householdId}`)
+  revalidateTag(`household-${householdId}`, 'default')
 }
 
 /**
@@ -500,5 +683,105 @@ export function revalidateHouseholdCache(householdId: string) {
  * More targeted than revalidating all household data
  */
 export function revalidateWeekCache(householdId: string, weekStartStr: string) {
-  revalidateTag(`week-${householdId}-${weekStartStr}`)
+  revalidateTag(`week-${householdId}-${weekStartStr}`, 'default')
+}
+
+// ============================================================================
+// Settings Page Data
+// ============================================================================
+
+export interface SettingsPageData {
+  household: Household | null
+  members: HouseholdMember[]
+  children: Child[]
+  connectedCalendarEmail: string | null
+}
+
+/**
+ * Core settings data fetcher - uses admin client to bypass RLS
+ */
+async function fetchSettingsDataCore(householdId: string): Promise<SettingsPageData> {
+  const supabase = createAdminClient()
+
+  // Parallel fetch all settings data
+  const [
+    householdResult,
+    membersResult,
+    childrenResult,
+    calendarTokenResult,
+  ] = await Promise.all([
+    supabase
+      .from('households')
+      .select('id, name, ai_meal_context, share_names_with_ai, external_integrations_enabled, created_at, ics_calendar_url, ics_last_sync_at, ics_sync_error')
+      .eq('id', householdId)
+      .single(),
+
+    supabase
+      .from('household_members')
+      .select('*')
+      .eq('household_id', householdId)
+      .order('is_parent', { ascending: false })
+      .order('name'),
+
+    supabase
+      .from('children')
+      .select('*')
+      .eq('household_id', householdId)
+      .order('sort_order'),
+
+    supabase
+      .from('google_calendar_tokens')
+      .select('email')
+      .eq('household_id', householdId)
+      .limit(1),
+  ])
+
+  return {
+    household: householdResult.data,
+    members: membersResult.data || [],
+    children: childrenResult.data || [],
+    connectedCalendarEmail: calendarTokenResult.data?.[0]?.email || null,
+  }
+}
+
+/**
+ * Cached version of settings data fetcher
+ */
+function getCachedSettingsData(householdId: string) {
+  return unstable_cache(
+    () => fetchSettingsDataCore(householdId),
+    ['settings-page-data', householdId],
+    {
+      revalidate: CACHE_TTL,
+      tags: [`household-${householdId}`, `settings-${householdId}`]
+    }
+  )()
+}
+
+/**
+ * Fetch all data needed for the settings page
+ */
+export const fetchSettingsPageData = cache(async (householdId: string): Promise<SettingsPageData> => {
+  return getCachedSettingsData(householdId)
+})
+
+/**
+ * Generate demo data for settings page
+ */
+export function getDemoSettingsPageData(): SettingsPageData {
+  const demoState = generateDemoState()
+
+  return {
+    household: demoState.household,
+    members: demoState.members,
+    children: demoState.children,
+    connectedCalendarEmail: null,
+  }
+}
+
+/**
+ * Revalidate settings cache
+ */
+export function revalidateSettingsCache(householdId: string) {
+  revalidateTag(`settings-${householdId}`, 'default')
 }

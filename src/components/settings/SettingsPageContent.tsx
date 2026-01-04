@@ -29,28 +29,56 @@ import {
 } from '@/app/innstillinger/sections'
 import { CollapsibleSection, SectionGroupLabel } from '@/app/innstillinger/components'
 
-export function SettingsPageContent() {
-  // Demo mode detection
-  const searchParams = useSearchParams()
-  const isDemo = searchParams.get('demo') === 'true'
+// Initial data from server (PPR)
+interface SettingsInitialData {
+  household: Household | null
+  members: HouseholdMember[]
+  children: Child[]
+  myProfile: HouseholdMember | null
+  connectedCalendarEmail: string | null
+  user: User | null
+}
 
-  // Demo mode hooks
+interface SettingsPageContentProps {
+  initialData?: SettingsInitialData
+  isDemo?: boolean
+}
+
+export function SettingsPageContent({ initialData, isDemo: propIsDemo }: SettingsPageContentProps) {
+  // Demo mode detection - from props (server) or searchParams (client)
+  const searchParams = useSearchParams()
+  const isDemo = propIsDemo ?? searchParams.get('demo') === 'true'
+
+  // Demo mode hooks (only used when no initialData)
   const demoHousehold = useHousehold()
   const demoMembers = useMembers()
   const demoChildren = useChildren()
-  const [loading, setLoading] = useState(true)
+
+  // Use initialData if provided (PPR), otherwise start with loading state
+  const hasInitialData = !!initialData
+  const [loading, setLoading] = useState(!hasInitialData)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [user, setUser] = useState<User | null>(null)
-  const [household, setHousehold] = useState<Household | null>(null)
-  const [members, setMembers] = useState<HouseholdMember[]>([])
-  const [children, setChildren] = useState<Child[]>([])
+  const [user, setUser] = useState<User | null>(initialData?.user || null)
+  const [household, setHousehold] = useState<Household | null>(initialData?.household || null)
+  const [members, setMembers] = useState<HouseholdMember[]>(initialData?.members || [])
+  const [children, setChildren] = useState<Child[]>(initialData?.children || [])
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   // Current user's profile
-  const [myProfile, setMyProfile] = useState<HouseholdMember | null>(null)
+  const [myProfile, setMyProfile] = useState<HouseholdMember | null>(initialData?.myProfile || null)
   const [editingProfile, setEditingProfile] = useState(false)
-  const [profileForm, setProfileForm] = useState({ name: '', short_name: '', birth_date: '', work_email: '', allergies: [] as string[], ics_calendar_url: '' })
+  const [profileForm, setProfileForm] = useState(() => {
+    const profile = initialData?.myProfile
+    return profile ? {
+      name: profile.name,
+      short_name: profile.short_name || '',
+      birth_date: profile.birth_date || '',
+      work_email: profile.work_email || '',
+      allergies: profile.allergies || [],
+      ics_calendar_url: profile.ics_calendar_url || '',
+    } : { name: '', short_name: '', birth_date: '', work_email: '', allergies: [] as string[], ics_calendar_url: '' }
+  })
   const [savingProfile, setSavingProfile] = useState(false)
   const [newProfileAllergy, setNewProfileAllergy] = useState('')
   const [syncingICS, setSyncingICS] = useState(false)
@@ -65,11 +93,11 @@ export function SettingsPageContent() {
   const [deletingAccount, setDeletingAccount] = useState(false)
 
   // Family calendar settings
-  const [familyCalendarUrl, setFamilyCalendarUrl] = useState('')
+  const [familyCalendarUrl, setFamilyCalendarUrl] = useState(initialData?.household?.ics_calendar_url || '')
   const [savingFamilyCalendar, setSavingFamilyCalendar] = useState(false)
   const [syncingFamilyCalendar, setSyncingFamilyCalendar] = useState(false)
-  const [familyCalendarLastSync, setFamilyCalendarLastSync] = useState<string | null>(null)
-  const [familyCalendarError, setFamilyCalendarError] = useState<string | null>(null)
+  const [familyCalendarLastSync, setFamilyCalendarLastSync] = useState<string | null>(initialData?.household?.ics_last_sync_at || null)
+  const [familyCalendarError, setFamilyCalendarError] = useState<string | null>(initialData?.household?.ics_sync_error || null)
   const [familyCalendarEventCount, setFamilyCalendarEventCount] = useState<number>(0)
 
   // New item forms
@@ -101,22 +129,25 @@ export function SettingsPageContent() {
   })
   const [newAllergy, setNewAllergy] = useState('')
 
-  const [aiMealContext, setAiMealContext] = useState('')
+  const [aiMealContext, setAiMealContext] = useState(initialData?.household?.ai_meal_context || '')
   const [savingAiContext, setSavingAiContext] = useState(false)
-  const [shareNamesWithAi, setShareNamesWithAi] = useState(true)
+  const [shareNamesWithAi, setShareNamesWithAi] = useState(initialData?.household?.share_names_with_ai ?? true)
   const [savingPrivacy, setSavingPrivacy] = useState(false)
-  const [connectedCalendarEmail, setConnectedCalendarEmail] = useState<string | null>(null)
+  const [connectedCalendarEmail, setConnectedCalendarEmail] = useState<string | null>(initialData?.connectedCalendarEmail || null)
 
   const supabase = useMemo(() => createClient(), [])
   const router = useRouter()
   const { language, setLanguage, t } = useLanguage()
 
   // Track if we've shown cached data to prevent re-showing skeleton
-  const hasShownCacheRef = useRef(false)
-  const householdIdRef = useRef<string | null>(null)
+  const hasShownCacheRef = useRef(hasInitialData) // Mark as shown if we have initial data
+  const householdIdRef = useRef<string | null>(initialData?.household?.id || null)
 
-  // Initialize demo data when demo mode is active
+  // Initialize demo data when demo mode is active (only if no initialData)
   useEffect(() => {
+    // Skip if we have initialData from server
+    if (hasInitialData) return
+
     if (isDemo) {
       // In demo mode, use data from demo hooks
       if (!demoHousehold.loading && demoHousehold.household) {
@@ -149,9 +180,13 @@ export function SettingsPageContent() {
       }
       return
     }
-    loadData()
+
+    // For production, only load data if we don't have initialData
+    if (!hasInitialData) {
+      loadData()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only effect or when demo data changes
-  }, [isDemo, demoHousehold.loading, demoMembers.loading, demoChildren.loading])
+  }, [isDemo, hasInitialData, demoHousehold.loading, demoMembers.loading, demoChildren.loading])
 
   const loadData = async () => {
     // Skip loading from Supabase in demo mode

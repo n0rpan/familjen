@@ -32,7 +32,7 @@ export async function WeekDataLoader({ householdId, week, year, isDemo }: WeekDa
   return (
     <WeekPageContent
       householdId={data.household?.id || 'demo'}
-      currentUserId={data.currentMember?.user_id}
+      currentUserId={data.currentMember?.user_id ?? undefined}
       household={data.household}
       children={data.children}
       members={data.members}
