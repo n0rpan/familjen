@@ -11,6 +11,7 @@
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { syncUserMetadata } from '@/lib/supabase/admin'
 import { getLanguageFromCookieOrBrowser } from '@/lib/i18n/cookie.server'
 import { getTranslations } from '@/lib/i18n/translations'
 import { HomeDataLoader } from '@/components/home/HomeDataLoader'
@@ -89,6 +90,11 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
     if (memberData?.household_id) {
       householdId = memberData.household_id
+
+      // Sync JWT so next page load is fast (fire-and-forget, don't block render)
+      syncUserMetadata(user.id, user.email!, householdId).catch((err) => {
+        console.error('[Home] Failed to sync user metadata:', err)
+      })
     }
   }
 
