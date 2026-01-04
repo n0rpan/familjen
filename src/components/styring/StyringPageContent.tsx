@@ -12,12 +12,16 @@ import { HomeControlPanel } from '@/components/integrations/HomeControlPanel'
 import { ToshibaACPanel } from '@/components/integrations/ToshibaACPanel'
 import { MelCloudACPanel } from '@/components/integrations/MelCloudACPanel'
 import { TransitionLink } from '@/components/TransitionLink'
+import type { StyringPageData } from '@/lib/data/server'
 
 interface StyringPageContentProps {
+  initialData?: StyringPageData
   isDemo?: boolean
 }
 
-export function StyringPageContent({ isDemo }: StyringPageContentProps) {
+export function StyringPageContent({ initialData, isDemo }: StyringPageContentProps) {
+  // initialData is available for future use - currently panels fetch their own data
+  void initialData
   const { t } = useLanguage()
 
   // Demo mode is not fully supported for home control - show message
