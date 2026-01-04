@@ -85,7 +85,7 @@ export function FeedPageWrapper({
         const urlPromises = batch.map(async (photo) => {
           try {
             const { data } = await supabase.storage
-              .from('integration-photos')
+              .from('external-photos')
               .createSignedUrl(photo.storage_path, 3600) // 1 hour expiry
 
             return { id: photo.id, url: data?.signedUrl || null }
