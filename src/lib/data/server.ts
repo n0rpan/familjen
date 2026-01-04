@@ -4,15 +4,17 @@
  * These functions fetch data for server components using the server Supabase client.
  * They're designed for PPR (Partial Prerendering) - static shell with streaming dynamic content.
  *
- * Key differences from client-side fetching:
- * - Uses server Supabase client (cookies-based auth)
- * - Uses React cache() for request deduplication
- * - Returns data directly for streaming (no IndexedDB caching)
- * - Includes timestamp for "last updated" indicator
+ * Key features:
+ * - Uses unstable_cache for cross-request caching (instant navigation)
+ * - Cache per household+week, shared between household members
+ * - Realtime subscriptions on client handle live updates
+ * - User-specific data (currentMember) derived after cache lookup
  */
 
 import { cache } from 'react'
+import { unstable_cache } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { formatDateISO, addDays, getWeekStart, type Holiday } from '@/lib/utils'
 import type {
   Household,
@@ -49,27 +51,42 @@ export interface HomePageData {
   timestamp: number
 }
 
+// Cached data structure (serializable - no Date objects)
+interface CachedHomeData {
+  household: Household | null
+  children: Child[]
+  members: HouseholdMember[]
+  pickups: PickupWithDetails[]
+  meals: MealWithRecipe[]
+  recipes: Recipe[]
+  tasks: ChildTaskWithChild[]
+  memberEvents: MemberEvent[]
+  householdEvents: HouseholdEvent[]
+  externalEvents: ExternalEvent[]
+  holidays: Holiday[]
+  weekContext: string
+}
+
 // Demo data for when ?demo=true
 export interface DemoData extends HomePageData {
   isDemo: true
 }
 
+// Cache TTL: 1 year (realtime subscriptions handle live updates)
+const CACHE_TTL = 365 * 24 * 60 * 60 // 1 year in seconds
+
 /**
- * Fetch all data needed for the home page
- * Uses React cache() for request deduplication within a single render
+ * Core data fetcher - uses admin client to bypass RLS
+ * Safe because we explicitly filter by householdId
+ * This function is wrapped with unstable_cache for cross-request caching
  */
-export const fetchHomePageData = cache(async (householdId: string): Promise<HomePageData> => {
-  const supabase = await createClient()
-
-  // Calculate week dates (Monday to Sunday)
-  const today = new Date()
-  const weekStart = getWeekStart(today)
-  const weekEnd = addDays(weekStart, 6)
-  const weekStartStr = formatDateISO(weekStart)
-  const weekEndStr = formatDateISO(weekEnd)
-
-  // Get current user for member matching
-  const { data: { user } } = await supabase.auth.getUser()
+async function fetchHomeDataCore(
+  householdId: string,
+  weekStartStr: string,
+  weekEndStr: string,
+  currentYear: number
+): Promise<CachedHomeData> {
+  const supabase = createAdminClient()
 
   // Fetch all data in parallel for maximum performance
   const [
@@ -143,14 +160,10 @@ export const fetchHomePageData = cache(async (householdId: string): Promise<Home
       .maybeSingle(),
   ])
 
-  // Find current member
   const members = membersResult.data || []
-  const currentMember = user
-    ? members.find(m => m.user_id === user.id) || null
-    : null
+  const children = childrenResult.data || []
 
   // Generate birthdays from members and children with birth_date
-  const currentYear = today.getFullYear()
   const birthdays: Holiday[] = []
 
   members.forEach(member => {
@@ -163,7 +176,6 @@ export const fetchHomePageData = cache(async (householdId: string): Promise<Home
     }
   })
 
-  const children = childrenResult.data || []
   children.forEach(child => {
     if (child.birth_date) {
       const birthDate = new Date(child.birth_date)
@@ -176,7 +188,6 @@ export const fetchHomePageData = cache(async (householdId: string): Promise<Home
 
   return {
     household: householdResult.data,
-    currentMember,
     children,
     members,
     pickups: (pickupsResult.data || []) as PickupWithDetails[],
@@ -190,9 +201,49 @@ export const fetchHomePageData = cache(async (householdId: string): Promise<Home
       ...(holidaysResult.data || []).map(h => ({ ...h, type: 'holiday' as const })),
       ...birthdays,
     ],
+    weekContext: weekContextResult.data?.context || '',
+  }
+}
+
+/**
+ * Cached version of home data fetcher
+ * Cache key: household ID + week start date
+ * Shared between all household members for efficiency
+ */
+const getCachedHomeData = unstable_cache(
+  fetchHomeDataCore,
+  ['home-page-data'],
+  { revalidate: CACHE_TTL }
+)
+
+/**
+ * Fetch all data needed for the home page
+ * Uses cached data for instant navigation, realtime handles updates
+ */
+export const fetchHomePageData = cache(async (householdId: string): Promise<HomePageData> => {
+  // Calculate week dates (Monday to Sunday)
+  const today = new Date()
+  const weekStart = getWeekStart(today)
+  const weekEnd = addDays(weekStart, 6)
+  const weekStartStr = formatDateISO(weekStart)
+  const weekEndStr = formatDateISO(weekEnd)
+  const currentYear = today.getFullYear()
+
+  // Get cached data (shared between household members)
+  const cachedData = await getCachedHomeData(householdId, weekStartStr, weekEndStr, currentYear)
+
+  // Get current user for member matching (not cached - per-request)
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const currentMember = user
+    ? cachedData.members.find(m => m.user_id === user.id) || null
+    : null
+
+  return {
+    ...cachedData,
+    currentMember,
     weekStart,
     weekEnd,
-    weekContext: weekContextResult.data?.context || '',
     timestamp: Date.now(),
   }
 })
