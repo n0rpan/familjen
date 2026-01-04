@@ -634,6 +634,18 @@ export interface TranslationStrings {
     ciModelUsage: string
     ciRecentActivity: string
     ciNoEvents: string
+    // Integration debug
+    noIntegrations: string
+    triggerSync: string
+    integrationsEnabled: string
+    integrationsDisabledMsg: string
+    deleteUser: string
+    externalIntegrations: string
+    externalIntegrationsDesc: string
+    enabledIntegrationsHint: string
+    debugIntegrations: string
+    lastSyncAt: string
+    never: string
   }
 
   // New household wizard

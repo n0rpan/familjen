@@ -626,6 +626,18 @@ export const nb: TranslationStrings = {
     ciModelUsage: 'Modellbruk',
     ciRecentActivity: 'Nylig CI-aktivitet',
     ciNoEvents: 'Ingen CI-hendelser ennå. Hendelser vises her når PRer gjennomgås.',
+    // Integration debug
+    noIntegrations: 'Ingen integrasjoner',
+    triggerSync: 'Utløs synk',
+    integrationsEnabled: 'Integrasjoner aktivert',
+    integrationsDisabledMsg: 'Integrasjoner deaktivert',
+    deleteUser: 'Slett bruker',
+    externalIntegrations: 'Eksterne integrasjoner',
+    externalIntegrationsDesc: 'Tillat kobling til Spond, Kidplan, iSkole',
+    enabledIntegrationsHint: 'Aktivert - husstand kan koble til Spond i innstillinger',
+    debugIntegrations: 'Debug integrasjoner',
+    lastSyncAt: 'Sist synk',
+    never: 'Aldri',
   },
 
   // New household wizard

@@ -246,6 +246,7 @@ interface IntegrationInfo {
 }
 
 function IntegrationDebug({ householdId }: { householdId: string }) {
+  const { t } = useLanguage()
   const [integrations, setIntegrations] = useState<IntegrationInfo[]>([])
   const [loading, setLoading] = useState(false)
   const [syncing, setSyncing] = useState<string | null>(null)
@@ -310,15 +311,15 @@ function IntegrationDebug({ householdId }: { householdId: string }) {
         >
           <polyline points="9 18 15 12 9 6" />
         </svg>
-        Debug Integrations
+        {t.admin.debugIntegrations}
       </button>
 
       {expanded && (
         <div className="mt-3 space-y-3">
           {loading ? (
-            <div className="text-xs" style={{ color: 'var(--muted)' }}>Laster...</div>
+            <div className="text-xs" style={{ color: 'var(--muted)' }}>{t.common.loading}</div>
           ) : integrations.length === 0 ? (
-            <div className="text-xs" style={{ color: 'var(--muted)' }}>Ingen integrasjoner</div>
+            <div className="text-xs" style={{ color: 'var(--muted)' }}>{t.admin.noIntegrations}</div>
           ) : (
             integrations.map((int) => (
               <div
@@ -345,7 +346,7 @@ function IntegrationDebug({ householdId }: { householdId: string }) {
                 <div style={{ color: 'var(--muted)' }}>
                   Email: {int.account_email || '—'}
                   <br />
-                  Last sync: {int.last_sync_at ? new Date(int.last_sync_at).toLocaleString('nb-NO') : 'Aldri'}
+                  {t.admin.lastSyncAt}: {int.last_sync_at ? new Date(int.last_sync_at).toLocaleString('nb-NO') : t.admin.never}
                   <br />
                   Events: {int.eventsCount} | Messages: {int.messagesCount} | Photos: {int.photosCount}
                 </div>
@@ -360,7 +361,7 @@ function IntegrationDebug({ householdId }: { householdId: string }) {
                   className="px-3 py-1 rounded text-xs font-medium"
                   style={{ background: 'var(--accent)', color: 'white' }}
                 >
-                  {syncing === int.id ? 'Syncing...' : 'Trigger Sync'}
+                  {syncing === int.id ? t.common.syncing : t.admin.triggerSync}
                 </button>
               </div>
             ))
@@ -414,6 +415,35 @@ export function AdminPageContent({ initialData, currentUserId }: AdminPageConten
     ),
   }), [initialData.households])
 
+  const showMessage = useCallback((type: 'success' | 'error', text: string) => {
+    setMessage({ type, text })
+    setTimeout(() => setMessage(null), 3000)
+  }, [])
+
+  const loadData = useCallback(async () => {
+    const [emailsResult, householdsResult, membersResult, childrenResult, auditResult] =
+      await Promise.all([
+        fetch('/api/admin/allowed-emails').then((r) => (r.ok ? r.json() : [])),
+        supabase.from('households').select('*').order('created_at'),
+        supabase.from('household_members').select('*').order('name'),
+        supabase.from('children').select('*').order('sort_order'),
+        supabase.from('audit_log').select('*').order('created_at', { ascending: false }).limit(50),
+      ])
+
+    setAllowedEmails(emailsResult || [])
+
+    const householdsWithDetails: HouseholdWithDetails[] = (householdsResult.data || []).map(
+      (household) => {
+        const members = (membersResult.data || []).filter((m) => m.household_id === household.id)
+        const children = (childrenResult.data || []).filter((c) => c.household_id === household.id)
+        return { ...household, members, children }
+      }
+    )
+
+    setHouseholds(householdsWithDetails)
+    setAuditLog(auditResult.data || [])
+  }, [supabase])
+
   // Load full data on mount
   useEffect(() => {
     const loadAll = async () => {
@@ -442,36 +472,7 @@ export function AdminPageContent({ initialData, currentUserId }: AdminPageConten
     }
 
     loadAll()
-  }, [supabase])
-
-  const showMessage = (type: 'success' | 'error', text: string) => {
-    setMessage({ type, text })
-    setTimeout(() => setMessage(null), 3000)
-  }
-
-  const loadData = async () => {
-    const [emailsResult, householdsResult, membersResult, childrenResult, auditResult] =
-      await Promise.all([
-        fetch('/api/admin/allowed-emails').then((r) => (r.ok ? r.json() : [])),
-        supabase.from('households').select('*').order('created_at'),
-        supabase.from('household_members').select('*').order('name'),
-        supabase.from('children').select('*').order('sort_order'),
-        supabase.from('audit_log').select('*').order('created_at', { ascending: false }).limit(50),
-      ])
-
-    setAllowedEmails(emailsResult || [])
-
-    const householdsWithDetails: HouseholdWithDetails[] = (householdsResult.data || []).map(
-      (household) => {
-        const members = (membersResult.data || []).filter((m) => m.household_id === household.id)
-        const children = (childrenResult.data || []).filter((c) => c.household_id === household.id)
-        return { ...household, members, children }
-      }
-    )
-
-    setHouseholds(householdsWithDetails)
-    setAuditLog(auditResult.data || [])
-  }
+  }, [supabase, loadData])
 
   const syncCalendar = async () => {
     setSyncing(true)
@@ -615,7 +616,7 @@ export function AdminPageContent({ initialData, currentUserId }: AdminPageConten
       setHouseholds((prev) =>
         prev.map((h) => (h.id === householdId ? { ...h, external_integrations_enabled: enabled } : h))
       )
-      showMessage('success', enabled ? 'Integrasjoner aktivert' : 'Integrasjoner deaktivert')
+      showMessage('success', enabled ? t.admin.integrationsEnabled : t.admin.integrationsDisabledMsg)
     }
     setSaving(false)
   }
@@ -847,7 +848,7 @@ export function AdminPageContent({ initialData, currentUserId }: AdminPageConten
                       onClick={() => deleteEmail(item.id, item)}
                       className="p-2 rounded-lg transition-colors hover:bg-red-50"
                       style={{ color: 'var(--muted)' }}
-                      title="Slett bruker"
+                      title={t.admin.deleteUser}
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <polyline points="3,6 5,6 21,6" />
@@ -1032,10 +1033,10 @@ export function AdminPageContent({ initialData, currentUserId }: AdminPageConten
                         <div className="flex items-center justify-between">
                           <div>
                             <h4 className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
-                              Eksterne integrasjoner
+                              {t.admin.externalIntegrations}
                             </h4>
                             <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                              Tillat kobling til Spond, Kidplan, iSkole
+                              {t.admin.externalIntegrationsDesc}
                             </p>
                           </div>
                           <button
@@ -1060,7 +1061,7 @@ export function AdminPageContent({ initialData, currentUserId }: AdminPageConten
                         </div>
                         {household.external_integrations_enabled && (
                           <div className="mt-2 text-xs" style={{ color: 'var(--color-sage)' }}>
-                            Aktivert - husstand kan koble til Spond i innstillinger
+                            {t.admin.enabledIntegrationsHint}
                           </div>
                         )}
                       </div>

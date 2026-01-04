@@ -199,7 +199,7 @@ export function WeekPageContent({
   // This ensures the cache is updated so next navigation shows fresh data
   const refreshWithRevalidate = useCallback(() => {
     revalidateWeek(householdId, weekStartStr)
-    refreshWithRevalidate()
+    router.refresh()
   }, [householdId, weekStartStr, router])
 
   // Navigate to a specific week
