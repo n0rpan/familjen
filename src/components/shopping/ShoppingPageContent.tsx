@@ -94,15 +94,29 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
   const supabase = useMemo(() => createClient(), [])
   const realtime = useRealtimeOptional()
 
-  // Get final values early (demo mode uses hook data, production uses local state)
-  // Wrapped in useMemo to ensure stable references for downstream useMemos
+  // Get final values early
+  // - PPR (with initialData): use lists/household state (initialized from server data)
+  // - Client-only demo (no initialData): use demo hook data
+  // - Production: use lists/household state
   const finalLists = useMemo(
-    () => isDemo ? (effectiveLists || []) : lists,
-    [isDemo, effectiveLists, lists]
+    () => {
+      if (isDemo && !hasInitialData) {
+        // Client-only demo mode - use demo hooks
+        return effectiveLists || []
+      }
+      // PPR (demo or production) - use state initialized from server
+      return lists
+    },
+    [isDemo, hasInitialData, effectiveLists, lists]
   )
   const finalHousehold = useMemo(
-    () => isDemo ? effectiveHousehold : household,
-    [isDemo, effectiveHousehold, household]
+    () => {
+      if (isDemo && !hasInitialData) {
+        return effectiveHousehold
+      }
+      return household
+    },
+    [isDemo, hasInitialData, effectiveHousehold, household]
   )
 
   // Track items we're currently modifying to prevent double-updates
@@ -773,8 +787,9 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
   }, [lists, supabase])
 
   // Get final loading/error values for conditional rendering
-  const finalLoading = isDemo ? effectiveLoading : loading
-  const finalError = isDemo ? effectiveError : error
+  // Same logic as finalLists: PPR uses local state, client-only demo uses hooks
+  const finalLoading = (isDemo && !hasInitialData) ? effectiveLoading : loading
+  const finalError = (isDemo && !hasInitialData) ? effectiveError : error
 
   if (finalLoading && !finalHousehold) {
     return <ShoppingPagePartialSkeleton t={t} />
