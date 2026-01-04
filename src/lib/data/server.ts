@@ -12,7 +12,7 @@
  */
 
 import { cache } from 'react'
-import { unstable_cache } from 'next/cache'
+import { unstable_cache, revalidateTag } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatDateISO, addDays, getWeekStart, getWeekNumber, getWeekStartFromWeekNumber, type Holiday } from '@/lib/utils'
@@ -206,15 +206,28 @@ async function fetchHomeDataCore(
 }
 
 /**
- * Cached version of home data fetcher
+ * Create cached version of home data fetcher with household-specific tag
  * Cache key: household ID + week start date
  * Shared between all household members for efficiency
+ *
+ * Tags allow targeted revalidation after mutations:
+ * - revalidateTag(`household-${householdId}`) invalidates all data for that household
  */
-const getCachedHomeData = unstable_cache(
-  fetchHomeDataCore,
-  ['home-page-data'],
-  { revalidate: CACHE_TTL }
-)
+function getCachedHomeData(
+  householdId: string,
+  weekStartStr: string,
+  weekEndStr: string,
+  currentYear: number
+) {
+  return unstable_cache(
+    () => fetchHomeDataCore(householdId, weekStartStr, weekEndStr, currentYear),
+    ['home-page-data', householdId, weekStartStr],
+    {
+      revalidate: CACHE_TTL,
+      tags: [`household-${householdId}`, `week-${householdId}-${weekStartStr}`]
+    }
+  )()
+}
 
 /**
  * Fetch all data needed for the home page
@@ -252,13 +265,24 @@ export const fetchHomePageData = cache(async (householdId: string): Promise<Home
 export type WeekPageData = HomePageData
 
 /**
- * Cached version for week page (same cache, different key pattern)
+ * Create cached version for week page with household-specific tag
+ * Uses same tags as home page so revalidation works for both
  */
-const getCachedWeekData = unstable_cache(
-  fetchHomeDataCore,
-  ['week-page-data'],
-  { revalidate: CACHE_TTL }
-)
+function getCachedWeekData(
+  householdId: string,
+  weekStartStr: string,
+  weekEndStr: string,
+  currentYear: number
+) {
+  return unstable_cache(
+    () => fetchHomeDataCore(householdId, weekStartStr, weekEndStr, currentYear),
+    ['week-page-data', householdId, weekStartStr],
+    {
+      revalidate: CACHE_TTL,
+      tags: [`household-${householdId}`, `week-${householdId}-${weekStartStr}`]
+    }
+  )()
+}
 
 /**
  * Fetch all data needed for the week page
@@ -461,4 +485,20 @@ export function getDemoHomePageData(): HomePageData {
     weekContext: '',
     timestamp: Date.now(),
   }
+}
+
+/**
+ * Revalidate all cached data for a household
+ * Call this after mutations to ensure fresh data on next navigation
+ */
+export function revalidateHouseholdCache(householdId: string) {
+  revalidateTag(`household-${householdId}`)
+}
+
+/**
+ * Revalidate cached data for a specific week
+ * More targeted than revalidating all household data
+ */
+export function revalidateWeekCache(householdId: string, weekStartStr: string) {
+  revalidateTag(`week-${householdId}-${weekStartStr}`)
 }

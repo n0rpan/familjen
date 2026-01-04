@@ -48,6 +48,7 @@ import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealt
 import { useRealtimeOptional } from '@/lib/realtime/context'
 import { MemberEventModal, HouseholdEventModal, ChildTaskModal, ExternalEventModal } from './index'
 import type { ExternalEventLocalOverrides, Holiday } from '@/lib/types'
+import { revalidateWeek } from '@/lib/revalidate'
 
 // Dynamic imports for code splitting
 const DayPicker = dynamic(
@@ -194,6 +195,13 @@ export function WeekPageContent({
   const weekStartStr = formatDateISO(weekStart)
   const weekEndStr = formatDateISO(weekEnd)
 
+  // Helper: Revalidate cache and refresh server data
+  // This ensures the cache is updated so next navigation shows fresh data
+  const refreshWithRevalidate = useCallback(() => {
+    revalidateWeek(householdId, weekStartStr)
+    refreshWithRevalidate()
+  }, [householdId, weekStartStr, router])
+
   // Navigate to a specific week
   const navigateToWeek = useCallback((targetWeekNumber: number, targetYear?: number) => {
     if (isDemo) {
@@ -226,31 +234,30 @@ export function WeekPageContent({
     }
   }, [showWeekPicker])
 
-  // Realtime handlers
+  // Realtime handlers - revalidate cache to ensure fresh data
   const handlePickupRealtime = useCallback((
     eventType: 'INSERT' | 'UPDATE' | 'DELETE',
     newRecord: Pickup | null,
     oldRecord: Pickup | null
   ) => {
-    // Refresh the page to get new server data
-    router.refresh()
-  }, [router])
+    refreshWithRevalidate()
+  }, [refreshWithRevalidate])
 
   const handleMealRealtime = useCallback(() => {
-    router.refresh()
-  }, [router])
+    refreshWithRevalidate()
+  }, [refreshWithRevalidate])
 
   const handleTaskRealtime = useCallback(() => {
-    router.refresh()
-  }, [router])
+    refreshWithRevalidate()
+  }, [refreshWithRevalidate])
 
   const handleEventRealtime = useCallback(() => {
-    router.refresh()
-  }, [router])
+    refreshWithRevalidate()
+  }, [refreshWithRevalidate])
 
   const handleHouseholdEventRealtime = useCallback(() => {
-    router.refresh()
-  }, [router])
+    refreshWithRevalidate()
+  }, [refreshWithRevalidate])
 
   // Subscribe to realtime changes
   useRealtimeSubscription<Pickup>({
@@ -335,7 +342,7 @@ export function WeekPageContent({
         }
       }
 
-      router.refresh()
+      refreshWithRevalidate()
     } catch (error) {
       console.error('Error saving pickup:', error)
       showMessage('error', t.errors.saveFailed)
@@ -392,7 +399,7 @@ export function WeekPageContent({
         }
       }
 
-      router.refresh()
+      refreshWithRevalidate()
     } catch (error) {
       console.error('Error saving meal:', error)
       showMessage('error', t.errors.saveFailed)
@@ -417,7 +424,7 @@ export function WeekPageContent({
       } else {
         showMessage('success', sync ? t.week.sendToWorkCalendar : t.week.removeFromWorkCalendar)
       }
-      router.refresh()
+      refreshWithRevalidate()
     } catch (error) {
       console.error('Calendar sync error:', error)
       showMessage('error', t.errors.calendarSyncFailed)
@@ -498,7 +505,7 @@ export function WeekPageContent({
       }
 
       showMessage('success', t.success.copied)
-      router.refresh()
+      refreshWithRevalidate()
     } catch (err) {
       console.error('Error copying last week:', err)
       showMessage('error', t.errors.saveFailed)
@@ -530,7 +537,7 @@ export function WeekPageContent({
       ])
 
       showMessage('success', t.success.cleared)
-      router.refresh()
+      refreshWithRevalidate()
     } catch (err) {
       console.error('Error clearing week:', err)
       showMessage('error', t.errors.saveFailed)
@@ -577,7 +584,7 @@ export function WeekPageContent({
       if (error) throw error
 
       showMessage('success', t.success.saved)
-      router.refresh()
+      refreshWithRevalidate()
     } catch (err) {
       console.error('Error setting quick pickups:', err)
       showMessage('error', t.errors.saveFailed)
@@ -662,7 +669,7 @@ export function WeekPageContent({
       }
 
       closeEventModal()
-      router.refresh()
+      refreshWithRevalidate()
     } catch (err) {
       console.error('Error saving event:', err)
     } finally {
@@ -683,7 +690,7 @@ export function WeekPageContent({
         .eq('id', editingEvent.id)
 
       closeEventModal()
-      router.refresh()
+      refreshWithRevalidate()
     } catch (err) {
       console.error('Error deleting event:', err)
     } finally {
@@ -758,7 +765,7 @@ export function WeekPageContent({
       }
 
       closeHouseholdEventModal()
-      router.refresh()
+      refreshWithRevalidate()
     } catch (err) {
       console.error('Error saving household event:', err)
     } finally {
@@ -784,7 +791,7 @@ export function WeekPageContent({
         .eq('id', editingHouseholdEvent.id)
 
       closeHouseholdEventModal()
-      router.refresh()
+      refreshWithRevalidate()
     } catch (err) {
       console.error('Error deleting household event:', err)
     } finally {
@@ -867,7 +874,7 @@ export function WeekPageContent({
       }
 
       closeTaskModal()
-      router.refresh()
+      refreshWithRevalidate()
     } catch (err) {
       console.error('Error saving task:', err)
     } finally {
@@ -888,7 +895,7 @@ export function WeekPageContent({
         .eq('id', editingTask.id)
 
       closeTaskModal()
-      router.refresh()
+      refreshWithRevalidate()
     } catch (err) {
       console.error('Error deleting task:', err)
     } finally {
@@ -909,7 +916,7 @@ export function WeekPageContent({
         })
         .eq('id', taskId)
 
-      router.refresh()
+      refreshWithRevalidate()
     } catch (err) {
       console.error('Error toggling task:', err)
     } finally {
@@ -959,7 +966,7 @@ export function WeekPageContent({
       if (error) throw error
 
       closeExternalEventModal()
-      router.refresh()
+      refreshWithRevalidate()
       showMessage('success', t.success.saved)
     } catch (err) {
       console.error('Error saving external event:', err)
