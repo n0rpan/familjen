@@ -11,7 +11,7 @@
  * This component renders nothing visible - it just sets up the subscriptions.
  */
 
-import { useEffect, useCallback, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { usePrefetchAdjacentWeeks } from '@/hooks/usePrefetchAdjacentWeeks'

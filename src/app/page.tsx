@@ -9,6 +9,7 @@
  */
 
 import { Suspense } from 'react'
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getLanguageFromCookieOrBrowser } from '@/lib/i18n/cookie.server'
 import { getTranslations } from '@/lib/i18n/translations'
@@ -79,7 +80,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
   // No household - show onboarding options
   if (!householdId) {
-    return <NoHouseholdView t={t} userId={user.id} />
+    return <NoHouseholdView t={t} />
   }
 
   // Check if household has children (quick query)
@@ -135,7 +136,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 }
 
 // Separate component for no-household state with invite claiming
-async function NoHouseholdView({ t, userId }: { t: ReturnType<typeof getTranslations>; userId: string }) {
+async function NoHouseholdView({ t }: { t: ReturnType<typeof getTranslations> }) {
   const supabase = await createClient()
 
   // Try to claim any pending invite
@@ -143,8 +144,6 @@ async function NoHouseholdView({ t, userId }: { t: ReturnType<typeof getTranslat
 
   // If invite was claimed, the user now has a household - redirect to trigger refresh
   if (claimedInvite && claimedInvite.length > 0) {
-    // Use redirect to force page reload with new household
-    const { redirect } = await import('next/navigation')
     redirect('/')
   }
 
