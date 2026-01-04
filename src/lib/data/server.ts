@@ -15,7 +15,7 @@ import { cache } from 'react'
 import { unstable_cache } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { formatDateISO, addDays, getWeekStart, type Holiday } from '@/lib/utils'
+import { formatDateISO, addDays, getWeekStart, getWeekNumber, getWeekStartFromWeekNumber, type Holiday } from '@/lib/utils'
 import type {
   Household,
   HouseholdMember,
@@ -247,6 +247,119 @@ export const fetchHomePageData = cache(async (householdId: string): Promise<Home
     timestamp: Date.now(),
   }
 })
+
+// Week page uses the same data structure as home page
+export type WeekPageData = HomePageData
+
+/**
+ * Cached version for week page (same cache, different key pattern)
+ */
+const getCachedWeekData = unstable_cache(
+  fetchHomeDataCore,
+  ['week-page-data'],
+  { revalidate: CACHE_TTL }
+)
+
+/**
+ * Fetch all data needed for the week page
+ * @param householdId - The household ID
+ * @param week - Optional week number (1-53). Defaults to current week.
+ * @param year - Optional year. Defaults to current year or inferred from week.
+ */
+export const fetchWeekPageData = cache(async (
+  householdId: string,
+  week?: number,
+  year?: number
+): Promise<WeekPageData> => {
+  // Calculate week dates
+  const today = new Date()
+  const weekStart = week
+    ? getWeekStartFromWeekNumber(week, year)
+    : getWeekStart(today)
+  const weekEnd = addDays(weekStart, 6)
+  const weekStartStr = formatDateISO(weekStart)
+  const weekEndStr = formatDateISO(weekEnd)
+  const currentYear = weekStart.getFullYear()
+
+  // Get cached data (shared between household members)
+  const cachedData = await getCachedWeekData(householdId, weekStartStr, weekEndStr, currentYear)
+
+  // Get current user for member matching (not cached - per-request)
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const currentMember = user
+    ? cachedData.members.find(m => m.user_id === user.id) || null
+    : null
+
+  return {
+    ...cachedData,
+    currentMember,
+    weekStart,
+    weekEnd,
+    timestamp: Date.now(),
+  }
+})
+
+/**
+ * Generate demo data for week page (supports different weeks)
+ * @param week - Optional week number (1-53). Defaults to current week.
+ * @param year - Optional year. Defaults to current year or inferred from week.
+ */
+export function getDemoWeekPageData(week?: number, year?: number): WeekPageData {
+  const demoState = generateDemoState()
+  const today = new Date()
+  const weekStart = week
+    ? getWeekStartFromWeekNumber(week, year)
+    : getWeekStart(today)
+  const weekEnd = addDays(weekStart, 6)
+
+  // Find current member (Erik is the "logged in" demo user)
+  const currentMember = demoState.members.find(m => m.id === DEMO_IDS.members.erik) || null
+
+  // Transform pickups to include child and picker relations
+  const pickups: PickupWithDetails[] = demoState.pickups.map(pickup => {
+    const child = demoState.children.find(c => c.id === pickup.child_id)
+    const picker = demoState.members.find(m => m.id === pickup.picker_id)
+    return {
+      ...pickup,
+      child: child!,
+      picker: picker || null,
+    }
+  })
+
+  // Transform meals to include recipe relations
+  const meals: MealWithRecipe[] = demoState.meals.map(meal => {
+    const recipe = meal.recipe_id
+      ? demoState.recipes.find(r => r.id === meal.recipe_id) || null
+      : null
+    return { ...meal, recipe }
+  })
+
+  // Transform tasks to include child relations
+  const tasks: ChildTaskWithChild[] = demoState.childTasks.map(task => {
+    const child = demoState.children.find(c => c.id === task.child_id)
+    return { ...task, child: child! }
+  })
+
+  return {
+    household: demoState.household,
+    currentMember,
+    children: demoState.children,
+    members: demoState.members,
+    pickups,
+    meals,
+    recipes: demoState.recipes,
+    tasks,
+    memberEvents: demoState.memberEvents,
+    householdEvents: demoState.householdEvents,
+    externalEvents: demoState.externalEvents,
+    holidays: demoState.holidays,
+    weekStart,
+    weekEnd,
+    weekContext: '',
+    timestamp: Date.now(),
+  }
+}
 
 /**
  * Get today's summary from home page data
