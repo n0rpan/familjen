@@ -406,12 +406,46 @@ export function getTodaySummary(data: HomePageData): DaySummary {
 }
 
 /**
- * Get user's household ID from JWT (fast, no database query)
+ * Get user's household ID from JWT with DB fallback
+ *
+ * PERFORMANCE: Tries JWT first (instant), falls back to DB if JWT doesn't have household_id.
+ * This handles the case where a user just created/joined a household and JWT hasn't been refreshed.
+ *
+ * SECURITY: Server is always the source of truth. JWT is only used as a performance optimization.
  */
 export async function getHouseholdIdFromSession(): Promise<string | null> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  return user?.app_metadata?.household_id || null
+
+  if (!user) return null
+
+  // Try JWT first (fast path)
+  const jwtHouseholdId = user.app_metadata?.household_id as string | undefined
+  if (jwtHouseholdId) return jwtHouseholdId
+
+  // Fallback: Check database if JWT doesn't have household_id
+  // This handles cases where JWT wasn't refreshed after joining/creating a household
+  const { data: memberData } = await supabase
+    .from('household_members')
+    .select('household_id')
+    .eq('user_id', user.id)
+    .single()
+
+  if (memberData?.household_id) {
+    // Sync JWT so next page load is fast (fire-and-forget, don't block render)
+    // Dynamic import to avoid importing admin code in client bundles
+    import('@/lib/supabase/admin').then(({ syncUserMetadata }) => {
+      syncUserMetadata(user.id, user.email!, memberData.household_id).catch((err) => {
+        console.error('[getHouseholdIdFromSession] Failed to sync user metadata:', err)
+      })
+    }).catch(() => {
+      // Ignore import errors
+    })
+
+    return memberData.household_id
+  }
+
+  return null
 }
 
 /**

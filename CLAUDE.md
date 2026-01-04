@@ -2275,6 +2275,34 @@ export function useHouseholdId(): string | null {
 }
 ```
 
+**Server-side with DB fallback** (for PPR pages):
+```typescript
+// src/lib/data/server.ts - used by all PPR pages
+export async function getHouseholdIdFromSession(): Promise<string | null> {
+  const user = await getUser()
+
+  // Try JWT first (fast path)
+  const jwtHouseholdId = user?.app_metadata?.household_id
+  if (jwtHouseholdId) return jwtHouseholdId
+
+  // Fallback: Check database if JWT is stale (user just created/joined household)
+  const membership = await queryMembership(user.id)
+  if (membership?.household_id) {
+    // Sync JWT in background (fire-and-forget)
+    syncUserMetadata(user.id, user.email, membership.household_id)
+    return membership.household_id
+  }
+
+  return null
+}
+```
+
+**When JWT gets synced:**
+1. On login (`src/app/auth/callback/route.ts`)
+2. On home page load if JWT is stale (`src/app/page.tsx`)
+3. On PPR page load if JWT is stale (`getHouseholdIdFromSession`)
+4. On invite claim (`src/components/settings/SettingsPageContent.tsx`)
+
 **Security:** RLS policies on Supabase validate household_id server-side. The JWT value is for client-side optimization only - all data access goes through Supabase which enforces proper authorization.
 
 ### IndexedDB Caching (Stale-While-Revalidate)
