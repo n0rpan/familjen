@@ -90,31 +90,20 @@ async function AppContent({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Fallback UI while cookies are being read.
- * Uses default language for the static shell.
+ * Minimal fallback UI for static shell prerendering.
+ * Must NOT include any components that access dynamic data (cookies, searchParams, etc.)
+ * The full app content streams in once cookies are read.
  */
-function AppContentFallback({ children }: { children: React.ReactNode }) {
+function AppContentFallback() {
   return (
-    <LanguageProvider initialLanguage={DEFAULT_LANGUAGE}>
-      <NavigationProvider>
-        <DemoWrapper>
-          <RealtimeWrapper>
-            <OfflineIndicator />
-            <Header />
-            <div className="app-shell-content pt-mobile-header">
-              <AppShell>
-                <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-28 md:pb-6 relative z-0" style={{ viewTransitionName: 'page-content' }}>
-                  <PageContent>
-                    {children}
-                  </PageContent>
-                </main>
-              </AppShell>
-            </div>
-            <UpdatePrompt />
-          </RealtimeWrapper>
-        </DemoWrapper>
-      </NavigationProvider>
-    </LanguageProvider>
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="animate-pulse-soft">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+          <polyline points="9 22 9 12 15 12 15 22" />
+        </svg>
+      </div>
+    </div>
   )
 }
 
@@ -126,7 +115,7 @@ export default function RootLayout({
   return (
     <html lang={DEFAULT_LANGUAGE} className={`${outfit.variable} ${fraunces.variable}`}>
       <body className="antialiased grain app-shell font-sans" style={{ background: 'var(--background)' }}>
-        <Suspense fallback={<AppContentFallback>{children}</AppContentFallback>}>
+        <Suspense fallback={<AppContentFallback />}>
           <AppContent>{children}</AppContent>
         </Suspense>
         <ServiceWorkerRegistration />
