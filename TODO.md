@@ -27,22 +27,24 @@ This tracks our progress on making the app feel instant. See PERFORMANCE_PLAN.md
 ---
 
 ## Phase 2: Data Prefetching on Hover
-**Status: PENDING**
+**Status: COMPLETE**
 
-- [ ] Create prefetch functions for each page:
+- [x] Create prefetch functions for each page:
   - `prefetchFeedData()` - messages, photos, notifications
   - `prefetchShoppingData()` - lists, items
   - `prefetchRecipesData()` - recipes
-- [ ] Extend `TransitionLink` with data prefetching on hover
-- [ ] Update hooks to check IndexedDB cache first (stale-while-revalidate)
+- [x] Extend `TransitionLink` with data prefetching on hover
+- [x] Update hooks to check IndexedDB cache first (stale-while-revalidate)
+  - `useFeed` - checks cache before fetching, saves to cache after
+  - `useShoppingLists` - checks cache before fetching, saves to cache after
 
-**Key files to create:**
-- `src/lib/prefetch/pages.ts`
+**Files created:**
+- `src/lib/prefetch/pages.ts` - prefetch functions + cache keys
 
-**Key files to modify:**
-- `src/components/TransitionLink.tsx`
-- `src/hooks/data/useFeed.ts`
-- `src/hooks/data/useShoppingLists.ts`
+**Files modified:**
+- `src/components/TransitionLink.tsx` - calls prefetchRouteData on hover
+- `src/hooks/data/useFeed.ts` - stale-while-revalidate with IndexedDB
+- `src/hooks/data/useShoppingLists.ts` - stale-while-revalidate with IndexedDB
 
 ---
 

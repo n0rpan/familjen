@@ -1,9 +1,11 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useState, type ComponentProps, type MouseEvent } from 'react'
 import { useNavigationOptional } from '@/lib/navigation'
+import { prefetchRouteData } from '@/lib/prefetch/pages'
+import { useHouseholdId } from '@/hooks/data/useHousehold'
 
 type TransitionLinkProps = ComponentProps<typeof Link> & {
   viewTransition?: boolean
@@ -72,18 +74,29 @@ export function TransitionLink({
 }: TransitionLinkProps) {
   const router = useRouter()
   const navigation = useNavigationOptional()
+  const searchParams = useSearchParams()
+  const isDemo = searchParams.get('demo') === 'true'
+  const householdId = useHouseholdId()
   const [prefetched, setPrefetched] = useState(false)
 
   // Prefetch on hover for faster navigation
   const handleMouseEnter = useCallback(
     (e: MouseEvent<HTMLAnchorElement>) => {
       if (!prefetched && typeof href === 'string') {
+        // Prefetch route (Next.js built-in)
         router.prefetch(href)
+
+        // Prefetch data for the route (our IndexedDB cache)
+        // Skip in demo mode - demo uses mock data
+        if (!isDemo) {
+          prefetchRouteData(href, householdId)
+        }
+
         setPrefetched(true)
       }
       onMouseEnter?.(e)
     },
-    [router, href, prefetched, onMouseEnter]
+    [router, href, prefetched, onMouseEnter, isDemo, householdId]
   )
 
   // Handle click with view transition
