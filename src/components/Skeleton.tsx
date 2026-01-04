@@ -485,6 +485,251 @@ export function WeekSkeleton() {
   )
 }
 
+// =============================================================================
+// LOADING SKELETONS - Pure shimmer, no translations (for loading.tsx)
+// =============================================================================
+
+// Feed page loading skeleton
+export function FeedPageSkeleton() {
+  return (
+    <div className="space-y-6 animate-fade-in">
+      {/* Header */}
+      <div>
+        <Skeleton height={32} width={120} borderRadius={12} className="mb-2" />
+        <Skeleton height={18} width={280} borderRadius={8} />
+      </div>
+
+      {/* Filter tabs */}
+      <div className="flex gap-2 overflow-x-auto pb-2">
+        {[80, 60, 70, 90, 75].map((width, i) => (
+          <Skeleton key={i} height={36} width={width} borderRadius={18} />
+        ))}
+      </div>
+
+      {/* Message cards */}
+      <div className="space-y-4">
+        {[1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="rounded-2xl p-5"
+            style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+          >
+            <div className="flex items-start gap-3 mb-3">
+              <Skeleton width={40} height={40} borderRadius={12} />
+              <div className="flex-1">
+                <Skeleton height={16} width="40%" borderRadius={6} className="mb-2" />
+                <Skeleton height={12} width="25%" borderRadius={4} />
+              </div>
+              <Skeleton height={20} width={60} borderRadius={10} />
+            </div>
+            <SkeletonText lines={3} />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Shopping page loading skeleton
+export function ShoppingPageSkeleton() {
+  return (
+    <div className="space-y-8 animate-fade-in">
+      {/* Header */}
+      <div>
+        <Skeleton height={32} width={160} borderRadius={12} />
+      </div>
+
+      {/* Shopping card */}
+      <div
+        className="rounded-2xl p-4"
+        style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+      >
+        {/* Add item input */}
+        <div className="flex gap-2 mb-4">
+          <Skeleton height={48} className="flex-1" borderRadius={12} />
+          <Skeleton height={48} width={48} borderRadius={12} />
+        </div>
+
+        {/* List items */}
+        <div className="space-y-2">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="flex items-center gap-3 p-3 rounded-xl" style={{ background: 'var(--card-alt)' }}>
+              <Skeleton width={24} height={24} borderRadius={6} />
+              <Skeleton height={18} style={{ width: `${50 + (i * 10) % 40}%` }} borderRadius={8} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Week page loading skeleton
+export function WeekPageSkeleton() {
+  return (
+    <div className="space-y-6 animate-fade-in">
+      {/* Header with nav buttons */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <Skeleton height={32} width={140} borderRadius={12} className="mb-2" />
+          <Skeleton height={18} width={200} borderRadius={8} />
+        </div>
+        <div className="flex items-center gap-2">
+          <Skeleton height={40} width={40} borderRadius={12} />
+          <Skeleton height={40} width={100} borderRadius={12} />
+          <Skeleton height={40} width={40} borderRadius={12} />
+        </div>
+      </div>
+
+      {/* Week grid */}
+      <div
+        className="rounded-2xl overflow-hidden"
+        style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+      >
+        {/* Table header */}
+        <div className="px-4 md:px-6 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
+          <Skeleton height={20} width={120} borderRadius={8} />
+        </div>
+
+        {/* Table content */}
+        <div className="overflow-x-auto">
+          <div className="min-w-[600px]">
+            {/* Day headers row */}
+            <div className="flex" style={{ borderBottom: '1px solid var(--border)' }}>
+              <div className="w-24 p-3 shrink-0" />
+              {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="flex-1 min-w-[80px] p-3 flex flex-col items-center gap-1">
+                  <Skeleton height={14} width={32} borderRadius={6} />
+                  <Skeleton height={12} width={20} borderRadius={4} />
+                </div>
+              ))}
+            </div>
+
+            {/* Child rows */}
+            {[0, 1].map((childIndex) => (
+              <div key={childIndex} className="flex" style={{ borderBottom: '1px solid var(--border)' }}>
+                <div className="w-24 p-3 shrink-0 flex items-center gap-2">
+                  <Skeleton height={28} width={28} borderRadius="50%" />
+                  <Skeleton height={14} width={50} borderRadius={6} />
+                </div>
+                {[0, 1, 2, 3, 4, 5, 6].map((dayIndex) => (
+                  <div key={dayIndex} className="flex-1 min-w-[80px] p-2">
+                    <Skeleton height={36} borderRadius={8} className="mb-1" />
+                    <Skeleton height={20} width="80%" borderRadius={6} />
+                  </div>
+                ))}
+              </div>
+            ))}
+
+            {/* Meal row */}
+            <div className="flex">
+              <div className="w-24 p-3 shrink-0 flex items-center gap-2">
+                <Skeleton height={28} width={28} borderRadius={8} />
+                <Skeleton height={14} width={50} borderRadius={6} />
+              </div>
+              {[0, 1, 2, 3, 4, 5, 6].map((dayIndex) => (
+                <div key={dayIndex} className="flex-1 min-w-[80px] p-2">
+                  <Skeleton height={36} borderRadius={8} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Recipes page loading skeleton
+export function RecipesPageSkeleton() {
+  return (
+    <div className="space-y-6 animate-fade-in">
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <Skeleton height={32} width={160} borderRadius={12} />
+        <Skeleton height={40} width={140} borderRadius={12} />
+      </div>
+
+      {/* Search input */}
+      <div
+        className="flex items-center gap-3 px-4 py-3 rounded-xl"
+        style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+      >
+        <Skeleton width={20} height={20} borderRadius={4} />
+        <Skeleton height={18} width={200} borderRadius={8} />
+      </div>
+
+      {/* Recipe grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {[1, 2, 3, 4, 5, 6].map((i) => (
+          <div
+            key={i}
+            className="rounded-xl p-4"
+            style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+          >
+            <Skeleton height={24} width="70%" borderRadius={8} className="mb-3" />
+            <SkeletonText lines={2} />
+            <div className="flex gap-2 mt-3">
+              <Skeleton height={24} width={60} borderRadius={12} />
+              <Skeleton height={24} width={80} borderRadius={12} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// =============================================================================
+// PARTIAL SKELETONS - Show real UI, shimmer only for dynamic data
+// These are used when we have no cached data yet (first visit)
+// =============================================================================
+
+// Feed page partial skeleton - real title + shimmer for messages/photos
+export function FeedPagePartialSkeleton({ t }: { t: TranslationStrings }) {
+  return (
+    <div className="space-y-6 animate-fade-in">
+      {/* REAL header */}
+      <div>
+        <h1 className="text-2xl md:text-3xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
+          {t.nav.feed}
+        </h1>
+        <p className="mt-1" style={{ color: 'var(--muted)' }}>
+          {t.feed?.subtitle || 'Meldinger, bilder og varsler fra Spond, barnehage og skole'}
+        </p>
+      </div>
+
+      {/* SHIMMER for filter tabs */}
+      <div className="flex gap-2 overflow-x-auto pb-2">
+        {[80, 60, 70, 90, 75].map((width, i) => (
+          <Skeleton key={i} height={36} width={width} borderRadius={18} />
+        ))}
+      </div>
+
+      {/* SHIMMER for message cards */}
+      <div className="space-y-4">
+        {[1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="rounded-2xl p-5"
+            style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+          >
+            <div className="flex items-start gap-3 mb-3">
+              <Skeleton width={40} height={40} borderRadius={12} />
+              <div className="flex-1">
+                <Skeleton height={16} width="40%" borderRadius={6} className="mb-2" />
+                <Skeleton height={12} width="25%" borderRadius={4} />
+              </div>
+              <Skeleton height={20} width={60} borderRadius={10} />
+            </div>
+            <SkeletonText lines={3} />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // Recipes page partial skeleton - real title + shimmer for grid
 export function RecipesPagePartialSkeleton({ t }: { t: TranslationStrings }) {
   return (

@@ -73,31 +73,79 @@ This tracks our progress on making the app feel instant. See PERFORMANCE_PLAN.md
 ---
 
 ## Phase 4: Enhanced Service Worker for API Caching
-**Status: PENDING**
+**Status: RECONSIDERED - Using IndexedDB Instead**
 
-- [ ] Add API response caching to `public/sw.js`
-- [ ] Implement stale-while-revalidate for Supabase REST API
-- [ ] Add cache headers to API routes
-- [ ] Test offline behavior
+After analysis, SW-level API caching is not ideal for this app:
+- Supabase REST API calls are user-specific (auth tokens, RLS policies)
+- SW caching could cause data leakage between users
+- Our `/api/` routes are mostly write operations (AI, calendar sync)
 
-**Key files to modify:**
-- `public/sw.js`
+**What we have instead:**
+- IndexedDB caching with stale-while-revalidate in hooks (useFeed, useShoppingLists)
+- This is more appropriate because it's user-scoped and handles auth properly
+
+**The SW already handles:**
+- Static asset caching (JS, CSS, images, fonts)
+- Navigation caching with freshness checking
+- Offline fallback for navigation
 
 ---
 
 ## Phase 5: Loading State Improvements
-**Status: PENDING**
+**Status: COMPLETE**
 
-- [ ] Add `loading.tsx` to all main pages:
+- [x] Add `loading.tsx` to all main pages:
   - `src/app/feed/loading.tsx`
   - `src/app/handleliste/loading.tsx`
   - `src/app/uke/loading.tsx`
   - `src/app/oppskrifter/loading.tsx`
-- [ ] Create page-specific skeleton components:
-  - `FeedSkeleton`
-  - `ShoppingSkeleton`
-  - `WeekPlannerSkeleton`
-  - `RecipesSkeleton`
+- [x] Create page-specific skeleton components:
+  - `FeedPageSkeleton`
+  - `ShoppingPageSkeleton`
+  - `WeekPageSkeleton`
+  - `RecipesPageSkeleton`
+
+---
+
+## Phase 5b: Page Performance Patterns (Revised)
+**Status: COMPLETE**
+
+After analysis, we identified that **not all pages benefit from full PPR conversion**.
+
+### When to Use PPR (Server-First Pattern)
+Use for pages that:
+- Have mostly static content that changes infrequently
+- Don't require heavy client-side interactivity
+- Benefit from instant shell rendering
+
+**Example: Home Page (`/`)**
+- Server component fetches data, streams via Suspense
+- Client component adds realtime subscriptions
+- Static shell renders instantly
+
+### When to Use Client-First Pattern
+Use for pages that:
+- Are heavily interactive (modals, forms, navigation)
+- Already have excellent caching (IndexedDB + stale-while-revalidate)
+- Have realtime subscriptions that keep data fresh
+
+**Examples: Week (`/uke`), Feed (`/feed`), Shopping (`/handleliste`)**
+
+### Current Optimization Stack (All Pages)
+1. **`loading.tsx`** - Instant skeleton on navigation ✅
+2. **IndexedDB caching** - Instant data on repeat visits ✅
+3. **Stale-while-revalidate** - Show cached, fetch fresh in background ✅
+4. **Realtime subscriptions** - Live updates without refresh ✅
+5. **Route prefetching** - `TransitionLink` prefetches on hover ✅
+6. **Data prefetching** - Hook data prefetched on link hover ✅
+
+### Result
+All pages now feel instant:
+- First navigation: Shows skeleton immediately
+- Repeat visits: Shows cached data instantly, refreshes in background
+- Realtime: Updates appear live without user action
+
+**Documentation added to CLAUDE.md for AI agents and developers.**
 
 ---
 
