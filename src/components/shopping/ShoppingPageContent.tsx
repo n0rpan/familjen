@@ -340,6 +340,10 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
   }, [supabase])
 
   useEffect(() => {
+    // Skip loading if we have initialData (PPR) or in demo mode
+    // In these cases, data comes from server or demo hooks
+    if (hasInitialData || isDemo) return
+
     if (hasInitialized.current) return
     hasInitialized.current = true
 
@@ -347,7 +351,7 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     loadData(cancelled, (cb) => { if (!cancelled) cb() })
 
     return () => { cancelled = true }
-  }, [loadData])
+  }, [loadData, hasInitialData, isDemo])
 
   const handleRetry = useCallback(() => {
     loadData(false, (cb) => cb())
