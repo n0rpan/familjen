@@ -72,6 +72,12 @@ export const en: TranslationStrings = {
     viewOnly: 'View only',
     external: 'External',
     all: 'All',
+    // Relative time
+    lastUpdated: 'Last updated',
+    justNow: 'Just now',
+    minutesAgo: '{n}m ago',
+    hoursAgo: '{n}h ago',
+    daysAgo: '{n}d ago',
   },
 
   // Date/Time

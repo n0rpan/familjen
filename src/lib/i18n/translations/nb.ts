@@ -72,6 +72,12 @@ export const nb: TranslationStrings = {
     viewOnly: 'Kun visning',
     external: 'Ekstern',
     all: 'Alle',
+    // Relative time
+    lastUpdated: 'Sist oppdatert',
+    justNow: 'Akkurat nå',
+    minutesAgo: '{n} min siden',
+    hoursAgo: '{n} t siden',
+    daysAgo: '{n} d siden',
   },
 
   // Date/Time

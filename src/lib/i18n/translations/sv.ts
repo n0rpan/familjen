@@ -72,6 +72,12 @@ export const sv: TranslationStrings = {
     viewOnly: 'Endast visning',
     external: 'Extern',
     all: 'Alla',
+    // Relative time
+    lastUpdated: 'Senast uppdaterad',
+    justNow: 'Precis nu',
+    minutesAgo: '{n} min sedan',
+    hoursAgo: '{n} t sedan',
+    daysAgo: '{n} d sedan',
   },
 
   // Date/Time

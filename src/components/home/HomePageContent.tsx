@@ -16,6 +16,7 @@ import { SuggestionBanner } from '@/components/integrations/SuggestionReview'
 import { RecentPhotos } from '@/components/RecentPhotos'
 import { HomeRefreshWrapper } from '@/components/HomeRefreshWrapper'
 import { TransitionLink } from '@/components/TransitionLink'
+import { LastUpdated } from '@/components/LastUpdated'
 import { useLanguage } from '@/lib/i18n/context'
 import type {
   Child,
@@ -73,6 +74,9 @@ export interface HomePageContentProps {
 
   // Demo mode flag (to adjust links)
   isDemo?: boolean
+
+  // Data freshness timestamp
+  dataTimestamp?: number
 }
 
 export function HomePageContent({
@@ -95,6 +99,7 @@ export function HomePageContent({
   noMeal,
   isAllReady,
   isDemo = false,
+  dataTimestamp,
 }: HomePageContentProps) {
   const { t } = useLanguage()
 
@@ -124,6 +129,13 @@ export function HomePageContent({
 
   const content = (
     <div className="space-y-8 animate-fade-in">
+      {/* Last Updated Indicator */}
+      {dataTimestamp && (
+        <div className="flex justify-end -mb-4">
+          <LastUpdated timestamp={dataTimestamp} showLabel={false} />
+        </div>
+      )}
+
       {/* Today's Status Summary */}
       {isAllReady ? (
         <div

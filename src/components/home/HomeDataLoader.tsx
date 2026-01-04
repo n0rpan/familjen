@@ -62,6 +62,7 @@ export async function HomeDataLoader({ householdId, isDemo }: HomeDataLoaderProp
       noMeal={noMeal}
       isAllReady={isAllReady}
       isDemo={isDemo}
+      dataTimestamp={data.timestamp}
     />
   )
 }

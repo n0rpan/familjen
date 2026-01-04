@@ -49,22 +49,26 @@ This tracks our progress on making the app feel instant. See PERFORMANCE_PLAN.md
 ---
 
 ## Phase 3: "Last Updated" Indicator + Realtime
-**Status: PENDING**
+**Status: COMPLETE**
 
-- [ ] Add i18n strings for relative time (`justNow`, `minutesAgo`, `hoursAgo`, `lastUpdated`)
-- [ ] Create `LastUpdated` component
-- [ ] Create `useRealtimeToday` hook (immediate subscription, no 500ms delay)
-- [ ] Integrate into home page
+- [x] Add i18n strings for relative time (`justNow`, `minutesAgo`, `hoursAgo`, `daysAgo`, `lastUpdated`)
+- [x] Create `LastUpdated` component
+- [x] Integrate into home page (shows relative timestamp in top-right)
+- [x] Realtime subscriptions already cover full week (from Phase 1)
 
-**Key files to create:**
-- `src/components/LastUpdated.tsx`
-- `src/hooks/useRealtimeToday.ts`
+**Note:** The `useRealtimeToday` hook wasn't needed - the existing realtime subscriptions in
+`HomeClientInteractions` already cover the full week and call `router.refresh()` on changes.
 
-**Key files to modify:**
-- `src/lib/i18n/translations/nb.ts`
-- `src/lib/i18n/translations/sv.ts`
-- `src/lib/i18n/translations/en.ts`
-- `src/lib/i18n/types.ts`
+**Files created:**
+- `src/components/LastUpdated.tsx` - Relative time indicator with auto-update
+
+**Files modified:**
+- `src/lib/i18n/types.ts` - Added relative time strings to `common` section
+- `src/lib/i18n/translations/nb.ts` - Norwegian translations
+- `src/lib/i18n/translations/sv.ts` - Swedish translations
+- `src/lib/i18n/translations/en.ts` - English translations
+- `src/components/home/HomePageContent.tsx` - Shows LastUpdated in home page
+- `src/components/home/HomeDataLoader.tsx` - Passes timestamp to content
 
 ---
 
