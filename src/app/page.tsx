@@ -76,7 +76,21 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   }
 
   // Get household ID from JWT (fast, no extra query)
-  const householdId = user.app_metadata?.household_id as string | undefined
+  let householdId = user.app_metadata?.household_id as string | undefined
+
+  // Fallback: If JWT doesn't have household_id, check database
+  // This handles cases where JWT wasn't refreshed after joining a household
+  if (!householdId) {
+    const { data: memberData } = await supabase
+      .from('household_members')
+      .select('household_id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (memberData?.household_id) {
+      householdId = memberData.household_id
+    }
+  }
 
   // No household - show onboarding options
   if (!householdId) {
