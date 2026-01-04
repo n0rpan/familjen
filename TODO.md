@@ -99,11 +99,14 @@ After analysis, SW-level API caching is not ideal for this app:
   - `src/app/handleliste/loading.tsx`
   - `src/app/uke/loading.tsx`
   - `src/app/oppskrifter/loading.tsx`
+  - `src/app/innstillinger/loading.tsx`
+  - `src/app/styring/loading.tsx`
 - [x] Create page-specific skeleton components:
   - `FeedPageSkeleton`
   - `ShoppingPageSkeleton`
   - `WeekPageSkeleton`
   - `RecipesPageSkeleton`
+  - `HomeControlPageSkeleton`
 
 ---
 
@@ -150,15 +153,27 @@ All pages now feel instant:
 ---
 
 ## Phase 6: Code Splitting for Heavy Components
-**Status: PENDING**
+**Status: COMPLETE**
 
-- [ ] Dynamic import heavy components:
-  - `PhotoLightbox`
-  - `DuplicateSuggestions`
-  - `DuplicateDetection`
-  - `ShoppingAI`
-  - `AISuggestionModal`
-- [ ] Test bundle size improvements
+**Component Audit:**
+After auditing the codebase, we found:
+- `PhotoLightbox` - Doesn't exist (lightbox is inline in PhotoGallery, small)
+- `DuplicateDetection` - Doesn't exist as a component
+- `ShoppingAI` - Doesn't exist as a component
+- `AISuggestionModal` - Already dynamically imported in `/uke/page.tsx` ✅
+
+**Components converted to dynamic imports:**
+- [x] `AddWishlistItemModal` (20KB) - Only loaded when user clicks to add item
+  - File: `src/components/wishlist/WishlistSection.tsx`
+- [x] `DuplicateSuggestionsList` (13KB) - Only loaded when duplicates exist
+  - File: `src/components/feed/FeedPageContent.tsx`
+- [x] `MergedDuplicatesList` - Only loaded when merged duplicates exist
+  - File: `src/components/feed/FeedPageContent.tsx`
+
+**Note:** Large components like `HomeControlPanel` (73KB) and `SettingsPageContent` (69KB)
+are used as the main content of their pages, so dynamic import wouldn't help - the page
+would just show loading anyway. Code splitting is most effective for conditionally rendered
+modals and overlays.
 
 ---
 

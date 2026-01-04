@@ -640,6 +640,44 @@ export function WeekPageSkeleton() {
   )
 }
 
+// Home control page loading skeleton
+export function HomeControlPageSkeleton() {
+  return (
+    <div className="space-y-4 animate-fade-in">
+      {/* Header */}
+      <div className="mb-2">
+        <Skeleton height={32} width={140} borderRadius={12} className="mb-2" />
+        <Skeleton height={18} width={280} borderRadius={8} />
+      </div>
+
+      {/* Device panels */}
+      {[1, 2, 3].map((i) => (
+        <div
+          key={i}
+          className="rounded-2xl p-4"
+          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <Skeleton width={40} height={40} borderRadius={12} />
+              <Skeleton height={20} width={120} borderRadius={8} />
+            </div>
+            <Skeleton width={24} height={24} borderRadius={6} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {[1, 2, 3, 4].map((j) => (
+              <div key={j} className="flex items-center gap-2 p-3 rounded-xl" style={{ background: 'var(--card-alt)' }}>
+                <Skeleton width={32} height={32} borderRadius={8} />
+                <Skeleton height={16} width={60} borderRadius={6} />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // Recipes page loading skeleton
 export function RecipesPageSkeleton() {
   return (

@@ -1,11 +1,17 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback, memo } from 'react'
+import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import type { WishlistItem, WishlistOccasion } from '@/lib/types'
 import { WISHLIST_OCCASIONS } from '@/lib/constants'
-import { AddWishlistItemModal } from './AddWishlistItemModal'
+
+// Dynamic import for code splitting - modal is 20KB and only loaded when needed
+const AddWishlistItemModal = dynamic(
+  () => import('./AddWishlistItemModal').then(mod => mod.AddWishlistItemModal),
+  { ssr: false }
+)
 
 interface WishlistSectionProps {
   personId: string
