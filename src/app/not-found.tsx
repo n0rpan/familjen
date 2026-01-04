@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import { TransitionLink } from '@/components/TransitionLink'
 
 /**
  * Custom 404 Page
@@ -40,12 +40,12 @@ export default function NotFound() {
         <p className="mb-8" style={{ color: 'var(--muted)' }}>
           Vi fant ikke siden du leter etter. Den kan ha blitt flyttet eller slettet.
         </p>
-        <Link
+        <TransitionLink
           href="/"
           className="btn btn-primary"
         >
           Gå til forsiden
-        </Link>
+        </TransitionLink>
       </div>
     </div>
   )

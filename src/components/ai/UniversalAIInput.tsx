@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import type {
@@ -64,6 +64,8 @@ export function UniversalAIInput({
 }: UniversalAIInputProps) {
   const { t } = useLanguage()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const isDemo = searchParams.get('demo') === 'true'
   const supabase = useMemo(() => createClient(), [])
 
   const [input, setInput] = useState('')
@@ -671,7 +673,7 @@ export function UniversalAIInput({
         case 'navigate': {
           // Navigate to the handleliste page (wishlist is at the bottom)
           setParsedActions(prev => prev.filter(a => a !== action))
-          router.push('/handleliste')
+          router.push(isDemo ? '/handleliste?demo=true' : '/handleliste')
           return // Don't create any database records
         }
       }
