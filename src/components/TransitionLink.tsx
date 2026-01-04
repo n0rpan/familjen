@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useCallback, useState, type ComponentProps, type MouseEvent } from 'react'
+import { useCallback, useState, useMemo, type ComponentProps, type MouseEvent } from 'react'
 import { useNavigationOptional } from '@/lib/navigation'
 import { prefetchRouteData } from '@/lib/prefetch/pages'
 import { useHouseholdId } from '@/hooks/data/useHousehold'
@@ -99,6 +99,19 @@ export function TransitionLink({
     [router, href, prefetched, onMouseEnter, isDemo, householdId]
   )
 
+  // Compute final href with demo param preserved
+  const finalHref = useMemo(() => {
+    if (!isDemo || typeof href !== 'string' || href.startsWith('http')) {
+      return href
+    }
+    // Preserve demo mode across navigation
+    const url = new URL(href, 'http://localhost')
+    if (!url.searchParams.has('demo')) {
+      url.searchParams.set('demo', 'true')
+    }
+    return url.pathname + url.search
+  }, [href, isDemo])
+
   // Handle click with view transition
   const handleClick = useCallback(
     (e: MouseEvent<HTMLAnchorElement>) => {
@@ -111,14 +124,14 @@ export function TransitionLink({
       }
 
       // Only handle internal navigation
-      if (typeof href !== 'string' || href.startsWith('http')) {
+      if (typeof finalHref !== 'string' || finalHref.startsWith('http')) {
         return
       }
 
       e.preventDefault()
 
       // Determine navigation direction
-      const targetPath = href.split('?')[0] // Normalize path without query
+      const targetPath = finalHref.split('?')[0] // Normalize path without query
       const isBack = isBackNavigation(targetPath)
       setTransitionDirection(isBack ? 'back' : 'forward')
 
@@ -132,16 +145,16 @@ export function TransitionLink({
       navigation?.startNavigation(targetPath)
 
       // Navigate directly - no view transitions (they cause flash/lag)
-      router.push(href)
+      router.push(finalHref)
       pushToNavStack(targetPath)
       clearTransitionDirection()
     },
-    [router, href, onClick, navigation]
+    [router, finalHref, onClick, navigation]
   )
 
   return (
     <Link
-      href={href}
+      href={finalHref}
       onClick={handleClick}
       onMouseEnter={handleMouseEnter}
       {...props}
