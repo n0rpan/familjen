@@ -107,13 +107,17 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     return <NoHouseholdView t={t} />
   }
 
-  // Check if household has children (quick query, reuses supabase client)
+  // Quick check if household has children - determines if we show onboarding or main UI
+  // NOTE: This is intentionally separate from fetchHomePageData for two reasons:
+  // 1. This check happens BEFORE the Suspense boundary to avoid flashing the wrong UI
+  // 2. The count-only query (head: true) is faster than fetching full children data
+  // The main data fetch in HomeDataLoader will also fetch children for the actual UI
   const { count } = await supabase
     .from('children')
     .select('*', { count: 'exact', head: true })
     .eq('household_id', householdId)
 
-  // No children - needs setup
+  // No children - needs setup (different UI entirely, not just empty state)
   if (count === 0) {
     return (
       <div className="space-y-8 animate-fade-in">

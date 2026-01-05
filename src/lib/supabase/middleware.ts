@@ -129,6 +129,7 @@ export async function updateSession(request: NextRequest) {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
+      path: '/', // Explicit path ensures cookie is accessible across all routes
       maxAge: VALIDATION_INTERVAL_MS / 1000, // Cookie expires when validation is needed
     })
   }
