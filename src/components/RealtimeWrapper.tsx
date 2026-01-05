@@ -7,6 +7,7 @@ import { RealtimeToastContainer } from '@/components/RealtimeToast'
 import type { HouseholdMember } from '@/lib/types'
 import { prefetchWeekData, prefetchShoppingData, prefetchRecipesData } from '@/lib/prefetch/fetchers'
 import { useBackgroundSync } from '@/hooks/useBackgroundSync'
+import { useSessionValidator } from '@/hooks/useSessionValidator'
 
 interface RealtimeWrapperProps {
   children: React.ReactNode
@@ -23,6 +24,9 @@ export function RealtimeWrapper({ children }: RealtimeWrapperProps) {
 
   // Process offline queue when back online
   useBackgroundSync()
+
+  // Validate session periodically in background (doesn't block navigation)
+  useSessionValidator()
 
   // Prefetch critical data after householdId is known
   useEffect(() => {

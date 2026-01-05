@@ -10,7 +10,7 @@
 
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getSessionLocal } from '@/lib/supabase/server'
 import { syncUserMetadata } from '@/lib/supabase/admin'
 import { getLanguageFromCookieOrBrowser } from '@/lib/i18n/cookie.server'
 import { getTranslations } from '@/lib/i18n/translations'
@@ -44,8 +44,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   }
 
   // Production mode - check auth and household
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  // Use local session (no network call) - middleware already validated
+  const user = await getSessionLocal()
 
   // Not logged in
   if (!user) {
@@ -80,6 +80,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   // Get household ID from JWT (fast, no extra query)
   let householdId = user.app_metadata?.household_id as string | undefined
 
+  // Create Supabase client once - reused for fallback check and children count
+  const supabase = await createClient()
+
   // Fallback: If JWT doesn't have household_id, check database
   // This handles cases where JWT wasn't refreshed after joining a household
   if (!householdId) {
@@ -104,7 +107,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     return <NoHouseholdView t={t} />
   }
 
-  // Check if household has children (quick query)
+  // Check if household has children (quick query, reuses supabase client)
   const { count } = await supabase
     .from('children')
     .select('*', { count: 'exact', head: true })
@@ -151,7 +154,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   return (
     <>
       <Suspense fallback={<HomeCacheFallback householdId={householdId} />}>
-        <HomeDataLoader householdId={householdId} isDemo={false} />
+        <HomeDataLoader householdId={householdId} userId={user.id} isDemo={false} />
       </Suspense>
       <HomeClientInteractions householdId={householdId} isDemo={false} />
     </>

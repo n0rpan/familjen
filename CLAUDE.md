@@ -2377,26 +2377,48 @@ export function useHouseholdId(): string | null {
 }
 ```
 
-**Server-side with DB fallback** (for PPR pages):
+**Server-side with local session** (for PPR pages):
 ```typescript
+// src/lib/supabase/server.ts - reads JWT locally (no network call)
+export async function getSessionLocal(): Promise<User | null> {
+  const supabase = await createClient()
+  const { data: { session } } = await supabase.auth.getSession()  // LOCAL read
+  return session?.user ?? null
+}
+
 // src/lib/data/server.ts - used by all PPR pages
 export async function getHouseholdIdFromSession(): Promise<string | null> {
-  const user = await getUser()
+  const user = await getSessionLocal()  // No network call - instant!
 
-  // Try JWT first (fast path)
+  // Fast path: JWT has household_id (>99% of established users)
   const jwtHouseholdId = user?.app_metadata?.household_id
   if (jwtHouseholdId) return jwtHouseholdId
 
-  // Fallback: Check database if JWT is stale (user just created/joined household)
+  // Slow path: DB fallback for stale JWTs (rare)
   const membership = await queryMembership(user.id)
   if (membership?.household_id) {
-    // Sync JWT so next request is fast (fire-and-forget)
     syncUserMetadata(user.id, user.email, membership.household_id).catch(console.error)
     return membership.household_id
   }
   return null
 }
 ```
+
+**Auth Architecture (for instant navigation):**
+
+| Layer | Purpose | When |
+|-------|---------|------|
+| Middleware (`proxy.ts`) | Validates session with Supabase (network call) | Every request |
+| Page components | Read JWT locally via `getSessionLocal()` (no network) | On render |
+| Background validator | Re-validates session every 5 minutes | Client-side |
+
+**Why this is fast:** Middleware already validated the session, so pages can trust the local JWT without making another network call to Supabase. The JWT is cryptographically signed and can't be forged.
+
+**Background session validation** (`src/hooks/useSessionValidator.ts`):
+- Validates with Supabase every 5 minutes (doesn't block navigation)
+- Also validates when app becomes visible (returning from background)
+- On invalid session: clears IndexedDB cache and redirects to login
+- Skips validation on login page and in demo mode
 
 **When JWT gets synced:**
 1. On login (`src/app/auth/callback/route.ts`)
@@ -2406,7 +2428,11 @@ export async function getHouseholdIdFromSession(): Promise<string | null> {
 
 **Note:** Sync only happens when DB fallback is used (JWT is stale). Once synced, future requests use JWT directly. Sync is fire-and-forget to avoid blocking page render.
 
-**Security:** RLS policies on Supabase validate household_id server-side. The JWT value is for client-side optimization only - all data access goes through Supabase which enforces proper authorization.
+**Security:**
+- Middleware is the security perimeter - it validates every request with Supabase
+- Pages trust the local JWT because middleware already validated it
+- RLS policies on Supabase enforce authorization server-side
+- Background validator catches expired sessions for long-running PWA sessions
 
 ### IndexedDB Caching (Stale-While-Revalidate)
 

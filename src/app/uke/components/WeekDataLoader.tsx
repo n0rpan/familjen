@@ -14,16 +14,17 @@ import { WeekPageContent } from './WeekPageContent'
 
 interface WeekDataLoaderProps {
   householdId: string
+  userId?: string  // For currentMember lookup without extra auth call
   week?: number  // ISO week number (1-53), defaults to current week
   year?: number  // Year, defaults to current or inferred
   isDemo: boolean
 }
 
-export async function WeekDataLoader({ householdId, week, year, isDemo }: WeekDataLoaderProps) {
+export async function WeekDataLoader({ householdId, userId, week, year, isDemo }: WeekDataLoaderProps) {
   // Fetch data - same structure for demo and production
   const data = isDemo
     ? getDemoWeekPageData(week, year)
-    : await fetchWeekPageData(householdId, week, year)
+    : await fetchWeekPageData(householdId, week, year, userId)
 
   // Calculate current week number for comparison
   const currentWeekNumber = getWeekNumber(new Date())

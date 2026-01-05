@@ -16,7 +16,7 @@
 
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
-import { getHouseholdIdFromSession } from '@/lib/data/server'
+import { getSessionLocal } from '@/lib/supabase/server'
 import { WeekDataLoader } from './components/WeekDataLoader'
 import { WeekPageSkeleton } from '@/components/Skeleton'
 
@@ -69,9 +69,15 @@ export default async function WeekPage({ searchParams }: PageProps) {
     )
   }
 
-  // Production mode: get household from session
-  const householdId = await getHouseholdIdFromSession()
+  // Production mode: get user from local session (no network call)
+  const user = await getSessionLocal()
 
+  if (!user) {
+    redirect('/login')
+  }
+
+  // Get household ID from JWT
+  const householdId = user.app_metadata?.household_id as string | undefined
   if (!householdId) {
     redirect('/login')
   }
@@ -82,6 +88,7 @@ export default async function WeekPage({ searchParams }: PageProps) {
     <Suspense fallback={<WeekPageSkeleton />}>
       <WeekDataLoader
         householdId={householdId}
+        userId={user.id}
         week={week}
         year={year}
         isDemo={false}
