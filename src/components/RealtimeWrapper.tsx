@@ -48,16 +48,18 @@ export function RealtimeWrapper({ children }: RealtimeWrapperProps) {
 
     const loadUserContext = async () => {
       try {
-        // Get current user
-        const { data: { user } } = await supabase.auth.getUser()
+        // Get session locally (no network call - instant!)
+        // Middleware already validated, we just need the user ID
+        const { data: { session } } = await supabase.auth.getSession()
 
         if (!mounted) return
 
-        if (!user) {
+        if (!session?.user) {
           setIsLoaded(true)
           return
         }
 
+        const user = session.user
         setCurrentUserId(user.id)
 
         // Get user's household membership
