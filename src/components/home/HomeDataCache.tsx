@@ -11,7 +11,7 @@
  * stale-while-revalidate pattern with IndexedDB.
  *
  * IMPORTANT: The cache version must be incremented when the data structure changes
- * to prevent crashes from schema mismatches. See CACHE_VERSION below.
+ * to prevent crashes from schema mismatches. See CACHE_VERSION in @/lib/cache-constants.
  *
  * Cache Invalidation:
  * - Cache is cleared on logout and account deletion (see src/lib/cache.ts clearAllCache)
@@ -22,7 +22,7 @@
 
 import React, { useEffect, useState, useMemo, type ReactNode } from 'react'
 import { getCached, setCache, isCacheFresh } from '@/lib/cache'
-import { CACHE_KEYS } from '@/lib/prefetch/pages'
+import { CACHE_KEYS, CACHE_VERSION } from '@/lib/cache-constants'
 import { HomePageContent, type HomePageContentProps } from './HomePageContent'
 import { HomePageSkeleton, RefreshingSkeleton } from '@/components/Skeleton'
 import { formatDateISO, getWeekStart } from '@/lib/utils'
@@ -38,14 +38,6 @@ import type {
   DaySummary,
 } from '@/lib/types'
 import type { Holiday } from '@/lib/utils'
-
-/**
- * Cache version - increment this when the CachedHomeData structure changes
- * to prevent crashes from stale data with incompatible schema
- *
- * Exported so prefetchHomeData can use the same version
- */
-export const CACHE_VERSION = 1
 
 // Shape of cached home data in IndexedDB
 export interface CachedHomeData {

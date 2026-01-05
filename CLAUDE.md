@@ -141,8 +141,8 @@ After a PWA update, the server-side cache (`unstable_cache`) is cold because it'
 
 **Cache versioning:**
 ```typescript
-// Increment CACHE_VERSION when CachedHomeData structure changes
-const CACHE_VERSION = 1
+// In src/lib/cache-constants.ts - increment when CachedHomeData structure changes
+export const CACHE_VERSION = 1
 
 // Cache is only used if version matches
 if (cached.data.version === CACHE_VERSION) {
@@ -151,8 +151,9 @@ if (cached.data.version === CACHE_VERSION) {
 ```
 
 **Key files:**
+- `src/lib/cache-constants.ts` - `CACHE_VERSION` and `CACHE_KEYS` (shared constants)
 - `src/components/home/HomeDataCache.tsx` - `HomeCacheFallback` and `HomeDataCacher`
-- `src/lib/prefetch/pages.ts` - `prefetchHomeData` and `CACHE_KEYS`
+- `src/lib/prefetch/pages.ts` - `prefetchHomeData` function
 - `src/lib/cache.ts` - IndexedDB wrapper functions
 
 **Cache invalidation:**

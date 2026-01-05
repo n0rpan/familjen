@@ -8,16 +8,10 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { getCached, setCache, isCacheFresh } from '@/lib/cache'
-import { CACHE_VERSION } from '@/components/home/HomeDataCache'
+import { CACHE_VERSION, CACHE_KEYS } from '@/lib/cache-constants'
 
-// Cache keys used by data hooks - must match
-export const CACHE_KEYS = {
-  home: (householdId: string) => `home-${householdId}`,
-  week: (householdId: string, weekStart: string) => `week-${householdId}-${weekStart}`,
-  feed: (householdId: string) => `feed-${householdId}`,
-  shopping: (householdId: string) => `shopping-${householdId}`,
-  recipes: (householdId: string) => `recipes-${householdId}`,
-}
+// Re-export CACHE_KEYS for backwards compatibility with existing imports
+export { CACHE_KEYS } from '@/lib/cache-constants'
 
 // Max age before we consider prefetched data stale
 const PREFETCH_MAX_AGE = 10 * 60 * 1000 // 10 minutes (longer since we have realtime)
