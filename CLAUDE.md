@@ -168,7 +168,9 @@ if (cached.data.version === CACHE_VERSION) {
 - `src/lib/cache-constants.ts` - `CACHE_VERSION` and `CACHE_KEYS` (shared constants)
 - `src/lib/cache-sync.ts` - Synchronous localStorage cache layer for instant reads
 - `src/lib/cache.ts` - IndexedDB wrapper functions + `updateCacheWithRealtimeChange`
+- `src/components/SmartLoading.tsx` - Route loading component that shows cached content
 - `src/components/*/DataCache.tsx` - CacheFallback and DataCacher for each page
+- `src/app/*/loading.tsx` - Route loading states using SmartLoading
 - `src/lib/prefetch/pages.ts` - `prefetchHomeData` function
 - `src/components/home/HomeClientInteractions.tsx` - Realtime subscriptions + cache updates
 
@@ -398,14 +400,66 @@ All main pages have been converted to the PPR pattern for instant navigation:
 - `revalidateStyring(householdId)` - Revalidate home control cache
 - `revalidateAdmin()` - Revalidate admin data cache
 
+### SmartLoading (Route Loading with Cache)
+
+Next.js shows `loading.tsx` BEFORE our Suspense fallback during navigation. This means cache fallback components never get to show cached data first.
+
+**Solution:** `SmartLoading` component makes `loading.tsx` itself check localStorage cache:
+
+```typescript
+// src/app/[page]/loading.tsx
+'use client'
+
+import { SmartLoading } from '@/components/SmartLoading'
+import { [Page]PageSkeleton } from '@/components/Skeleton'
+import { [Page]PageContent } from '@/components/[page]/[Page]PageContent'
+import type { Cached[Page]Data } from '@/components/[page]/[Page]DataCache'
+
+export default function [Page]Loading() {
+  return (
+    <SmartLoading page="[page]" skeleton={<[Page]PageSkeleton />}>
+      {(rawData) => {
+        const data = rawData as Cached[Page]Data
+        return <[Page]PageContent initialData={data} isDemo={false} />
+      }}
+    </SmartLoading>
+  )
+}
+```
+
+**How SmartLoading works:**
+1. Reads householdId from localStorage (set by DataCacher components)
+2. Checks localStorage cache for fresh data (30-minute max age)
+3. If cache hit: renders cached content (instant, no skeleton flash)
+4. If cache miss: falls back to skeleton
+
+**Safety guarantees:**
+- Cache is ignored if older than 30 minutes
+- Cache is ignored if version doesn't match (`CACHE_VERSION`)
+- Server data always replaces cached data when it arrives
+- Cache is cleared on logout (`clearAllCache()`)
+
 ### Adding a New Page (Checklist)
 
-1. **Create `loading.tsx`** - Shows skeleton immediately on navigation
+1. **Create `loading.tsx`** - Uses SmartLoading for instant cached loads
    ```typescript
    // src/app/[page]/loading.tsx
+   'use client'
+
+   import { SmartLoading } from '@/components/SmartLoading'
    import { [Page]PageSkeleton } from '@/components/Skeleton'
-   export default function Loading() {
-     return <[Page]PageSkeleton />
+   import { [Page]PageContent } from '@/components/[page]/[Page]PageContent'
+   import type { Cached[Page]Data } from '@/components/[page]/[Page]DataCache'
+
+   export default function [Page]Loading() {
+     return (
+       <SmartLoading page="[page]" skeleton={<[Page]PageSkeleton />}>
+         {(rawData) => {
+           const data = rawData as Cached[Page]Data
+           return <[Page]PageContent initialData={data} isDemo={false} />
+         }}
+       </SmartLoading>
+     )
    }
    ```
 
