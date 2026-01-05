@@ -219,3 +219,43 @@ export const SEARCH_SUMMARY_SCHEMA = {
     },
   },
 }
+
+// =============================================================================
+// SHOPPING LIST SCHEMAS
+// =============================================================================
+
+/**
+ * Schema for shopping duplicate detection.
+ * Used by check-shopping-duplicate endpoint.
+ */
+export const SHOPPING_DUPLICATE_SCHEMA = {
+  type: 'json_schema',
+  json_schema: {
+    name: 'shopping_duplicate_check',
+    strict: true,
+    schema: {
+      type: 'object',
+      properties: {
+        matches: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              index: { type: 'number', description: '1-based index of matching item in list' },
+              matchType: { type: 'string', enum: ['exact', 'semantic', 'variant'] },
+              reason: { type: 'string', description: 'Brief Norwegian explanation' },
+            },
+            required: ['index', 'matchType', 'reason'],
+            additionalProperties: false,
+          },
+        },
+        suggestion: {
+          type: ['string', 'null'],
+          description: 'Optional suggestion for the user in Norwegian',
+        },
+      },
+      required: ['matches', 'suggestion'],
+      additionalProperties: false,
+    },
+  },
+}

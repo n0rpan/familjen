@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
         pricing: m.pricing,
         context_length: m.context_length,
         supportsVision: m.architecture?.input_modalities?.includes('image') ?? false,
-        supportsStructuredOutputs: m.supported_parameters?.includes('structured_outputs') ?? true,
+        supportsStructuredOutputs: m.supported_parameters?.includes('structured_outputs') ?? false,
       }))
       .sort((a: OpenRouterModel, b: OpenRouterModel) => {
         // Sort by provider (anthropic, openai first) then by name
