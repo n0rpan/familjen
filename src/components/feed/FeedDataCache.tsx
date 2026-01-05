@@ -16,13 +16,55 @@ import { getCached, setCache, isCacheFresh } from '@/lib/cache'
 import { setStoredHouseholdId } from '@/components/SmartLoading'
 import { getCachedSync, setCacheSync, isSyncCacheFresh } from '@/lib/cache-sync'
 import { CACHE_KEYS, CACHE_VERSION } from '@/lib/cache-constants'
-import { FeedPageContent } from './FeedPageContent'
+import { FeedPageContent, type FeedPageContentProps } from './FeedPageContent'
 import { FeedPageSkeleton } from '@/components/Skeleton'
 import type { FeedPageData } from '@/lib/data/server'
 
 // Shape of cached feed data
 export interface CachedFeedData extends FeedPageData {
   version?: number
+}
+
+/**
+ * Compute FeedPageContentProps from cached data.
+ *
+ * This helper transforms the raw cached data structure into the props
+ * expected by FeedPageContent. The main transformations are:
+ * - Converting integration records to IntegrationStatus format
+ * - Setting empty reminders (AI-generated, not cached)
+ *
+ * Used by both FeedCacheFallback (Suspense fallback) and feed/loading.tsx
+ * (SmartLoading) to ensure consistent prop computation.
+ *
+ * Type assertions explanation:
+ * FeedPageData uses Record<string, unknown>[] for Supabase query flexibility,
+ * but we know the runtime shape matches our specific types. The CacheErrorBoundary
+ * wrapper provides safety - if cached data causes render errors, we fall back
+ * to skeleton gracefully. This is intentional to avoid duplicating type definitions.
+ */
+export function computeFeedPropsFromCache(cachedData: CachedFeedData): FeedPageContentProps {
+  // Type assertions through unknown are needed because FeedPageData uses
+  // Record<string, unknown>[] for Supabase flexibility. Runtime shape is correct.
+  return {
+    messages: cachedData.messages as unknown as FeedPageContentProps['messages'],
+    photos: cachedData.photos as unknown as FeedPageContentProps['photos'],
+    // Reminders are AI-generated at render time, not cached
+    reminders: [],
+    notifications: cachedData.notifications as unknown as FeedPageContentProps['notifications'],
+    integrationChildren: cachedData.integrationChildren as unknown as FeedPageContentProps['integrationChildren'],
+    // Transform integration records to IntegrationStatus format
+    integrationStatuses: cachedData.integrations.map(i => ({
+      id: i.id,
+      service: i.service as 'spond' | 'kidplan' | 'iskole' | 'mykid',
+      displayName: i.display_name,
+      lastSyncStatus: i.last_sync_status,
+      lastSyncError: i.last_sync_error,
+      lastSyncAt: i.last_sync_at,
+    })),
+    duplicateSuggestions: cachedData.duplicateSuggestions as unknown as FeedPageContentProps['duplicateSuggestions'],
+    mergedDuplicates: cachedData.mergedDuplicates as unknown as FeedPageContentProps['mergedDuplicates'],
+    isDemo: false,
+  }
 }
 
 // Max age for cached data: 30 minutes
@@ -125,26 +167,10 @@ export function FeedCacheFallback({ householdId }: FeedCacheFallbackProps) {
 
   // If we have valid cached data, show it immediately
   if (cachedData) {
+    const props = computeFeedPropsFromCache(cachedData)
     return (
       <CacheErrorBoundary fallback={<FeedPageSkeleton />}>
-        <FeedPageContent
-          messages={cachedData.messages as never[]}
-          photos={cachedData.photos as never[]}
-          reminders={[]}
-          notifications={cachedData.notifications as never[]}
-          integrationChildren={cachedData.integrationChildren as never[]}
-          integrationStatuses={cachedData.integrations.map(i => ({
-            id: i.id,
-            service: i.service as 'spond' | 'kidplan' | 'iskole' | 'mykid',
-            displayName: i.display_name,
-            lastSyncStatus: i.last_sync_status,
-            lastSyncError: i.last_sync_error,
-            lastSyncAt: i.last_sync_at,
-          }))}
-          duplicateSuggestions={cachedData.duplicateSuggestions as never[]}
-          mergedDuplicates={cachedData.mergedDuplicates as never[]}
-          isDemo={false}
-        />
+        <FeedPageContent {...props} />
       </CacheErrorBoundary>
     )
   }
