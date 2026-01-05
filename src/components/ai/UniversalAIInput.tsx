@@ -331,6 +331,32 @@ export function UniversalAIInput({
     setMealSuggestions(prev => prev.filter(s => s.day !== suggestion.day))
   }, [])
 
+  // Navigate to wishlist modal with pre-filled data from AI
+  const navigateToWishlistWithData = useCallback((action: ParsedAction) => {
+    // Store pre-filled data in localStorage for the wishlist modal to pick up
+    const prefillData = {
+      name: action.data.item_name || action.data.name || action.data.product_name || '',
+      description: action.data.description || '',
+      price: action.data.price || null,
+      link: action.data.link || '',
+      occasion: action.data.occasion || 'general',
+      childId: action.data.child_id || null,
+      memberId: action.data.member_id || null,
+      // Include the image from state (used for vision analysis) or from action data
+      image: selectedImage || action.data.image || null,
+    }
+    localStorage.setItem('wishlist-prefill', JSON.stringify(prefillData))
+
+    // Navigate to handleliste with query param to trigger modal open
+    const url = isDemo ? '/handleliste?demo=true&addWishlist=true' : '/handleliste?addWishlist=true'
+    router.push(url)
+
+    // Clear the action from the list and the image
+    setParsedActions([])
+    setSelectedImage(null)
+    setImagePreview(null)
+  }, [isDemo, router, selectedImage])
+
   const handleClarification = useCallback((action: ParsedAction, field: string, value: string | null, resultType?: ActionType) => {
     // Handle person_id clarification (contains "child:uuid" or "member:uuid")
     let updatedData = { ...action.data }
@@ -358,8 +384,11 @@ export function UniversalAIInput({
     // If it's a modification or delete, ask for confirmation
     if (updatedAction.operation === 'modify' || updatedAction.operation === 'delete') {
       setPendingConfirmation(updatedAction)
+    } else if (updatedAction.type === 'wishlist_item' && updatedAction.operation === 'add') {
+      // Navigate to wishlist modal with pre-filled data instead of executing directly
+      navigateToWishlistWithData(updatedAction)
     } else {
-      // Execute immediately for additions and completions
+      // Execute immediately for other additions and completions
       executeAction(updatedAction)
     }
 

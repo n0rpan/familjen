@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import type { WishlistItem, WishlistOccasion } from '@/lib/types'
 import { WISHLIST_OCCASIONS } from '@/lib/constants'
+import type { WishlistPrefillData } from './AddWishlistItemModal'
 
 // Dynamic import for code splitting - modal is 20KB and only loaded when needed
 const AddWishlistItemModal = dynamic(
@@ -20,6 +21,9 @@ interface WishlistSectionProps {
   householdId: string
   showShareLink?: boolean
   onItemCountChange?: (delta: number) => void
+  prefillData?: WishlistPrefillData | null  // For AI-prefilled data
+  autoOpenModal?: boolean  // Auto-open modal on mount
+  onPrefillConsumed?: () => void  // Callback when prefill data is consumed
 }
 
 interface ShareToken {
@@ -35,6 +39,9 @@ export const WishlistSection = memo(function WishlistSection({
   householdId,
   showShareLink = true,
   onItemCountChange,
+  prefillData,
+  autoOpenModal,
+  onPrefillConsumed,
 }: WishlistSectionProps) {
   const { t } = useLanguage()
   const supabase = useMemo(() => createClient(), [])
@@ -47,6 +54,17 @@ export const WishlistSection = memo(function WishlistSection({
   const [activeOccasion, setActiveOccasion] = useState<WishlistOccasion | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
+
+  // Auto-open modal when autoOpenModal is true (from AI navigation)
+  useEffect(() => {
+    if (autoOpenModal && !loading) {
+      setShowAddModal(true)
+      // If there's a prefill occasion, select that tab
+      if (prefillData?.occasion) {
+        setActiveOccasion(prefillData.occasion)
+      }
+    }
+  }, [autoOpenModal, loading, prefillData?.occasion])
 
   // Fetch items and share token
   useEffect(() => {
@@ -456,7 +474,11 @@ export const WishlistSection = memo(function WishlistSection({
       {/* Add item modal */}
       <AddWishlistItemModal
         isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
+        onClose={() => {
+          setShowAddModal(false)
+          // Notify parent that prefill data was consumed
+          onPrefillConsumed?.()
+        }}
         personId={personId}
         personType={personType}
         householdId={householdId}
@@ -470,7 +492,10 @@ export const WishlistSection = memo(function WishlistSection({
             }
             return [newItem, ...prev.filter(i => i.id !== newItem.id)]
           })
+          // Notify parent that prefill data was consumed
+          onPrefillConsumed?.()
         }}
+        initialData={prefillData}
       />
     </div>
   )

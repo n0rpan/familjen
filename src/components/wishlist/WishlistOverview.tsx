@@ -1,11 +1,21 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback, memo } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
-import type { WishlistItem, Child, HouseholdMember } from '@/lib/types'
-import { WISHLIST_OCCASIONS } from '@/lib/constants'
+import type { Child, HouseholdMember } from '@/lib/types'
 import { WishlistSection } from './WishlistSection'
+import type { WishlistPrefillData } from './AddWishlistItemModal'
+
+// Key for localStorage prefill data (set by AI navigation)
+const PREFILL_STORAGE_KEY = 'wishlist-prefill'
+
+// Extended prefill data structure (includes person selection)
+interface StoredPrefillData extends WishlistPrefillData {
+  childId?: string | null
+  memberId?: string | null
+}
 
 interface WishlistOverviewProps {
   householdId: string
@@ -23,12 +33,15 @@ export const WishlistOverview = memo(function WishlistOverview({
 }: WishlistOverviewProps) {
   const { t } = useLanguage()
   const supabase = useMemo(() => createClient(), [])
+  const searchParams = useSearchParams()
 
   const [children, setChildren] = useState<Child[]>([])
   const [members, setMembers] = useState<HouseholdMember[]>([])
   const [itemCounts, setItemCounts] = useState<Record<string, number>>({})
   const [expandedPerson, setExpandedPerson] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [prefillData, setPrefillData] = useState<StoredPrefillData | null>(null)
+  const [shouldAutoOpen, setShouldAutoOpen] = useState(false)
 
   // Fetch children, members, and item counts
   useEffect(() => {
@@ -77,6 +90,45 @@ export const WishlistOverview = memo(function WishlistOverview({
 
     fetchData()
   }, [supabase, householdId])
+
+  // Check for addWishlist query param and localStorage prefill data
+  useEffect(() => {
+    const addWishlist = searchParams.get('addWishlist') === 'true'
+    if (!addWishlist) return
+
+    // Read prefill data from localStorage
+    try {
+      const stored = localStorage.getItem(PREFILL_STORAGE_KEY)
+      if (stored) {
+        const data = JSON.parse(stored) as StoredPrefillData
+        setPrefillData(data)
+        setShouldAutoOpen(true)
+
+        // Determine which person to expand based on prefill data
+        const personId = data.childId || data.memberId
+        if (personId) {
+          setExpandedPerson(personId)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to read wishlist prefill data:', err)
+    }
+  }, [searchParams])
+
+  // Clear prefill data from localStorage after it's been consumed
+  const handlePrefillConsumed = useCallback(() => {
+    setPrefillData(null)
+    setShouldAutoOpen(false)
+    try {
+      localStorage.removeItem(PREFILL_STORAGE_KEY)
+    } catch (err) {
+      console.error('Failed to clear wishlist prefill data:', err)
+    }
+    // Clear the query param without causing a navigation
+    const url = new URL(window.location.href)
+    url.searchParams.delete('addWishlist')
+    window.history.replaceState({}, '', url.toString())
+  }, [])
 
   // Combined list of people with wishlists (children first, then members)
   const people = useMemo(() => {
@@ -203,6 +255,20 @@ export const WishlistOverview = memo(function WishlistOverview({
                     householdId={householdId}
                     showShareLink={true}
                     onItemCountChange={(delta) => handleItemCountChange(person.id, delta)}
+                    // Pass prefill data only to the correct person
+                    prefillData={
+                      shouldAutoOpen &&
+                      ((person.type === 'child' && prefillData?.childId === person.id) ||
+                       (person.type === 'member' && prefillData?.memberId === person.id))
+                        ? prefillData
+                        : null
+                    }
+                    autoOpenModal={
+                      shouldAutoOpen &&
+                      ((person.type === 'child' && prefillData?.childId === person.id) ||
+                       (person.type === 'member' && prefillData?.memberId === person.id))
+                    }
+                    onPrefillConsumed={handlePrefillConsumed}
                   />
                 </div>
               </div>
