@@ -6,6 +6,7 @@ import { useCallback, useState, useMemo, type ComponentProps, type MouseEvent } 
 import { useNavigationOptional } from '@/lib/navigation'
 import { prefetchRouteData } from '@/lib/prefetch/pages'
 import { useHouseholdId } from '@/hooks/data/useHousehold'
+import { normalizePath } from '@/lib/utils'
 
 type TransitionLinkProps = ComponentProps<typeof Link> & {
   viewTransition?: boolean
@@ -128,10 +129,10 @@ export function TransitionLink({
         return
       }
 
-      // Normalize paths (remove query string for comparison)
-      const targetPath = finalHref.split('?')[0]
+      // Normalize paths for comparison (handles trailing slashes and query strings)
+      const targetPath = normalizePath(finalHref)
       // Read pathname at click time, not render time, to avoid stale closure issues
-      const currentPath = (typeof window !== 'undefined' ? window.location.pathname : '').split('?')[0]
+      const currentPath = normalizePath(typeof window !== 'undefined' ? window.location.pathname : '')
 
       // Same page? Do nothing - don't dim, don't navigate
       if (targetPath === currentPath) {

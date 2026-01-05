@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
+import { normalizePath } from '@/lib/utils'
 
 // Only show loading indicator if navigation takes longer than this
 // Fast navigations (cached routes) won't show any loading state
@@ -41,11 +42,12 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
 
   // Start navigation - called on link click
   const startNavigation = useCallback((path: string) => {
-    // Normalize path (remove query string for comparison)
-    const normalizedPath = path.split('?')[0]
+    // Normalize path (remove query string and trailing slash for comparison)
+    const normalizedPath = normalizePath(path)
+    const normalizedCurrent = normalizePath(pathname)
 
     // Don't show navigation state for same-page navigation
-    if (normalizedPath === pathname) {
+    if (normalizedPath === normalizedCurrent) {
       return
     }
 
