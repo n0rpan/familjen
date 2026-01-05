@@ -95,6 +95,9 @@ export function UniversalAIInput({
 
   const currentMember = members.find(m => m.user_id === currentUserId)
 
+  // Use ref to break circular dependency between handleClarification and executeAction
+  const executeActionRef = useRef<((action: ParsedAction) => Promise<void>) | undefined>(undefined)
+
   // Rate limit countdown timer
   useEffect(() => {
     if (rateLimitCountdown <= 0) return
@@ -237,7 +240,7 @@ export function UniversalAIInput({
     } finally {
       setIsParsing(false)
     }
-  }, [children, members, currentUserId, rateLimitCountdown])
+  }, [children, members, currentUserId, rateLimitCountdown, isDemo])
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value
@@ -341,11 +344,13 @@ export function UniversalAIInput({
    */
   const navigateWithPrefill = useCallback((action: ParsedAction): boolean => {
     // Get routing decision
+    // Extract image from action data, ensuring it's a string or null
+    const actionImage = typeof action.data.image === 'string' ? action.data.image : null
     const decision = determineActionRouting(action.type, action.operation, {
       ...action.data,
       confidence: action.confidence,
       // Include image from state for vision analysis
-      image: selectedImage || action.data.image || null,
+      image: selectedImage || actionImage,
     })
 
     if (!decision.shouldNavigate) {
@@ -401,17 +406,16 @@ export function UniversalAIInput({
       const navigated = navigateWithPrefill(updatedAction)
       if (!navigated) {
         // If navigation not needed, execute with quick card flow
-        executeAction(updatedAction)
+        executeActionRef.current?.(updatedAction)
       }
     } else {
       // Execute immediately for completions and other operations
-      executeAction(updatedAction)
+      executeActionRef.current?.(updatedAction)
     }
 
     // Remove from parsed actions
     setParsedActions(prev => prev.filter(a => a !== action))
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- executeAction is stable
-  }, [])
+  }, [navigateWithPrefill])
 
   // Infer child_id from child_name if needed
   const inferChildId = useCallback((action: ParsedAction): string | null => {
@@ -786,6 +790,9 @@ export function UniversalAIInput({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- executeDelete/Complete/Edit are stable callbacks defined below
   }, [householdId, supabase, t, onActionExecuted, router, validateAndPrepareAction])
+
+  // Keep ref updated for circular dependency resolution
+  executeActionRef.current = executeAction
 
   // Execute DELETE operation with disambiguation
   const executeDelete = useCallback(async (action: ParsedAction) => {

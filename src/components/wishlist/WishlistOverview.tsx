@@ -96,6 +96,11 @@ export const WishlistOverview = memo(function WishlistOverview({
     const addWishlist = searchParams.get('addWishlist') === 'true'
     if (!addWishlist) return
 
+    // Clear the query param immediately to prevent re-triggering
+    const url = new URL(window.location.href)
+    url.searchParams.delete('addWishlist')
+    window.history.replaceState({}, '', url.toString())
+
     // Read prefill data from localStorage
     try {
       const stored = localStorage.getItem(PREFILL_STORAGE_KEY)
@@ -124,10 +129,7 @@ export const WishlistOverview = memo(function WishlistOverview({
     } catch (err) {
       console.error('Failed to clear wishlist prefill data:', err)
     }
-    // Clear the query param without causing a navigation
-    const url = new URL(window.location.href)
-    url.searchParams.delete('addWishlist')
-    window.history.replaceState({}, '', url.toString())
+    // Note: Query param already cleared immediately in useEffect above
   }, [])
 
   // Combined list of people with wishlists (children first, then members)

@@ -35,8 +35,8 @@ export function RecipesPageContent({ initialData, isDemo = false }: RecipesPageC
   const [household, setHousehold] = useState<Household | null>(initialData?.household || null)
   const [recipesData, setRecipesData] = useState<Recipe[]>(initialData?.recipes || [])
 
-  // Prefill state from AI navigation
-  const [prefillData, setPrefillData] = useState<RecipePrefillData | null>(null)
+  // Track whether form was opened from AI navigation (for future UX enhancements)
+  const [isFromAIPrefill, setIsFromAIPrefill] = useState(false)
 
   // Use hooks for mutations (these also work in demo mode)
   const {
@@ -85,7 +85,7 @@ export function RecipesPageContent({ initialData, isDemo = false }: RecipesPageC
       const stored = localStorage.getItem(PREFILL_STORAGE_KEYS.recipe)
       if (stored) {
         const data = JSON.parse(stored) as RecipePrefillData
-        setPrefillData(data)
+        setIsFromAIPrefill(true)
 
         // Prefill form fields
         setNewRecipe({
@@ -121,10 +121,10 @@ export function RecipesPageContent({ initialData, isDemo = false }: RecipesPageC
     window.history.replaceState({}, '', url.toString())
   }, [searchParams])
 
-  // Clear prefill data when form is closed
+  // Clear prefill state when form is closed
   const handleCloseForm = useCallback(() => {
     setShowForm(false)
-    setPrefillData(null)
+    setIsFromAIPrefill(false)
     setNewRecipe({
       name: '',
       instructions: '',

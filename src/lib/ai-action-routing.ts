@@ -358,11 +358,13 @@ export function prepareNavigation(
     return null
   }
 
-  // Store prefill data
+  // Store prefill data - fail navigation if storage fails
   try {
     localStorage.setItem(decision.storageKey, JSON.stringify(decision.prefillData.data))
   } catch (err) {
     console.error('Failed to store prefill data:', err)
+    // Return null to signal failure - caller should fall back to quick card
+    return null
   }
 
   // Build URL
