@@ -58,6 +58,7 @@ export const nb: TranslationStrings = {
     saving: 'Lagrer...',
     pending: 'venter',
     syncing: 'Synkroniserer',
+    refreshing: 'Oppdaterer...',
     sync: 'Synkroniser',
     offline: 'Frakoblet',
     backOnline: 'Tilkoblet igjen',

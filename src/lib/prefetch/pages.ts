@@ -8,6 +8,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { getCached, setCache, isCacheFresh } from '@/lib/cache'
+import { CACHE_VERSION } from '@/components/home/HomeDataCache'
 
 // Cache keys used by data hooks - must match
 export const CACHE_KEYS = {
@@ -284,6 +285,7 @@ export async function prefetchHomeData(householdId: string): Promise<void> {
     ])
 
     await setCache(cacheKey, {
+      version: CACHE_VERSION,
       household: householdResult.data,
       children: childrenResult.data || [],
       members: membersResult.data || [],

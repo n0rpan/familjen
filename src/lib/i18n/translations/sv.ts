@@ -58,6 +58,7 @@ export const sv: TranslationStrings = {
     saving: 'Sparar...',
     pending: 'väntar',
     syncing: 'Synkroniserar',
+    refreshing: 'Uppdaterar...',
     sync: 'Synkronisera',
     offline: 'Offline',
     backOnline: 'Online igen',

@@ -36,8 +36,10 @@ import type { Holiday } from '@/lib/utils'
 /**
  * Cache version - increment this when the CachedHomeData structure changes
  * to prevent crashes from stale data with incompatible schema
+ *
+ * Exported so prefetchHomeData can use the same version
  */
-const CACHE_VERSION = 1
+export const CACHE_VERSION = 1
 
 // Shape of cached home data in IndexedDB
 export interface CachedHomeData {
@@ -83,6 +85,7 @@ interface HomeCacheFallbackProps {
  */
 export function HomeCacheFallback({ householdId }: HomeCacheFallbackProps) {
   const [cachedData, setCachedData] = useState<CachedHomeData | null>(null)
+  const [cacheTimestamp, setCacheTimestamp] = useState<number | null>(null)
   const [cacheChecked, setCacheChecked] = useState(false)
 
   // Check IndexedDB cache on mount
@@ -100,7 +103,11 @@ export function HomeCacheFallback({ householdId }: HomeCacheFallbackProps) {
           isCacheFresh(cached, CACHE_MAX_AGE) &&
           cached.data.version === CACHE_VERSION
         ) {
-          if (mounted) setCachedData(cached.data)
+          if (mounted) {
+            setCachedData(cached.data)
+            // Store actual cache timestamp for accurate "last updated" display
+            setCacheTimestamp(cached.timestamp)
+          }
         }
       } catch (error) {
         console.warn('[HomeCache] Failed to read cache:', error)
@@ -118,7 +125,7 @@ export function HomeCacheFallback({ householdId }: HomeCacheFallbackProps) {
 
   // Compute props for cached data rendering
   const cachedProps = useMemo(() => {
-    if (!cachedData) return null
+    if (!cachedData || !cacheTimestamp) return null
 
     const todayStr = formatDateISO(new Date())
     const weekStart = cachedData.weekStart
@@ -167,9 +174,10 @@ export function HomeCacheFallback({ householdId }: HomeCacheFallbackProps) {
       noMeal,
       isAllReady,
       isDemo: false,
-      dataTimestamp: Date.now(),
+      // Use actual cache timestamp for accurate "last updated" display
+      dataTimestamp: cacheTimestamp,
     } as HomePageContentProps
-  }, [cachedData, householdId])
+  }, [cachedData, cacheTimestamp, householdId])
 
   // If cache not checked yet, show skeleton (brief flash while checking IndexedDB)
   if (!cacheChecked) {
