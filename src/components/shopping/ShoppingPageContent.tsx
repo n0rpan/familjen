@@ -27,30 +27,39 @@ import {
 } from '@/lib/prefetch/fetchers'
 import { setCache } from '@/lib/cache'
 import type { ShoppingCacheData } from '@/lib/types'
+import type { ShoppingPageData } from '@/lib/data/server'
 
 interface ListWithItems extends ShoppingList {
   items: ShoppingListItem[]
 }
 
-export function ShoppingPageContent() {
+interface ShoppingPageContentProps {
+  initialData?: ShoppingPageData
+  isDemo?: boolean
+}
+
+export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: ShoppingPageContentProps) {
   const { t } = useLanguage()
   const searchParams = useSearchParams()
-  const isDemo = searchParams.get('demo') === 'true'
+  const isDemo = propIsDemo ?? searchParams.get('demo') === 'true'
 
-  // Demo mode: use hooks for data
+  // Track if we have initial data from server (PPR)
+  const hasInitialData = !!initialData
+
+  // Demo mode: use hooks for data (only when no initialData)
   const demoHook = useShoppingLists()
   const { household: demoHousehold } = useHousehold()
 
   // Get effective data based on mode
-  const effectiveLists = isDemo ? demoHook.lists : null
-  const effectiveHousehold = isDemo ? demoHousehold : null
-  const effectiveLoading = isDemo ? demoHook.loading : true
-  const effectiveError = isDemo ? demoHook.error : null
+  const effectiveLists = isDemo && !hasInitialData ? demoHook.lists : null
+  const effectiveHousehold = isDemo && !hasInitialData ? demoHousehold : null
+  const effectiveLoading = isDemo && !hasInitialData ? demoHook.loading : !hasInitialData
+  const effectiveError = isDemo && !hasInitialData ? demoHook.error : null
 
-  const [loading, setLoading] = useState(!isDemo)
+  const [loading, setLoading] = useState(!hasInitialData && !isDemo)
   const [error, setError] = useState<string | null>(null)
-  const [household, setHousehold] = useState<Household | null>(null)
-  const [lists, setLists] = useState<ListWithItems[]>([])
+  const [household, setHousehold] = useState<Household | null>(initialData?.household || null)
+  const [lists, setLists] = useState<ListWithItems[]>(initialData?.lists || [])
   const [newItemText, setNewItemText] = useState<Record<string, string>>({})
   const [newItemQuantity, setNewItemQuantity] = useState<Record<string, string>>({})
   const [viewMode, setViewMode] = useState<ShoppingViewMode>('newest')
@@ -85,15 +94,29 @@ export function ShoppingPageContent() {
   const supabase = useMemo(() => createClient(), [])
   const realtime = useRealtimeOptional()
 
-  // Get final values early (demo mode uses hook data, production uses local state)
-  // Wrapped in useMemo to ensure stable references for downstream useMemos
+  // Get final values early
+  // - PPR (with initialData): use lists/household state (initialized from server data)
+  // - Client-only demo (no initialData): use demo hook data
+  // - Production: use lists/household state
   const finalLists = useMemo(
-    () => isDemo ? (effectiveLists || []) : lists,
-    [isDemo, effectiveLists, lists]
+    () => {
+      if (isDemo && !hasInitialData) {
+        // Client-only demo mode - use demo hooks
+        return effectiveLists || []
+      }
+      // PPR (demo or production) - use state initialized from server
+      return lists
+    },
+    [isDemo, hasInitialData, effectiveLists, lists]
   )
   const finalHousehold = useMemo(
-    () => isDemo ? effectiveHousehold : household,
-    [isDemo, effectiveHousehold, household]
+    () => {
+      if (isDemo && !hasInitialData) {
+        return effectiveHousehold
+      }
+      return household
+    },
+    [isDemo, hasInitialData, effectiveHousehold, household]
   )
 
   // Track items we're currently modifying to prevent double-updates
@@ -317,6 +340,10 @@ export function ShoppingPageContent() {
   }, [supabase])
 
   useEffect(() => {
+    // Skip loading if we have initialData (PPR) or in demo mode
+    // In these cases, data comes from server or demo hooks
+    if (hasInitialData || isDemo) return
+
     if (hasInitialized.current) return
     hasInitialized.current = true
 
@@ -324,7 +351,7 @@ export function ShoppingPageContent() {
     loadData(cancelled, (cb) => { if (!cancelled) cb() })
 
     return () => { cancelled = true }
-  }, [loadData])
+  }, [loadData, hasInitialData, isDemo])
 
   const handleRetry = useCallback(() => {
     loadData(false, (cb) => cb())
@@ -764,8 +791,9 @@ export function ShoppingPageContent() {
   }, [lists, supabase])
 
   // Get final loading/error values for conditional rendering
-  const finalLoading = isDemo ? effectiveLoading : loading
-  const finalError = isDemo ? effectiveError : error
+  // Same logic as finalLists: PPR uses local state, client-only demo uses hooks
+  const finalLoading = (isDemo && !hasInitialData) ? effectiveLoading : loading
+  const finalError = (isDemo && !hasInitialData) ? effectiveError : error
 
   if (finalLoading && !finalHousehold) {
     return <ShoppingPagePartialSkeleton t={t} />

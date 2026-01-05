@@ -78,7 +78,16 @@ export async function POST(request: Request) {
         weekContext: 'Enkel hverdagsmat som barna liker. Oliver liker ikke sterkt.',
       }
 
-      return handleDemoAIRequest('google/gemini-2.5-flash-lite', weekStart, existingMeals, demoContext)
+      // Fetch model from app_settings (same as production)
+      const supabaseForSettings = await createClient()
+      const { data: modelSetting } = await supabaseForSettings
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'openrouter_model')
+        .single()
+
+      const model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
+      return handleDemoAIRequest(model, weekStart, existingMeals, demoContext)
     }
 
     // Production mode: create Supabase client and authenticate

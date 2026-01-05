@@ -170,6 +170,70 @@ export function getWeekNumber(date: Date): number {
 }
 
 /**
+ * Get the Monday of a given ISO week number
+ * @param week - ISO week number (1-53)
+ * @param year - Year (defaults to current year, or infers from week proximity)
+ * @returns Date object for Monday of that week
+ */
+export function getWeekStartFromWeekNumber(week: number, year?: number): Date {
+  const now = new Date()
+  const currentYear = now.getFullYear()
+  const currentWeek = getWeekNumber(now)
+
+  // If no year provided, infer based on proximity
+  // If requesting week 52/53 and we're in week 1-3, likely means last year
+  // If requesting week 1-3 and we're in week 50+, likely means next year
+  if (!year) {
+    if (week >= 50 && currentWeek <= 3) {
+      year = currentYear - 1
+    } else if (week <= 3 && currentWeek >= 50) {
+      year = currentYear + 1
+    } else {
+      year = currentYear
+    }
+  }
+
+  // Find January 4th of the year (always in week 1 per ISO)
+  const jan4 = new Date(year, 0, 4)
+  const jan4DayOfWeek = jan4.getDay() || 7  // Convert Sunday=0 to 7
+
+  // Find the Monday of week 1
+  const week1Monday = new Date(jan4)
+  week1Monday.setDate(jan4.getDate() - jan4DayOfWeek + 1)
+
+  // Add (week - 1) * 7 days to get to the target week
+  const targetMonday = new Date(week1Monday)
+  targetMonday.setDate(week1Monday.getDate() + (week - 1) * 7)
+  targetMonday.setHours(0, 0, 0, 0)
+
+  return targetMonday
+}
+
+/**
+ * Parse week parameter from URL
+ * Supports formats: "2" (week number), "2025-02" (year-week)
+ * @returns { weekStart: Date, year: number, week: number } or null if invalid
+ */
+export function parseWeekParam(param: string): { weekStart: Date; year: number; week: number } | null {
+  if (!param) return null
+
+  // Format: "2025-02" (year-week)
+  if (param.includes('-')) {
+    const [yearStr, weekStr] = param.split('-')
+    const year = parseInt(yearStr, 10)
+    const week = parseInt(weekStr, 10)
+    if (isNaN(year) || isNaN(week) || week < 1 || week > 53) return null
+    return { weekStart: getWeekStartFromWeekNumber(week, year), year, week }
+  }
+
+  // Format: "2" (just week number)
+  const week = parseInt(param, 10)
+  if (isNaN(week) || week < 1 || week > 53) return null
+  const weekStart = getWeekStartFromWeekNumber(week)
+  return { weekStart, year: weekStart.getFullYear(), week }
+}
+
+/**
  * Format week header in localized style: "Uke 51, 2024" (nb), "Week 51, 2024" (en)
  */
 export function formatWeekHeaderLocalized(date: Date, lang: Language): string {

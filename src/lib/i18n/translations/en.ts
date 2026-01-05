@@ -626,6 +626,18 @@ export const en: TranslationStrings = {
     ciModelUsage: 'Model Usage',
     ciRecentActivity: 'Recent CI Activity',
     ciNoEvents: 'No CI events yet. Events will appear here when PRs are reviewed.',
+    // Integration debug
+    noIntegrations: 'No integrations',
+    triggerSync: 'Trigger Sync',
+    integrationsEnabled: 'Integrations enabled',
+    integrationsDisabledMsg: 'Integrations disabled',
+    deleteUser: 'Delete user',
+    externalIntegrations: 'External integrations',
+    externalIntegrationsDesc: 'Allow connection to Spond, Kidplan, iSkole',
+    enabledIntegrationsHint: 'Enabled - household can connect to Spond in settings',
+    debugIntegrations: 'Debug integrations',
+    lastSyncAt: 'Last sync',
+    never: 'Never',
   },
 
   // New household wizard

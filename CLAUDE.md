@@ -258,6 +258,32 @@ export function useWeekData({ weekOffset }: Options) {
 }
 ```
 
+### Current PPR Status
+
+All main pages have been converted to the PPR pattern for instant navigation:
+
+| Page | Route | Pattern | DataLoader | Notes |
+|------|-------|---------|------------|-------|
+| Home | `/` | PPR | `HomeDataLoader` | Full SSR with realtime subscriptions |
+| Week | `/uke` | PPR | `WeekDataLoader` | Complex week grid with pickups, meals, events |
+| Feed | `/feed` | PPR | `FeedDataLoader` | Messages, photos from integrations |
+| Settings | `/innstillinger` | PPR | `SettingsDataLoader` | User profile and household settings |
+| Recipes | `/oppskrifter` | PPR | `RecipesDataLoader` | Recipe list with search |
+| Shopping | `/handleliste` | PPR | `ShoppingDataLoader` | Shopping lists with categories |
+| Styring | `/styring` | PPR | `StyringDataLoader` | Home control (Somfy, Toshiba, MelCloud) |
+| Admin | `/admin` | PPR | `AdminDataLoader` | No demo mode, requires admin auth |
+
+**Server-side data fetching** is centralized in `src/lib/data/server.ts`:
+- Each page has `fetch[Page]PageData()` - cached server function
+- Each page has `getDemo[Page]PageData()` - demo data generator
+- Each page has `revalidate[Page]Cache()` - cache invalidation helper
+
+**Cache revalidation** is handled via `src/lib/revalidate.ts`:
+- `revalidateRecipes(householdId)` - Revalidate recipes cache
+- `revalidateShopping(householdId)` - Revalidate shopping lists cache
+- `revalidateStyring(householdId)` - Revalidate home control cache
+- `revalidateAdmin()` - Revalidate admin data cache
+
 ### Adding a New Page (Checklist)
 
 1. **Create `loading.tsx`** - Shows skeleton immediately on navigation
@@ -2248,6 +2274,35 @@ export function useHouseholdId(): string | null {
   return householdId
 }
 ```
+
+**Server-side with DB fallback** (for PPR pages):
+```typescript
+// src/lib/data/server.ts - used by all PPR pages
+export async function getHouseholdIdFromSession(): Promise<string | null> {
+  const user = await getUser()
+
+  // Try JWT first (fast path)
+  const jwtHouseholdId = user?.app_metadata?.household_id
+  if (jwtHouseholdId) return jwtHouseholdId
+
+  // Fallback: Check database if JWT is stale (user just created/joined household)
+  const membership = await queryMembership(user.id)
+  if (membership?.household_id) {
+    // Sync JWT so next request is fast (fire-and-forget)
+    syncUserMetadata(user.id, user.email, membership.household_id).catch(console.error)
+    return membership.household_id
+  }
+  return null
+}
+```
+
+**When JWT gets synced:**
+1. On login (`src/app/auth/callback/route.ts`)
+2. On home page load if JWT is stale (`src/app/page.tsx`)
+3. On any PPR page load if JWT is stale (`getHouseholdIdFromSession`)
+4. On invite claim (`src/components/settings/SettingsPageContent.tsx`)
+
+**Note:** Sync only happens when DB fallback is used (JWT is stale). Once synced, future requests use JWT directly. Sync is fire-and-forget to avoid blocking page render.
 
 **Security:** RLS policies on Supabase validate household_id server-side. The JWT value is for client-side optimization only - all data access goes through Supabase which enforces proper authorization.
 

@@ -32,6 +32,9 @@ export type {
 
 import type { Holiday } from './utils'
 
+// Re-export Holiday for convenience
+export type { Holiday }
+
 // Forward declaration for types defined below (avoid circular reference)
 export interface WeekCacheData {
   household: Household | null

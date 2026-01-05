@@ -56,6 +56,8 @@ export const RATE_LIMITS = {
 export const DEMO_RATE_LIMITS = {
   // AI suggestions in demo - 50/hour globally (cheap model, ~$0.01/hour)
   aiSuggest: { limit: 50, windowMs: 60 * 60 * 1000 },
+  // AI action parsing in demo - 100/hour globally (same cheap model)
+  aiParseReminders: { limit: 100, windowMs: 60 * 60 * 1000 },
 } as const
 
 // Cooldown after hitting demo limit (5 minutes)

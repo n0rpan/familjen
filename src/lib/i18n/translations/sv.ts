@@ -626,6 +626,18 @@ export const sv: TranslationStrings = {
     ciModelUsage: 'Modellanvändning',
     ciRecentActivity: 'Senaste CI-aktivitet',
     ciNoEvents: 'Inga CI-händelser ännu. Händelser visas här när PRer granskas.',
+    // Integration debug
+    noIntegrations: 'Inga integrationer',
+    triggerSync: 'Utlös synk',
+    integrationsEnabled: 'Integrationer aktiverade',
+    integrationsDisabledMsg: 'Integrationer inaktiverade',
+    deleteUser: 'Ta bort användare',
+    externalIntegrations: 'Externa integrationer',
+    externalIntegrationsDesc: 'Tillåt koppling till Spond, Kidplan, iSkole',
+    enabledIntegrationsHint: 'Aktiverad - hushållet kan koppla till Spond i inställningar',
+    debugIntegrations: 'Debug integrationer',
+    lastSyncAt: 'Senaste synk',
+    never: 'Aldrig',
   },
 
   // New household wizard

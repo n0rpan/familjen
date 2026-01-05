@@ -3,11 +3,11 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { isUserAdmin } from '@/lib/config'
 
 // Protected routes that require authentication
-const PROTECTED_PATHS = ['/uke', '/oppskrifter', '/innstillinger', '/handleliste', '/ny-husstand', '/admin', '/feed']
+const PROTECTED_PATHS = ['/uke', '/oppskrifter', '/innstillinger', '/handleliste', '/ny-husstand', '/admin', '/feed', '/styring']
 const ADMIN_PATHS = ['/admin']
 
 // Paths that allow demo mode bypass (all protected paths except admin-only)
-const DEMO_ALLOWED_PATHS = ['/uke', '/oppskrifter', '/innstillinger', '/handleliste', '/feed', '/']
+const DEMO_ALLOWED_PATHS = ['/uke', '/oppskrifter', '/innstillinger', '/handleliste', '/feed', '/styring', '/']
 
 // Check if request has a Supabase auth cookie (quick check without calling auth API)
 function hasAuthCookie(request: NextRequest): boolean {

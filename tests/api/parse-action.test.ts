@@ -131,7 +131,9 @@ vi.mock('@/lib/supabase/household', () => ({
 // Mock rate limiting
 vi.mock('@/lib/rate-limit', () => ({
   checkRateLimit: vi.fn().mockResolvedValue({ limited: false }),
+  checkDemoRateLimit: vi.fn().mockResolvedValue({ limited: false }),
   createRateLimitKey: vi.fn().mockReturnValue('test-key'),
+  isDemoRequest: vi.fn().mockReturnValue(false), // Tests run as production mode
   RATE_LIMITS: { aiParseReminders: { requests: 20, window: 60 } },
 }))
 
