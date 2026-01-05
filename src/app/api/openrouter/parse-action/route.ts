@@ -774,53 +774,28 @@ ${safeInput}
 Brukeren har gitt denne instruksjonen for hvordan bildet skal tolkes.`
     : ''
 
-  return `Analyser dette bildet og bestem hva det viser.
+  return `Analyser dette bildet og tolk innholdet til en familieplanleggingshandling.
 ${userNote}
 
 ${baseContext}
 
-MULIGE BILDETYPER (analyser og bestem automatisk):
+Bruk din intelligens til å forstå hva bildet viser og returner passende handling(er).
 
-1. INVITASJON / HENDELSE
-   - Finn: Dato, klokkeslett, sted, hva slags hendelse
-   - Barn-hendelser: child_task med task_type="appointment"
-   - Voksen-hendelser: member_event
-   - VIKTIG: Sett needs_clarification for child_id/member_id
-
-2. OPPGAVE / PÅMINNELSE
-   - Finn: Oppgave, dato, hvem det gjelder
-   - Returner: child_task med passende task_type (bring, reminder, closure, etc.)
-
-3. PRODUKT / GAVE (for ønskeliste)
-   - Finn: Produktnavn, beskrivelse, ca. pris
-   - Returner: wishlist_item med operation="add"
-   - VIKTIG: wishlist_item MÅ ALLTID ha needs_clarification for person_id
-   - Hvis flere produkter er synlige (f.eks. en butikkhylle eller utstilling):
-     * Velg det mest fremtredende/sentrale produktet
-     * ELLER returner det med tydeligst synlig pris
-     * Bruk generell beskrivelse hvis spesifikt produkt er uklart (f.eks. "Smykke/øredobber" i stedet for spesifikk modell)
-
-4. HANDLELISTE / KVITTERING / MENY
-   - Finn: Varer/produkter
-   - Handleliste/meny: shopping_item med operation="add" (flere varer OK)
-   - Kvittering: shopping_item med operation="complete"
-   - For menyer (restaurant/kafé): Returner rettene som shopping_items ELLER meals avhengig av kontekst
-
-5. MIDDAGSPLAN / MAT
-   - Finn: Rett, dato
-   - Returner: meal
-
-6. ANNET
-   - Prøv å tolk innholdet og returner passende handling
-   - Hvis bildet er uklart eller ikke relaterer til familieplanlegging, returner tom actions-array
+Eksempler på hva bilder kan inneholde:
+- Bursdagsinvitasjon → child_task (appointment) med dato, tid, sted
+- Produkt/leke/gave → wishlist_item (MÅ ha needs_clarification for person_id)
+- Meny/handleliste → shopping_item(s)
+- Mat/oppskrift → meal
+- Kalender/påminnelse → child_task eller member_event
 
 VIKTIG:
-- Barn til valg (for needs_clarification): [${childrenOptions}]
+- Barn: [${childrenOptions}]
 - Alle personer (for wishlist): [${allPersonOptions}]
-- Returner BARE gyldig JSON med actions-array
-- Sett høy confidence (0.8+) kun hvis du er sikker på tolkningen
-- Hvis usikker på tolkningen, returner lav confidence (< 0.5)
-- Hvis bildet er helt uforståelig eller irrelevant, returner { "actions": [] }`
+- For wishlist_item: ALLTID sett needs_clarification med person_id
+- For child_task uten spesifisert barn: sett needs_clarification med child_id
+- Returner BARE gyldig JSON: { "actions": [...] }
+- confidence 0.8+ kun hvis sikker, ellers lavere
+- Hvis bildet er uklart/irrelevant: { "actions": [] }`
 }
 
 // ============================================================================
