@@ -7,6 +7,9 @@
  * - Server-side caching with unstable_cache (1 year TTL)
  * - Realtime subscriptions handle live updates
  *
+ * Cache fallback (WeekCacheFallback) shows IndexedDB cached data while
+ * Suspense waits for server data, eliminating skeleton flash.
+ *
  * URL format:
  * - /uke - Current week
  * - /uke?uke=2 - Week 2 of current/inferred year
@@ -17,7 +20,9 @@
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { getSessionLocal } from '@/lib/supabase/server'
+import { getWeekStart, getWeekStartFromWeekNumber } from '@/lib/utils'
 import { WeekDataLoader } from './components/WeekDataLoader'
+import { WeekCacheFallback } from './components/WeekDataCache'
 import { WeekPageSkeleton } from '@/components/Skeleton'
 
 interface PageProps {
@@ -84,8 +89,13 @@ export default async function WeekPage({ searchParams }: PageProps) {
 
   const { week, year } = parseWeekParam(params.uke)
 
+  // Calculate week start for cache key
+  const weekStart = week
+    ? getWeekStartFromWeekNumber(week, year || new Date().getFullYear())
+    : getWeekStart(new Date())
+
   return (
-    <Suspense fallback={<WeekPageSkeleton />}>
+    <Suspense fallback={<WeekCacheFallback householdId={householdId} weekStart={weekStart} />}>
       <WeekDataLoader
         householdId={householdId}
         userId={user.id}
