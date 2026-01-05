@@ -334,7 +334,8 @@ export async function POST(request: Request) {
           messages,
           temperature: 0.2,
           max_tokens: 2000,
-          response_format: ACTION_PARSE_SCHEMA,
+          // Only use structured output for text requests - vision models may not support it
+          ...(hasImage ? {} : { response_format: ACTION_PARSE_SCHEMA }),
         }),
         signal: controller.signal,
       })
@@ -349,7 +350,8 @@ export async function POST(request: Request) {
     }
 
     if (!response.ok) {
-      console.error('OpenRouter error:', { status: response.status })
+      const errorText = await response.text().catch(() => 'Unknown error')
+      console.error('OpenRouter error:', { status: response.status, error: errorText, hasImage })
       return NextResponse.json({ error: 'Kunne ikke tolke tekst' }, { status: 500 })
     }
 
@@ -930,7 +932,8 @@ Returner JSON: { "suggestions": [{ "day": "YYYY-MM-DD", "name": "Rett", "descrip
         ],
         temperature: 0.3,
         max_tokens: 2000,
-        response_format: { type: 'json_schema', json_schema: ACTION_PARSE_SCHEMA },
+        // Only use structured output for text requests - vision models may not support it
+        ...(hasImage ? {} : { response_format: ACTION_PARSE_SCHEMA }),
       }),
     })
 
