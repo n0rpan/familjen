@@ -870,7 +870,7 @@ Returner JSON: { "suggestions": [{ "day": "YYYY-MM-DD", "name": "Rett", "descrip
 
       const data = await response.json()
       const content = data.choices?.[0]?.message?.content || ''
-      const parsed = extractJSON(content)
+      const parsed = extractJSON<{ suggestions?: MealSuggestion[] }>(content)
 
       if (!parsed?.suggestions) {
         return NextResponse.json({
@@ -940,7 +940,7 @@ Returner JSON: { "suggestions": [{ "day": "YYYY-MM-DD", "name": "Rett", "descrip
       } as ActionResponse)
     }
 
-    const parsed = extractJSON(content)
+    const parsed = extractJSON<{ actions?: ParsedAction[] }>(content)
     if (!parsed?.actions || !Array.isArray(parsed.actions)) {
       return NextResponse.json({
         mode: 'action',
