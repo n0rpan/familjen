@@ -102,6 +102,16 @@ describe('ai-action-routing', () => {
           { item: 'cucumber', amount: '' },
         ])
       })
+
+      it('uses link field as fallback for external_link', () => {
+        const result = determineActionRouting('recipe', 'add', {
+          name: 'Online Recipe',
+          link: 'https://example.com/recipe',
+        })
+
+        const prefill = result.prefillData?.data as { external_link?: string }
+        expect(prefill.external_link).toBe('https://example.com/recipe')
+      })
     })
 
     describe('wishlist_item routing', () => {
@@ -181,6 +191,29 @@ describe('ai-action-routing', () => {
         })
         expect(result.shouldNavigate).toBe(true)
       })
+
+      it('navigates when end_date equals date due to field count (3 fields)', () => {
+        // When end_date equals date, hasDateRange is false
+        // But title + date + end_date = 3 meaningful fields, which triggers navigation
+        const result = determineActionRouting('member_event', 'add', {
+          title: 'Same Day Event',
+          date: '2025-01-15',
+          end_date: '2025-01-15', // Same as start date - not a date range, but still counts as field
+          confidence: 0.9,
+        })
+        expect(result.shouldNavigate).toBe(true)
+        // Should NOT mention multi-day since hasDateRange is false
+        expect(result.reason).not.toContain('Multi-day')
+      })
+
+      it('navigates when field count reaches exactly 3', () => {
+        const result = determineActionRouting('member_event', 'add', {
+          title: 'Work Meeting',
+          date: '2025-01-15',
+          event_type: 'work', // 3rd meaningful field triggers navigation
+        })
+        expect(result.shouldNavigate).toBe(true)
+      })
     })
 
     describe('child_task routing', () => {
@@ -220,6 +253,18 @@ describe('ai-action-routing', () => {
           notes: 'Remember water bottle too',
         })
         expect(result.shouldNavigate).toBe(true)
+      })
+
+      it('uses name field as fallback for title', () => {
+        const result = determineActionRouting('child_task', 'add', {
+          name: 'Task from name field',
+          task_type: 'appointment',
+          date: '2025-02-10',
+        })
+
+        expect(result.shouldNavigate).toBe(true)
+        const prefill = result.prefillData?.data as { title?: string }
+        expect(prefill.title).toBe('Task from name field')
       })
     })
 
