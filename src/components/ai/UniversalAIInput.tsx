@@ -19,6 +19,7 @@ import { formatDateISO, getWeekdayNameShort } from '@/lib/utils'
 import { compressImageToBase64 } from '@/lib/image-compression'
 import { getCachedCategory, setCachedCategory } from '@/lib/shopping-category-cache'
 import type { ShoppingCategory } from '@/lib/constants'
+import { determineActionRouting, prepareNavigation } from '@/lib/ai-action-routing'
 
 interface Child {
   id: string
@@ -331,30 +332,41 @@ export function UniversalAIInput({
     setMealSuggestions(prev => prev.filter(s => s.day !== suggestion.day))
   }, [])
 
-  // Navigate to wishlist modal with pre-filled data from AI
-  const navigateToWishlistWithData = useCallback((action: ParsedAction) => {
-    // Store pre-filled data in localStorage for the wishlist modal to pick up
-    const prefillData = {
-      name: action.data.item_name || action.data.name || action.data.product_name || '',
-      description: action.data.description || '',
-      price: action.data.price || null,
-      link: action.data.link || '',
-      occasion: action.data.occasion || 'general',
-      childId: action.data.child_id || null,
-      memberId: action.data.member_id || null,
-      // Include the image from state (used for vision analysis) or from action data
+  /**
+   * Smart navigation for complex actions
+   *
+   * Uses the action routing system to determine if an action should navigate
+   * to a full UI form instead of using quick action cards. This provides
+   * better UX for actions with many fields to edit.
+   */
+  const navigateWithPrefill = useCallback((action: ParsedAction): boolean => {
+    // Get routing decision
+    const decision = determineActionRouting(action.type, action.operation, {
+      ...action.data,
+      confidence: action.confidence,
+      // Include image from state for vision analysis
       image: selectedImage || action.data.image || null,
-    }
-    localStorage.setItem('wishlist-prefill', JSON.stringify(prefillData))
+    })
 
-    // Navigate to handleliste with query param to trigger modal open
-    const url = isDemo ? '/handleliste?demo=true&addWishlist=true' : '/handleliste?addWishlist=true'
+    if (!decision.shouldNavigate) {
+      return false // Caller should handle with quick card
+    }
+
+    // Prepare navigation URL (stores prefill data in localStorage)
+    const url = prepareNavigation(decision, isDemo)
+    if (!url) {
+      return false
+    }
+
+    // Navigate
     router.push(url)
 
-    // Clear the action from the list and the image
+    // Clear state
     setParsedActions([])
     setSelectedImage(null)
     setImagePreview(null)
+
+    return true // Navigation handled
   }, [isDemo, router, selectedImage])
 
   const handleClarification = useCallback((action: ParsedAction, field: string, value: string | null, resultType?: ActionType) => {
@@ -384,11 +396,15 @@ export function UniversalAIInput({
     // If it's a modification or delete, ask for confirmation
     if (updatedAction.operation === 'modify' || updatedAction.operation === 'delete') {
       setPendingConfirmation(updatedAction)
-    } else if (updatedAction.type === 'wishlist_item' && updatedAction.operation === 'add') {
-      // Navigate to wishlist modal with pre-filled data instead of executing directly
-      navigateToWishlistWithData(updatedAction)
+    } else if (updatedAction.operation === 'add') {
+      // For add operations, check if we should navigate to full UI
+      const navigated = navigateWithPrefill(updatedAction)
+      if (!navigated) {
+        // If navigation not needed, execute with quick card flow
+        executeAction(updatedAction)
+      }
     } else {
-      // Execute immediately for other additions and completions
+      // Execute immediately for completions and other operations
       executeAction(updatedAction)
     }
 
@@ -1792,11 +1808,17 @@ export function UniversalAIInput({
     // Require confirmation for modify, edit, and delete operations
     if (action.operation === 'modify' || action.operation === 'delete' || action.operation === 'edit') {
       setPendingConfirmation(action)
+    } else if (action.operation === 'add') {
+      // For add operations, check if we should navigate to full UI
+      const navigated = navigateWithPrefill(action)
+      if (!navigated) {
+        executeAction(action)
+      }
     } else {
-      // Execute immediately for add and complete
+      // Execute immediately for complete and other operations
       executeAction(action)
     }
-  }, [executeAction])
+  }, [executeAction, navigateWithPrefill])
 
   return (
     <div className="space-y-3">

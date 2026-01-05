@@ -15,7 +15,7 @@
  */
 
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { WeekGrid } from '@/components/WeekGrid'
 import { formatDateISO, addDays, getWeekNumber, formatWeekHeaderLocalized } from '@/lib/utils'
@@ -49,6 +49,11 @@ import { useRealtimeOptional } from '@/lib/realtime/context'
 import { MemberEventModal, HouseholdEventModal, ChildTaskModal, ExternalEventModal } from './index'
 import type { ExternalEventLocalOverrides, Holiday } from '@/lib/types'
 import { revalidateWeek } from '@/lib/revalidate'
+import {
+  PREFILL_STORAGE_KEYS,
+  type MemberEventPrefillData,
+  type ChildTaskPrefillData,
+} from '@/lib/ai-action-routing'
 
 // Dynamic imports for code splitting
 const DayPicker = dynamic(
@@ -105,6 +110,7 @@ export function WeekPageContent({
   isDemo,
 }: WeekPageContentProps) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { language, t } = useLanguage()
 
   // Local state - initialized from props, updated by mutations and realtime
@@ -185,6 +191,83 @@ export function WeekPageContent({
 
   const supabase = useMemo(() => createClient(), [])
   const realtime = useRealtimeOptional()
+
+  // Check for AI prefill navigation (addEvent or addTask query params)
+  useEffect(() => {
+    const addEvent = searchParams.get('addEvent') === 'true'
+    const addTask = searchParams.get('addTask') === 'true'
+
+    if (!addEvent && !addTask) return
+
+    // Handle event prefill
+    if (addEvent) {
+      try {
+        const stored = localStorage.getItem(PREFILL_STORAGE_KEYS.memberEvent)
+        if (stored) {
+          const data = JSON.parse(stored) as MemberEventPrefillData
+
+          // Prefill form
+          setEventForm({
+            member_id: data.member_id || (members[0]?.id || ''),
+            title: data.title || '',
+            event_type: data.event_type || 'other',
+            date: data.date || formatDateISO(weekStart),
+            end_date: data.end_date || '',
+          })
+
+          localStorage.removeItem(PREFILL_STORAGE_KEYS.memberEvent)
+        } else {
+          // No prefill data - just set default date
+          setEventForm(prev => ({
+            ...prev,
+            date: formatDateISO(weekStart),
+          }))
+        }
+        setShowEventModal(true)
+      } catch (err) {
+        console.error('Failed to read event prefill data:', err)
+        setShowEventModal(true)
+      }
+    }
+
+    // Handle task prefill
+    if (addTask) {
+      try {
+        const stored = localStorage.getItem(PREFILL_STORAGE_KEYS.childTask)
+        if (stored) {
+          const data = JSON.parse(stored) as ChildTaskPrefillData
+
+          // Prefill form
+          setTaskForm({
+            child_id: data.child_id || (children[0]?.id || ''),
+            title: data.title || '',
+            task_type: data.task_type || 'reminder',
+            date: data.date || formatDateISO(weekStart),
+            time: data.time || '',
+            notes: data.notes || '',
+          })
+
+          localStorage.removeItem(PREFILL_STORAGE_KEYS.childTask)
+        } else {
+          // No prefill data - just set default date
+          setTaskForm(prev => ({
+            ...prev,
+            date: formatDateISO(weekStart),
+          }))
+        }
+        setShowTaskModal(true)
+      } catch (err) {
+        console.error('Failed to read task prefill data:', err)
+        setShowTaskModal(true)
+      }
+    }
+
+    // Clear the query params without causing a navigation
+    const url = new URL(window.location.href)
+    url.searchParams.delete('addEvent')
+    url.searchParams.delete('addTask')
+    window.history.replaceState({}, '', url.toString())
+  }, [searchParams, members, children, weekStart])
 
   // Demo mode helper
   const showDemoMessage = useCallback((): void => {
