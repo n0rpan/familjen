@@ -146,6 +146,56 @@ describe('TransitionLink', () => {
       expect(handleClick).toHaveBeenCalled()
       expect(mockPush).not.toHaveBeenCalled()
     })
+
+    it('does not navigate when clicking link to current page (same-page guard)', () => {
+      // Mock window.location.pathname to be the same as href
+      const originalLocation = window.location
+      Object.defineProperty(window, 'location', {
+        value: { ...originalLocation, pathname: '/uke' },
+        writable: true,
+      })
+
+      render(
+        <TransitionLink href="/uke">Week</TransitionLink>
+      )
+
+      const link = screen.getByRole('link')
+      fireEvent.click(link)
+
+      // Should not navigate - same page
+      expect(mockPush).not.toHaveBeenCalled()
+
+      // Restore
+      Object.defineProperty(window, 'location', {
+        value: originalLocation,
+        writable: true,
+      })
+    })
+
+    it('navigates when clicking link to different page', () => {
+      // Mock window.location.pathname to be different from href
+      const originalLocation = window.location
+      Object.defineProperty(window, 'location', {
+        value: { ...originalLocation, pathname: '/' },
+        writable: true,
+      })
+
+      render(
+        <TransitionLink href="/uke">Week</TransitionLink>
+      )
+
+      const link = screen.getByRole('link')
+      fireEvent.click(link)
+
+      // Should navigate - different page
+      expect(mockPush).toHaveBeenCalledWith('/uke')
+
+      // Restore
+      Object.defineProperty(window, 'location', {
+        value: originalLocation,
+        writable: true,
+      })
+    })
   })
 
   describe('Prefetching', () => {

@@ -24,7 +24,7 @@ import React, { useEffect, useState, useMemo, type ReactNode } from 'react'
 import { getCached, setCache, isCacheFresh } from '@/lib/cache'
 import { CACHE_KEYS, CACHE_VERSION } from '@/lib/cache-constants'
 import { HomePageContent, type HomePageContentProps } from './HomePageContent'
-import { HomePageSkeleton, RefreshingSkeleton } from '@/components/Skeleton'
+import { HomePageSkeleton } from '@/components/Skeleton'
 import { formatDateISO, getWeekStart } from '@/lib/utils'
 import type {
   Child,
@@ -222,17 +222,13 @@ export function HomeCacheFallback({ householdId }: HomeCacheFallbackProps) {
     return <HomePageSkeleton />
   }
 
-  // If we have valid cached data, show it with refresh indicator
-  // Wrapped in error boundary to gracefully handle schema mismatches
+  // If we have valid cached data, show it immediately without any loading indicator
+  // The server content will seamlessly replace this when ready via Suspense
+  // No "Oppdaterer..." indicator - cached data is trusted, realtime keeps it fresh
   if (cachedData && cachedProps) {
     return (
       <CacheErrorBoundary fallback={<HomePageSkeleton />}>
-        <div className="relative">
-          {/* Refreshing indicator at top */}
-          <RefreshingSkeleton />
-          {/* Cached content - user sees real data instantly */}
-          <HomePageContent {...cachedProps} />
-        </div>
+        <HomePageContent {...cachedProps} />
       </CacheErrorBoundary>
     )
   }

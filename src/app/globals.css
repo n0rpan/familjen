@@ -371,14 +371,17 @@ input:focus, select:focus, textarea:focus {
   to { transform: rotate(360deg); }
 }
 
-/* Instant navigation feedback - applied via DOM before any async work */
+/* Navigation loading state - only applied after 150ms delay */
+/* If navigation completes faster, this never shows (instant navigation!) */
 .page-content-wrapper {
-  transition: opacity 50ms ease-out;
+  /* No transition by default - instant content swaps feel faster */
 }
 
 .page-content-wrapper.navigating {
-  opacity: 0.4;
+  /* Subtle dimout - only shown for slow navigations (>150ms) */
+  opacity: 0.7;
   pointer-events: none;
+  transition: opacity 100ms ease-out;
 }
 
 /* Fast fade-in for page content - speed over smoothness */

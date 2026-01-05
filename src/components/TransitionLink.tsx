@@ -128,20 +128,24 @@ export function TransitionLink({
         return
       }
 
+      // Normalize paths (remove query string for comparison)
+      const targetPath = finalHref.split('?')[0]
+      // Read pathname at click time, not render time, to avoid stale closure issues
+      const currentPath = (typeof window !== 'undefined' ? window.location.pathname : '').split('?')[0]
+
+      // Same page? Do nothing - don't dim, don't navigate
+      if (targetPath === currentPath) {
+        e.preventDefault()
+        return
+      }
+
       e.preventDefault()
 
       // Determine navigation direction
-      const targetPath = finalHref.split('?')[0] // Normalize path without query
       const isBack = isBackNavigation(targetPath)
       setTransitionDirection(isBack ? 'back' : 'forward')
 
-      // INSTANT FEEDBACK: Add class directly to DOM (synchronous, no React delay)
-      const pageContent = document.querySelector('.page-content-wrapper')
-      if (pageContent) {
-        pageContent.classList.add('navigating')
-      }
-
-      // Signal navigation for React-based tracking
+      // Signal navigation for React-based tracking (handles delayed loading state)
       navigation?.startNavigation(targetPath)
 
       // Navigate directly - no view transitions (they cause flash/lag)
