@@ -659,11 +659,16 @@ export function UniversalAIInput({
         }
         case 'wishlist_item': {
           table = 'wishlist_items'
+          // Handle various field names the AI might use for the item name
+          const itemName = preparedAction.data.item_name || preparedAction.data.name || preparedAction.data.product_name
+          if (!itemName) {
+            throw new Error('Mangler produktnavn')
+          }
           record = {
             household_id: householdId,
             child_id: preparedAction.data.child_id || null,
             member_id: preparedAction.data.member_id || null,
-            name: preparedAction.data.item_name,
+            name: itemName,
             description: preparedAction.data.description || null,
             link: preparedAction.data.link || null,
             price: preparedAction.data.price || null,
