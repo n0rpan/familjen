@@ -22,6 +22,7 @@
 
 import React, { useEffect, useState, useMemo, type ReactNode } from 'react'
 import { getCached, setCache, isCacheFresh } from '@/lib/cache'
+import { getCachedSync, setCacheSync, isSyncCacheFresh } from '@/lib/cache-sync'
 import { CACHE_KEYS, CACHE_VERSION } from '@/lib/cache-constants'
 import { HomePageContent, type HomePageContentProps } from './HomePageContent'
 import { HomePageSkeleton } from '@/components/Skeleton'
@@ -118,16 +119,39 @@ class CacheErrorBoundary extends React.Component<
  * - If cached data has schema mismatch despite version check, CacheErrorBoundary catches
  *   the render error and gracefully falls back to HomePageSkeleton
  */
-export function HomeCacheFallback({ householdId }: HomeCacheFallbackProps) {
-  const [cachedData, setCachedData] = useState<CachedHomeData | null>(null)
-  const [cacheTimestamp, setCacheTimestamp] = useState<number | null>(null)
-  const [cacheChecked, setCacheChecked] = useState(false)
+/**
+ * Get initial cache state synchronously from localStorage
+ * This runs during component initialization (before render), enabling instant cache display
+ */
+function getInitialCacheState(householdId: string): {
+  data: CachedHomeData | null
+  timestamp: number | null
+} {
+  const cacheKey = CACHE_KEYS.home(householdId)
+  const syncCached = getCachedSync<CachedHomeData>(cacheKey)
 
-  // Check IndexedDB cache on mount
+  if (syncCached && isSyncCacheFresh(syncCached, CACHE_MAX_AGE)) {
+    return { data: syncCached.data, timestamp: syncCached.timestamp }
+  }
+
+  return { data: null, timestamp: null }
+}
+
+export function HomeCacheFallback({ householdId }: HomeCacheFallbackProps) {
+  // Initialize state synchronously from localStorage (instant, no skeleton flash!)
+  const initialCache = getInitialCacheState(householdId)
+  const [cachedData, setCachedData] = useState<CachedHomeData | null>(initialCache.data)
+  const [cacheTimestamp, setCacheTimestamp] = useState<number | null>(initialCache.timestamp)
+  const [cacheChecked, setCacheChecked] = useState(initialCache.data !== null)
+
+  // If localStorage didn't have data, try IndexedDB as fallback (async)
   useEffect(() => {
+    // Skip if we already have data from localStorage
+    if (cachedData) return
+
     let mounted = true
 
-    async function checkCache() {
+    async function checkIndexedDB() {
       try {
         const cacheKey = CACHE_KEYS.home(householdId)
         const cached = await getCached<CachedHomeData>(cacheKey)
@@ -140,23 +164,24 @@ export function HomeCacheFallback({ householdId }: HomeCacheFallbackProps) {
         ) {
           if (mounted) {
             setCachedData(cached.data)
-            // Store actual cache timestamp for accurate "last updated" display
             setCacheTimestamp(cached.timestamp)
+            // Also populate localStorage for next time
+            setCacheSync(cacheKey, cached.data)
           }
         }
       } catch (error) {
-        console.warn('[HomeCache] Failed to read cache:', error)
+        console.warn('[HomeCache] Failed to read IndexedDB cache:', error)
       } finally {
         if (mounted) setCacheChecked(true)
       }
     }
 
-    checkCache()
+    checkIndexedDB()
 
     return () => {
       mounted = false
     }
-  }, [householdId])
+  }, [householdId, cachedData])
 
   // Compute props for cached data rendering
   const cachedProps = useMemo(() => {
@@ -243,20 +268,29 @@ interface HomeDataCacherProps {
 }
 
 /**
- * HomeDataCacher - Caches server-rendered data to IndexedDB
+ * HomeDataCacher - Caches server-rendered data to localStorage + IndexedDB
  *
  * Include this as a child of HomeDataLoader to cache data after render.
  * This ensures the cache is populated for next PWA restart.
+ *
+ * Dual storage strategy:
+ * - localStorage: Instant synchronous reads on next navigation
+ * - IndexedDB: Durability, larger storage capacity, background sync
  */
 export function HomeDataCacher({ householdId, data }: HomeDataCacherProps) {
   useEffect(() => {
     async function cacheData() {
+      const cacheKey = CACHE_KEYS.home(householdId)
+      const dataWithVersion = { ...data, version: CACHE_VERSION }
+
+      // Write to localStorage first (sync, instant reads next time)
+      setCacheSync(cacheKey, dataWithVersion)
+
+      // Then write to IndexedDB (async, durability + larger capacity)
       try {
-        const cacheKey = CACHE_KEYS.home(householdId)
-        // Add version to cached data for schema compatibility
-        await setCache(cacheKey, { ...data, version: CACHE_VERSION })
+        await setCache(cacheKey, dataWithVersion)
       } catch (error) {
-        console.warn('[HomeCache] Failed to cache data:', error)
+        console.warn('[HomeCache] Failed to cache to IndexedDB:', error)
       }
     }
 

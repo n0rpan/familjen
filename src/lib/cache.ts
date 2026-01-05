@@ -1,7 +1,13 @@
 /**
  * IndexedDB Data Cache
  * Stores page data for instant loading with stale-while-revalidate pattern
+ *
+ * Note: This works alongside cache-sync.ts (localStorage) for dual-layer caching.
+ * - localStorage: Synchronous reads for instant display
+ * - IndexedDB: Async reads, larger capacity, durability
  */
+
+import { clearAllCacheSync, deleteCacheSync } from './cache-sync'
 
 const DB_NAME = 'familjen-cache'
 const DB_VERSION = 1
@@ -177,8 +183,13 @@ export async function setCache<T>(key: string, data: T, retryCount = 0): Promise
 /**
  * Delete a specific cache entry by key
  * Use when cached data is known to be stale (e.g., membership revoked)
+ * Deletes from both localStorage and IndexedDB
  */
 export async function deleteCache(key: string, retryCount = 0): Promise<void> {
+  // Delete from localStorage first (synchronous)
+  deleteCacheSync(key)
+
+  // Then delete from IndexedDB (async)
   try {
     const db = await openDB()
 
@@ -200,15 +211,20 @@ export async function deleteCache(key: string, retryCount = 0): Promise<void> {
       resetConnection()
       return deleteCache(key, retryCount + 1)
     }
-    console.warn('[Cache] Failed to delete cache:', error)
+    console.warn('[Cache] Failed to delete from IndexedDB:', error)
   }
 }
 
 /**
  * Clear all cache entries for a household
  * Use when user logs out or switches household
+ * Clears both localStorage (sync) and IndexedDB (async) caches
  */
 export async function clearAllCache(): Promise<void> {
+  // Clear localStorage cache first (synchronous)
+  clearAllCacheSync()
+
+  // Then clear IndexedDB cache (async)
   try {
     const db = await openDB()
 
@@ -221,7 +237,7 @@ export async function clearAllCache(): Promise<void> {
       request.onsuccess = () => resolve()
     })
   } catch (error) {
-    console.warn('[Cache] Failed to clear all cache:', error)
+    console.warn('[Cache] Failed to clear IndexedDB cache:', error)
   }
 }
 

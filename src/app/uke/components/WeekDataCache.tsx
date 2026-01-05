@@ -13,6 +13,7 @@
 
 import React, { useEffect, useState, useMemo, type ReactNode } from 'react'
 import { getCached, setCache, isCacheFresh } from '@/lib/cache'
+import { getCachedSync, setCacheSync, isSyncCacheFresh } from '@/lib/cache-sync'
 import { CACHE_KEYS, CACHE_VERSION } from '@/lib/cache-constants'
 import { WeekPageContent } from './WeekPageContent'
 import { WeekPageSkeleton } from '@/components/Skeleton'
@@ -88,6 +89,21 @@ class CacheErrorBoundary extends React.Component<
 }
 
 /**
+ * Get initial week cache state synchronously from localStorage
+ * This runs during component initialization (before render), enabling instant cache display
+ */
+function getInitialWeekCacheState(householdId: string, weekStartStr: string): CachedWeekData | null {
+  const cacheKey = CACHE_KEYS.week(householdId, weekStartStr)
+  const syncCached = getCachedSync<CachedWeekData>(cacheKey)
+
+  if (syncCached && isSyncCacheFresh(syncCached, CACHE_MAX_AGE)) {
+    return syncCached.data
+  }
+
+  return null
+}
+
+/**
  * WeekCacheFallback - Suspense fallback that shows cached data
  *
  * Use this AS the Suspense fallback instead of WeekPageSkeleton:
@@ -97,16 +113,21 @@ class CacheErrorBoundary extends React.Component<
  * </Suspense>
  */
 export function WeekCacheFallback({ householdId, weekStart }: WeekCacheFallbackProps) {
-  const [cachedData, setCachedData] = useState<CachedWeekData | null>(null)
-  const [cacheChecked, setCacheChecked] = useState(false)
-
   const weekStartStr = formatDateISO(weekStart)
 
-  // Check IndexedDB cache on mount
+  // Initialize state synchronously from localStorage (instant, no skeleton flash!)
+  const initialCache = getInitialWeekCacheState(householdId, weekStartStr)
+  const [cachedData, setCachedData] = useState<CachedWeekData | null>(initialCache)
+  const [cacheChecked, setCacheChecked] = useState(initialCache !== null)
+
+  // If localStorage didn't have data, try IndexedDB as fallback (async)
   useEffect(() => {
+    // Skip if we already have data from localStorage
+    if (cachedData) return
+
     let mounted = true
 
-    async function checkCache() {
+    async function checkIndexedDB() {
       try {
         const cacheKey = CACHE_KEYS.week(householdId, weekStartStr)
         const cached = await getCached<CachedWeekData>(cacheKey)
@@ -119,21 +140,23 @@ export function WeekCacheFallback({ householdId, weekStart }: WeekCacheFallbackP
         ) {
           if (mounted) {
             setCachedData(cached.data)
+            // Also populate localStorage for next time
+            setCacheSync(cacheKey, cached.data)
           }
         }
       } catch (error) {
-        console.warn('[WeekCache] Failed to read cache:', error)
+        console.warn('[WeekCache] Failed to read IndexedDB cache:', error)
       } finally {
         if (mounted) setCacheChecked(true)
       }
     }
 
-    checkCache()
+    checkIndexedDB()
 
     return () => {
       mounted = false
     }
-  }, [householdId, weekStartStr])
+  }, [householdId, weekStartStr, cachedData])
 
   // Compute props for cached data rendering
   const cachedProps = useMemo(() => {
@@ -192,20 +215,30 @@ interface WeekDataCacherProps {
 }
 
 /**
- * WeekDataCacher - Caches server-rendered data to IndexedDB
+ * WeekDataCacher - Caches server-rendered data to localStorage + IndexedDB
  *
  * Include this as a child of WeekDataLoader to cache data after render.
+ *
+ * Dual storage strategy:
+ * - localStorage: Instant synchronous reads on next navigation
+ * - IndexedDB: Durability, larger storage capacity, background sync
  */
 export function WeekDataCacher({ householdId, weekStart, data }: WeekDataCacherProps) {
   const weekStartStr = formatDateISO(weekStart)
 
   useEffect(() => {
     async function cacheData() {
+      const cacheKey = CACHE_KEYS.week(householdId, weekStartStr)
+      const dataWithVersion = { ...data, version: CACHE_VERSION }
+
+      // Write to localStorage first (sync, instant reads next time)
+      setCacheSync(cacheKey, dataWithVersion)
+
+      // Then write to IndexedDB (async, durability + larger capacity)
       try {
-        const cacheKey = CACHE_KEYS.week(householdId, weekStartStr)
-        await setCache(cacheKey, { ...data, version: CACHE_VERSION })
+        await setCache(cacheKey, dataWithVersion)
       } catch (error) {
-        console.warn('[WeekCache] Failed to cache data:', error)
+        console.warn('[WeekCache] Failed to cache to IndexedDB:', error)
       }
     }
 
