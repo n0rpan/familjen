@@ -115,12 +115,14 @@ Every page benefits from these layers (in order of user experience):
 
 | Layer | What It Does | User Experience |
 |-------|--------------|-----------------|
-| `loading.tsx` | Shows skeleton instantly on navigation | Immediate feedback |
-| IndexedDB cache | Stores data locally with timestamps | Instant data on repeat visits |
-| Stale-while-revalidate | Shows cached, fetches fresh in background | Never waits for network |
+| IndexedDB cache | Stores data locally with timestamps | Instant data on cold start |
+| Delayed loading (150ms) | Only shows loading if navigation takes >150ms | Fast navigations feel instant |
+| Same-page guard | Clicking current page does nothing | No flicker or dimout |
+| Realtime → cache | Realtime updates also update IndexedDB | Cache stays fresh for next visit |
 | Data prefetching | Fetches data on link hover | Next page ready before click |
 | Route prefetching | Prefetches JS bundles on hover | No code loading delay |
 | Realtime subscriptions | Updates data live via websocket | No manual refresh needed |
+| Visibility refresh | Refreshes data when app resumes | Fresh data after backgrounding |
 
 ### IndexedDB Cache Hydration (PWA Instant Load)
 
@@ -130,14 +132,16 @@ After a PWA update, the server-side cache (`unstable_cache`) is cold because it'
 
 | Component | Purpose |
 |-----------|---------|
-| `HomeCacheFallback` | Suspense fallback that shows cached IndexedDB data with "Oppdaterer..." indicator |
+| `HomeCacheFallback` | Suspense fallback that shows cached IndexedDB data instantly (no loading indicator) |
 | `HomeDataCacher` | Caches server data to IndexedDB after render for next visit |
 | `prefetchHomeData` | Populates IndexedDB cache on link hover |
+| `updateCacheWithRealtimeChange` | Updates IndexedDB when realtime changes arrive |
 
 **Flow:**
 1. First visit: Server renders → `HomeDataCacher` saves to IndexedDB
-2. Repeat visit: `HomeCacheFallback` shows cached data → server updates in background
-3. After PWA update: IndexedDB still has data → instant load with refresh indicator
+2. Repeat visit: `HomeCacheFallback` shows cached data instantly → server updates seamlessly
+3. Realtime update: WebSocket receives change → updates IndexedDB cache + refreshes UI
+4. After PWA update: IndexedDB still has data → instant load, no visible loading state
 
 **Cache versioning:**
 ```typescript
@@ -154,7 +158,8 @@ if (cached.data.version === CACHE_VERSION) {
 - `src/lib/cache-constants.ts` - `CACHE_VERSION` and `CACHE_KEYS` (shared constants)
 - `src/components/home/HomeDataCache.tsx` - `HomeCacheFallback` and `HomeDataCacher`
 - `src/lib/prefetch/pages.ts` - `prefetchHomeData` function
-- `src/lib/cache.ts` - IndexedDB wrapper functions
+- `src/lib/cache.ts` - IndexedDB wrapper functions + `updateCacheWithRealtimeChange`
+- `src/components/home/HomeClientInteractions.tsx` - Realtime subscriptions + cache updates
 
 **Cache invalidation:**
 | Scenario | Behavior |
@@ -167,6 +172,50 @@ if (cached.data.version === CACHE_VERSION) {
 
 **Error handling:**
 The `HomeCacheFallback` wraps `HomePageContent` in a `CacheErrorBoundary`. If cached data causes a render error despite version checks (e.g., missing required fields), the boundary catches it and gracefully falls back to `HomePageSkeleton`.
+
+### Instant Navigation (No Loading Indicators)
+
+The app is optimized for recurring PWA users who expect native-app-like instant navigation:
+
+**Delayed loading indicator (150ms):**
+```typescript
+// src/lib/navigation/context.tsx
+const LOADING_DELAY_MS = 150
+
+// Only show loading state if navigation takes >150ms
+// Fast navigations (cached routes) complete before this fires
+loadingTimerRef.current = setTimeout(() => {
+  setState({ isNavigating: true, targetPath: normalizedPath })
+}, LOADING_DELAY_MS)
+```
+
+**Same-page clicks do nothing:**
+```typescript
+// src/components/TransitionLink.tsx
+// Clicking the current page doesn't cause any visual feedback
+if (targetPath === currentPath) {
+  e.preventDefault()
+  return // No dimout, no navigation, no flicker
+}
+```
+
+**Realtime updates keep cache fresh:**
+```typescript
+// src/components/home/HomeClientInteractions.tsx
+// When spouse changes data, update IndexedDB cache + UI
+const handleRealtimeChange = (table, payload) => {
+  // Update IndexedDB (for next cold start)
+  updateCacheWithRealtimeChange(homeCacheKey, table, eventType, data)
+  // Refresh current view
+  router.refresh()
+}
+```
+
+**Key files:**
+- `src/lib/navigation/context.tsx` - Delayed loading state management
+- `src/components/TransitionLink.tsx` - Same-page guard and navigation
+- `src/components/PageContent.tsx` - Applies `.navigating` class when loading
+- `src/app/globals.css` - Subtle opacity dimout (0.7) for slow navigations
 
 ### Two Page Patterns
 

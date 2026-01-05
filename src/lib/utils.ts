@@ -322,3 +322,21 @@ export function isNonWorkingDay(date: Date | string, holidays: Holiday[]): boole
   const d = typeof date === 'string' ? new Date(date) : date
   return isWeekend(d) || isHoliday(date, holidays)
 }
+
+/**
+ * Normalize a URL path by removing query strings and trailing slashes.
+ * Used for consistent path comparison (e.g., "/uke/" and "/uke" are the same).
+ * Preserves root "/" as-is.
+ *
+ * @example
+ * normalizePath('/uke/') // => '/uke'
+ * normalizePath('/uke?demo=true') // => '/uke'
+ * normalizePath('/') // => '/'
+ */
+export function normalizePath(path: string): string {
+  const withoutQuery = path.split('?')[0]
+  // Remove trailing slash but keep root "/" as is
+  return withoutQuery.length > 1 && withoutQuery.endsWith('/')
+    ? withoutQuery.slice(0, -1)
+    : withoutQuery
+}

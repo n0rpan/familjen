@@ -6,6 +6,7 @@ import { useCallback, useState, useMemo, type ComponentProps, type MouseEvent } 
 import { useNavigationOptional } from '@/lib/navigation'
 import { prefetchRouteData } from '@/lib/prefetch/pages'
 import { useHouseholdId } from '@/hooks/data/useHousehold'
+import { normalizePath } from '@/lib/utils'
 
 type TransitionLinkProps = ComponentProps<typeof Link> & {
   viewTransition?: boolean
@@ -128,20 +129,24 @@ export function TransitionLink({
         return
       }
 
+      // Normalize paths for comparison (handles trailing slashes and query strings)
+      const targetPath = normalizePath(finalHref)
+      // Read pathname at click time, not render time, to avoid stale closure issues
+      const currentPath = normalizePath(typeof window !== 'undefined' ? window.location.pathname : '')
+
+      // Same page? Do nothing - don't dim, don't navigate
+      if (targetPath === currentPath) {
+        e.preventDefault()
+        return
+      }
+
       e.preventDefault()
 
       // Determine navigation direction
-      const targetPath = finalHref.split('?')[0] // Normalize path without query
       const isBack = isBackNavigation(targetPath)
       setTransitionDirection(isBack ? 'back' : 'forward')
 
-      // INSTANT FEEDBACK: Add class directly to DOM (synchronous, no React delay)
-      const pageContent = document.querySelector('.page-content-wrapper')
-      if (pageContent) {
-        pageContent.classList.add('navigating')
-      }
-
-      // Signal navigation for React-based tracking
+      // Signal navigation for React-based tracking (handles delayed loading state)
       navigation?.startNavigation(targetPath)
 
       // Navigate directly - no view transitions (they cause flash/lag)

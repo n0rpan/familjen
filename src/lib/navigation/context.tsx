@@ -2,6 +2,11 @@
 
 import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
+import { normalizePath } from '@/lib/utils'
+
+// Only show loading indicator if navigation takes longer than this
+// Fast navigations (cached routes) won't show any loading state
+const LOADING_DELAY_MS = 150
 
 interface NavigationState {
   isNavigating: boolean
@@ -24,47 +29,75 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
 
   // Track the pathname when navigation started
   const startPathnameRef = useRef<string | null>(null)
+  // Timer for delayed loading indicator
+  const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Clear loading timer
+  const clearLoadingTimer = useCallback(() => {
+    if (loadingTimerRef.current) {
+      clearTimeout(loadingTimerRef.current)
+      loadingTimerRef.current = null
+    }
+  }, [])
 
   // Start navigation - called on link click
   const startNavigation = useCallback((path: string) => {
-    // Normalize path (remove query string for comparison)
-    const normalizedPath = path.split('?')[0]
+    // Normalize path (remove query string and trailing slash for comparison)
+    const normalizedPath = normalizePath(path)
+    const normalizedCurrent = normalizePath(pathname)
 
     // Don't show navigation state for same-page navigation
-    if (normalizedPath === pathname) {
+    if (normalizedPath === normalizedCurrent) {
       return
     }
 
+    // Clear any existing timer
+    clearLoadingTimer()
+
     startPathnameRef.current = pathname
-    setState({ isNavigating: true, targetPath: normalizedPath })
-  }, [pathname])
+
+    // Delay showing loading state - fast navigations won't show any indicator
+    // This makes cached route navigation feel instant
+    loadingTimerRef.current = setTimeout(() => {
+      setState({ isNavigating: true, targetPath: normalizedPath })
+    }, LOADING_DELAY_MS)
+  }, [pathname, clearLoadingTimer])
 
   // End navigation - called when page is ready or on error
   const endNavigation = useCallback(() => {
+    clearLoadingTimer()
     startPathnameRef.current = null
     setState({ isNavigating: false, targetPath: null })
-  }, [])
+  }, [clearLoadingTimer])
 
-  // Auto-end navigation ONLY when pathname actually changes
+  // Auto-end navigation when pathname changes (even before loading timer fires)
   useEffect(() => {
-    // Only end if we were navigating AND pathname changed from where we started
-    if (state.isNavigating && startPathnameRef.current !== null && pathname !== startPathnameRef.current) {
-      // End immediately - no artificial delay
+    // If pathname changed from where we started, navigation is complete
+    if (startPathnameRef.current !== null && pathname !== startPathnameRef.current) {
+      // Clear the loading timer - navigation completed before delay
+      // This means user sees no loading indicator at all (instant navigation!)
+      clearLoadingTimer()
       startPathnameRef.current = null
       setState({ isNavigating: false, targetPath: null })
     }
-  }, [pathname, state.isNavigating])
+  }, [pathname, clearLoadingTimer])
 
   // Failsafe: end navigation after timeout if stuck
   useEffect(() => {
     if (state.isNavigating) {
       const timer = setTimeout(() => {
+        clearLoadingTimer()
         startPathnameRef.current = null
         setState({ isNavigating: false, targetPath: null })
       }, 5000) // 5 second max
       return () => clearTimeout(timer)
     }
-  }, [state.isNavigating])
+  }, [state.isNavigating, clearLoadingTimer])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => clearLoadingTimer()
+  }, [clearLoadingTimer])
 
   return (
     <NavigationContext.Provider value={{ ...state, startNavigation, endNavigation }}>

@@ -29,11 +29,14 @@ export function PageContent({ children }: PageContentProps) {
   const isMountedRef = useRef(true)
 
   // Handle navigation state changes
+  // Now that we use delayed loading (150ms), isNavigating only becomes true
+  // for slow navigations. Fast/cached navigations complete before the delay.
   useEffect(() => {
     if (!wrapperRef.current) return
 
     if (isNavigating) {
-      // Add navigating state for CSS and aria-busy for AT
+      // Add navigating state for CSS dimout and aria-busy for AT
+      wrapperRef.current.classList.add('navigating')
       wrapperRef.current.setAttribute('aria-busy', 'true')
     } else {
       // Remove navigating state

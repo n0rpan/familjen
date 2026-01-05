@@ -146,6 +146,131 @@ describe('TransitionLink', () => {
       expect(handleClick).toHaveBeenCalled()
       expect(mockPush).not.toHaveBeenCalled()
     })
+
+    it('does not navigate when clicking link to current page (same-page guard)', () => {
+      // Mock window.location.pathname to be the same as href
+      const originalLocation = window.location
+      Object.defineProperty(window, 'location', {
+        value: { ...originalLocation, pathname: '/uke' },
+        writable: true,
+      })
+
+      render(
+        <TransitionLink href="/uke">Week</TransitionLink>
+      )
+
+      const link = screen.getByRole('link')
+      fireEvent.click(link)
+
+      // Should not navigate - same page
+      expect(mockPush).not.toHaveBeenCalled()
+
+      // Restore
+      Object.defineProperty(window, 'location', {
+        value: originalLocation,
+        writable: true,
+      })
+    })
+
+    it('navigates when clicking link to different page', () => {
+      // Mock window.location.pathname to be different from href
+      const originalLocation = window.location
+      Object.defineProperty(window, 'location', {
+        value: { ...originalLocation, pathname: '/' },
+        writable: true,
+      })
+
+      render(
+        <TransitionLink href="/uke">Week</TransitionLink>
+      )
+
+      const link = screen.getByRole('link')
+      fireEvent.click(link)
+
+      // Should navigate - different page
+      expect(mockPush).toHaveBeenCalledWith('/uke')
+
+      // Restore
+      Object.defineProperty(window, 'location', {
+        value: originalLocation,
+        writable: true,
+      })
+    })
+
+    it('treats paths with and without trailing slash as same page', () => {
+      // Mock window.location.pathname with trailing slash
+      const originalLocation = window.location
+      Object.defineProperty(window, 'location', {
+        value: { ...originalLocation, pathname: '/uke/' },
+        writable: true,
+      })
+
+      render(
+        <TransitionLink href="/uke">Week</TransitionLink>
+      )
+
+      const link = screen.getByRole('link')
+      fireEvent.click(link)
+
+      // Should NOT navigate - same page (trailing slash normalized)
+      expect(mockPush).not.toHaveBeenCalled()
+
+      // Restore
+      Object.defineProperty(window, 'location', {
+        value: originalLocation,
+        writable: true,
+      })
+    })
+
+    it('treats link with trailing slash as same page when on path without', () => {
+      // Mock window.location.pathname without trailing slash
+      const originalLocation = window.location
+      Object.defineProperty(window, 'location', {
+        value: { ...originalLocation, pathname: '/innstillinger' },
+        writable: true,
+      })
+
+      render(
+        <TransitionLink href="/innstillinger/">Settings</TransitionLink>
+      )
+
+      const link = screen.getByRole('link')
+      fireEvent.click(link)
+
+      // Should NOT navigate - same page (trailing slash normalized)
+      expect(mockPush).not.toHaveBeenCalled()
+
+      // Restore
+      Object.defineProperty(window, 'location', {
+        value: originalLocation,
+        writable: true,
+      })
+    })
+
+    it('keeps root path as is without breaking trailing slash removal', () => {
+      // Mock window.location.pathname as root
+      const originalLocation = window.location
+      Object.defineProperty(window, 'location', {
+        value: { ...originalLocation, pathname: '/' },
+        writable: true,
+      })
+
+      render(
+        <TransitionLink href="/">Home</TransitionLink>
+      )
+
+      const link = screen.getByRole('link')
+      fireEvent.click(link)
+
+      // Should NOT navigate - same page (root)
+      expect(mockPush).not.toHaveBeenCalled()
+
+      // Restore
+      Object.defineProperty(window, 'location', {
+        value: originalLocation,
+        writable: true,
+      })
+    })
   })
 
   describe('Prefetching', () => {

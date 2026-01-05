@@ -235,3 +235,76 @@ export function isCacheFresh(entry: CacheEntry | null, maxAge: number): boolean 
 
 // Default max age: 3 minutes (aligned with service worker nav cache)
 export const DEFAULT_MAX_AGE = 3 * 60 * 1000
+
+/**
+ * Update cached data with a realtime change
+ * This keeps the cache fresh for the next cold start without a server round-trip
+ *
+ * @param key Cache key to update
+ * @param table Table name (pickups, meals, etc.)
+ * @param event Event type (INSERT, UPDATE, DELETE)
+ * @param data The new/old data from the realtime payload
+ * @param idField Field name to use as ID (default: 'id')
+ */
+export async function updateCacheWithRealtimeChange<T extends Record<string, unknown>>(
+  key: string,
+  table: string,
+  event: 'INSERT' | 'UPDATE' | 'DELETE',
+  data: Record<string, unknown>,
+  idField = 'id'
+): Promise<void> {
+  try {
+    // Validate data is a valid object (guard against malformed realtime payloads)
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return
+
+    const cached = await getCached<T>(key)
+    if (!cached) return // No cache to update
+
+    const cacheData = cached.data as Record<string, unknown>
+
+    // Find the array field that corresponds to this table
+    // Map table names to cache data fields
+    const tableToField: Record<string, string> = {
+      pickups: 'pickups',
+      meals: 'meals',
+      child_tasks: 'tasks',
+      member_events: 'memberEvents',
+      household_events: 'householdEvents',
+      external_events: 'externalEvents',
+    }
+
+    const arrayField = tableToField[table]
+    if (!arrayField || !Array.isArray(cacheData[arrayField])) return
+
+    const array = cacheData[arrayField] as Record<string, unknown>[]
+    const id = data[idField]
+
+    switch (event) {
+      case 'INSERT':
+        array.push(data)
+        break
+
+      case 'UPDATE': {
+        const updateIndex = array.findIndex(item => item[idField] === id)
+        if (updateIndex !== -1) {
+          array[updateIndex] = { ...array[updateIndex], ...data }
+        }
+        break
+      }
+
+      case 'DELETE': {
+        const deleteIndex = array.findIndex(item => item[idField] === id)
+        if (deleteIndex !== -1) {
+          array.splice(deleteIndex, 1)
+        }
+        break
+      }
+    }
+
+    // Update the cache with modified data (preserves original timestamp)
+    await setCache(key, cacheData)
+    console.log(`[Cache] Updated ${table} cache with ${event}`)
+  } catch (error) {
+    console.warn('[Cache] Failed to update cache with realtime change:', error)
+  }
+}

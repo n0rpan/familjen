@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatDateISO, getWeekStart, getWeekDates, isWeekend, isSameDay, addDays } from '@/lib/utils'
+import { formatDateISO, getWeekStart, getWeekDates, isWeekend, isSameDay, addDays, normalizePath } from '@/lib/utils'
 
 describe('formatDateISO', () => {
   it('formats date as YYYY-MM-DD', () => {
@@ -96,5 +96,44 @@ describe('addDays', () => {
     const date = new Date(2025, 11, 22)
     const result = addDays(date, -5)
     expect(formatDateISO(result)).toBe('2025-12-17')
+  })
+})
+
+describe('normalizePath', () => {
+  it('removes trailing slash from paths', () => {
+    expect(normalizePath('/uke/')).toBe('/uke')
+    expect(normalizePath('/innstillinger/')).toBe('/innstillinger')
+  })
+
+  it('preserves root path', () => {
+    expect(normalizePath('/')).toBe('/')
+  })
+
+  it('removes query strings', () => {
+    expect(normalizePath('/uke?demo=true')).toBe('/uke')
+    expect(normalizePath('/uke?week=2&demo=true')).toBe('/uke')
+  })
+
+  it('removes both query string and trailing slash', () => {
+    expect(normalizePath('/uke/?demo=true')).toBe('/uke')
+  })
+
+  it('handles paths without trailing slash (no change)', () => {
+    expect(normalizePath('/uke')).toBe('/uke')
+    expect(normalizePath('/innstillinger')).toBe('/innstillinger')
+  })
+
+  it('handles empty string', () => {
+    expect(normalizePath('')).toBe('')
+  })
+
+  it('handles nested paths', () => {
+    expect(normalizePath('/admin/users/')).toBe('/admin/users')
+    expect(normalizePath('/admin/users')).toBe('/admin/users')
+  })
+
+  it('handles multiple trailing slashes by removing only one', () => {
+    // This matches current behavior - only removes one trailing slash
+    expect(normalizePath('/uke//')).toBe('/uke/')
   })
 })

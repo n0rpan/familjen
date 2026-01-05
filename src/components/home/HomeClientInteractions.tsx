@@ -6,6 +6,7 @@
  * Handles all client-side interactivity for the home page:
  * - Realtime subscriptions for the current week
  * - Page refresh on data changes
+ * - IndexedDB cache updates for instant cold starts
  * - Prefetching adjacent weeks
  *
  * This component renders nothing visible - it just sets up the subscriptions.
@@ -19,6 +20,9 @@ import { usePrefetchRoutes, KEY_ROUTES, SECONDARY_ROUTES } from '@/hooks/usePref
 import { usePrefetchAllPages } from '@/hooks/usePrefetchAllPages'
 import { formatDateISO, getWeekStart, addDays } from '@/lib/utils'
 import { revalidateWeek } from '@/lib/revalidate'
+import { updateCacheWithRealtimeChange } from '@/lib/cache'
+import { CACHE_KEYS } from '@/lib/cache-constants'
+import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 
 interface HomeClientInteractionsProps {
   householdId: string
@@ -57,9 +61,23 @@ export function HomeClientInteractions({ householdId, isDemo }: HomeClientIntera
     const weekEnd = addDays(weekStart, 6)
     const weekStartStr = formatDateISO(weekStart)
     const weekEndStr = formatDateISO(weekEnd)
+    const homeCacheKey = CACHE_KEYS.home(householdId)
 
-    // Refresh the page when data changes and revalidate cache
-    const handleChange = () => {
+    // Update IndexedDB cache with realtime change, then refresh UI
+    // This keeps cache fresh for next cold start AND updates current view
+    const handleRealtimeChange = (
+      table: string,
+      payload: RealtimePostgresChangesPayload<Record<string, unknown>>
+    ) => {
+      const eventType = payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE'
+      const data = eventType === 'DELETE' ? payload.old : payload.new
+
+      // Update IndexedDB cache (async, don't await)
+      if (data && typeof data === 'object') {
+        updateCacheWithRealtimeChange(homeCacheKey, table, eventType, data as Record<string, unknown>)
+      }
+
+      // Revalidate server cache and refresh current view
       revalidateWeek(householdId, weekStartStr)
       router.refresh()
     }
@@ -80,7 +98,7 @@ export function HomeClientInteractions({ householdId, isDemo }: HomeClientIntera
           const date = (payload.new as { date?: string } | null)?.date ||
                        (payload.old as { date?: string } | null)?.date
           if (date && date >= weekStartStr && date <= weekEndStr) {
-            handleChange()
+            handleRealtimeChange('pickups', payload)
           }
         }
       )
@@ -96,7 +114,7 @@ export function HomeClientInteractions({ householdId, isDemo }: HomeClientIntera
           const date = (payload.new as { date?: string } | null)?.date ||
                        (payload.old as { date?: string } | null)?.date
           if (date && date >= weekStartStr && date <= weekEndStr) {
-            handleChange()
+            handleRealtimeChange('meals', payload)
           }
         }
       )
@@ -112,7 +130,7 @@ export function HomeClientInteractions({ householdId, isDemo }: HomeClientIntera
           const date = (payload.new as { date?: string } | null)?.date ||
                        (payload.old as { date?: string } | null)?.date
           if (date && date >= weekStartStr && date <= weekEndStr) {
-            handleChange()
+            handleRealtimeChange('child_tasks', payload)
           }
         }
       )
@@ -124,7 +142,7 @@ export function HomeClientInteractions({ householdId, isDemo }: HomeClientIntera
           table: 'member_events',
           filter: `household_id=eq.${householdId}`,
         },
-        handleChange
+        (payload) => handleRealtimeChange('member_events', payload)
       )
       .on(
         'postgres_changes',
@@ -134,7 +152,7 @@ export function HomeClientInteractions({ householdId, isDemo }: HomeClientIntera
           table: 'household_events',
           filter: `household_id=eq.${householdId}`,
         },
-        handleChange
+        (payload) => handleRealtimeChange('household_events', payload)
       )
       .subscribe()
 
