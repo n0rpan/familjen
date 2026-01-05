@@ -66,6 +66,7 @@ export interface TranslationStrings {
     saving: string
     pending: string
     syncing: string
+    refreshing: string
     sync: string
     offline: string
     backOnline: string

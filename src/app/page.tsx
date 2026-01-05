@@ -16,6 +16,7 @@ import { getLanguageFromCookieOrBrowser } from '@/lib/i18n/cookie.server'
 import { getTranslations } from '@/lib/i18n/translations'
 import { HomeDataLoader } from '@/components/home/HomeDataLoader'
 import { HomeClientInteractions } from '@/components/home/HomeClientInteractions'
+import { HomeCacheFallback } from '@/components/home/HomeDataCache'
 import { HomePageSkeleton } from '@/components/Skeleton'
 import { TransitionLink } from '@/components/TransitionLink'
 import Image from 'next/image'
@@ -145,9 +146,11 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   }
 
   // Ready! Load home page with data streaming
+  // HomeCacheFallback acts as Suspense fallback - shows cached IndexedDB data if available
+  // This ensures instant loads after PWA updates when server cache is cold
   return (
     <>
-      <Suspense fallback={<HomePageSkeleton />}>
+      <Suspense fallback={<HomeCacheFallback householdId={householdId} />}>
         <HomeDataLoader householdId={householdId} isDemo={false} />
       </Suspense>
       <HomeClientInteractions householdId={householdId} isDemo={false} />

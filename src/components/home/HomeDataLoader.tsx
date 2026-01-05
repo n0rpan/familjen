@@ -6,10 +6,14 @@
  *
  * This is the key component for PPR - it runs on the server and streams
  * the rendered content to the client.
+ *
+ * Also includes HomeDataCacher to cache data to IndexedDB for instant
+ * loads after PWA updates (when server cache is cold).
  */
 
 import { fetchHomePageData, getDemoHomePageData, getTodaySummary } from '@/lib/data/server'
 import { HomePageContent } from './HomePageContent'
+import { HomeDataCacher } from './HomeDataCache'
 import { formatDateISO, addDays } from '@/lib/utils'
 import type { AIHeadsUp, Child } from '@/lib/types'
 
@@ -41,29 +45,56 @@ export async function HomeDataLoader({ householdId, isDemo }: HomeDataLoaderProp
   // Generate demo AI heads-up data
   const aiHeadsUps: AIHeadsUp[] = isDemo ? generateDemoHeadsUps(data) : []
 
+  // Prepare data for IndexedDB cache (client component will cache it)
+  // currentUserId is safe to cache - IndexedDB is per-device like session cookies
+  // This enables "You are picking up" to show correctly during stale phase
+  const cacheData = !isDemo ? {
+    household: data.household,
+    children: data.children,
+    members: data.members,
+    pickups: data.pickups,
+    meals: data.meals,
+    tasks: data.tasks,
+    memberEvents: data.memberEvents,
+    householdEvents: data.householdEvents,
+    externalEvents: data.externalEvents,
+    weekStart: formatDateISO(data.weekStart),
+    weekEnd: formatDateISO(data.weekEnd),
+    currentUserId: data.currentMember?.user_id ?? undefined,
+  } : null
+
   return (
-    <HomePageContent
-      householdId={data.household?.id || 'demo'}
-      currentUserId={data.currentMember?.user_id || undefined}
-      children={data.children}
-      members={data.members}
-      todaySummary={todaySummary}
-      pickups={data.pickups}
-      meals={data.meals}
-      memberEvents={data.memberEvents}
-      householdEvents={data.householdEvents}
-      externalEvents={data.externalEvents}
-      childTasks={data.tasks}
-      holidays={data.holidays}
-      weekStart={data.weekStart}
-      aiHeadsUps={aiHeadsUps}
-      recentPhotos={[]}
-      childrenWithoutPickup={childrenWithoutPickup}
-      noMeal={noMeal}
-      isAllReady={isAllReady}
-      isDemo={isDemo}
-      dataTimestamp={data.timestamp}
-    />
+    <>
+      <HomePageContent
+        householdId={data.household?.id || 'demo'}
+        currentUserId={data.currentMember?.user_id || undefined}
+        children={data.children}
+        members={data.members}
+        todaySummary={todaySummary}
+        pickups={data.pickups}
+        meals={data.meals}
+        memberEvents={data.memberEvents}
+        householdEvents={data.householdEvents}
+        externalEvents={data.externalEvents}
+        childTasks={data.tasks}
+        holidays={data.holidays}
+        weekStart={data.weekStart}
+        aiHeadsUps={aiHeadsUps}
+        recentPhotos={[]}
+        childrenWithoutPickup={childrenWithoutPickup}
+        noMeal={noMeal}
+        isAllReady={isAllReady}
+        isDemo={isDemo}
+        dataTimestamp={data.timestamp}
+      />
+      {/* Cache data to IndexedDB for instant loads after PWA updates */}
+      {cacheData && (
+        <HomeDataCacher
+          householdId={data.household?.id || householdId}
+          data={cacheData}
+        />
+      )}
+    </>
   )
 }
 

@@ -122,6 +122,52 @@ Every page benefits from these layers (in order of user experience):
 | Route prefetching | Prefetches JS bundles on hover | No code loading delay |
 | Realtime subscriptions | Updates data live via websocket | No manual refresh needed |
 
+### IndexedDB Cache Hydration (PWA Instant Load)
+
+After a PWA update, the server-side cache (`unstable_cache`) is cold because it's tied to the deployment. This causes a delay while data is fetched from Supabase. To solve this, we use IndexedDB caching on the client side that persists across deployments.
+
+**Components:**
+
+| Component | Purpose |
+|-----------|---------|
+| `HomeCacheFallback` | Suspense fallback that shows cached IndexedDB data with "Oppdaterer..." indicator |
+| `HomeDataCacher` | Caches server data to IndexedDB after render for next visit |
+| `prefetchHomeData` | Populates IndexedDB cache on link hover |
+
+**Flow:**
+1. First visit: Server renders → `HomeDataCacher` saves to IndexedDB
+2. Repeat visit: `HomeCacheFallback` shows cached data → server updates in background
+3. After PWA update: IndexedDB still has data → instant load with refresh indicator
+
+**Cache versioning:**
+```typescript
+// In src/lib/cache-constants.ts - increment when CachedHomeData structure changes
+export const CACHE_VERSION = 1
+
+// Cache is only used if version matches
+if (cached.data.version === CACHE_VERSION) {
+  setCachedData(cached.data)
+}
+```
+
+**Key files:**
+- `src/lib/cache-constants.ts` - `CACHE_VERSION` and `CACHE_KEYS` (shared constants)
+- `src/components/home/HomeDataCache.tsx` - `HomeCacheFallback` and `HomeDataCacher`
+- `src/lib/prefetch/pages.ts` - `prefetchHomeData` function
+- `src/lib/cache.ts` - IndexedDB wrapper functions
+
+**Cache invalidation:**
+| Scenario | Behavior |
+|----------|----------|
+| Logout | `clearAllCache()` clears all IndexedDB entries |
+| Account deletion | `clearAllCache()` clears all IndexedDB entries |
+| Household switch | Different cache key (`home-{householdId}`) is used |
+| Schema change | Increment `CACHE_VERSION` - old cache ignored |
+| Render error | `CacheErrorBoundary` catches and falls back to skeleton |
+
+**Error handling:**
+The `HomeCacheFallback` wraps `HomePageContent` in a `CacheErrorBoundary`. If cached data causes a render error despite version checks (e.g., missing required fields), the boundary catches it and gracefully falls back to `HomePageSkeleton`.
+
 ### Two Page Patterns
 
 #### Pattern 1: PPR (Server-First) - For Static-ish Pages
@@ -142,13 +188,13 @@ src/components/[page]/
 └── [Page]ClientInteractions.tsx  # Client component - realtime
 ```
 
-**Example: Home Page (`/`)**
+**Example: Home Page (`/`) with IndexedDB Cache Fallback**
 ```typescript
 // src/app/page.tsx (Server Component)
 import { Suspense } from 'react'
 import { HomeDataLoader } from '@/components/home/HomeDataLoader'
 import { HomeClientInteractions } from '@/components/home/HomeClientInteractions'
-import { HomePageSkeleton } from '@/components/Skeleton'
+import { HomeCacheFallback } from '@/components/home/HomeDataCache'
 
 export default async function HomePage({ searchParams }: Props) {
   const params = await searchParams
@@ -157,7 +203,8 @@ export default async function HomePage({ searchParams }: Props) {
 
   return (
     <>
-      <Suspense fallback={<HomePageSkeleton />}>
+      {/* HomeCacheFallback shows cached data while server loads (PWA instant load) */}
+      <Suspense fallback={<HomeCacheFallback householdId={householdId} />}>
         <HomeDataLoader householdId={householdId} isDemo={isDemo} />
       </Suspense>
       <HomeClientInteractions householdId={householdId} isDemo={isDemo} />
@@ -171,7 +218,13 @@ export async function HomeDataLoader({ householdId, isDemo }: Props) {
     ? getDemoHomePageData()
     : await fetchHomePageData(householdId)
 
-  return <HomePageContent {...data} isDemo={isDemo} />
+  return (
+    <>
+      <HomePageContent {...data} isDemo={isDemo} />
+      {/* Cache data for next PWA restart */}
+      {!isDemo && <HomeDataCacher householdId={householdId} data={data} />}
+    </>
+  )
 }
 
 // src/components/home/HomeClientInteractions.tsx (Client Component)

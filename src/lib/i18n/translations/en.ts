@@ -58,6 +58,7 @@ export const en: TranslationStrings = {
     saving: 'Saving...',
     pending: 'pending',
     syncing: 'Syncing',
+    refreshing: 'Refreshing...',
     sync: 'Sync',
     offline: 'Offline',
     backOnline: 'Back online',

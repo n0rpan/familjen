@@ -1,6 +1,7 @@
 'use client'
 
 import { CSSProperties } from 'react'
+import { useLanguage } from '@/lib/i18n/context'
 import type { TranslationStrings } from '@/lib/i18n/types'
 
 interface SkeletonProps {
@@ -45,6 +46,40 @@ export function SkeletonText({ lines = 1, className = '' }: { lines?: number; cl
 // Circle skeleton (for avatars)
 export function SkeletonCircle({ size = 40 }: { size?: number }) {
   return <Skeleton width={size} height={size} borderRadius="50%" />
+}
+
+// Refreshing indicator - shows when cached data is displayed while fetching fresh data
+export function RefreshingSkeleton() {
+  const { t } = useLanguage()
+
+  return (
+    <div
+      className="fixed top-0 left-0 right-0 z-50 flex items-center justify-center gap-2 py-2 px-4 animate-fade-in"
+      style={{
+        background: 'linear-gradient(180deg, rgba(126, 182, 196, 0.95) 0%, rgba(126, 182, 196, 0.85) 100%)',
+        backdropFilter: 'blur(8px)',
+      }}
+    >
+      {/* Spinning refresh icon */}
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="white"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="animate-spin"
+        style={{ animationDuration: '1s' }}
+      >
+        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+      </svg>
+      <span className="text-sm font-medium text-white">
+        {t.common.refreshing}
+      </span>
+    </div>
+  )
 }
 
 // Card skeleton
