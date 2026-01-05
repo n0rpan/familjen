@@ -5,6 +5,7 @@ import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limi
 import { z } from 'zod'
 import { SHOPPING_CATEGORIES, type ShoppingCategory } from '@/lib/constants'
 import { getCommonItemCategory, normalizeItemName } from '@/lib/shopping-common-items'
+import { getModel } from '@/lib/ai-models'
 
 // Request schema
 const categorizeItemSchema = z.object({
@@ -63,14 +64,8 @@ export async function POST(request: Request) {
       } as CategorizeItemResponse)
     }
 
-    // Fetch model from app_settings
-    const { data: modelSetting } = await supabase
-      .from('app_settings')
-      .select('value')
-      .eq('key', 'openrouter_model')
-      .single()
-
-    const model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
+    // Get model from app_settings with env fallback
+    const model = await getModel(supabase, 'text')
 
     // Call OpenRouter API for categorization
     const apiKey = process.env.OPENROUTER_API_KEY

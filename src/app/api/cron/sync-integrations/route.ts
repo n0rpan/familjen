@@ -13,6 +13,7 @@ import { deduplicateAllEvents } from '@/lib/integrations/event-deduplication'
 import { fetchAndParseICS, type ICSEvent } from '@/lib/ics-parser'
 import { syncHouseholdICS as syncHouseholdICSShared } from '@/lib/household-ics-sync'
 import { verifyCronRequest } from '@/lib/cron-auth'
+import { getModel } from '@/lib/ai-models'
 import { truncate, sanitizeString, sanitizeTime } from '@/lib/sanitize'
 
 type AnySupabaseClient = SupabaseClient<any, any, any>
@@ -228,14 +229,8 @@ export async function GET(request: Request) {
     if (unprocessedMessages.data && unprocessedMessages.data.length > 0) {
       console.log(`[Cron] Processing ${unprocessedMessages.data.length} messages for AI extraction`)
 
-      // Get AI model
-      const { data: modelSetting } = await supabase
-        .from('app_settings')
-        .select('value')
-        .eq('key', 'openrouter_model')
-        .single()
-
-      const model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
+      // Get AI model from settings with env fallback
+      const model = await getModel(supabase as SupabaseClient, 'text')
 
       // Process messages (simplified for cron - can be batched)
       for (const message of unprocessedMessages.data) {
@@ -278,14 +273,8 @@ export async function GET(request: Request) {
     let documentsProcessed = 0
     let documentSuggestionsCreated = 0
 
-    // Get vision model from settings
-    const { data: visionModelSetting } = await supabase
-      .from('app_settings')
-      .select('value')
-      .eq('key', 'openrouter_vision_model')
-      .single()
-
-    const visionModel = visionModelSetting?.value || 'google/gemini-2.5-flash-lite'
+    // Get vision model from settings with env fallback
+    const visionModel = await getModel(supabase as SupabaseClient, 'vision')
 
     // Process documents where ai_processed = false
     const { data: unprocessedDocuments } = await supabase

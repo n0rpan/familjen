@@ -4,6 +4,7 @@ import { getLanguageFromCookieOrBrowser } from '@/lib/i18n/cookie.server'
 import type { Language } from '@/lib/i18n/types'
 import { ApiErrors, handleApiError } from '@/lib/api-errors'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
+import { getModel } from '@/lib/ai-models'
 
 export const maxDuration = 30
 
@@ -88,26 +89,19 @@ export async function POST(request: NextRequest) {
       return ApiErrors.forbidden()
     }
 
-    // Run parallel queries for household API key and vision model setting
-    const [householdResult, visionModelResult] = await Promise.all([
-      supabase
-        .from('households')
-        .select('openrouter_api_key_encrypted')
-        .eq('id', member.household_id)
-        .single(),
-      supabase
-        .from('app_settings')
-        .select('value')
-        .eq('key', 'openrouter_vision_model')
-        .single(),
-    ])
+    // Get household API key (if they have their own)
+    const { data: householdData } = await supabase
+      .from('households')
+      .select('openrouter_api_key_encrypted')
+      .eq('id', member.household_id)
+      .single()
 
     let apiKey = process.env.OPENROUTER_API_KEY
 
     // Try to decrypt household's API key if they have one
-    if (householdResult.data?.openrouter_api_key_encrypted) {
+    if (householdData?.openrouter_api_key_encrypted) {
       const { data: decryptedKey } = await supabase.rpc('decrypt_token', {
-        ciphertext: householdResult.data.openrouter_api_key_encrypted,
+        ciphertext: householdData.openrouter_api_key_encrypted,
       })
       if (decryptedKey) {
         apiKey = decryptedKey
@@ -118,7 +112,8 @@ export async function POST(request: NextRequest) {
       return ApiErrors.internal({ internalMessage: 'No OpenRouter API key configured' })
     }
 
-    const model = visionModelResult.data?.value || 'google/gemini-2.5-flash-lite'
+    // Get vision model from app_settings with env fallback
+    const model = await getModel(supabase, 'vision')
 
     // Get image from request
     const { image } = await request.json()

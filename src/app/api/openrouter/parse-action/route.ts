@@ -7,6 +7,7 @@ import { extractJSON } from '@/lib/json-extract'
 import { formatDateISO } from '@/lib/utils'
 import { sanitizePromptInput, sanitizePromptArray } from '@/lib/sanitize'
 import { ACTION_PARSE_SCHEMA, SEARCH_SUMMARY_SCHEMA, MEAL_SUGGESTION_SCHEMA } from '@/lib/ai-schemas'
+import { getModel, getModelFromEnv, STRUCTURED_OUTPUT_PROVIDER_OPTIONS } from '@/lib/ai-models'
 import { validateMealSuggestions, type FamilyContext } from '@/lib/ai-validation'
 import { z } from 'zod'
 import type { MealSuggestion } from '@/lib/types'
@@ -273,16 +274,9 @@ export async function POST(request: Request) {
     }
 
     // --- ACTION MODE ---
-    // Fetch model from app_settings (text or vision based on input)
-    const modelKey = hasImage ? 'openrouter_vision_model' : 'openrouter_model'
-    const { data: modelSetting } = await supabase
-      .from('app_settings')
-      .select('value')
-      .eq('key', modelKey)
-      .single()
-
-    const defaultModel = 'google/gemini-2.5-flash-lite'
-    const model = modelSetting?.value || defaultModel
+    // Get model from app_settings with env fallback
+    const modelType = hasImage ? 'vision' : 'text'
+    const model = await getModel(supabase, modelType)
 
     const currentMember = context.members.find(m => m.isCurrentUser)
 
@@ -335,6 +329,7 @@ export async function POST(request: Request) {
           temperature: 0.2,
           max_tokens: 2000,
           response_format: ACTION_PARSE_SCHEMA,
+          ...STRUCTURED_OUTPUT_PROVIDER_OPTIONS,
         }),
         signal: controller.signal,
       })
@@ -349,7 +344,13 @@ export async function POST(request: Request) {
     }
 
     if (!response.ok) {
-      console.error('OpenRouter error:', { status: response.status })
+      const errorBody = await response.text().catch(() => 'Could not read error body')
+      console.error('OpenRouter error:', {
+        status: response.status,
+        model,
+        hasImage,
+        error: errorBody,
+      })
       return NextResponse.json({ error: 'Kunne ikke tolke tekst' }, { status: 500 })
     }
 
@@ -788,15 +789,8 @@ async function handleDemoMode(
   // Fetch model from app_settings (same as production)
   // Demo uses same model as production to ensure consistent behavior
   const supabase = await createClient()
-  const modelKey = hasImage ? 'openrouter_vision_model' : 'openrouter_model'
-  const { data: modelSetting } = await supabase
-    .from('app_settings')
-    .select('value')
-    .eq('key', modelKey)
-    .single()
-
-  const defaultModel = 'google/gemini-2.5-flash-lite'
-  const model = modelSetting?.value || defaultModel
+  const modelType = hasImage ? 'vision' : 'text'
+  const model = await getModel(supabase, modelType)
 
   // For search mode in demo, return mock search results
   // (no database to query in demo mode)
@@ -930,13 +924,14 @@ Returner JSON: { "suggestions": [{ "day": "YYYY-MM-DD", "name": "Rett", "descrip
         ],
         temperature: 0.3,
         max_tokens: 2000,
-        response_format: { type: 'json_schema', json_schema: ACTION_PARSE_SCHEMA },
+        response_format: ACTION_PARSE_SCHEMA,
+        ...STRUCTURED_OUTPUT_PROVIDER_OPTIONS,
       }),
     })
 
     if (!response.ok) {
       const errorText = await response.text()
-      console.error('Demo action API error:', response.status, errorText)
+      console.error('Demo action API error:', { status: response.status, model, hasImage, error: errorText })
       return NextResponse.json({ error: 'AI-tjenesten er midlertidig utilgjengelig' }, { status: 503 })
     }
 
@@ -1132,13 +1127,7 @@ async function handleSearchMode(
 
   // If we found results, use AI to summarize/answer
   if (sources.length > 0) {
-    const { data: modelSetting } = await supabase
-      .from('app_settings')
-      .select('value')
-      .eq('key', 'openrouter_model')
-      .single()
-
-    const model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
+    const model = await getModel(supabase, 'text')
     const apiKey = process.env.OPENROUTER_API_KEY
 
     if (!apiKey) {
@@ -1317,14 +1306,8 @@ async function handleSuggestMode(
 
   const favoriteRecipes = (recipesResult.data || []).filter(r => r.is_favorite).map(r => r.name)
 
-  // Get model from settings
-  const { data: modelSetting } = await supabase
-    .from('app_settings')
-    .select('value')
-    .eq('key', 'openrouter_model')
-    .single()
-
-  const model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
+  // Get model from settings with env fallback
+  const model = await getModel(supabase, 'text')
   const apiKey = process.env.OPENROUTER_API_KEY
 
   if (!apiKey) {

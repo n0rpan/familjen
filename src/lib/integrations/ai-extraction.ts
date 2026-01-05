@@ -6,6 +6,7 @@
 import { extractJSON } from '@/lib/json-extract'
 import { formatDateISO } from '@/lib/utils'
 import { sanitizeDate, sanitizeTime } from '@/lib/sanitize'
+import { getModel } from '@/lib/ai-models'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export interface ExtractedAction {
@@ -92,14 +93,8 @@ export async function processMessagesWithAI(
     return result
   }
 
-  // Get AI model from settings
-  const { data: modelSetting } = await supabase
-    .from('app_settings')
-    .select('value')
-    .eq('key', 'openrouter_model')
-    .single()
-
-  const model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
+  // Get AI model from settings with env fallback
+  const model = await getModel(supabase, 'text')
 
   // Get children and members names for context
   const { data: children } = await supabase

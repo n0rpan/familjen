@@ -10,6 +10,7 @@ import { formatDateISO } from '@/lib/utils'
 import { validateMealSuggestions } from '@/lib/ai-validation'
 import { sanitizePromptInput, sanitizePromptArray } from '@/lib/sanitize'
 import { MEAL_SUGGESTION_SCHEMA } from '@/lib/ai-schemas'
+import { getModel, STRUCTURED_OUTPUT_PROVIDER_OPTIONS } from '@/lib/ai-models'
 
 // Helper to calculate age from birth date
 function calculateAge(birthDate: string): number {
@@ -78,15 +79,9 @@ export async function POST(request: Request) {
         weekContext: 'Enkel hverdagsmat som barna liker. Oliver liker ikke sterkt.',
       }
 
-      // Fetch model from app_settings (same as production)
+      // Get model from app_settings (same as production)
       const supabaseForSettings = await createClient()
-      const { data: modelSetting } = await supabaseForSettings
-        .from('app_settings')
-        .select('value')
-        .eq('key', 'openrouter_model')
-        .single()
-
-      const model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
+      const model = await getModel(supabaseForSettings, 'text')
       return handleDemoAIRequest(model, weekStart, existingMeals, demoContext)
     }
 
@@ -109,17 +104,8 @@ export async function POST(request: Request) {
       )
     }
 
-    // Use cost-effective model as default
-    let model = 'google/gemini-2.5-flash-lite'
-
-    // Fetch model from app_settings
-    const { data: modelSetting } = await supabase
-      .from('app_settings')
-      .select('value')
-      .eq('key', 'openrouter_model')
-      .single()
-
-    model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
+    // Get model from app_settings with env fallback
+    const model = await getModel(supabase, 'text')
 
     // Fetch household data (using safe multi-row handler)
     const { data: household, error: householdError } = await getUserHousehold(supabase)
@@ -341,6 +327,7 @@ Ikke inkluder noe annet enn JSON i svaret.`,
             temperature: 0.4,
             max_tokens: 2000,
             response_format: MEAL_SUGGESTION_SCHEMA,
+            ...STRUCTURED_OUTPUT_PROVIDER_OPTIONS,
           }),
           signal: controller.signal,
         })
@@ -671,6 +658,7 @@ Ikke inkluder noe annet enn JSON i svaret.`,
         temperature: 0.7,
         max_tokens: 2000,
         response_format: MEAL_SUGGESTION_SCHEMA,
+        ...STRUCTURED_OUTPUT_PROVIDER_OPTIONS,
       }),
       signal: controller.signal,
     })
@@ -679,7 +667,7 @@ Ikke inkluder noe annet enn JSON i svaret.`,
 
     if (!response.ok) {
       const errorText = await response.text()
-      console.error('OpenRouter API error (demo):', response.status, errorText)
+      console.error('OpenRouter API error (demo):', { status: response.status, model, error: errorText })
       return NextResponse.json({ error: 'AI-tjenesten svarer ikke' }, { status: 502 })
     }
 

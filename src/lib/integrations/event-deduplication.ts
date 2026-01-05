@@ -9,6 +9,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js'
 import { formatDateISO } from '@/lib/utils'
+import { getModel } from '@/lib/ai-models'
 
 // Confidence thresholds
 const HIGH_CONFIDENCE_THRESHOLD = 0.9
@@ -377,14 +378,7 @@ async function findPotentialDuplicates(
  * Get the AI model to use for deduplication from app settings.
  */
 async function getDeduplicationModel(supabase: SupabaseClient): Promise<string> {
-  const { data } = await supabase
-    .from('app_settings')
-    .select('value')
-    .eq('key', 'openrouter_model')
-    .single()
-
-  // Use the configured model, or fall back to a fast/cheap model
-  return data?.value || 'google/gemini-2.5-flash-lite'
+  return getModel(supabase, 'text')
 }
 
 /**
