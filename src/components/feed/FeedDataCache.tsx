@@ -13,6 +13,7 @@
 
 import React, { useEffect, useState, type ReactNode } from 'react'
 import { getCached, setCache, isCacheFresh } from '@/lib/cache'
+import { setStoredHouseholdId } from '@/components/SmartLoading'
 import { getCachedSync, setCacheSync, isSyncCacheFresh } from '@/lib/cache-sync'
 import { CACHE_KEYS, CACHE_VERSION } from '@/lib/cache-constants'
 import { FeedPageContent } from './FeedPageContent'
@@ -165,6 +166,9 @@ export function FeedDataCacher({ householdId, data }: FeedDataCacherProps) {
     async function cacheData() {
       const cacheKey = CACHE_KEYS.feed(householdId)
       const dataWithVersion = { ...data, version: CACHE_VERSION }
+
+      // Store householdId for SmartLoading to use during navigation
+      setStoredHouseholdId(householdId)
 
       // Write to localStorage first (sync, instant reads next time)
       setCacheSync(cacheKey, dataWithVersion)
