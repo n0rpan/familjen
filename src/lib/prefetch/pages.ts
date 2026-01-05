@@ -11,6 +11,8 @@ import { getCached, setCache, isCacheFresh } from '@/lib/cache'
 
 // Cache keys used by data hooks - must match
 export const CACHE_KEYS = {
+  home: (householdId: string) => `home-${householdId}`,
+  week: (householdId: string, weekStart: string) => `week-${householdId}-${weekStart}`,
   feed: (householdId: string) => `feed-${householdId}`,
   shopping: (householdId: string) => `shopping-${householdId}`,
   recipes: (householdId: string) => `recipes-${householdId}`,
@@ -199,10 +201,112 @@ export async function prefetchRecipesData(householdId: string): Promise<void> {
 }
 
 /**
+ * Prefetch home page data
+ * Call this when user hovers over home link or on initial load
+ *
+ * Note: This is a standalone async function (not a React hook), so createClient()
+ * is called once per invocation. The useMemo pattern from Key Patterns only applies
+ * to React components/hooks that may re-render.
+ */
+export async function prefetchHomeData(householdId: string): Promise<void> {
+  const cacheKey = CACHE_KEYS.home(householdId)
+
+  // Skip if already cached and fresh
+  const cached = await getCached(cacheKey)
+  if (cached && isCacheFresh(cached, PREFETCH_MAX_AGE)) {
+    return
+  }
+
+  try {
+    // createClient() is called once per function invocation (not on re-render)
+    const supabase = createClient()
+
+    // Calculate week dates
+    const today = new Date()
+    const dayOfWeek = today.getDay()
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
+    const weekStart = new Date(today)
+    weekStart.setDate(today.getDate() + mondayOffset)
+    weekStart.setHours(0, 0, 0, 0)
+
+    const weekEnd = new Date(weekStart)
+    weekEnd.setDate(weekStart.getDate() + 6)
+
+    const weekStartStr = weekStart.toISOString().split('T')[0]
+    const weekEndStr = weekEnd.toISOString().split('T')[0]
+
+    // Parallel fetch - match what server fetches
+    const [
+      householdResult,
+      childrenResult,
+      membersResult,
+      pickupsResult,
+      mealsResult,
+      tasksResult,
+      memberEventsResult,
+      householdEventsResult,
+      externalEventsResult,
+    ] = await Promise.all([
+      supabase.from('households').select('*').eq('id', householdId).single(),
+      supabase.from('children').select('*').eq('household_id', householdId).order('sort_order'),
+      supabase.from('household_members').select('*').eq('household_id', householdId),
+      supabase.from('pickups')
+        .select('*, child:children(*), picker:household_members(*)')
+        .eq('household_id', householdId)
+        .gte('date', weekStartStr)
+        .lte('date', weekEndStr),
+      supabase.from('meals')
+        .select('*, recipe:recipes(*)')
+        .eq('household_id', householdId)
+        .gte('date', weekStartStr)
+        .lte('date', weekEndStr),
+      supabase.from('child_tasks')
+        .select('*, child:children(*)')
+        .eq('household_id', householdId)
+        .gte('date', weekStartStr)
+        .lte('date', weekEndStr),
+      supabase.from('member_events')
+        .select('*')
+        .eq('household_id', householdId)
+        .lte('date', weekEndStr)
+        .or(`end_date.gte.${weekStartStr},end_date.is.null`),
+      supabase.from('household_events')
+        .select('*')
+        .eq('household_id', householdId)
+        .lte('event_date', weekEndStr)
+        .or(`end_date.gte.${weekStartStr},end_date.is.null`),
+      supabase.from('external_events')
+        .select('*, integration:external_integrations!inner(service, display_name)')
+        .eq('external_integrations.household_id', householdId)
+        .eq('is_hidden', false)
+        .gte('event_date', weekStartStr)
+        .lte('event_date', weekEndStr),
+    ])
+
+    await setCache(cacheKey, {
+      household: householdResult.data,
+      children: childrenResult.data || [],
+      members: membersResult.data || [],
+      pickups: pickupsResult.data || [],
+      meals: mealsResult.data || [],
+      tasks: tasksResult.data || [],
+      memberEvents: memberEventsResult.data || [],
+      householdEvents: householdEventsResult.data || [],
+      externalEvents: externalEventsResult.data || [],
+      weekStart: weekStartStr,
+      weekEnd: weekEndStr,
+    })
+  } catch (error) {
+    console.warn('[Prefetch] Failed to prefetch home data:', error)
+  }
+}
+
+/**
  * Map of routes to their prefetch functions
  * Used by TransitionLink to prefetch data on hover
  */
 export const PREFETCH_MAP: Record<string, (householdId: string) => Promise<void>> = {
+  '/': prefetchHomeData,
   '/feed': prefetchFeedData,
   '/handleliste': prefetchShoppingData,
   '/oppskrifter': prefetchRecipesData,
@@ -240,6 +344,10 @@ export async function prefetchAllPages(householdId: string): Promise<void> {
   try {
     // Prefetch in menu order with small delays between each
     // This prevents overwhelming the network/database
+
+    // 0. Home page data (for PWA restarts with cold server cache)
+    await prefetchHomeData(householdId)
+    await new Promise(resolve => setTimeout(resolve, 500))
 
     // 1. Feed (messages, photos - users often check this)
     await prefetchFeedData(householdId)
