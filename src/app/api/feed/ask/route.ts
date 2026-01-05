@@ -5,6 +5,7 @@ import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limi
 import { formatDateISO } from '@/lib/utils'
 import { sanitizePromptInput } from '@/lib/sanitize'
 import { FEED_ASK_SCHEMA } from '@/lib/ai-schemas'
+import { getModel, STRUCTURED_OUTPUT_PROVIDER_OPTIONS } from '@/lib/ai-models'
 
 interface MessageContext {
   id: string
@@ -148,14 +149,8 @@ export async function POST(request: Request) {
       }
     })
 
-    // Get AI model from settings
-    const { data: modelSetting } = await supabase
-      .from('app_settings')
-      .select('value')
-      .eq('key', 'openrouter_model')
-      .single()
-
-    const model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
+    // Get AI model from settings with env fallback
+    const model = await getModel(supabase, 'text')
 
     // Call AI to answer the question
     const response = await askAI(question, messageContexts, language, model)
@@ -246,6 +241,7 @@ Instructions:
         temperature: 0.3,
         max_tokens: 1000,
         response_format: FEED_ASK_SCHEMA,
+        ...STRUCTURED_OUTPUT_PROVIDER_OPTIONS,
       }),
       signal: controller.signal,
     })
@@ -254,7 +250,7 @@ Instructions:
 
     if (!response.ok) {
       const errorText = await response.text()
-      console.error('OpenRouter API error:', response.status, errorText)
+      console.error('OpenRouter API error:', { status: response.status, model, error: errorText })
       return {
         answer: getErrorResponse(language),
         sources: [],

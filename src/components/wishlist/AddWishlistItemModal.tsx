@@ -7,6 +7,16 @@ import type { WishlistItem, WishlistOccasion } from '@/lib/types'
 import { WISHLIST_OCCASIONS } from '@/lib/constants'
 import { compressImage } from '@/lib/image-compression'
 
+// Initial data for prefilling the form (from AI navigation)
+export interface WishlistPrefillData {
+  name?: string
+  description?: string
+  price?: number | null
+  link?: string
+  occasion?: WishlistOccasion
+  image?: string | null  // base64 data URL
+}
+
 interface AddWishlistItemModalProps {
   isOpen: boolean
   onClose: () => void
@@ -16,6 +26,7 @@ interface AddWishlistItemModalProps {
   defaultOccasion?: WishlistOccasion
   onItemAdded: (item: WishlistItem) => void
   editItem?: WishlistItem | null
+  initialData?: WishlistPrefillData | null  // For AI-prefilled data
 }
 
 export const AddWishlistItemModal = memo(function AddWishlistItemModal({
@@ -27,6 +38,7 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
   defaultOccasion = 'general',
   onItemAdded,
   editItem,
+  initialData,
 }: AddWishlistItemModalProps) {
   const { t } = useLanguage()
   const supabase = useMemo(() => createClient(), [])
@@ -53,27 +65,54 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
   const [aiMessage, setAiMessage] = useState<string | null>(null)
   const [aiError, setAiError] = useState<string | null>(null)
 
-  // Reset form when modal opens or editItem changes
+  // Reset form when modal opens or editItem/initialData changes
   useEffect(() => {
     if (isOpen) {
-      setName(editItem?.name || '')
-      setDescription(editItem?.description || '')
-      setLink(editItem?.link || '')
-      setPrice(editItem?.price?.toString() || '')
-      setPriority(editItem?.priority || 0)
-      setOccasion(editItem?.occasion || defaultOccasion)
-      setImageFile(null)
-      setImagePreview(
-        editItem?.image_path
-          ? supabase.storage.from('wishlist-images').getPublicUrl(editItem.image_path).data.publicUrl
-          : null
-      )
-      setExistingImagePath(editItem?.image_path || null)
+      // Priority: editItem > initialData > defaults
+      if (editItem) {
+        // Editing existing item
+        setName(editItem.name || '')
+        setDescription(editItem.description || '')
+        setLink(editItem.link || '')
+        setPrice(editItem.price?.toString() || '')
+        setPriority(editItem.priority || 0)
+        setOccasion(editItem.occasion || defaultOccasion)
+        setImageFile(null)
+        setImagePreview(
+          editItem.image_path
+            ? supabase.storage.from('wishlist-images').getPublicUrl(editItem.image_path).data.publicUrl
+            : null
+        )
+        setExistingImagePath(editItem.image_path || null)
+      } else if (initialData) {
+        // Prefilled from AI navigation
+        setName(initialData.name || '')
+        setDescription(initialData.description || '')
+        setLink(initialData.link || '')
+        setPrice(initialData.price?.toString() || '')
+        setPriority(0)
+        setOccasion(initialData.occasion || defaultOccasion)
+        setImageFile(null)
+        // If AI provided a base64 image, show it as preview
+        setImagePreview(initialData.image || null)
+        setExistingImagePath(null)
+      } else {
+        // New item with defaults
+        setName('')
+        setDescription('')
+        setLink('')
+        setPrice('')
+        setPriority(0)
+        setOccasion(defaultOccasion)
+        setImageFile(null)
+        setImagePreview(null)
+        setExistingImagePath(null)
+      }
       setSaveError(null)
       setAiMessage(null)
       setAiError(null)
     }
-  }, [isOpen, editItem, defaultOccasion, supabase])
+  }, [isOpen, editItem, initialData, defaultOccasion, supabase])
 
   // Handle image selection with compression
   const handleImageSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {

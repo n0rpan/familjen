@@ -14,6 +14,7 @@ export interface OpenRouterModel {
     max_completion_tokens: number
   }
   supportsVision?: boolean
+  supportsStructuredOutputs?: boolean
 }
 
 interface OpenRouterAPIModel {
@@ -26,11 +27,13 @@ interface OpenRouterAPIModel {
     input_modalities?: string[]
     output_modalities?: string[]
   }
+  supported_parameters?: string[]
 }
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const visionOnly = searchParams.get('vision') === 'true'
+
   try {
     const supabase = await createClient()
 
@@ -55,13 +58,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'OpenRouter API-nøkkel ikke konfigurert' }, { status: 500 })
     }
 
-    const response = await fetch('https://openrouter.ai/api/v1/models', {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      next: { revalidate: 3600 }, // Cache for 1 hour
-    })
+    // Fetch models that support structured outputs (required for our app)
+    // See: https://openrouter.ai/docs/guides/features/structured-outputs
+    const response = await fetch(
+      'https://openrouter.ai/api/v1/models?supported_parameters=structured_outputs',
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        next: { revalidate: 3600 }, // Cache for 1 hour
+      }
+    )
 
     if (!response.ok) {
       throw new Error('Failed to fetch models')
@@ -69,15 +77,18 @@ export async function GET(request: NextRequest) {
 
     const data = await response.json()
 
-    // Filter and sort models - prioritize popular ones
+    // Filter and sort models
     const models: OpenRouterModel[] = data.data
       .filter((m: OpenRouterAPIModel) => {
         // Filter out deprecated or test models
         if (m.id.includes('test') || m.id.includes('deprecated')) return false
+
         // If vision only requested, filter to models with image input
         if (visionOnly) {
-          return m.architecture?.input_modalities?.includes('image') ?? false
+          const hasImageInput = m.architecture?.input_modalities?.includes('image') ?? false
+          if (!hasImageInput) return false
         }
+
         return true
       })
       .map((m: OpenRouterAPIModel) => ({
@@ -86,6 +97,7 @@ export async function GET(request: NextRequest) {
         pricing: m.pricing,
         context_length: m.context_length,
         supportsVision: m.architecture?.input_modalities?.includes('image') ?? false,
+        supportsStructuredOutputs: m.supported_parameters?.includes('structured_outputs') ?? false,
       }))
       .sort((a: OpenRouterModel, b: OpenRouterModel) => {
         // Sort by provider (anthropic, openai first) then by name

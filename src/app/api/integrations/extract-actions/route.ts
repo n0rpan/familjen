@@ -4,6 +4,7 @@ import { validateOrigin, isUserAdmin } from '@/lib/config'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 import { extractJSON } from '@/lib/json-extract'
 import { formatDateISO } from '@/lib/utils'
+import { getModel } from '@/lib/ai-models'
 
 interface ExtractedAction {
   type: 'task' | 'event' | 'reminder'
@@ -115,14 +116,8 @@ export async function POST(request: Request) {
       })
     }
 
-    // Get AI model from settings
-    const { data: modelSetting } = await supabase
-      .from('app_settings')
-      .select('value')
-      .eq('key', 'openrouter_model')
-      .single()
-
-    const model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
+    // Get AI model from settings with env fallback
+    const model = await getModel(supabase, 'text')
 
     // Get children names for context
     const { data: children } = await supabase

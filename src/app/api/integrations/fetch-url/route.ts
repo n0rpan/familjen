@@ -7,6 +7,7 @@ import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limi
 import { isUrlAllowed } from '@/lib/sanitize'
 import { parseICSContent } from '@/lib/ics-parser'
 import { formatDateISO } from '@/lib/utils'
+import { getModel } from '@/lib/ai-models'
 
 /**
  * POST /api/integrations/fetch-url
@@ -290,14 +291,8 @@ export async function POST(request: Request) {
     }
 
     // For HTML/calendar_page: Use the new sync function with proper event tracking
-    // Get AI model setting
-    const { data: modelSetting } = await supabase
-      .from('app_settings')
-      .select('value')
-      .eq('key', 'openrouter_vision_model')
-      .single()
-
-    const model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
+    // Get AI vision model from settings with env fallback
+    const model = await getModel(supabase, 'vision')
 
     // Build the CalendarSource object
     const calendarSource: CalendarSource = {

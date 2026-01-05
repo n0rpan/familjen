@@ -5,6 +5,7 @@
 
 import { extractJSON } from '@/lib/json-extract'
 import { formatDateISO } from '@/lib/utils'
+import { getModel } from '@/lib/ai-models'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export interface EventAssignment {
@@ -81,14 +82,8 @@ export async function processHouseholdEventsWithAI(
 
   console.log(`[HouseholdEventExtraction] Processing ${events.length} events`)
 
-  // Get AI model from settings
-  const { data: modelSetting } = await supabase
-    .from('app_settings')
-    .select('value')
-    .eq('key', 'openrouter_model')
-    .single()
-
-  const model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
+  // Get AI model from settings with env fallback
+  const model = await getModel(supabase, 'text')
 
   // Get family members for context
   const [childrenResult, membersResult] = await Promise.all([

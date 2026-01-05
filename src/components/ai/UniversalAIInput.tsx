@@ -19,6 +19,7 @@ import { formatDateISO, getWeekdayNameShort } from '@/lib/utils'
 import { compressImageToBase64 } from '@/lib/image-compression'
 import { getCachedCategory, setCachedCategory } from '@/lib/shopping-category-cache'
 import type { ShoppingCategory } from '@/lib/constants'
+import { determineActionRouting, prepareNavigation } from '@/lib/ai-action-routing'
 
 interface Child {
   id: string
@@ -93,6 +94,9 @@ export function UniversalAIInput({
   const pendingInputRef = useRef<string>('')
 
   const currentMember = members.find(m => m.user_id === currentUserId)
+
+  // Use ref to break circular dependency between handleClarification and executeAction
+  const executeActionRef = useRef<((action: ParsedAction) => Promise<void>) | undefined>(undefined)
 
   // Rate limit countdown timer
   useEffect(() => {
@@ -236,7 +240,7 @@ export function UniversalAIInput({
     } finally {
       setIsParsing(false)
     }
-  }, [children, members, currentUserId, rateLimitCountdown])
+  }, [children, members, currentUserId, rateLimitCountdown, isDemo])
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value
@@ -331,6 +335,45 @@ export function UniversalAIInput({
     setMealSuggestions(prev => prev.filter(s => s.day !== suggestion.day))
   }, [])
 
+  /**
+   * Smart navigation for complex actions
+   *
+   * Uses the action routing system to determine if an action should navigate
+   * to a full UI form instead of using quick action cards. This provides
+   * better UX for actions with many fields to edit.
+   */
+  const navigateWithPrefill = useCallback((action: ParsedAction): boolean => {
+    // Get routing decision
+    // Extract image from action data, ensuring it's a string or null
+    const actionImage = typeof action.data.image === 'string' ? action.data.image : null
+    const decision = determineActionRouting(action.type, action.operation, {
+      ...action.data,
+      confidence: action.confidence,
+      // Include image from state for vision analysis
+      image: selectedImage || actionImage,
+    })
+
+    if (!decision.shouldNavigate) {
+      return false // Caller should handle with quick card
+    }
+
+    // Prepare navigation URL (stores prefill data in localStorage)
+    const url = prepareNavigation(decision, isDemo)
+    if (!url) {
+      return false
+    }
+
+    // Navigate
+    router.push(url)
+
+    // Clear state
+    setParsedActions([])
+    setSelectedImage(null)
+    setImagePreview(null)
+
+    return true // Navigation handled
+  }, [isDemo, router, selectedImage])
+
   const handleClarification = useCallback((action: ParsedAction, field: string, value: string | null, resultType?: ActionType) => {
     // Handle person_id clarification (contains "child:uuid" or "member:uuid")
     let updatedData = { ...action.data }
@@ -358,15 +401,21 @@ export function UniversalAIInput({
     // If it's a modification or delete, ask for confirmation
     if (updatedAction.operation === 'modify' || updatedAction.operation === 'delete') {
       setPendingConfirmation(updatedAction)
+    } else if (updatedAction.operation === 'add') {
+      // For add operations, check if we should navigate to full UI
+      const navigated = navigateWithPrefill(updatedAction)
+      if (!navigated) {
+        // If navigation not needed, execute with quick card flow
+        executeActionRef.current?.(updatedAction)
+      }
     } else {
-      // Execute immediately for additions and completions
-      executeAction(updatedAction)
+      // Execute immediately for completions and other operations
+      executeActionRef.current?.(updatedAction)
     }
 
     // Remove from parsed actions
     setParsedActions(prev => prev.filter(a => a !== action))
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- executeAction is stable
-  }, [])
+  }, [navigateWithPrefill])
 
   // Infer child_id from child_name if needed
   const inferChildId = useCallback((action: ParsedAction): string | null => {
@@ -659,11 +708,16 @@ export function UniversalAIInput({
         }
         case 'wishlist_item': {
           table = 'wishlist_items'
+          // Handle various field names the AI might use for the item name
+          const itemName = preparedAction.data.item_name || preparedAction.data.name || preparedAction.data.product_name
+          if (!itemName) {
+            throw new Error('Mangler produktnavn')
+          }
           record = {
             household_id: householdId,
             child_id: preparedAction.data.child_id || null,
             member_id: preparedAction.data.member_id || null,
-            name: preparedAction.data.item_name,
+            name: itemName,
             description: preparedAction.data.description || null,
             link: preparedAction.data.link || null,
             price: preparedAction.data.price || null,
@@ -736,6 +790,9 @@ export function UniversalAIInput({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- executeDelete/Complete/Edit are stable callbacks defined below
   }, [householdId, supabase, t, onActionExecuted, router, validateAndPrepareAction])
+
+  // Keep ref updated for circular dependency resolution
+  executeActionRef.current = executeAction
 
   // Execute DELETE operation with disambiguation
   const executeDelete = useCallback(async (action: ParsedAction) => {
@@ -1758,11 +1815,17 @@ export function UniversalAIInput({
     // Require confirmation for modify, edit, and delete operations
     if (action.operation === 'modify' || action.operation === 'delete' || action.operation === 'edit') {
       setPendingConfirmation(action)
+    } else if (action.operation === 'add') {
+      // For add operations, check if we should navigate to full UI
+      const navigated = navigateWithPrefill(action)
+      if (!navigated) {
+        executeAction(action)
+      }
     } else {
-      // Execute immediately for add and complete
+      // Execute immediately for complete and other operations
       executeAction(action)
     }
-  }, [executeAction])
+  }, [executeAction, navigateWithPrefill])
 
   return (
     <div className="space-y-3">

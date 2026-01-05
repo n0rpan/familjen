@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { validateOrigin } from '@/lib/config'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 import { z } from 'zod'
+import { getModelOrNull, STRUCTURED_OUTPUT_PROVIDER_OPTIONS } from '@/lib/ai-models'
+import { SHOPPING_DUPLICATE_SCHEMA } from '@/lib/ai-schemas'
 
 /**
  * Semantic Shopping Duplicate Check
@@ -74,14 +76,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ matches: [], suggestion: null } as CheckDuplicateResponse)
     }
 
-    // Get model from settings - no fallback, admin must configure
-    const { data: modelSetting } = await supabase
-      .from('app_settings')
-      .select('value')
-      .eq('key', 'openrouter_model')
-      .single()
-
-    const model = modelSetting?.value
+    // Get model using centralized helper (DB → env fallback)
+    const model = await getModelOrNull(supabase, 'text')
     const apiKey = process.env.OPENROUTER_API_KEY
 
     // Skip if no model configured or no API key
@@ -108,32 +104,23 @@ export async function POST(request: Request) {
 Din oppgave er å sjekke om et nytt element som legges til handlelisten ALLEREDE finnes på listen.
 
 Regler:
-1. "melk" og "Melk" = SAMME (stor/liten bokstav)
-2. "egg" og "6 egg" = SAMME (mengde + produkt)
-3. "tomat" og "tomater" = SAMME (entall/flertall)
-4. "helmjølk" og "melk" = VARIANT (spesifikk type vs generell - brukeren kan ønske begge)
-5. "brød" og "grovbrød" = VARIANT (generell vs spesifikk)
-6. "ost" og "brunost" = FORSKJELLIG (helt forskjellige produkter)
-7. "epler" og "bananer" = FORSKJELLIG
+1. "melk" og "Melk" = SAMME (stor/liten bokstav) → matchType: "exact"
+2. "egg" og "6 egg" = SAMME (mengde + produkt) → matchType: "semantic"
+3. "tomat" og "tomater" = SAMME (entall/flertall) → matchType: "semantic"
+4. "helmjølk" og "melk" = VARIANT (spesifikk vs generell) → matchType: "variant"
+5. "brød" og "grovbrød" = VARIANT (generell vs spesifikk) → matchType: "variant"
+6. "ost" og "brunost" = FORSKJELLIG (helt forskjellige produkter) → ingen match
+7. "epler" og "bananer" = FORSKJELLIG → ingen match
 
-Svar i JSON-format:
-{
-  "matches": [
-    {
-      "index": 1,
-      "matchType": "exact" | "semantic" | "variant",
-      "reason": "Kort norsk forklaring"
-    }
-  ],
-  "suggestion": "Forslag til brukeren (f.eks. 'Kanskje du vil øke mengden på eksisterende vare?') eller null"
-}`
+Returner matches array med index (1-basert), matchType og kort norsk forklaring.
+Hvis ingen matcher, returner tom array. Gi suggestion hvis relevant (f.eks. "Kanskje du vil øke mengden?").`
 
     const userPrompt = `Handlelisten inneholder:
 ${existingList}
 
 Nytt element som skal legges til: "${sanitizedNewItem}"
 
-Er dette allerede på listen? Svar i JSON.`
+Sjekk om dette allerede finnes på listen.`
 
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -151,12 +138,18 @@ Er dette allerede på listen? Svar i JSON.`
         ],
         temperature: 0.1,
         max_tokens: 500,
-        response_format: { type: 'json_object' },
+        response_format: SHOPPING_DUPLICATE_SCHEMA,
+        ...STRUCTURED_OUTPUT_PROVIDER_OPTIONS,
       }),
     })
 
     if (!response.ok) {
-      console.error('OpenRouter check duplicate error:', { status: response.status })
+      const errorBody = await response.text().catch(() => 'Unable to read error body')
+      console.error('OpenRouter check duplicate error:', {
+        status: response.status,
+        model,
+        error: errorBody
+      })
       return NextResponse.json({ matches: [], suggestion: null } as CheckDuplicateResponse)
     }
 

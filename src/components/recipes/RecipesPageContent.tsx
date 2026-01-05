@@ -5,16 +5,18 @@
  *
  * Client component for the recipes page.
  * Receives initial data from server (PPR) and manages local state for mutations.
+ * Supports AI prefill navigation for creating recipes from parsed actions.
  */
 
-import { useState, useMemo, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useRecipes, useShoppingLists } from '@/hooks/data'
 import type { Recipe, Household } from '@/lib/types'
 import { useLanguage } from '@/lib/i18n/context'
 import { RecipesPagePartialSkeleton } from '@/components/Skeleton'
 import { revalidateRecipes } from '@/lib/revalidate'
 import type { RecipesPageData } from '@/lib/data/server'
+import { PREFILL_STORAGE_KEYS, type RecipePrefillData } from '@/lib/ai-action-routing'
 
 interface RecipesPageContentProps {
   initialData?: RecipesPageData
@@ -24,6 +26,7 @@ interface RecipesPageContentProps {
 export function RecipesPageContent({ initialData, isDemo = false }: RecipesPageContentProps) {
   const { t } = useLanguage()
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   // Use initial data if provided, otherwise use hooks
   const hasInitialData = !!initialData
@@ -31,6 +34,9 @@ export function RecipesPageContent({ initialData, isDemo = false }: RecipesPageC
   // State initialized from server data
   const [household, setHousehold] = useState<Household | null>(initialData?.household || null)
   const [recipesData, setRecipesData] = useState<Recipe[]>(initialData?.recipes || [])
+
+  // Track whether form was opened from AI navigation (for future UX enhancements)
+  const [isFromAIPrefill, setIsFromAIPrefill] = useState(false)
 
   // Use hooks for mutations (these also work in demo mode)
   const {
@@ -68,6 +74,67 @@ export function RecipesPageContent({ initialData, isDemo = false }: RecipesPageC
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const loading = !hasInitialData && hookLoading
+
+  // Check for AI prefill navigation
+  useEffect(() => {
+    const addRecipe = searchParams.get('addRecipe') === 'true'
+    if (!addRecipe) return
+
+    // Read prefill data from localStorage
+    try {
+      const stored = localStorage.getItem(PREFILL_STORAGE_KEYS.recipe)
+      if (stored) {
+        const data = JSON.parse(stored) as RecipePrefillData
+        setIsFromAIPrefill(true)
+
+        // Prefill form fields
+        setNewRecipe({
+          name: data.name || '',
+          instructions: data.instructions || '',
+          external_link: data.external_link || '',
+          is_quick: data.is_quick ?? false,
+          is_kid_friendly: data.is_kid_friendly ?? true,
+        })
+
+        // Prefill ingredients if provided
+        if (data.ingredients && data.ingredients.length > 0) {
+          setIngredients(data.ingredients)
+        }
+
+        // Open the form
+        setShowForm(true)
+
+        // Clean up localStorage
+        localStorage.removeItem(PREFILL_STORAGE_KEYS.recipe)
+      } else {
+        // No prefill data but query param present - just open form
+        setShowForm(true)
+      }
+    } catch (err) {
+      console.error('Failed to read recipe prefill data:', err)
+      setShowForm(true) // Still open form even if prefill fails
+    }
+
+    // Clear the query param without causing a navigation
+    const url = new URL(window.location.href)
+    url.searchParams.delete('addRecipe')
+    window.history.replaceState({}, '', url.toString())
+  }, [searchParams])
+
+  // Clear prefill state when form is closed
+  const handleCloseForm = useCallback(() => {
+    setShowForm(false)
+    setIsFromAIPrefill(false)
+    setNewRecipe({
+      name: '',
+      instructions: '',
+      external_link: '',
+      is_quick: false,
+      is_kid_friendly: true,
+    })
+    setIngredients([])
+    setNewIngredient({ item: '', amount: '' })
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -215,7 +282,7 @@ export function RecipesPageContent({ initialData, isDemo = false }: RecipesPageC
           )}
         </div>
         <button
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => showForm ? handleCloseForm() : setShowForm(true)}
           className={`btn btn-primary self-start sm:self-auto ${showForm ? '' : 'hidden sm:inline-flex'}`}
         >
           {showForm ? t.common.cancel : `+ ${t.recipes.addRecipe}`}

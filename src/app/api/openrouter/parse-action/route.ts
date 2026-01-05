@@ -7,6 +7,7 @@ import { extractJSON } from '@/lib/json-extract'
 import { formatDateISO } from '@/lib/utils'
 import { sanitizePromptInput, sanitizePromptArray } from '@/lib/sanitize'
 import { ACTION_PARSE_SCHEMA, SEARCH_SUMMARY_SCHEMA, MEAL_SUGGESTION_SCHEMA } from '@/lib/ai-schemas'
+import { getModel, getModelFromEnv, STRUCTURED_OUTPUT_PROVIDER_OPTIONS } from '@/lib/ai-models'
 import { validateMealSuggestions, type FamilyContext } from '@/lib/ai-validation'
 import { z } from 'zod'
 import type { MealSuggestion } from '@/lib/types'
@@ -273,16 +274,9 @@ export async function POST(request: Request) {
     }
 
     // --- ACTION MODE ---
-    // Fetch model from app_settings (text or vision based on input)
-    const modelKey = hasImage ? 'openrouter_vision_model' : 'openrouter_model'
-    const { data: modelSetting } = await supabase
-      .from('app_settings')
-      .select('value')
-      .eq('key', modelKey)
-      .single()
-
-    const defaultModel = 'google/gemini-2.5-flash-lite'
-    const model = modelSetting?.value || defaultModel
+    // Get model from app_settings with env fallback
+    const modelType = hasImage ? 'vision' : 'text'
+    const model = await getModel(supabase, modelType)
 
     const currentMember = context.members.find(m => m.isCurrentUser)
 
@@ -320,6 +314,8 @@ export async function POST(request: Request) {
     const timeoutId = setTimeout(() => controller.abort(), 15000)
 
     let response: Response
+    let retryWithoutSchema = false
+
     try {
       response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -335,21 +331,65 @@ export async function POST(request: Request) {
           temperature: 0.2,
           max_tokens: 2000,
           response_format: ACTION_PARSE_SCHEMA,
+          ...STRUCTURED_OUTPUT_PROVIDER_OPTIONS,
         }),
         signal: controller.signal,
       })
+
+      // If structured output fails for vision, retry without it
+      if (!response.ok && hasImage && response.status === 400) {
+        console.log('Vision request with structured output failed, retrying without schema...')
+        retryWithoutSchema = true
+      }
     } catch (fetchError) {
       clearTimeout(timeoutId)
       if (fetchError instanceof Error && fetchError.name === 'AbortError') {
         return NextResponse.json({ error: 'Forespørselen tok for lang tid' }, { status: 504 })
       }
       throw fetchError
-    } finally {
-      clearTimeout(timeoutId)
     }
 
+    // Retry vision request without structured output
+    if (retryWithoutSchema) {
+      try {
+        response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+            'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+            'X-Title': 'Familjen',
+          },
+          body: JSON.stringify({
+            model,
+            messages,
+            temperature: 0.2,
+            max_tokens: 2000,
+            // No response_format - let the AI respond naturally
+            // The prompt already instructs it to return JSON
+          }),
+          signal: controller.signal,
+        })
+      } catch (fetchError) {
+        clearTimeout(timeoutId)
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+          return NextResponse.json({ error: 'Forespørselen tok for lang tid' }, { status: 504 })
+        }
+        throw fetchError
+      }
+    }
+
+    clearTimeout(timeoutId)
+
     if (!response.ok) {
-      console.error('OpenRouter error:', { status: response.status })
+      const errorBody = await response.text().catch(() => 'Could not read error body')
+      console.error('OpenRouter error:', {
+        status: response.status,
+        model,
+        hasImage,
+        retryWithoutSchema,
+        error: errorBody,
+      })
       return NextResponse.json({ error: 'Kunne ikke tolke tekst' }, { status: 500 })
     }
 
@@ -372,7 +412,21 @@ export async function POST(request: Request) {
 
     const parsed = extractJSON<{ actions?: RawAction[] }>(content)
     if (!parsed) {
-      console.error('Failed to extract JSON from AI response:', { contentLength: content?.length })
+      // Log more details for debugging, especially for vision requests
+      console.error('Failed to extract JSON from AI response:', {
+        contentLength: content?.length,
+        hasImage,
+        model,
+        // Log first 500 chars to understand what the AI returned
+        contentPreview: content?.substring(0, 500),
+      })
+      // For vision requests, return empty actions instead of error (more graceful)
+      if (hasImage) {
+        return NextResponse.json({
+          mode: 'action',
+          actions: [],
+        } as ActionResponse)
+      }
       return NextResponse.json({ error: 'Kunne ikke tolke AI-svar' }, { status: 500 })
     }
 
@@ -720,46 +774,28 @@ ${safeInput}
 Brukeren har gitt denne instruksjonen for hvordan bildet skal tolkes.`
     : ''
 
-  return `Analyser dette bildet og bestem hva det viser.
+  return `Analyser dette bildet og tolk innholdet til en familieplanleggingshandling.
 ${userNote}
 
 ${baseContext}
 
-MULIGE BILDETYPER (analyser og bestem automatisk):
+Bruk din intelligens til å forstå hva bildet viser og returner passende handling(er).
 
-1. INVITASJON / HENDELSE
-   - Finn: Dato, klokkeslett, sted, hva slags hendelse
-   - Barn-hendelser: child_task med task_type="appointment"
-   - Voksen-hendelser: member_event
-   - VIKTIG: Sett needs_clarification for child_id/member_id
-
-2. OPPGAVE / PÅMINNELSE
-   - Finn: Oppgave, dato, hvem det gjelder
-   - Returner: child_task med passende task_type (bring, reminder, closure, etc.)
-
-3. PRODUKT / GAVE (for ønskeliste)
-   - Finn: Produktnavn, beskrivelse, ca. pris
-   - Returner: wishlist_item med operation="add"
-   - VIKTIG: wishlist_item MÅ ALLTID ha needs_clarification for person_id
-
-4. HANDLELISTE / KVITTERING
-   - Finn: Varer/produkter
-   - Handleliste: shopping_item med operation="add"
-   - Kvittering: shopping_item med operation="complete"
-
-5. MIDDAGSPLAN / MAT
-   - Finn: Rett, dato
-   - Returner: meal
-
-6. ANNET
-   - Prøv å tolk innholdet og returner passende handling
+Eksempler på hva bilder kan inneholde:
+- Bursdagsinvitasjon → child_task (appointment) med dato, tid, sted
+- Produkt/leke/gave → wishlist_item (MÅ ha needs_clarification for person_id)
+- Meny/handleliste → shopping_item(s)
+- Mat/oppskrift → meal
+- Kalender/påminnelse → child_task eller member_event
 
 VIKTIG:
-- Barn til valg (for needs_clarification): [${childrenOptions}]
+- Barn: [${childrenOptions}]
 - Alle personer (for wishlist): [${allPersonOptions}]
-- Returner BARE gyldig JSON med actions-array
-- Sett høy confidence (0.8+) kun hvis du er sikker på tolkningen
-- Hvis usikker, returner lav confidence (< 0.5)`
+- For wishlist_item: ALLTID sett needs_clarification med person_id
+- For child_task uten spesifisert barn: sett needs_clarification med child_id
+- Returner BARE gyldig JSON: { "actions": [...] }
+- confidence 0.8+ kun hvis sikker, ellers lavere
+- Hvis bildet er uklart/irrelevant: { "actions": [] }`
 }
 
 // ============================================================================
@@ -788,15 +824,8 @@ async function handleDemoMode(
   // Fetch model from app_settings (same as production)
   // Demo uses same model as production to ensure consistent behavior
   const supabase = await createClient()
-  const modelKey = hasImage ? 'openrouter_vision_model' : 'openrouter_model'
-  const { data: modelSetting } = await supabase
-    .from('app_settings')
-    .select('value')
-    .eq('key', modelKey)
-    .single()
-
-  const defaultModel = 'google/gemini-2.5-flash-lite'
-  const model = modelSetting?.value || defaultModel
+  const modelType = hasImage ? 'vision' : 'text'
+  const model = await getModel(supabase, modelType)
 
   // For search mode in demo, return mock search results
   // (no database to query in demo mode)
@@ -907,7 +936,20 @@ Returner JSON: { "suggestions": [{ "day": "YYYY-MM-DD", "name": "Rett", "descrip
     : buildUserPrompt(input, context, currentMember?.name)
 
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      hasImage
+        ? {
+            role: 'user',
+            content: [
+              { type: 'text', text: userPrompt },
+              { type: 'image_url', image_url: { url: image! } },
+            ],
+          }
+        : { role: 'user', content: userPrompt },
+    ]
+
+    let response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
@@ -916,27 +958,37 @@ Returner JSON: { "suggestions": [{ "day": "YYYY-MM-DD", "name": "Rett", "descrip
       },
       body: JSON.stringify({
         model: model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          hasImage
-            ? {
-                role: 'user',
-                content: [
-                  { type: 'text', text: userPrompt },
-                  { type: 'image_url', image_url: { url: image! } },
-                ],
-              }
-            : { role: 'user', content: userPrompt },
-        ],
+        messages,
         temperature: 0.3,
         max_tokens: 2000,
-        response_format: { type: 'json_schema', json_schema: ACTION_PARSE_SCHEMA },
+        response_format: ACTION_PARSE_SCHEMA,
+        ...STRUCTURED_OUTPUT_PROVIDER_OPTIONS,
       }),
     })
 
+    // If structured output fails for vision, retry without it
+    if (!response.ok && hasImage && response.status === 400) {
+      console.log('Demo vision request with structured output failed, retrying without schema...')
+      response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://familjen.eu',
+        },
+        body: JSON.stringify({
+          model: model,
+          messages,
+          temperature: 0.3,
+          max_tokens: 2000,
+          // No response_format - let the AI respond naturally
+        }),
+      })
+    }
+
     if (!response.ok) {
       const errorText = await response.text()
-      console.error('Demo action API error:', response.status, errorText)
+      console.error('Demo action API error:', { status: response.status, model, hasImage, error: errorText })
       return NextResponse.json({ error: 'AI-tjenesten er midlertidig utilgjengelig' }, { status: 503 })
     }
 
@@ -952,6 +1004,8 @@ Returner JSON: { "suggestions": [{ "day": "YYYY-MM-DD", "name": "Rett", "descrip
 
     const parsed = extractJSON<{ actions?: ParsedAction[] }>(content)
     if (!parsed?.actions || !Array.isArray(parsed.actions)) {
+      // Log for debugging
+      console.log('Demo vision JSON extraction failed:', { contentLength: content?.length, contentPreview: content?.substring(0, 200) })
       return NextResponse.json({
         mode: 'action',
         actions: [],
@@ -1132,13 +1186,7 @@ async function handleSearchMode(
 
   // If we found results, use AI to summarize/answer
   if (sources.length > 0) {
-    const { data: modelSetting } = await supabase
-      .from('app_settings')
-      .select('value')
-      .eq('key', 'openrouter_model')
-      .single()
-
-    const model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
+    const model = await getModel(supabase, 'text')
     const apiKey = process.env.OPENROUTER_API_KEY
 
     if (!apiKey) {
@@ -1317,14 +1365,8 @@ async function handleSuggestMode(
 
   const favoriteRecipes = (recipesResult.data || []).filter(r => r.is_favorite).map(r => r.name)
 
-  // Get model from settings
-  const { data: modelSetting } = await supabase
-    .from('app_settings')
-    .select('value')
-    .eq('key', 'openrouter_model')
-    .single()
-
-  const model = modelSetting?.value || 'google/gemini-2.5-flash-lite'
+  // Get model from settings with env fallback
+  const model = await getModel(supabase, 'text')
   const apiKey = process.env.OPENROUTER_API_KEY
 
   if (!apiKey) {
