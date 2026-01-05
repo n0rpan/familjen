@@ -115,7 +115,10 @@ Every page benefits from these layers (in order of user experience):
 
 | Layer | What It Does | User Experience |
 |-------|--------------|-----------------|
-| IndexedDB cache | Stores data locally with timestamps | Instant data on cold start |
+| localStorage cache | Synchronous reads during initial render | Zero skeleton flash |
+| IndexedDB cache | Stores data locally with timestamps | Fallback for larger data |
+| Middleware auth cookie | Skips auth validation for 5 min after validation | Instant middleware |
+| Session validator | Background validation every 5 min + on visibility | No stale sessions |
 | Delayed loading (150ms) | Only shows loading if navigation takes >150ms | Fast navigations feel instant |
 | Same-page guard | Clicking current page does nothing | No flicker or dimout |
 | Realtime → cache | Realtime updates also update IndexedDB | Cache stays fresh for next visit |
@@ -128,20 +131,27 @@ Every page benefits from these layers (in order of user experience):
 
 After a PWA update, the server-side cache (`unstable_cache`) is cold because it's tied to the deployment. This causes a delay while data is fetched from Supabase. To solve this, we use IndexedDB caching on the client side that persists across deployments.
 
-**Components:**
+**Dual Storage Strategy:**
+- **localStorage** (sync): Instant reads during initial render - no skeleton flash
+- **IndexedDB** (async): Durability, larger capacity, background sync fallback
 
-| Component | Purpose |
-|-----------|---------|
-| `HomeCacheFallback` | Suspense fallback that shows cached IndexedDB data instantly (no loading indicator) |
-| `HomeDataCacher` | Caches server data to IndexedDB after render for next visit |
-| `prefetchHomeData` | Populates IndexedDB cache on link hover |
-| `updateCacheWithRealtimeChange` | Updates IndexedDB when realtime changes arrive |
+**Cache Fallback Components (all pages):**
+
+| Page | CacheFallback Component | DataCacher Component |
+|------|------------------------|---------------------|
+| Home | `HomeCacheFallback` | `HomeDataCacher` |
+| Week | `WeekCacheFallback` | `WeekDataCacher` |
+| Feed | `FeedCacheFallback` | `FeedDataCacher` |
+| Shopping | `ShoppingCacheFallback` | `ShoppingDataCacher` |
+| Recipes | `RecipesCacheFallback` | `RecipesDataCacher` |
+| Settings | `SettingsCacheFallback` | `SettingsDataCacher` |
+| Styring | `StyringCacheFallback` | `StyringDataCacher` |
 
 **Flow:**
-1. First visit: Server renders → `HomeDataCacher` saves to IndexedDB
-2. Repeat visit: `HomeCacheFallback` shows cached data instantly → server updates seamlessly
+1. First visit: Server renders → `*DataCacher` saves to localStorage + IndexedDB
+2. Repeat visit: `*CacheFallback` reads localStorage synchronously (instant!) → server updates seamlessly
 3. Realtime update: WebSocket receives change → updates IndexedDB cache + refreshes UI
-4. After PWA update: IndexedDB still has data → instant load, no visible loading state
+4. After PWA update: localStorage has data → truly instant load, zero skeleton flash
 
 **Cache versioning:**
 ```typescript
@@ -156,22 +166,24 @@ if (cached.data.version === CACHE_VERSION) {
 
 **Key files:**
 - `src/lib/cache-constants.ts` - `CACHE_VERSION` and `CACHE_KEYS` (shared constants)
-- `src/components/home/HomeDataCache.tsx` - `HomeCacheFallback` and `HomeDataCacher`
-- `src/lib/prefetch/pages.ts` - `prefetchHomeData` function
+- `src/lib/cache-sync.ts` - Synchronous localStorage cache layer for instant reads
 - `src/lib/cache.ts` - IndexedDB wrapper functions + `updateCacheWithRealtimeChange`
+- `src/components/*/DataCache.tsx` - CacheFallback and DataCacher for each page
+- `src/lib/prefetch/pages.ts` - `prefetchHomeData` function
 - `src/components/home/HomeClientInteractions.tsx` - Realtime subscriptions + cache updates
 
 **Cache invalidation:**
 | Scenario | Behavior |
 |----------|----------|
-| Logout | `clearAllCache()` clears all IndexedDB entries |
-| Account deletion | `clearAllCache()` clears all IndexedDB entries |
+| Logout | `clearAllCache()` clears localStorage + IndexedDB |
+| Account deletion | `clearAllCache()` clears localStorage + IndexedDB |
 | Household switch | Different cache key (`home-{householdId}`) is used |
 | Schema change | Increment `CACHE_VERSION` - old cache ignored |
 | Render error | `CacheErrorBoundary` catches and falls back to skeleton |
+| Session expired | `useSessionValidator` clears caches and redirects to login |
 
 **Error handling:**
-The `HomeCacheFallback` wraps `HomePageContent` in a `CacheErrorBoundary`. If cached data causes a render error despite version checks (e.g., missing required fields), the boundary catches it and gracefully falls back to `HomePageSkeleton`.
+The `*CacheFallback` wraps page content in a `CacheErrorBoundary`. If cached data causes a render error despite version checks (e.g., missing required fields), the boundary catches it and gracefully falls back to the skeleton.
 
 ### Instant Navigation (No Loading Indicators)
 
