@@ -9,6 +9,9 @@
 
 import { clearAllCacheSync, deleteCacheSync } from './cache-sync'
 
+// Key for SmartLoading household ID (also defined in SmartLoading.tsx)
+const HOUSEHOLD_ID_KEY = 'familjen-current-household'
+
 const DB_NAME = 'familjen-cache'
 const DB_VERSION = 1
 const STORE_NAME = 'data'
@@ -223,6 +226,13 @@ export async function deleteCache(key: string, retryCount = 0): Promise<void> {
 export async function clearAllCache(): Promise<void> {
   // Clear localStorage cache first (synchronous)
   clearAllCacheSync()
+
+  // Clear SmartLoading household ID
+  try {
+    localStorage.removeItem(HOUSEHOLD_ID_KEY)
+  } catch {
+    // Ignore storage errors
+  }
 
   // Then clear IndexedDB cache (async)
   try {

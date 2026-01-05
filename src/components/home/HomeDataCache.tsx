@@ -24,6 +24,7 @@ import React, { useEffect, useState, useMemo, type ReactNode } from 'react'
 import { getCached, setCache, isCacheFresh } from '@/lib/cache'
 import { getCachedSync, setCacheSync, isSyncCacheFresh } from '@/lib/cache-sync'
 import { CACHE_KEYS, CACHE_VERSION } from '@/lib/cache-constants'
+import { setStoredHouseholdId } from '@/components/SmartLoading'
 import { HomePageContent, type HomePageContentProps } from './HomePageContent'
 import { HomePageSkeleton } from '@/components/Skeleton'
 import { formatDateISO, getWeekStart } from '@/lib/utils'
@@ -62,6 +63,64 @@ export interface CachedHomeData {
 
 // Max age for cached data: 30 minutes
 const CACHE_MAX_AGE = 30 * 60 * 1000
+
+/**
+ * Transform raw cached data into HomePageContentProps
+ * Used by both HomeCacheFallback and loading.tsx
+ */
+export function computeHomePropsFromCache(
+  cachedData: CachedHomeData,
+  householdId: string,
+  cacheTimestamp?: number
+): HomePageContentProps {
+  const todayStr = formatDateISO(new Date())
+  const weekStart = cachedData.weekStart
+    ? new Date(cachedData.weekStart + 'T00:00:00')
+    : getWeekStart(new Date())
+
+  // Calculate today's summary
+  const todaySummary: DaySummary = {
+    date: todayStr,
+    pickups: cachedData.pickups.filter(p => p.date === todayStr),
+    meal: cachedData.meals.find(m => m.date === todayStr) || null,
+    tasks: cachedData.tasks.filter(t => t.date === todayStr),
+    householdEvents: cachedData.householdEvents.filter(e => e.event_date === todayStr),
+    memberEvents: cachedData.memberEvents.filter(e => e.date === todayStr),
+    externalEvents: cachedData.externalEvents.filter(e => e.event_date === todayStr),
+  }
+
+  // Calculate status for attention banner
+  const todayPickups = cachedData.pickups.filter(p => p.date === todayStr)
+  const todayMeal = cachedData.meals.find(m => m.date === todayStr)
+  const childrenWithoutPickup = cachedData.children.filter(child =>
+    !todayPickups.some(p => p.child_id === child.id && p.picker_id)
+  ) as Child[]
+  const noMeal = !todayMeal || (!todayMeal.recipe_id && !todayMeal.custom_meal)
+  const isAllReady = childrenWithoutPickup.length === 0 && !noMeal
+
+  return {
+    householdId: cachedData.household?.id || householdId,
+    currentUserId: cachedData.currentUserId,
+    children: cachedData.children,
+    members: cachedData.members,
+    todaySummary,
+    pickups: cachedData.pickups,
+    meals: cachedData.meals,
+    memberEvents: cachedData.memberEvents,
+    householdEvents: cachedData.householdEvents,
+    externalEvents: cachedData.externalEvents,
+    childTasks: cachedData.tasks,
+    holidays: [] as Holiday[],
+    weekStart,
+    aiHeadsUps: [],
+    recentPhotos: [],
+    childrenWithoutPickup,
+    noMeal,
+    isAllReady,
+    isDemo: false,
+    dataTimestamp: cacheTimestamp,
+  }
+}
 
 interface HomeCacheFallbackProps {
   householdId: string
@@ -183,63 +242,10 @@ export function HomeCacheFallback({ householdId }: HomeCacheFallbackProps) {
     }
   }, [householdId, cachedData])
 
-  // Compute props for cached data rendering
+  // Compute props for cached data rendering using shared helper
   const cachedProps = useMemo(() => {
     if (!cachedData || !cacheTimestamp) return null
-
-    const todayStr = formatDateISO(new Date())
-    const weekStart = cachedData.weekStart
-      ? new Date(cachedData.weekStart + 'T00:00:00')
-      : getWeekStart(new Date())
-
-    // Calculate today's summary
-    const todaySummary: DaySummary = {
-      date: todayStr,
-      pickups: cachedData.pickups.filter(p => p.date === todayStr),
-      meal: cachedData.meals.find(m => m.date === todayStr) || null,
-      tasks: cachedData.tasks.filter(t => t.date === todayStr),
-      householdEvents: cachedData.householdEvents.filter(e => e.event_date === todayStr),
-      memberEvents: cachedData.memberEvents.filter(e => e.date === todayStr),
-      externalEvents: cachedData.externalEvents.filter(e => e.event_date === todayStr),
-    }
-
-    // Calculate status for attention banner
-    const todayPickups = cachedData.pickups.filter(p => p.date === todayStr)
-    const todayMeal = cachedData.meals.find(m => m.date === todayStr)
-    const childrenWithoutPickup = cachedData.children.filter(child =>
-      !todayPickups.some(p => p.child_id === child.id && p.picker_id)
-    ) as Child[]
-    const noMeal = !todayMeal || (!todayMeal.recipe_id && !todayMeal.custom_meal)
-    const isAllReady = childrenWithoutPickup.length === 0 && !noMeal
-
-    return {
-      householdId: cachedData.household?.id || householdId,
-      // currentUserId is safe to cache - IndexedDB is per-device like session cookies
-      // This enables "You are picking up" to show correctly during stale phase
-      currentUserId: cachedData.currentUserId,
-      children: cachedData.children,
-      members: cachedData.members,
-      todaySummary,
-      pickups: cachedData.pickups,
-      meals: cachedData.meals,
-      memberEvents: cachedData.memberEvents,
-      householdEvents: cachedData.householdEvents,
-      externalEvents: cachedData.externalEvents,
-      childTasks: cachedData.tasks,
-      // Holidays not cached - they require DB query + birthday computation
-      // The stale phase is brief (until server streams in), so empty array is acceptable
-      // Users see holidays immediately when server content replaces this fallback
-      holidays: [] as Holiday[],
-      weekStart,
-      aiHeadsUps: [],
-      recentPhotos: [],
-      childrenWithoutPickup,
-      noMeal,
-      isAllReady,
-      isDemo: false,
-      // Use actual cache timestamp for accurate "last updated" display
-      dataTimestamp: cacheTimestamp,
-    } as HomePageContentProps
+    return computeHomePropsFromCache(cachedData, householdId, cacheTimestamp)
   }, [cachedData, cacheTimestamp, householdId])
 
   // If cache not checked yet, show skeleton (brief flash while checking IndexedDB)
@@ -282,6 +288,9 @@ export function HomeDataCacher({ householdId, data }: HomeDataCacherProps) {
     async function cacheData() {
       const cacheKey = CACHE_KEYS.home(householdId)
       const dataWithVersion = { ...data, version: CACHE_VERSION }
+
+      // Store householdId for SmartLoading to use during navigation
+      setStoredHouseholdId(householdId)
 
       // Write to localStorage first (sync, instant reads next time)
       setCacheSync(cacheKey, dataWithVersion)
