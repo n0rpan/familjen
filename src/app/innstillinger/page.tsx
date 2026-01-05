@@ -14,6 +14,7 @@
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { SettingsDataLoader } from '@/components/settings/SettingsDataLoader'
+import { SettingsCacheFallback } from '@/components/settings/SettingsDataCache'
 import { SettingsPageSkeleton } from '@/components/Skeleton'
 import { getHouseholdIdFromSession } from '@/lib/data/server'
 
@@ -33,11 +34,14 @@ export default async function SettingsPage({ searchParams }: PageProps) {
     redirect('/login')
   }
 
+  // Use cache fallback for production, skeleton for demo
+  const effectiveHouseholdId = householdId || 'demo'
+
   return (
     <div className="page-container">
-      <Suspense fallback={<SettingsPageSkeleton />}>
+      <Suspense fallback={isDemo ? <SettingsPageSkeleton /> : <SettingsCacheFallback householdId={effectiveHouseholdId} />}>
         <SettingsDataLoader
-          householdId={householdId || 'demo'}
+          householdId={effectiveHouseholdId}
           isDemo={isDemo}
         />
       </Suspense>

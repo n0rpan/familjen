@@ -7,6 +7,7 @@
 
 import { fetchRecipesPageData, getDemoRecipesPageData } from '@/lib/data/server'
 import { RecipesPageContent } from './RecipesPageContent'
+import { RecipesDataCacher } from './RecipesDataCache'
 
 interface RecipesDataLoaderProps {
   householdId: string
@@ -19,9 +20,13 @@ export async function RecipesDataLoader({ householdId, isDemo }: RecipesDataLoad
     : await fetchRecipesPageData(householdId)
 
   return (
-    <RecipesPageContent
-      initialData={data}
-      isDemo={isDemo}
-    />
+    <>
+      <RecipesPageContent
+        initialData={data}
+        isDemo={isDemo}
+      />
+      {/* Cache data for instant loads on repeat visits */}
+      {!isDemo && <RecipesDataCacher householdId={householdId} data={data} />}
+    </>
   )
 }

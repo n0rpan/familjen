@@ -7,6 +7,7 @@
 
 import { fetchShoppingPageData, getDemoShoppingPageData } from '@/lib/data/server'
 import { ShoppingPageWrapper } from './ShoppingPageWrapper'
+import { ShoppingDataCacher } from './ShoppingDataCache'
 
 interface ShoppingDataLoaderProps {
   householdId: string
@@ -19,10 +20,14 @@ export async function ShoppingDataLoader({ householdId, isDemo }: ShoppingDataLo
     : await fetchShoppingPageData(householdId)
 
   return (
-    <ShoppingPageWrapper
-      initialData={data}
-      householdId={householdId}
-      isDemo={isDemo}
-    />
+    <>
+      <ShoppingPageWrapper
+        initialData={data}
+        householdId={householdId}
+        isDemo={isDemo}
+      />
+      {/* Cache data for instant loads on repeat visits */}
+      {!isDemo && <ShoppingDataCacher householdId={householdId} data={data} />}
+    </>
   )
 }

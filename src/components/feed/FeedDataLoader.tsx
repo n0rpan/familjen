@@ -10,6 +10,7 @@
 
 import { fetchFeedPageData, getDemoFeedPageData } from '@/lib/data/server'
 import { FeedPageWrapper } from './FeedPageWrapper'
+import { FeedDataCacher } from './FeedDataCache'
 
 interface FeedDataLoaderProps {
   householdId: string
@@ -30,12 +31,16 @@ export async function FeedDataLoader({
     : await fetchFeedPageData(householdId)
 
   return (
-    <FeedPageWrapper
-      initialData={data}
-      householdId={householdId}
-      isDemo={isDemo}
-      serviceFilter={serviceFilter}
-      typeFilter={typeFilter}
-    />
+    <>
+      <FeedPageWrapper
+        initialData={data}
+        householdId={householdId}
+        isDemo={isDemo}
+        serviceFilter={serviceFilter}
+        typeFilter={typeFilter}
+      />
+      {/* Cache data for instant loads on repeat visits */}
+      {!isDemo && <FeedDataCacher householdId={householdId} data={data} />}
+    </>
   )
 }

@@ -11,6 +11,7 @@
 
 import { fetchStyringPageData, getDemoStyringPageData } from '@/lib/data/server'
 import { StyringPageContent } from './StyringPageContent'
+import { StyringDataCacher } from './StyringDataCache'
 
 interface StyringDataLoaderProps {
   householdId: string
@@ -23,5 +24,11 @@ export async function StyringDataLoader({ householdId, isDemo }: StyringDataLoad
     ? getDemoStyringPageData()
     : await fetchStyringPageData(householdId)
 
-  return <StyringPageContent initialData={data} isDemo={isDemo} />
+  return (
+    <>
+      <StyringPageContent initialData={data} isDemo={isDemo} />
+      {/* Cache data for instant loads on repeat visits */}
+      {!isDemo && <StyringDataCacher householdId={householdId} data={data} />}
+    </>
+  )
 }

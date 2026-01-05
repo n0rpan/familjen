@@ -10,6 +10,7 @@
 
 import { fetchSettingsPageData, getDemoSettingsPageData, getCurrentUser } from '@/lib/data/server'
 import { SettingsPageContent } from './SettingsPageContent'
+import { SettingsDataCacher } from './SettingsDataCache'
 
 interface SettingsDataLoaderProps {
   householdId: string
@@ -31,16 +32,20 @@ export async function SettingsDataLoader({ householdId, isDemo }: SettingsDataLo
     : data.members[0] || null // Demo: first member is "logged in"
 
   return (
-    <SettingsPageContent
-      initialData={{
-        household: data.household,
-        members: data.members,
-        children: data.children,
-        myProfile,
-        connectedCalendarEmail: data.connectedCalendarEmail,
-        user,
-      }}
-      isDemo={isDemo}
-    />
+    <>
+      <SettingsPageContent
+        initialData={{
+          household: data.household,
+          members: data.members,
+          children: data.children,
+          myProfile,
+          connectedCalendarEmail: data.connectedCalendarEmail,
+          user,
+        }}
+        isDemo={isDemo}
+      />
+      {/* Cache data for instant loads on repeat visits */}
+      {!isDemo && <SettingsDataCacher householdId={householdId} data={data} />}
+    </>
   )
 }

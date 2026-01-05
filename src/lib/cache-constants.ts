@@ -22,4 +22,6 @@ export const CACHE_KEYS = {
   feed: (householdId: string) => `feed-${householdId}`,
   shopping: (householdId: string) => `shopping-${householdId}`,
   recipes: (householdId: string) => `recipes-${householdId}`,
+  settings: (householdId: string) => `settings-${householdId}`,
+  styring: (householdId: string) => `styring-${householdId}`,
 }

@@ -14,6 +14,7 @@
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { FeedDataLoader } from '@/components/feed/FeedDataLoader'
+import { FeedCacheFallback } from '@/components/feed/FeedDataCache'
 import { FeedPageSkeleton } from '@/components/Skeleton'
 import { getHouseholdIdFromSession } from '@/lib/data/server'
 
@@ -39,10 +40,13 @@ export default async function FeedPage({ searchParams }: PageProps) {
     redirect('/login')
   }
 
+  // Use cache fallback for production, skeleton for demo
+  const effectiveHouseholdId = householdId || 'demo'
+
   return (
-    <Suspense fallback={<FeedPageSkeleton />}>
+    <Suspense fallback={isDemo ? <FeedPageSkeleton /> : <FeedCacheFallback householdId={effectiveHouseholdId} />}>
       <FeedDataLoader
-        householdId={householdId || 'demo'}
+        householdId={effectiveHouseholdId}
         isDemo={isDemo}
         serviceFilter={serviceFilter}
         typeFilter={typeFilter}

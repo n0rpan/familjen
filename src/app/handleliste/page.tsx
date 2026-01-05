@@ -1,6 +1,7 @@
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { ShoppingDataLoader } from '@/components/shopping/ShoppingDataLoader'
+import { ShoppingCacheFallback } from '@/components/shopping/ShoppingDataCache'
 import { ShoppingPageSkeleton } from '@/components/Skeleton'
 import { getHouseholdIdFromSession } from '@/lib/data/server'
 
@@ -25,11 +26,14 @@ export default async function ShoppingListPage({ searchParams }: PageProps) {
     redirect('/login')
   }
 
+  // Use cache fallback for production, skeleton for demo
+  const effectiveHouseholdId = householdId || 'demo'
+
   return (
     <div className="page-container">
-      <Suspense fallback={<ShoppingPageSkeleton />}>
+      <Suspense fallback={isDemo ? <ShoppingPageSkeleton /> : <ShoppingCacheFallback householdId={effectiveHouseholdId} />}>
         <ShoppingDataLoader
-          householdId={householdId || 'demo'}
+          householdId={effectiveHouseholdId}
           isDemo={isDemo}
         />
       </Suspense>
