@@ -1,6 +1,7 @@
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { StyringDataLoader } from '@/components/styring/StyringDataLoader'
+import { StyringCacheFallback } from '@/components/styring/StyringDataCache'
 import { StyringPageSkeleton } from '@/components/Skeleton'
 import { getHouseholdIdFromSession } from '@/lib/data/server'
 
@@ -25,11 +26,14 @@ export default async function StyringPage({ searchParams }: PageProps) {
     redirect('/login')
   }
 
+  // Use cache fallback for production, skeleton for demo
+  const effectiveHouseholdId = householdId || 'demo'
+
   return (
     <div className="page-container">
-      <Suspense fallback={<StyringPageSkeleton />}>
+      <Suspense fallback={isDemo ? <StyringPageSkeleton /> : <StyringCacheFallback householdId={effectiveHouseholdId} />}>
         <StyringDataLoader
-          householdId={householdId || 'demo'}
+          householdId={effectiveHouseholdId}
           isDemo={isDemo}
         />
       </Suspense>

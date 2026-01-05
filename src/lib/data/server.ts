@@ -13,7 +13,7 @@
 
 import { cache } from 'react'
 import { unstable_cache, revalidateTag } from 'next/cache'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getSessionLocal } from '@/lib/supabase/server'
 import { createAdminClient, syncUserMetadata } from '@/lib/supabase/admin'
 import { formatDateISO, addDays, getWeekStart, getWeekNumber, getWeekStartFromWeekNumber, type Holiday } from '@/lib/utils'
 import type {
@@ -235,8 +235,11 @@ function getCachedHomeData(
 /**
  * Fetch all data needed for the home page
  * Uses cached data for instant navigation, realtime handles updates
+ *
+ * @param householdId - The household ID
+ * @param userId - Optional user ID for currentMember lookup (avoids extra auth call)
  */
-export const fetchHomePageData = cache(async (householdId: string): Promise<HomePageData> => {
+export const fetchHomePageData = cache(async (householdId: string, userId?: string): Promise<HomePageData> => {
   // Calculate week dates (Monday to Sunday)
   const today = new Date()
   const weekStart = getWeekStart(today)
@@ -248,11 +251,10 @@ export const fetchHomePageData = cache(async (householdId: string): Promise<Home
   // Get cached data (shared between household members)
   const cachedData = await getCachedHomeData(householdId, weekStartStr, weekEndStr, currentYear)
 
-  // Get current user for member matching (not cached - per-request)
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const currentMember = user
-    ? cachedData.members.find(m => m.user_id === user.id) || null
+  // Find current member from cached data using passed userId
+  // No network call needed - userId comes from local session (middleware validated)
+  const currentMember = userId
+    ? cachedData.members.find(m => m.user_id === userId) || null
     : null
 
   return {
@@ -292,11 +294,13 @@ function getCachedWeekData(
  * @param householdId - The household ID
  * @param week - Optional week number (1-53). Defaults to current week.
  * @param year - Optional year. Defaults to current year or inferred from week.
+ * @param userId - Optional user ID for currentMember lookup (avoids extra auth call)
  */
 export const fetchWeekPageData = cache(async (
   householdId: string,
   week?: number,
-  year?: number
+  year?: number,
+  userId?: string
 ): Promise<WeekPageData> => {
   // Calculate week dates
   const today = new Date()
@@ -311,11 +315,10 @@ export const fetchWeekPageData = cache(async (
   // Get cached data (shared between household members)
   const cachedData = await getCachedWeekData(householdId, weekStartStr, weekEndStr, currentYear)
 
-  // Get current user for member matching (not cached - per-request)
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const currentMember = user
-    ? cachedData.members.find(m => m.user_id === user.id) || null
+  // Find current member from cached data using passed userId
+  // No network call needed - userId comes from local session (middleware validated)
+  const currentMember = userId
+    ? cachedData.members.find(m => m.user_id === userId) || null
     : null
 
   return {
@@ -429,14 +432,8 @@ export function getTodaySummary(data: HomePageData): DaySummary {
  */
 export async function getHouseholdIdFromSession(): Promise<string | null> {
   try {
-    const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    if (authError) {
-      console.error('[getHouseholdIdFromSession] Auth error:', authError.message)
-      return null
-    }
-
+    // Use local session (no network call) - middleware already validated
+    const user = await getSessionLocal()
     if (!user) return null
 
     // Fast path: JWT has household_id (>99% of established users)
@@ -444,6 +441,7 @@ export async function getHouseholdIdFromSession(): Promise<string | null> {
     if (jwtHouseholdId) return jwtHouseholdId
 
     // Slow path: DB fallback for stale JWTs (rare - new households or old tokens)
+    const supabase = await createClient()
     const { data: memberData, error: dbError } = await supabase
       .from('household_members')
       .select('household_id')
@@ -472,21 +470,20 @@ export async function getHouseholdIdFromSession(): Promise<string | null> {
 }
 
 /**
- * Check if user is authenticated
+ * Check if user is authenticated (no network call)
+ * Uses local session - middleware already validated
  */
 export async function isAuthenticated(): Promise<boolean> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getSessionLocal()
   return !!user
 }
 
 /**
- * Get current user info
+ * Get current user info (no network call)
+ * Uses local session - middleware already validated
  */
 export const getCurrentUser = cache(async () => {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  return user
+  return await getSessionLocal()
 })
 
 /**

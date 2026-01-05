@@ -14,7 +14,7 @@
  * Mutations update local state optimistically, then sync via realtime.
  */
 
-import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
+import { useState, useMemo, useRef, useCallback, useEffect, startTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { WeekGrid } from '@/components/WeekGrid'
@@ -306,13 +306,12 @@ export function WeekPageContent({
 
   // Navigate to a specific week
   const navigateToWeek = useCallback((targetWeekNumber: number, targetYear?: number) => {
-    if (isDemo) {
-      const yearParam = targetYear ? `${targetYear}-${String(targetWeekNumber).padStart(2, '0')}` : String(targetWeekNumber)
-      router.push(`/uke?demo=true&uke=${yearParam}`)
-    } else {
-      const yearParam = targetYear ? `${targetYear}-${String(targetWeekNumber).padStart(2, '0')}` : String(targetWeekNumber)
-      router.push(`/uke?uke=${yearParam}`)
-    }
+    const yearParam = targetYear ? `${targetYear}-${String(targetWeekNumber).padStart(2, '0')}` : String(targetWeekNumber)
+    const url = isDemo ? `/uke?demo=true&uke=${yearParam}` : `/uke?uke=${yearParam}`
+    // Use startTransition to keep current content visible during navigation
+    startTransition(() => {
+      router.push(url)
+    })
   }, [router, isDemo])
 
   // Handle week picker date selection

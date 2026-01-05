@@ -115,7 +115,10 @@ Every page benefits from these layers (in order of user experience):
 
 | Layer | What It Does | User Experience |
 |-------|--------------|-----------------|
-| IndexedDB cache | Stores data locally with timestamps | Instant data on cold start |
+| localStorage cache | Synchronous reads during initial render | Zero skeleton flash |
+| IndexedDB cache | Stores data locally with timestamps | Fallback for larger data |
+| Middleware auth cookie | Skips auth validation for 5 min after validation | Instant middleware |
+| Session validator | Background validation every 5 min + on visibility | No stale sessions |
 | Delayed loading (150ms) | Only shows loading if navigation takes >150ms | Fast navigations feel instant |
 | Same-page guard | Clicking current page does nothing | No flicker or dimout |
 | Realtime → cache | Realtime updates also update IndexedDB | Cache stays fresh for next visit |
@@ -128,20 +131,27 @@ Every page benefits from these layers (in order of user experience):
 
 After a PWA update, the server-side cache (`unstable_cache`) is cold because it's tied to the deployment. This causes a delay while data is fetched from Supabase. To solve this, we use IndexedDB caching on the client side that persists across deployments.
 
-**Components:**
+**Dual Storage Strategy:**
+- **localStorage** (sync): Instant reads during initial render - no skeleton flash
+- **IndexedDB** (async): Durability, larger capacity, background sync fallback
 
-| Component | Purpose |
-|-----------|---------|
-| `HomeCacheFallback` | Suspense fallback that shows cached IndexedDB data instantly (no loading indicator) |
-| `HomeDataCacher` | Caches server data to IndexedDB after render for next visit |
-| `prefetchHomeData` | Populates IndexedDB cache on link hover |
-| `updateCacheWithRealtimeChange` | Updates IndexedDB when realtime changes arrive |
+**Cache Fallback Components (all pages):**
+
+| Page | CacheFallback Component | DataCacher Component |
+|------|------------------------|---------------------|
+| Home | `HomeCacheFallback` | `HomeDataCacher` |
+| Week | `WeekCacheFallback` | `WeekDataCacher` |
+| Feed | `FeedCacheFallback` | `FeedDataCacher` |
+| Shopping | `ShoppingCacheFallback` | `ShoppingDataCacher` |
+| Recipes | `RecipesCacheFallback` | `RecipesDataCacher` |
+| Settings | `SettingsCacheFallback` | `SettingsDataCacher` |
+| Styring | `StyringCacheFallback` | `StyringDataCacher` |
 
 **Flow:**
-1. First visit: Server renders → `HomeDataCacher` saves to IndexedDB
-2. Repeat visit: `HomeCacheFallback` shows cached data instantly → server updates seamlessly
+1. First visit: Server renders → `*DataCacher` saves to localStorage + IndexedDB
+2. Repeat visit: `*CacheFallback` reads localStorage synchronously (instant!) → server updates seamlessly
 3. Realtime update: WebSocket receives change → updates IndexedDB cache + refreshes UI
-4. After PWA update: IndexedDB still has data → instant load, no visible loading state
+4. After PWA update: localStorage has data → truly instant load, zero skeleton flash
 
 **Cache versioning:**
 ```typescript
@@ -156,22 +166,26 @@ if (cached.data.version === CACHE_VERSION) {
 
 **Key files:**
 - `src/lib/cache-constants.ts` - `CACHE_VERSION` and `CACHE_KEYS` (shared constants)
-- `src/components/home/HomeDataCache.tsx` - `HomeCacheFallback` and `HomeDataCacher`
-- `src/lib/prefetch/pages.ts` - `prefetchHomeData` function
+- `src/lib/cache-sync.ts` - Synchronous localStorage cache layer for instant reads
 - `src/lib/cache.ts` - IndexedDB wrapper functions + `updateCacheWithRealtimeChange`
+- `src/components/SmartLoading.tsx` - Route loading component that shows cached content
+- `src/components/*/DataCache.tsx` - CacheFallback and DataCacher for each page
+- `src/app/*/loading.tsx` - Route loading states using SmartLoading
+- `src/lib/prefetch/pages.ts` - `prefetchHomeData` function
 - `src/components/home/HomeClientInteractions.tsx` - Realtime subscriptions + cache updates
 
 **Cache invalidation:**
 | Scenario | Behavior |
 |----------|----------|
-| Logout | `clearAllCache()` clears all IndexedDB entries |
-| Account deletion | `clearAllCache()` clears all IndexedDB entries |
+| Logout | `clearAllCache()` clears localStorage + IndexedDB |
+| Account deletion | `clearAllCache()` clears localStorage + IndexedDB |
 | Household switch | Different cache key (`home-{householdId}`) is used |
 | Schema change | Increment `CACHE_VERSION` - old cache ignored |
 | Render error | `CacheErrorBoundary` catches and falls back to skeleton |
+| Session expired | `useSessionValidator` clears caches and redirects to login |
 
 **Error handling:**
-The `HomeCacheFallback` wraps `HomePageContent` in a `CacheErrorBoundary`. If cached data causes a render error despite version checks (e.g., missing required fields), the boundary catches it and gracefully falls back to `HomePageSkeleton`.
+The `*CacheFallback` wraps page content in a `CacheErrorBoundary`. If cached data causes a render error despite version checks (e.g., missing required fields), the boundary catches it and gracefully falls back to the skeleton.
 
 ### Instant Navigation (No Loading Indicators)
 
@@ -386,14 +400,66 @@ All main pages have been converted to the PPR pattern for instant navigation:
 - `revalidateStyring(householdId)` - Revalidate home control cache
 - `revalidateAdmin()` - Revalidate admin data cache
 
+### SmartLoading (Route Loading with Cache)
+
+Next.js shows `loading.tsx` BEFORE our Suspense fallback during navigation. This means cache fallback components never get to show cached data first.
+
+**Solution:** `SmartLoading` component makes `loading.tsx` itself check localStorage cache:
+
+```typescript
+// src/app/[page]/loading.tsx
+'use client'
+
+import { SmartLoading } from '@/components/SmartLoading'
+import { [Page]PageSkeleton } from '@/components/Skeleton'
+import { [Page]PageContent } from '@/components/[page]/[Page]PageContent'
+import type { Cached[Page]Data } from '@/components/[page]/[Page]DataCache'
+
+export default function [Page]Loading() {
+  return (
+    <SmartLoading page="[page]" skeleton={<[Page]PageSkeleton />}>
+      {(rawData) => {
+        const data = rawData as Cached[Page]Data
+        return <[Page]PageContent initialData={data} isDemo={false} />
+      }}
+    </SmartLoading>
+  )
+}
+```
+
+**How SmartLoading works:**
+1. Reads householdId from localStorage (set by DataCacher components)
+2. Checks localStorage cache for fresh data (30-minute max age)
+3. If cache hit: renders cached content (instant, no skeleton flash)
+4. If cache miss: falls back to skeleton
+
+**Safety guarantees:**
+- Cache is ignored if older than 30 minutes
+- Cache is ignored if version doesn't match (`CACHE_VERSION`)
+- Server data always replaces cached data when it arrives
+- Cache is cleared on logout (`clearAllCache()`)
+
 ### Adding a New Page (Checklist)
 
-1. **Create `loading.tsx`** - Shows skeleton immediately on navigation
+1. **Create `loading.tsx`** - Uses SmartLoading for instant cached loads
    ```typescript
    // src/app/[page]/loading.tsx
+   'use client'
+
+   import { SmartLoading } from '@/components/SmartLoading'
    import { [Page]PageSkeleton } from '@/components/Skeleton'
-   export default function Loading() {
-     return <[Page]PageSkeleton />
+   import { [Page]PageContent } from '@/components/[page]/[Page]PageContent'
+   import type { Cached[Page]Data } from '@/components/[page]/[Page]DataCache'
+
+   export default function [Page]Loading() {
+     return (
+       <SmartLoading page="[page]" skeleton={<[Page]PageSkeleton />}>
+         {(rawData) => {
+           const data = rawData as Cached[Page]Data
+           return <[Page]PageContent initialData={data} isDemo={false} />
+         }}
+       </SmartLoading>
+     )
    }
    ```
 
@@ -2377,26 +2443,48 @@ export function useHouseholdId(): string | null {
 }
 ```
 
-**Server-side with DB fallback** (for PPR pages):
+**Server-side with local session** (for PPR pages):
 ```typescript
+// src/lib/supabase/server.ts - reads JWT locally (no network call)
+export async function getSessionLocal(): Promise<User | null> {
+  const supabase = await createClient()
+  const { data: { session } } = await supabase.auth.getSession()  // LOCAL read
+  return session?.user ?? null
+}
+
 // src/lib/data/server.ts - used by all PPR pages
 export async function getHouseholdIdFromSession(): Promise<string | null> {
-  const user = await getUser()
+  const user = await getSessionLocal()  // No network call - instant!
 
-  // Try JWT first (fast path)
+  // Fast path: JWT has household_id (>99% of established users)
   const jwtHouseholdId = user?.app_metadata?.household_id
   if (jwtHouseholdId) return jwtHouseholdId
 
-  // Fallback: Check database if JWT is stale (user just created/joined household)
+  // Slow path: DB fallback for stale JWTs (rare)
   const membership = await queryMembership(user.id)
   if (membership?.household_id) {
-    // Sync JWT so next request is fast (fire-and-forget)
     syncUserMetadata(user.id, user.email, membership.household_id).catch(console.error)
     return membership.household_id
   }
   return null
 }
 ```
+
+**Auth Architecture (for instant navigation):**
+
+| Layer | Purpose | When |
+|-------|---------|------|
+| Middleware (`proxy.ts`) | Validates session with Supabase (network call) | Every request |
+| Page components | Read JWT locally via `getSessionLocal()` (no network) | On render |
+| Background validator | Re-validates session every 5 minutes | Client-side |
+
+**Why this is fast:** Middleware already validated the session, so pages can trust the local JWT without making another network call to Supabase. The JWT is cryptographically signed and can't be forged.
+
+**Background session validation** (`src/hooks/useSessionValidator.ts`):
+- Validates with Supabase every 5 minutes (doesn't block navigation)
+- Also validates when app becomes visible (returning from background)
+- On invalid session: clears IndexedDB cache and redirects to login
+- Skips validation on login page and in demo mode
 
 **When JWT gets synced:**
 1. On login (`src/app/auth/callback/route.ts`)
@@ -2406,7 +2494,11 @@ export async function getHouseholdIdFromSession(): Promise<string | null> {
 
 **Note:** Sync only happens when DB fallback is used (JWT is stale). Once synced, future requests use JWT directly. Sync is fire-and-forget to avoid blocking page render.
 
-**Security:** RLS policies on Supabase validate household_id server-side. The JWT value is for client-side optimization only - all data access goes through Supabase which enforces proper authorization.
+**Security:**
+- Middleware is the security perimeter - it validates every request with Supabase
+- Pages trust the local JWT because middleware already validated it
+- RLS policies on Supabase enforce authorization server-side
+- Background validator catches expired sessions for long-running PWA sessions
 
 ### IndexedDB Caching (Stale-While-Revalidate)
 

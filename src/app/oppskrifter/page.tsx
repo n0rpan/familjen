@@ -14,6 +14,7 @@
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { RecipesDataLoader } from '@/components/recipes/RecipesDataLoader'
+import { RecipesCacheFallback } from '@/components/recipes/RecipesDataCache'
 import { RecipesPageSkeleton } from '@/components/Skeleton'
 import { getHouseholdIdFromSession } from '@/lib/data/server'
 
@@ -33,11 +34,14 @@ export default async function RecipesPage({ searchParams }: PageProps) {
     redirect('/login')
   }
 
+  // Use cache fallback for production, skeleton for demo
+  const effectiveHouseholdId = householdId || 'demo'
+
   return (
     <div className="page-container">
-      <Suspense fallback={<RecipesPageSkeleton />}>
+      <Suspense fallback={isDemo ? <RecipesPageSkeleton /> : <RecipesCacheFallback householdId={effectiveHouseholdId} />}>
         <RecipesDataLoader
-          householdId={householdId || 'demo'}
+          householdId={effectiveHouseholdId}
           isDemo={isDemo}
         />
       </Suspense>

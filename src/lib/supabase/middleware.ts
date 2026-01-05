@@ -9,6 +9,12 @@ const ADMIN_PATHS = ['/admin']
 // Paths that allow demo mode bypass (all protected paths except admin-only)
 const DEMO_ALLOWED_PATHS = ['/uke', '/oppskrifter', '/innstillinger', '/handleliste', '/feed', '/styring', '/']
 
+// Cookie name for tracking last validation time
+const VALIDATION_COOKIE = 'familjen-auth-validated'
+
+// Only validate with Supabase server every 5 minutes (instant navigation between validations)
+const VALIDATION_INTERVAL_MS = 5 * 60 * 1000
+
 // Check if request has a Supabase auth cookie (quick check without calling auth API)
 function hasAuthCookie(request: NextRequest): boolean {
   const cookies = request.cookies.getAll()
@@ -19,6 +25,17 @@ function hasAuthCookie(request: NextRequest): boolean {
 // Check if request is in demo mode
 function isDemoMode(request: NextRequest): boolean {
   return request.nextUrl.searchParams.get('demo') === 'true'
+}
+
+// Check if we recently validated the session (within VALIDATION_INTERVAL_MS)
+function wasRecentlyValidated(request: NextRequest): boolean {
+  const validationCookie = request.cookies.get(VALIDATION_COOKIE)
+  if (!validationCookie?.value) return false
+
+  const lastValidated = parseInt(validationCookie.value, 10)
+  if (isNaN(lastValidated)) return false
+
+  return Date.now() - lastValidated < VALIDATION_INTERVAL_MS
 }
 
 export async function updateSession(request: NextRequest) {
@@ -46,7 +63,17 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.next({ request })
   }
 
-  // Auth cookie exists - need to validate/refresh the session
+  // FAST PATH: If we validated recently, trust local session (no network call!)
+  // This makes menu navigation instant. Background validator catches expired sessions.
+  const recentlyValidated = wasRecentlyValidated(request)
+
+  // For non-admin routes, skip validation if we validated recently
+  // Admin routes always validate for security
+  if (recentlyValidated && !isAdminPath && !isLoginPage) {
+    return NextResponse.next({ request })
+  }
+
+  // SLOW PATH: Need to validate/refresh the session with Supabase
   let supabaseResponse = NextResponse.next({
     request,
   })
@@ -72,7 +99,7 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  // Refresh session if expired (this is the expensive call we're optimizing)
+  // Validate session with Supabase (network call)
   const { data: { user } } = await supabase.auth.getUser()
 
   // Protected routes - redirect to login if session is invalid/expired
@@ -94,6 +121,17 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone()
     url.pathname = '/'
     return NextResponse.redirect(url)
+  }
+
+  // Set validation timestamp cookie for fast path on next navigation
+  if (user) {
+    supabaseResponse.cookies.set(VALIDATION_COOKIE, Date.now().toString(), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/', // Explicit path ensures cookie is accessible across all routes
+      maxAge: VALIDATION_INTERVAL_MS / 1000, // Cookie expires when validation is needed
+    })
   }
 
   return supabaseResponse

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
+import { useState, useCallback, useRef, useMemo, useEffect, startTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
@@ -363,8 +363,10 @@ export function UniversalAIInput({
       return false
     }
 
-    // Navigate
-    router.push(url)
+    // Navigate with startTransition to keep current content visible
+    startTransition(() => {
+      router.push(url)
+    })
 
     // Clear state
     setParsedActions([])
@@ -730,7 +732,9 @@ export function UniversalAIInput({
         case 'navigate': {
           // Navigate to the handleliste page (wishlist is at the bottom)
           setParsedActions(prev => prev.filter(a => a !== action))
-          router.push(isDemo ? '/handleliste?demo=true' : '/handleliste')
+          startTransition(() => {
+            router.push(isDemo ? '/handleliste?demo=true' : '/handleliste')
+          })
           return // Don't create any database records
         }
       }

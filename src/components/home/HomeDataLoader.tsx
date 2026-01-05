@@ -19,14 +19,15 @@ import type { AIHeadsUp, Child } from '@/lib/types'
 
 interface HomeDataLoaderProps {
   householdId: string
+  userId?: string  // For currentMember lookup without extra auth call
   isDemo: boolean
 }
 
-export async function HomeDataLoader({ householdId, isDemo }: HomeDataLoaderProps) {
+export async function HomeDataLoader({ householdId, userId, isDemo }: HomeDataLoaderProps) {
   // Fetch data - same structure for demo and production
   const data = isDemo
     ? getDemoHomePageData()
-    : await fetchHomePageData(householdId)
+    : await fetchHomePageData(householdId, userId)
 
   // Calculate today's summary
   const todaySummary = getTodaySummary(data)
