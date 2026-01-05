@@ -254,6 +254,9 @@ export async function updateCacheWithRealtimeChange<T extends Record<string, unk
   idField = 'id'
 ): Promise<void> {
   try {
+    // Validate data is a valid object (guard against malformed realtime payloads)
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return
+
     const cached = await getCached<T>(key)
     if (!cached) return // No cache to update
 

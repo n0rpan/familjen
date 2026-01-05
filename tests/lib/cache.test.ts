@@ -380,6 +380,39 @@ describe('updateCacheWithRealtimeChange', () => {
       const cached = mockStore.get(cacheKey) as { data: typeof existingData }
       expect(cached.data.pickups).toHaveLength(0)
     })
+
+    it('ignores null or undefined data (malformed payload)', async () => {
+      const cacheKey = 'home-household-123'
+      const existingData = {
+        pickups: [{ id: 'pickup-1' }],
+        meals: [],
+        tasks: [],
+      }
+      mockStore.set(cacheKey, { key: cacheKey, data: existingData, timestamp: Date.now() })
+
+      // Should not throw and should not modify cache
+      await updateCacheWithRealtimeChange(cacheKey, 'pickups', 'INSERT', null as unknown as Record<string, unknown>)
+      await updateCacheWithRealtimeChange(cacheKey, 'pickups', 'INSERT', undefined as unknown as Record<string, unknown>)
+
+      const cached = mockStore.get(cacheKey) as { data: typeof existingData }
+      expect(cached.data.pickups).toHaveLength(1) // Unchanged
+    })
+
+    it('ignores array data (malformed payload)', async () => {
+      const cacheKey = 'home-household-123'
+      const existingData = {
+        pickups: [{ id: 'pickup-1' }],
+        meals: [],
+        tasks: [],
+      }
+      mockStore.set(cacheKey, { key: cacheKey, data: existingData, timestamp: Date.now() })
+
+      // Should not throw and should not modify cache
+      await updateCacheWithRealtimeChange(cacheKey, 'pickups', 'INSERT', [] as unknown as Record<string, unknown>)
+
+      const cached = mockStore.get(cacheKey) as { data: typeof existingData }
+      expect(cached.data.pickups).toHaveLength(1) // Unchanged
+    })
   })
 
   describe('Table to field mapping', () => {
