@@ -81,35 +81,55 @@ export type PrefillData =
   | { type: 'childTask'; data: ChildTaskPrefillData }
 
 /**
- * Routing decision result
+ * Routing decision result - discriminated union for type safety
+ *
+ * When shouldNavigate is true, all navigation fields are guaranteed to exist.
+ * When shouldNavigate is false, only reason is present.
  */
-export interface RoutingDecision {
-  shouldNavigate: boolean
-  route?: string
-  queryParam?: string
-  storageKey?: string
-  prefillData?: PrefillData
+export type RoutingDecision = NavigateDecision | QuickCardDecision
+
+/** Decision to navigate to full UI with prefill */
+export interface NavigateDecision {
+  shouldNavigate: true
+  route: string
+  queryParam: string
+  storageKey: string
+  prefillData: PrefillData
   reason: string
 }
 
-/**
- * Parsed action data from AI (simplified interface)
- */
-interface ActionData {
-  // Common
-  confidence?: number
+/** Decision to use quick inline card */
+export interface QuickCardDecision {
+  shouldNavigate: false
+  reason: string
+}
 
-  // Recipe fields
+// ============================================================================
+// Domain-specific action data interfaces
+// ============================================================================
+
+/** Common fields present in all action data */
+interface CommonActionFields {
+  confidence?: number
+}
+
+/** Fields specific to recipe actions */
+interface RecipeActionFields {
   name?: string
   item_name?: string
-  product_name?: string
   ingredients?: Array<{ item: string; amount: string }> | string[]
   instructions?: string
   external_link?: string
+  link?: string // Alias for external_link
   is_quick?: boolean
   is_kid_friendly?: boolean
+}
 
-  // Wishlist fields
+/** Fields specific to wishlist actions */
+interface WishlistActionFields {
+  name?: string
+  item_name?: string
+  product_name?: string
   description?: string
   price?: number | null
   link?: string
@@ -117,20 +137,49 @@ interface ActionData {
   image?: string | null
   child_id?: string | null
   member_id?: string | null
+}
 
-  // Event/Task fields
+/** Fields specific to member event actions */
+interface MemberEventActionFields {
   title?: string
+  name?: string // Alias for title
+  member_id?: string | null
+  event_type?: MemberEventType
   date?: string
   end_date?: string
+}
+
+/** Fields specific to child task actions */
+interface ChildTaskActionFields {
+  title?: string
+  name?: string // Alias for title
+  child_id?: string | null
+  task_type?: ChildTaskType
+  date?: string
   time?: string
   notes?: string
-  task_type?: ChildTaskType
-  event_type?: MemberEventType
+}
 
-  // For shopping
+/** Fields specific to shopping actions */
+interface ShoppingActionFields {
+  item_name?: string
   category?: string
   quantity?: string
 }
+
+/**
+ * Combined action data interface for routing decisions.
+ *
+ * This combines all domain-specific fields since AI parsing can produce
+ * any combination of fields. The routing functions extract only the
+ * relevant fields for their domain.
+ */
+type ActionData = CommonActionFields &
+  RecipeActionFields &
+  WishlistActionFields &
+  MemberEventActionFields &
+  ChildTaskActionFields &
+  ShoppingActionFields
 
 /**
  * Count meaningful fields in action data
@@ -349,18 +398,25 @@ export function determineActionRouting(
 
 /**
  * Store prefill data and return navigation URL
+ *
+ * Uses discriminated union narrowing - when decision.shouldNavigate is true,
+ * all navigation fields are guaranteed to exist.
  */
 export function prepareNavigation(
   decision: RoutingDecision,
   isDemo: boolean
 ): string | null {
-  if (!decision.shouldNavigate || !decision.route || !decision.storageKey || !decision.prefillData) {
+  // Type guard: when shouldNavigate is false, this is a QuickCardDecision
+  if (!decision.shouldNavigate) {
     return null
   }
 
+  // TypeScript now knows this is NavigateDecision with all fields guaranteed
+  const { route, queryParam, storageKey, prefillData } = decision
+
   // Store prefill data - fail navigation if storage fails
   try {
-    localStorage.setItem(decision.storageKey, JSON.stringify(decision.prefillData.data))
+    localStorage.setItem(storageKey, JSON.stringify(prefillData.data))
   } catch (err) {
     console.error('Failed to store prefill data:', err)
     // Return null to signal failure - caller should fall back to quick card
@@ -368,19 +424,17 @@ export function prepareNavigation(
   }
 
   // Build URL
-  const baseUrl = decision.route
   const queryParams = new URLSearchParams()
 
   if (isDemo) {
     queryParams.set('demo', 'true')
   }
-  if (decision.queryParam) {
-    const [key, value] = decision.queryParam.split('=')
-    queryParams.set(key, value)
-  }
+
+  const [key, value] = queryParam.split('=')
+  queryParams.set(key, value)
 
   const queryString = queryParams.toString()
-  return queryString ? `${baseUrl}?${queryString}` : baseUrl
+  return queryString ? `${route}?${queryString}` : route
 }
 
 /**

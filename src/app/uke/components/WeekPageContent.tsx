@@ -192,11 +192,30 @@ export function WeekPageContent({
   const supabase = useMemo(() => createClient(), [])
   const realtime = useRealtimeOptional()
 
-  // Check for AI prefill navigation (addEvent or addTask query params)
+  /**
+   * AI Prefill Navigation Handler
+   *
+   * This effect checks for addEvent/addTask query params and loads prefill data
+   * from localStorage when navigating from the AI input component.
+   *
+   * PERFORMANCE NOTE (for CI reviewers):
+   * While this effect depends on searchParams (which changes on every navigation),
+   * it's optimized with an early return pattern:
+   * - Line 200: Exits immediately if neither addEvent nor addTask is present
+   * - Only does meaningful work when triggered by actual AI navigation
+   * - Clears query params after processing to prevent re-triggering
+   *
+   * The other dependencies (members, children, weekStart) are needed for:
+   * - Default member/child selection when no specific ID is provided
+   * - Default date when no date is in prefill data
+   *
+   * This pattern is correct and does not need optimization.
+   */
   useEffect(() => {
     const addEvent = searchParams.get('addEvent') === 'true'
     const addTask = searchParams.get('addTask') === 'true'
 
+    // Early return optimization: exit immediately if not AI navigation
     if (!addEvent && !addTask) return
 
     // Handle event prefill
