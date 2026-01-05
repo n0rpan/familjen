@@ -236,6 +236,9 @@ export async function prefetchHomeData(householdId: string): Promise<void> {
     const weekStartStr = weekStart.toISOString().split('T')[0]
     const weekEndStr = weekEnd.toISOString().split('T')[0]
 
+    // Get current user for cache consistency with HomeDataLoader
+    const { data: { user } } = await supabase.auth.getUser()
+
     // Parallel fetch - match what server fetches
     const [
       householdResult,
@@ -297,6 +300,8 @@ export async function prefetchHomeData(householdId: string): Promise<void> {
       externalEvents: externalEventsResult.data || [],
       weekStart: weekStartStr,
       weekEnd: weekEndStr,
+      // Include currentUserId for consistent "You are picking up" display
+      currentUserId: user?.id,
     })
   } catch (error) {
     console.warn('[Prefetch] Failed to prefetch home data:', error)

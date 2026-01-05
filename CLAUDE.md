@@ -155,6 +155,18 @@ if (cached.data.version === CACHE_VERSION) {
 - `src/lib/prefetch/pages.ts` - `prefetchHomeData` and `CACHE_KEYS`
 - `src/lib/cache.ts` - IndexedDB wrapper functions
 
+**Cache invalidation:**
+| Scenario | Behavior |
+|----------|----------|
+| Logout | `clearAllCache()` clears all IndexedDB entries |
+| Account deletion | `clearAllCache()` clears all IndexedDB entries |
+| Household switch | Different cache key (`home-{householdId}`) is used |
+| Schema change | Increment `CACHE_VERSION` - old cache ignored |
+| Render error | `CacheErrorBoundary` catches and falls back to skeleton |
+
+**Error handling:**
+The `HomeCacheFallback` wraps `HomePageContent` in a `CacheErrorBoundary`. If cached data causes a render error despite version checks (e.g., missing required fields), the boundary catches it and gracefully falls back to `HomePageSkeleton`.
+
 ### Two Page Patterns
 
 #### Pattern 1: PPR (Server-First) - For Static-ish Pages

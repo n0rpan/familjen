@@ -12,9 +12,15 @@
  *
  * IMPORTANT: The cache version must be incremented when the data structure changes
  * to prevent crashes from schema mismatches. See CACHE_VERSION below.
+ *
+ * Cache Invalidation:
+ * - Cache is cleared on logout and account deletion (see src/lib/cache.ts clearAllCache)
+ * - Cache is household-scoped via key: home-{householdId}
+ * - Switching households naturally uses different cache key
+ * - Version mismatch causes cache to be ignored (falls back to skeleton)
  */
 
-import { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo, type ReactNode } from 'react'
 import { getCached, setCache, isCacheFresh } from '@/lib/cache'
 import { CACHE_KEYS } from '@/lib/prefetch/pages'
 import { HomePageContent, type HomePageContentProps } from './HomePageContent'
@@ -69,6 +75,39 @@ interface HomeCacheFallbackProps {
 }
 
 /**
+ * Simple error boundary for cached content rendering
+ * Falls back to skeleton if cached data causes render errors
+ */
+interface ErrorBoundaryState {
+  hasError: boolean
+}
+
+class CacheErrorBoundary extends React.Component<
+  { children: ReactNode; fallback: ReactNode },
+  ErrorBoundaryState
+> {
+  constructor(props: { children: ReactNode; fallback: ReactNode }) {
+    super(props)
+    this.state = { hasError: false }
+  }
+
+  static getDerivedStateFromError(): ErrorBoundaryState {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error: Error) {
+    console.warn('[HomeCache] Cached data caused render error, falling back to skeleton:', error.message)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback
+    }
+    return this.props.children
+  }
+}
+
+/**
  * HomeCacheFallback - Suspense fallback that shows cached data
  *
  * Use this AS the Suspense fallback instead of HomePageSkeleton:
@@ -82,6 +121,10 @@ interface HomeCacheFallbackProps {
  * 2. If fresh cache exists with valid version, render HomePageContent + RefreshingSkeleton
  * 3. If no cache or stale, render HomePageSkeleton
  * 4. When server content streams in, Suspense replaces this component entirely
+ *
+ * Error Handling:
+ * - If cached data has schema mismatch despite version check, CacheErrorBoundary catches
+ *   the render error and gracefully falls back to HomePageSkeleton
  */
 export function HomeCacheFallback({ householdId }: HomeCacheFallbackProps) {
   const [cachedData, setCachedData] = useState<CachedHomeData | null>(null)
@@ -166,7 +209,10 @@ export function HomeCacheFallback({ householdId }: HomeCacheFallbackProps) {
       householdEvents: cachedData.householdEvents,
       externalEvents: cachedData.externalEvents,
       childTasks: cachedData.tasks,
-      holidays: [] as Holiday[], // Holidays not cached, will update when server data arrives
+      // Holidays not cached - they require DB query + birthday computation
+      // The stale phase is brief (until server streams in), so empty array is acceptable
+      // Users see holidays immediately when server content replaces this fallback
+      holidays: [] as Holiday[],
       weekStart,
       aiHeadsUps: [],
       recentPhotos: [],
@@ -185,14 +231,17 @@ export function HomeCacheFallback({ householdId }: HomeCacheFallbackProps) {
   }
 
   // If we have valid cached data, show it with refresh indicator
+  // Wrapped in error boundary to gracefully handle schema mismatches
   if (cachedData && cachedProps) {
     return (
-      <div className="relative">
-        {/* Refreshing indicator at top */}
-        <RefreshingSkeleton />
-        {/* Cached content - user sees real data instantly */}
-        <HomePageContent {...cachedProps} />
-      </div>
+      <CacheErrorBoundary fallback={<HomePageSkeleton />}>
+        <div className="relative">
+          {/* Refreshing indicator at top */}
+          <RefreshingSkeleton />
+          {/* Cached content - user sees real data instantly */}
+          <HomePageContent {...cachedProps} />
+        </div>
+      </CacheErrorBoundary>
     )
   }
 
