@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useCallback, useState, useMemo, type ComponentProps, type MouseEvent } from 'react'
+import { useCallback, useState, useMemo, startTransition, type ComponentProps, type MouseEvent } from 'react'
 import { useNavigationOptional } from '@/lib/navigation'
 import { prefetchRouteData } from '@/lib/prefetch/pages'
 import { useHouseholdId } from '@/hooks/data/useHousehold'
@@ -149,8 +149,11 @@ export function TransitionLink({
       // Signal navigation for React-based tracking (handles delayed loading state)
       navigation?.startNavigation(targetPath)
 
-      // Navigate directly - no view transitions (they cause flash/lag)
-      router.push(finalHref)
+      // Use startTransition to keep old content visible while new content loads
+      // This prevents the brief skeleton flash during navigation
+      startTransition(() => {
+        router.push(finalHref)
+      })
       pushToNavStack(targetPath)
       clearTransitionDirection()
     },
