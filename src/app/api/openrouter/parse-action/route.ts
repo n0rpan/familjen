@@ -785,8 +785,18 @@ async function handleDemoMode(
   context: z.infer<typeof parseActionSchema>['context'],
   hasImage: boolean
 ): Promise<Response> {
-  // Use cheap model for demo to minimize costs
-  const demoModel = 'google/gemini-2.5-flash-lite'
+  // Fetch model from app_settings (same as production)
+  // Demo uses same model as production to ensure consistent behavior
+  const supabase = await createClient()
+  const modelKey = hasImage ? 'openrouter_vision_model' : 'openrouter_model'
+  const { data: modelSetting } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', modelKey)
+    .single()
+
+  const defaultModel = 'google/gemini-2.5-flash-lite'
+  const model = modelSetting?.value || defaultModel
 
   // For search mode in demo, return mock search results
   // (no database to query in demo mode)
@@ -856,7 +866,7 @@ Returner JSON: { "suggestions": [{ "day": "YYYY-MM-DD", "name": "Rett", "descrip
           'HTTP-Referer': 'https://familjen.eu',
         },
         body: JSON.stringify({
-          model: demoModel,
+          model: model,
           messages: [{ role: 'user', content: suggestPrompt }],
           temperature: 0.7,
           max_tokens: 2000,
@@ -905,7 +915,7 @@ Returner JSON: { "suggestions": [{ "day": "YYYY-MM-DD", "name": "Rett", "descrip
         'HTTP-Referer': 'https://familjen.eu',
       },
       body: JSON.stringify({
-        model: demoModel,
+        model: model,
         messages: [
           { role: 'system', content: systemPrompt },
           hasImage
