@@ -564,6 +564,7 @@ export interface FeedPageData {
   notifications: Array<Record<string, unknown>>
   duplicateSuggestions: Array<Record<string, unknown>>
   mergedDuplicates: Array<Record<string, unknown>>
+  timestamp: number
 }
 
 /**
@@ -589,6 +590,7 @@ async function fetchFeedDataCore(householdId: string): Promise<FeedPageData> {
       notifications: [],
       duplicateSuggestions: [],
       mergedDuplicates: [],
+      timestamp: Date.now(),
     }
   }
 
@@ -674,6 +676,7 @@ async function fetchFeedDataCore(householdId: string): Promise<FeedPageData> {
     notifications: notificationsResult.data || [],
     duplicateSuggestions: duplicateSuggestionsResult.data || [],
     mergedDuplicates: mergedDuplicatesResult.data || [],
+    timestamp: Date.now(),
   }
 }
 
@@ -713,6 +716,7 @@ export function getDemoFeedPageData(): FeedPageData {
     notifications: [], // Demo doesn't have mock notifications
     duplicateSuggestions: [],
     mergedDuplicates: [],
+    timestamp: Date.now(),
   }
 }
 
@@ -929,6 +933,7 @@ export interface ShoppingListWithItems extends ShoppingList {
 export interface ShoppingPageData {
   household: Household | null
   lists: ShoppingListWithItems[]
+  timestamp: number
 }
 
 /**
@@ -957,6 +962,7 @@ async function fetchShoppingDataCore(householdId: string): Promise<ShoppingPageD
   return {
     household: householdResult.data,
     lists: listsResult.data || [],
+    timestamp: Date.now(),
   }
 }
 
@@ -990,6 +996,7 @@ export function getDemoShoppingPageData(): ShoppingPageData {
   return {
     household: demoState.household,
     lists: demoState.shoppingLists,
+    timestamp: Date.now(),
   }
 }
 

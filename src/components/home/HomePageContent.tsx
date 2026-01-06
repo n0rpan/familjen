@@ -16,7 +16,6 @@ import { SuggestionBanner } from '@/components/integrations/SuggestionReview'
 import { RecentPhotos } from '@/components/RecentPhotos'
 import { HomeRefreshWrapper } from '@/components/HomeRefreshWrapper'
 import { TransitionLink } from '@/components/TransitionLink'
-import { LastUpdated } from '@/components/LastUpdated'
 import { useLanguage } from '@/lib/i18n/context'
 import type {
   Child,
@@ -129,45 +128,68 @@ export function HomePageContent({
 
   const content = (
     <div className="space-y-8 animate-fade-in">
-      {/* Last Updated Indicator */}
-      {dataTimestamp && (
-        <div className="flex justify-end -mb-4">
-          <LastUpdated timestamp={dataTimestamp} showLabel={false} />
-        </div>
-      )}
-
       {/* Today's Status Summary */}
       {isAllReady ? (
         <div
-          className="flex items-center gap-3 px-4 py-3 rounded-xl"
-          style={{ background: 'rgba(131, 166, 151, 0.15)' }}
+          className="flex items-center justify-between px-4 py-3 rounded-xl"
+          style={{
+            background: 'rgba(139, 168, 136, 0.15)',
+            border: '1px solid rgba(139, 168, 136, 0.3)',
+          }}
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-sage)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="20 6 9 17 4 12"/>
-          </svg>
-          <span className="text-sm font-medium" style={{ color: 'var(--color-sage-dark, #5A7A57)' }}>
-            {t.home.allReadyForToday}
+          <div className="flex items-center gap-3">
+            {/* Pulsing indicator dot */}
+            <div
+              className="w-2 h-2 rounded-full animate-pulse"
+              style={{
+                background: 'var(--color-sage)',
+                boxShadow: '0 0 8px var(--color-sage)',
+              }}
+            />
+            <span className="text-sm font-semibold" style={{ color: 'var(--color-sage)' }}>
+              {t.home.allReadyForToday}
+            </span>
+          </div>
+          <span
+            className="text-xs px-2 py-1 rounded-full"
+            style={{ background: 'var(--card)', color: 'var(--color-sage)' }}
+          >
+            {t.common.justNow}
           </span>
         </div>
       ) : (
         <TransitionLink
           href={getHref('/uke')}
-          className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl transition-opacity hover:opacity-80"
-          style={{ background: 'rgba(229, 185, 94, 0.15)' }}
+          className="flex items-center justify-between px-4 py-3 rounded-xl transition-opacity hover:opacity-80"
+          style={{
+            background: 'rgba(229, 185, 94, 0.15)',
+            border: '1px solid rgba(229, 185, 94, 0.3)',
+          }}
         >
           <div className="flex items-center gap-3">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10"/>
-              <line x1="12" y1="8" x2="12" y2="12"/>
-              <line x1="12" y1="16" x2="12.01" y2="16"/>
-            </svg>
-            <span className="text-sm font-medium" style={{ color: 'var(--color-honey-dark, #A68A3A)' }}>
+            {/* Pulsing indicator dot */}
+            <div
+              className="w-2 h-2 rounded-full animate-pulse"
+              style={{
+                background: 'var(--color-honey)',
+                boxShadow: '0 0 8px var(--color-honey)',
+              }}
+            />
+            <span className="text-sm font-semibold" style={{ color: 'var(--color-honey)' }}>
               {getAttentionMessage()}
             </span>
           </div>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="9 18 15 12 9 6"/>
-          </svg>
+          <div className="flex items-center gap-2">
+            <span
+              className="text-xs px-2 py-1 rounded-full"
+              style={{ background: 'var(--card)', color: 'var(--color-honey)' }}
+            >
+              {t.common.justNow}
+            </span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+          </div>
         </TransitionLink>
       )}
 
