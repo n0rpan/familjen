@@ -231,6 +231,27 @@ const handleRealtimeChange = (table, payload) => {
 - `src/components/PageContent.tsx` - Applies `.navigating` class when loading
 - `src/app/globals.css` - Subtle opacity dimout (0.7) for slow navigations
 
+### Freshness Indicators (Data Recency)
+
+Pages show a `FreshnessIndicator` component to communicate data recency to users:
+
+```typescript
+// Usage in page headers
+<FreshnessIndicator timestamp={dataTimestamp} color="sage" />
+```
+
+**How it works:**
+1. Server fetches data and captures `timestamp: Date.now()` in the data object
+2. DataLoader passes `dataTimestamp={data.timestamp}` to content component
+3. FreshnessIndicator displays relative time ("Akkurat nå", "5 min siden", etc.)
+4. Auto-updates every 60 seconds via `setInterval` (with proper cleanup)
+
+**Translation keys used:** `t.common.justNow`, `t.common.minutesAgo`, `t.common.hoursAgo`, `t.common.daysAgo` - these use `{count}` placeholder for the number.
+
+**Key files:**
+- `src/components/FreshnessIndicator.tsx` - Reusable indicator component
+- `src/lib/data/server.ts` - Page data interfaces include `timestamp: number`
+
 ### Two Page Patterns
 
 #### Pattern 1: PPR (Server-First) - For Static-ish Pages
@@ -1766,7 +1787,7 @@ async function Page() {
 
 | Section | Purpose |
 |---------|---------|
-| `common` | Buttons, labels, states (save, cancel, loading...) |
+| `common` | Buttons, labels, states, relative time (save, cancel, loading, justNow, minutesAgo, hoursAgo, daysAgo...) |
 | `nav` | Navigation items |
 | `date` | Weekdays, months, week format |
 | `home` | Home page strings |
