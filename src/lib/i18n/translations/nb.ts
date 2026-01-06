@@ -76,9 +76,9 @@ export const nb: TranslationStrings = {
     // Relative time
     lastUpdated: 'Sist oppdatert',
     justNow: 'Akkurat nå',
-    minutesAgo: '{n} min siden',
-    hoursAgo: '{n} t siden',
-    daysAgo: '{n} d siden',
+    minutesAgo: '{count} min siden',
+    hoursAgo: '{count} t siden',
+    daysAgo: '{count} d siden',
   },
 
   // Date/Time

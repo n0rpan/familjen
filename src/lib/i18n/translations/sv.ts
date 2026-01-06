@@ -76,9 +76,9 @@ export const sv: TranslationStrings = {
     // Relative time
     lastUpdated: 'Senast uppdaterad',
     justNow: 'Precis nu',
-    minutesAgo: '{n} min sedan',
-    hoursAgo: '{n} t sedan',
-    daysAgo: '{n} d sedan',
+    minutesAgo: '{count} min sedan',
+    hoursAgo: '{count} t sedan',
+    daysAgo: '{count} d sedan',
   },
 
   // Date/Time

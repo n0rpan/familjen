@@ -386,7 +386,7 @@ export const WeekGrid = memo(function WeekGrid({
                               onChange={(e) =>
                                 onPickupChange?.(child.id, dateStr, e.target.value || null)
                               }
-                              className="w-full text-sm p-2 rounded-lg transition-colors"
+                              className="w-full text-sm p-2 rounded-lg transition-colors min-h-[44px]"
                               style={{
                                 background: 'var(--background)',
                                 border: '1px solid var(--border)',

@@ -5,6 +5,10 @@ const nextConfig: NextConfig = {
   // In Next.js 16, PPR is enabled via cacheComponents
   cacheComponents: true,
 
+  // Hide dev indicators (the "1 Issue" badge in bottom-left)
+  // These only appear in development anyway, but this ensures clean screenshots
+  devIndicators: false,
+
   // Disable X-Powered-By header to reduce fingerprinting
   poweredByHeader: false,
 

@@ -23,7 +23,6 @@ export async function ShoppingDataLoader({ householdId, isDemo }: ShoppingDataLo
     <>
       <ShoppingPageWrapper
         initialData={data}
-        householdId={householdId}
         isDemo={isDemo}
       />
       {/* Cache data for instant loads on repeat visits */}
