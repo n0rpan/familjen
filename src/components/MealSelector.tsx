@@ -98,6 +98,7 @@ export const MealSelector = memo(function MealSelector({
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled}
+          title={value || undefined}
           className="flex-1 text-sm p-2 rounded-lg text-center min-w-0 truncate"
           style={{
             background: 'var(--card)',
