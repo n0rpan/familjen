@@ -112,7 +112,7 @@ export async function POST(request: Request) {
     const { data: household, error: householdError } = await getUserHousehold(supabase)
 
     if (householdError || !household) {
-      return ApiErrors.notFound('Husstanden')
+      return ApiErrors.noHousehold()
     }
 
     // Fetch all context data in parallel

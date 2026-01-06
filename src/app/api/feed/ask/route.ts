@@ -86,7 +86,7 @@ export async function POST(request: Request) {
       .single()
 
     if (!membership) {
-      return ApiErrors.notFound('Husstanden')
+      return ApiErrors.noHousehold()
     }
 
     // Check if integrations are enabled

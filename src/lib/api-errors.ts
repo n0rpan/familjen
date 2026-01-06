@@ -181,6 +181,23 @@ export const ApiErrors = {
   },
 
   /**
+   * 400 - User has no household.
+   * User action: Create or join a household.
+   * Use this when membership lookup returns null, not when a household was deleted.
+   */
+  noHousehold(options?: ApiErrorOptions): NextResponse<ErrorResponse> {
+    return createErrorResponse(
+      'validation',
+      'Du er ikke medlem av noen husstand',
+      400,
+      {
+        hint: 'Opprett en ny husstand eller bli med i en eksisterende',
+        ...options,
+      }
+    )
+  },
+
+  /**
    * 404 - Resource not found.
    * User action: Check URL, refresh, or the item may have been deleted.
    * @param resourceName - Optional name of what wasn't found (e.g., "Husstanden", "Oppskriften")
@@ -224,9 +241,14 @@ export const ApiErrors = {
    * @param retryAfter - Seconds until they can retry
    */
   rateLimit(retryAfter: number, options?: ApiErrorOptions): NextResponse<ErrorResponse> {
+    // Show minutes for waits over 60 seconds
+    const waitText = retryAfter >= 60
+      ? `${Math.ceil(retryAfter / 60)} minutter`
+      : `${retryAfter} sekunder`
+
     return createErrorResponse(
       'rateLimit',
-      `For mange forespørsler. Prøv igjen om ${retryAfter} sekunder`,
+      `For mange forespørsler. Prøv igjen om ${waitText}`,
       429,
       {
         retryAfter,

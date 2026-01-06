@@ -45,14 +45,14 @@ export async function POST(request: Request) {
       .single()
 
     if (!member) {
-      return ApiErrors.notFound('Husstanden')
+      return ApiErrors.noHousehold()
     }
 
     const body = await request.json()
     const { sourceUrlId } = body
 
     if (!sourceUrlId) {
-      return ApiErrors.validation('sourceUrlId er påkrevd')
+      return ApiErrors.validation('Kilde-URL-ID er påkrevd')
     }
 
     // Get the source URL record
@@ -362,7 +362,7 @@ export async function GET() {
       .single()
 
     if (!member) {
-      return ApiErrors.notFound('Husstanden')
+      return ApiErrors.noHousehold()
     }
 
     // Get all source URLs

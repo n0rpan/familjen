@@ -45,7 +45,7 @@ export async function POST() {
     .single()
 
   if (memberError || !member) {
-    return ApiErrors.notFound('Husstanden')
+    return ApiErrors.noHousehold()
   }
 
   try {

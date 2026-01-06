@@ -46,7 +46,7 @@ export async function POST(request: Request) {
       .single()
 
     if (!membership) {
-      return ApiErrors.notFound('Husstanden')
+      return ApiErrors.noHousehold()
     }
 
     // Only household admins can trigger sync
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
       .single()
 
     if (householdError || !household) {
-      return ApiErrors.notFound('Husstanden')
+      return ApiErrors.noHousehold()
     }
 
     if (!household.ics_calendar_url) {
@@ -213,7 +213,7 @@ export async function GET(request: Request) {
       .single()
 
     if (!membership) {
-      return ApiErrors.notFound('Husstanden')
+      return ApiErrors.noHousehold()
     }
 
     // Get household ICS status
@@ -224,7 +224,7 @@ export async function GET(request: Request) {
       .single()
 
     if (error || !household) {
-      return ApiErrors.notFound('Husstanden')
+      return ApiErrors.noHousehold()
     }
 
     return NextResponse.json({

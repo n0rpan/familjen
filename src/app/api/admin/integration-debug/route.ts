@@ -39,7 +39,7 @@ export async function GET(request: Request) {
     const householdId = url.searchParams.get('householdId')
 
     if (!householdId) {
-      return ApiErrors.validation('householdId er påkrevd')
+      return ApiErrors.validation('Husstands-ID er påkrevd')
     }
 
     // Create service role client to bypass RLS

@@ -111,7 +111,7 @@ export async function GET() {
     .single()
 
   if (!member) {
-    return ApiErrors.notFound('Husstanden')
+    return ApiErrors.noHousehold()
   }
 
   const householdId = member.household_id

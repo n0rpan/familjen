@@ -64,7 +64,7 @@ export async function POST(request: Request) {
       .single()
 
     if (!membership) {
-      return ApiErrors.notFound('Husstanden')
+      return ApiErrors.noHousehold()
     }
 
     // Parse request body for optional filters

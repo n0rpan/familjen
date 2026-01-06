@@ -40,7 +40,7 @@ export async function GET(request: Request) {
     const integrationId = searchParams.get('integrationId')
 
     if (!integrationId) {
-      return ApiErrors.validation('integrationId er påkrevd')
+      return ApiErrors.validation('Integrasjons-ID er påkrevd')
     }
 
     // Get user's household
@@ -51,7 +51,7 @@ export async function GET(request: Request) {
       .single()
 
     if (!membership) {
-      return ApiErrors.notFound('Husstanden')
+      return ApiErrors.noHousehold()
     }
 
     // Verify the integration belongs to the user's household

@@ -32,7 +32,7 @@ export async function GET(request: Request) {
     // Fetch household
     const { data: household, error: householdError } = await getUserHousehold(supabase)
     if (householdError || !household) {
-      return ApiErrors.notFound('Husstanden')
+      return ApiErrors.noHousehold()
     }
 
     // Get current week's dates

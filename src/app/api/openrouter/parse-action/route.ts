@@ -261,7 +261,7 @@ export async function POST(request: Request) {
     // Get household for all modes
     const { data: household, error: householdError } = await getUserHousehold(supabase)
     if (householdError || !household) {
-      return ApiErrors.notFound('Husstanden')
+      return ApiErrors.noHousehold()
     }
 
     // Handle search mode

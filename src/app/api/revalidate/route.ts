@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!householdId) {
-      return ApiErrors.validation('householdId er påkrevd')
+      return ApiErrors.validation('Husstands-ID er påkrevd')
     }
 
     // Verify user belongs to this household
