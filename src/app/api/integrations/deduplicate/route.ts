@@ -11,6 +11,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { deduplicateAllEvents } from '@/lib/integrations/event-deduplication'
 import { checkRateLimit, createRateLimitKey } from '@/lib/rate-limit'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 
 // Rate limit: 5 requests per hour (AI calls are expensive)
 const DEDUPE_RATE_LIMIT = { limit: 5, windowMs: 3600 * 1000 }
@@ -24,7 +25,7 @@ export async function POST() {
     error: authError,
   } = await supabase.auth.getUser()
   if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return ApiErrors.unauthorized()
   }
 
   // Rate limit check
@@ -33,10 +34,7 @@ export async function POST() {
     DEDUPE_RATE_LIMIT
   )
   if (rateLimit.limited) {
-    return NextResponse.json(
-      { error: `Prøv igjen om ${Math.ceil(rateLimit.retryAfter / 60)} minutter.` },
-      { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
-    )
+    return ApiErrors.rateLimit(rateLimit.retryAfter)
   }
 
   // Get user's household
@@ -47,7 +45,7 @@ export async function POST() {
     .single()
 
   if (memberError || !member) {
-    return NextResponse.json({ error: 'Household not found' }, { status: 404 })
+    return ApiErrors.noHousehold()
   }
 
   try {
@@ -61,10 +59,6 @@ export async function POST() {
       errors: result.errors,
     })
   } catch (error) {
-    console.error('[Manual Deduplication] Error:', error)
-    return NextResponse.json(
-      { error: 'Failed to run deduplication' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'deduplication')
   }
 }

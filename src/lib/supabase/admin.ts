@@ -62,10 +62,3 @@ export async function syncUserMetadata(
   return { isAdmin, householdId }
 }
 
-/**
- * @deprecated Use syncUserMetadata instead
- */
-export async function syncUserAdminStatus(userId: string, email: string): Promise<boolean> {
-  const result = await syncUserMetadata(userId, email, null)
-  return result.isAdmin
-}

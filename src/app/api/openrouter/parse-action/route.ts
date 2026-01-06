@@ -11,6 +11,7 @@ import { getModel, getModelFromEnv, STRUCTURED_OUTPUT_PROVIDER_OPTIONS } from '@
 import { validateMealSuggestions, type FamilyContext } from '@/lib/ai-validation'
 import { z } from 'zod'
 import type { MealSuggestion } from '@/lib/types'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 
 // Request schema
 const parseActionSchema = z.object({
@@ -208,7 +209,7 @@ export async function POST(request: Request) {
   try {
     // CSRF protection
     if (!validateOrigin(request)) {
-      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+      return ApiErrors.invalidOrigin()
     }
 
     // Check if this is a demo mode request
@@ -218,7 +219,7 @@ export async function POST(request: Request) {
     const body = await request.json()
     const validation = parseActionSchema.safeParse(body)
     if (!validation.success) {
-      return NextResponse.json({ error: 'Ugyldig forespørsel' }, { status: 400 })
+      return ApiErrors.validation('Ugyldig forespørsel')
     }
     const { input, image, context } = validation.data
     const hasImage = Boolean(image)
@@ -244,7 +245,7 @@ export async function POST(request: Request) {
     const supabase = await createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
-      return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Check rate limit (reuse aiParseReminders limit)
@@ -260,7 +261,7 @@ export async function POST(request: Request) {
     // Get household for all modes
     const { data: household, error: householdError } = await getUserHousehold(supabase)
     if (householdError || !household) {
-      return NextResponse.json({ error: 'Kunne ikke finne husstand' }, { status: 404 })
+      return ApiErrors.noHousehold()
     }
 
     // Handle search mode
@@ -289,7 +290,7 @@ export async function POST(request: Request) {
     // Call OpenRouter API
     const apiKey = process.env.OPENROUTER_API_KEY
     if (!apiKey) {
-      return NextResponse.json({ error: 'OpenRouter API-nøkkel ikke konfigurert' }, { status: 500 })
+      return ApiErrors.configError({ internalMessage: 'OPENROUTER_API_KEY not configured' })
     }
 
     // Build messages based on whether we have an image
@@ -344,7 +345,7 @@ export async function POST(request: Request) {
     } catch (fetchError) {
       clearTimeout(timeoutId)
       if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-        return NextResponse.json({ error: 'Forespørselen tok for lang tid' }, { status: 504 })
+        return ApiErrors.timeout({ internalMessage: 'Parse action request timed out' })
       }
       throw fetchError
     }
@@ -373,7 +374,7 @@ export async function POST(request: Request) {
       } catch (fetchError) {
         clearTimeout(timeoutId)
         if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-          return NextResponse.json({ error: 'Forespørselen tok for lang tid' }, { status: 504 })
+          return ApiErrors.timeout({ internalMessage: 'Parse action retry request timed out' })
         }
         throw fetchError
       }
@@ -383,21 +384,14 @@ export async function POST(request: Request) {
 
     if (!response.ok) {
       const errorBody = await response.text().catch(() => 'Could not read error body')
-      console.error('OpenRouter error:', {
-        status: response.status,
-        model,
-        hasImage,
-        retryWithoutSchema,
-        error: errorBody,
-      })
-      return NextResponse.json({ error: 'Kunne ikke tolke tekst' }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: `OpenRouter error: ${response.status} - ${errorBody}` })
     }
 
     const data = await response.json()
     const content = data.choices?.[0]?.message?.content
 
     if (!content) {
-      return NextResponse.json({ error: 'Tomt svar fra AI' }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: 'Empty AI response in parse action' })
     }
 
     // Parse the JSON response using robust extraction
@@ -427,7 +421,7 @@ export async function POST(request: Request) {
           actions: [],
         } as ActionResponse)
       }
-      return NextResponse.json({ error: 'Kunne ikke tolke AI-svar' }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: 'Failed to parse AI response' })
     }
 
     const actions: ParsedAction[] = (parsed.actions || []).map((a) => ({
@@ -445,8 +439,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ mode: 'action', actions } as ActionResponse)
   } catch (error) {
-    console.error('Parse action error:', error)
-    return NextResponse.json({ error: 'En feil oppstod' }, { status: 500 })
+    return handleApiError(error, 'parse action')
   }
 }
 
@@ -904,7 +897,7 @@ Returner JSON: { "suggestions": [{ "day": "YYYY-MM-DD", "name": "Rett", "descrip
 
       if (!response.ok) {
         console.error('Demo suggest API error:', response.status)
-        return NextResponse.json({ error: 'AI-tjenesten er midlertidig utilgjengelig' }, { status: 503 })
+        return ApiErrors.serviceUnavailable({ internalMessage: 'Demo suggest API error' })
       }
 
       const data = await response.json()
@@ -923,8 +916,7 @@ Returner JSON: { "suggestions": [{ "day": "YYYY-MM-DD", "name": "Rett", "descrip
         suggestions: parsed.suggestions,
       } as SuggestResponse)
     } catch (error) {
-      console.error('Demo suggest error:', error)
-      return NextResponse.json({ error: 'En feil oppstod ved middagsforslag' }, { status: 500 })
+      return handleApiError(error, 'demo suggest')
     }
   }
 
@@ -989,7 +981,7 @@ Returner JSON: { "suggestions": [{ "day": "YYYY-MM-DD", "name": "Rett", "descrip
     if (!response.ok) {
       const errorText = await response.text()
       console.error('Demo action API error:', { status: response.status, model, hasImage, error: errorText })
-      return NextResponse.json({ error: 'AI-tjenesten er midlertidig utilgjengelig' }, { status: 503 })
+      return ApiErrors.serviceUnavailable({ internalMessage: 'Demo action API error' })
     }
 
     const data = await response.json()
@@ -1017,8 +1009,7 @@ Returner JSON: { "suggestions": [{ "day": "YYYY-MM-DD", "name": "Rett", "descrip
       actions: parsed.actions,
     } as ActionResponse)
   } catch (error) {
-    console.error('Demo action error:', error)
-    return NextResponse.json({ error: 'En feil oppstod' }, { status: 500 })
+    return handleApiError(error, 'demo action')
   }
 }
 
@@ -1370,7 +1361,7 @@ async function handleSuggestMode(
   const apiKey = process.env.OPENROUTER_API_KEY
 
   if (!apiKey) {
-    return NextResponse.json({ error: 'OpenRouter API-nøkkel ikke konfigurert' }, { status: 500 })
+    return ApiErrors.configError({ internalMessage: 'OPENROUTER_API_KEY not configured for suggest mode' })
   }
 
   // Sanitize user inputs
@@ -1428,20 +1419,20 @@ Regler:
 
     if (!response.ok) {
       console.error('Suggest AI error:', response.status)
-      return NextResponse.json({ error: 'Kunne ikke få middagsforslag' }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: `Suggest AI error: ${response.status}` })
     }
 
     const data = await response.json()
     const content = data.choices?.[0]?.message?.content
 
     if (!content) {
-      return NextResponse.json({ error: 'Tomt svar fra AI' }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: 'Empty AI response in suggest mode' })
     }
 
     const parsed = extractJSON<{ suggestions?: MealSuggestion[] }>(content)
     if (!parsed) {
       console.error('Failed to parse suggest response')
-      return NextResponse.json({ error: 'Kunne ikke tolke middagsforslag' }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: 'Failed to parse suggest response' })
     }
 
     const suggestions = Array.isArray(parsed.suggestions) ? parsed.suggestions : []
@@ -1482,9 +1473,8 @@ Regler:
   } catch (error) {
     clearTimeout(suggestTimeoutId)
     if (error instanceof Error && error.name === 'AbortError') {
-      return NextResponse.json({ error: 'Forespørselen tok for lang tid' }, { status: 504 })
+      return ApiErrors.timeout({ internalMessage: 'Suggest request timed out' })
     }
-    console.error('Suggest error:', error)
-    return NextResponse.json({ error: 'En feil oppstod ved middagsforslag' }, { status: 500 })
+    return handleApiError(error, 'suggest mode')
   }
 }

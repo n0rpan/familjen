@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { validateOrigin } from '@/lib/config'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 import { KidplanClient, KidplanAuthError } from '@/lib/integrations/kidplan'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 
 /**
  * POST /api/integrations/kidplan/test-connection
@@ -14,7 +15,7 @@ export async function POST(request: Request) {
   try {
     // CSRF protection
     if (!validateOrigin(request)) {
-      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+      return ApiErrors.invalidOrigin()
     }
 
     const supabase = await createClient()
@@ -24,17 +25,14 @@ export async function POST(request: Request) {
       data: { user },
     } = await supabase.auth.getUser()
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Check rate limit
     const rateLimitKey = createRateLimitKey(user.id, 'kidplanTestConnection')
     const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.kidplanTestConnection)
     if (rateLimit.limited) {
-      return NextResponse.json(
-        { error: `Too many requests. Try again in ${rateLimit.retryAfter} seconds.` },
-        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
-      )
+      return ApiErrors.rateLimit(rateLimit.retryAfter)
     }
 
     // Get user's household
@@ -45,7 +43,7 @@ export async function POST(request: Request) {
       .single()
 
     if (!membership) {
-      return NextResponse.json({ error: 'No household found' }, { status: 400 })
+      return ApiErrors.noHousehold()
     }
 
     // Check if household has integrations enabled
@@ -56,10 +54,7 @@ export async function POST(request: Request) {
       .single()
 
     if (!household?.external_integrations_enabled) {
-      return NextResponse.json(
-        { error: 'External integrations are not enabled for your household' },
-        { status: 403 }
-      )
+      return ApiErrors.forbidden({ hint: 'Eksterne integrasjoner er ikke aktivert for din husstand' })
     }
 
     // Parse request body
@@ -67,10 +62,7 @@ export async function POST(request: Request) {
     const { email, password } = body
 
     if (!email || !password) {
-      return NextResponse.json(
-        { error: 'Email and password are required' },
-        { status: 400 }
-      )
+      return ApiErrors.validation('E-post og passord er påkrevd')
     }
 
     // Test connection to Kidplan
@@ -101,18 +93,11 @@ export async function POST(request: Request) {
       })
     } catch (error) {
       if (error instanceof KidplanAuthError) {
-        return NextResponse.json(
-          { error: 'Feil e-post eller passord' },
-          { status: 401 }
-        )
+        return ApiErrors.authFailed('Kidplan')
       }
       throw error
     }
   } catch (error) {
-    console.error('Kidplan test connection error:', error)
-    return NextResponse.json(
-      { error: 'Kunne ikke koble til Kidplan. Prøv igjen senere.' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'kidplan test connection')
   }
 }

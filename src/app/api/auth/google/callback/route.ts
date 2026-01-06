@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
-import { syncUserAdminStatus, createAdminClient } from '@/lib/supabase/admin'
+import { syncUserMetadata, createAdminClient } from '@/lib/supabase/admin'
 import { LANGUAGE_COOKIE_NAME, COOKIE_MAX_AGE } from '@/lib/i18n/cookie.server'
 import { isValidLanguage } from '@/lib/i18n/cookie'
 
@@ -123,19 +123,19 @@ export async function GET(request: NextRequest) {
           })
       }
 
-      // Sync is_admin to user's app_metadata (JWT claims)
-      try {
-        await syncUserAdminStatus(user.id, user.email)
-      } catch (err) {
-        console.error('Failed to sync admin status to JWT:', err)
-      }
-
-      // Load user's language preference and set cookie
+      // Load user's household membership and language preference
       const { data: member } = await supabase
         .from('household_members')
-        .select('language_preference')
+        .select('household_id, language_preference')
         .eq('user_id', user.id)
         .single()
+
+      // Sync is_admin and household_id to user's app_metadata (JWT claims)
+      try {
+        await syncUserMetadata(user.id, user.email, member?.household_id ?? null)
+      } catch (err) {
+        console.error('Failed to sync user metadata to JWT:', err)
+      }
 
       const response = NextResponse.redirect(`${origin}${next}`)
 

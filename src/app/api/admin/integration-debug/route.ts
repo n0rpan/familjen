@@ -2,6 +2,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { connection } from 'next/server'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 
 /**
  * GET /api/admin/integration-debug?householdId=xxx
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Check admin status from allowed_emails
@@ -30,7 +31,7 @@ export async function GET(request: Request) {
       .single()
 
     if (!allowedEmail?.is_admin) {
-      return NextResponse.json({ error: 'Forbidden: Admin only' }, { status: 403 })
+      return ApiErrors.adminRequired()
     }
 
     // Get household ID from query
@@ -38,7 +39,7 @@ export async function GET(request: Request) {
     const householdId = url.searchParams.get('householdId')
 
     if (!householdId) {
-      return NextResponse.json({ error: 'Missing householdId' }, { status: 400 })
+      return ApiErrors.validation('Husstands-ID er påkrevd')
     }
 
     // Create service role client to bypass RLS
@@ -55,7 +56,7 @@ export async function GET(request: Request) {
 
     if (intError) {
       console.error('[Admin] Error fetching integrations:', intError)
-      return NextResponse.json({ error: intError.message }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: intError.message })
     }
 
     if (!integrations || integrations.length === 0) {
@@ -81,7 +82,6 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ integrations: integrationInfos })
   } catch (error) {
-    console.error('[Admin] Integration debug error:', error)
-    return NextResponse.json({ error: String(error) }, { status: 500 })
+    return handleApiError(error, 'integration debug')
   }
 }

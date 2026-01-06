@@ -11,6 +11,7 @@ import { validateMealSuggestions } from '@/lib/ai-validation'
 import { sanitizePromptInput, sanitizePromptArray } from '@/lib/sanitize'
 import { MEAL_SUGGESTION_SCHEMA } from '@/lib/ai-schemas'
 import { getModel, STRUCTURED_OUTPUT_PROVIDER_OPTIONS } from '@/lib/ai-models'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 
 // Helper to calculate age from birth date
 function calculateAge(birthDate: string): number {
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
   try {
     // CSRF protection
     if (!validateOrigin(request)) {
-      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+      return ApiErrors.invalidOrigin()
     }
 
     // Check if this is a demo mode request
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
     // Validate request body first (needed for both demo and production)
     const validation = await validateRequest(request, aiSuggestRequestSchema)
     if (!validation.success) {
-      return NextResponse.json({ error: validation.error }, { status: 400 })
+      return ApiErrors.validation(validation.error || 'Ugyldig forespørsel')
     }
     const { weekStart, existingMeals } = validation.data
 
@@ -90,7 +91,7 @@ export async function POST(request: Request) {
 
     const { data, error: authError } = await supabase.auth.getUser()
     if (authError || !data.user) {
-      return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
     const user = data.user
 
@@ -111,7 +112,7 @@ export async function POST(request: Request) {
     const { data: household, error: householdError } = await getUserHousehold(supabase)
 
     if (householdError || !household) {
-      return NextResponse.json({ error: 'Kunne ikke finne husstand' }, { status: 404 })
+      return ApiErrors.noHousehold()
     }
 
     // Fetch all context data in parallel
@@ -228,7 +229,7 @@ export async function POST(request: Request) {
     // Check API key early
     const apiKey = process.env.OPENROUTER_API_KEY
     if (!apiKey) {
-      return NextResponse.json({ error: 'OpenRouter API-nøkkel ikke konfigurert' }, { status: 500 })
+      return ApiErrors.configError({ internalMessage: 'OPENROUTER_API_KEY not configured' })
     }
 
     // Prepare context for generation
@@ -334,8 +335,7 @@ Ikke inkluder noe annet enn JSON i svaret.`,
       } catch (fetchError) {
         clearTimeout(timeoutId)
         if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-          console.error('OpenRouter request timed out')
-          return NextResponse.json({ error: 'AI-forespørselen tok for lang tid' }, { status: 504 })
+          return ApiErrors.timeout({ internalMessage: 'OpenRouter request timed out' })
         }
         throw fetchError
       } finally {
@@ -343,8 +343,7 @@ Ikke inkluder noe annet enn JSON i svaret.`,
       }
 
       if (!response.ok) {
-        console.error('OpenRouter error:', { status: response.status, statusText: response.statusText })
-        return NextResponse.json({ error: 'Kunne ikke få AI-forslag' }, { status: 500 })
+        return ApiErrors.internal({ internalMessage: `OpenRouter error: ${response.status} ${response.statusText}` })
       }
 
       const data = await response.json()
@@ -402,8 +401,7 @@ Ikke inkluder noe annet enn JSON i svaret.`,
 
     return NextResponse.json({ suggestions: validatedMeals })
   } catch (error) {
-    console.error('Suggest meals error:', error)
-    return NextResponse.json({ error: 'En feil oppstod' }, { status: 500 })
+    return handleApiError(error, 'meal suggestions')
   }
 }
 
@@ -550,7 +548,7 @@ async function handleDemoAIRequest(
 ): Promise<Response> {
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) {
-    return NextResponse.json({ error: 'OpenRouter API-nøkkel ikke konfigurert' }, { status: 500 })
+    return ApiErrors.configError({ internalMessage: 'OPENROUTER_API_KEY not configured for demo' })
   }
 
   // Determine which days need suggestions (skip weekends)
@@ -666,23 +664,20 @@ Ikke inkluder noe annet enn JSON i svaret.`,
     clearTimeout(timeoutId)
 
     if (!response.ok) {
-      const errorText = await response.text()
-      console.error('OpenRouter API error (demo):', { status: response.status, model, error: errorText })
-      return NextResponse.json({ error: 'AI-tjenesten svarer ikke' }, { status: 502 })
+      return ApiErrors.internal({ internalMessage: `OpenRouter demo error: ${response.status}` })
     }
 
     const data = await response.json()
     const content = data.choices?.[0]?.message?.content
 
     if (!content) {
-      return NextResponse.json({ error: 'Tomt svar fra AI' }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: 'Empty AI response in demo mode' })
     }
 
     // Parse and validate response
     const parsed = extractJSON<{ suggestions: MealSuggestion[] }>(content)
     if (!parsed?.suggestions) {
-      console.error('Failed to parse AI response (demo):', content)
-      return NextResponse.json({ error: 'Kunne ikke tolke AI-svaret' }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: 'Failed to parse AI response in demo mode' })
     }
 
     // Basic validation for demo (skip full allergy check since we trust the prompt)
@@ -694,9 +689,8 @@ Ikke inkluder noe annet enn JSON i svaret.`,
   } catch (error) {
     clearTimeout(timeoutId)
     if (error instanceof Error && error.name === 'AbortError') {
-      return NextResponse.json({ error: 'AI-forespørsel tidsavbrutt' }, { status: 504 })
+      return ApiErrors.timeout({ internalMessage: 'Demo AI request timed out' })
     }
-    console.error('Demo AI request error:', error)
-    return NextResponse.json({ error: 'En feil oppstod' }, { status: 500 })
+    return handleApiError(error, 'demo meal suggestions')
   }
 }

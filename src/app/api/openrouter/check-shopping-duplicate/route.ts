@@ -5,6 +5,7 @@ import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limi
 import { z } from 'zod'
 import { getModelOrNull, STRUCTURED_OUTPUT_PROVIDER_OPTIONS } from '@/lib/ai-models'
 import { SHOPPING_DUPLICATE_SCHEMA } from '@/lib/ai-schemas'
+import { ApiErrors } from '@/lib/api-errors'
 
 /**
  * Semantic Shopping Duplicate Check
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
   try {
     // CSRF protection
     if (!validateOrigin(request)) {
-      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+      return ApiErrors.invalidOrigin()
     }
 
     const supabase = await createClient()
@@ -51,7 +52,7 @@ export async function POST(request: Request) {
     // Check authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
-      return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Rate limiting
