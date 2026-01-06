@@ -29,11 +29,11 @@ function formatRelativeTime(timestamp: number, t: { justNow: string; minutesAgo:
   if (minutes < 1) {
     return t.justNow
   } else if (minutes < 60) {
-    return t.minutesAgo.replace('{n}', String(minutes))
+    return t.minutesAgo.replace('{count}', String(minutes))
   } else if (hours < 24) {
-    return t.hoursAgo.replace('{n}', String(hours))
+    return t.hoursAgo.replace('{count}', String(hours))
   } else {
-    return t.daysAgo.replace('{n}', String(days))
+    return t.daysAgo.replace('{count}', String(days))
   }
 }
 
