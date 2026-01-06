@@ -76,9 +76,9 @@ export const en: TranslationStrings = {
     // Relative time
     lastUpdated: 'Last updated',
     justNow: 'Just now',
-    minutesAgo: '{n}m ago',
-    hoursAgo: '{n}h ago',
-    daysAgo: '{n}d ago',
+    minutesAgo: '{count}m ago',
+    hoursAgo: '{count}h ago',
+    daysAgo: '{count}d ago',
   },
 
   // Date/Time
