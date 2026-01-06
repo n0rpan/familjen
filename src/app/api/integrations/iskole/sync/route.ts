@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { isUserAdmin } from '@/lib/config'
 import { ISkoleClient, ISkoleAuthError, ISkoleError } from '@/lib/integrations/iskole'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 import { addDays } from '@/lib/utils'
 import { handleSyncSetup, getSyncStartDate, HISTORICAL_SYNC_DAYS, FUTURE_SYNC_DAYS } from '@/lib/integrations/shared'
 import { sendNewEventNotification } from '@/lib/integrations/shared/deletion-handler'
@@ -68,8 +69,7 @@ export async function POST(request: Request) {
       },
     })
   } catch (error) {
-    console.error('iSkole sync error:', error)
-    return NextResponse.json({ error: 'Failed to sync' }, { status: 500 })
+    return handleApiError(error, 'iskole sync')
   }
 }
 
@@ -621,15 +621,14 @@ export async function GET() {
       data: { user },
     } = await supabase.auth.getUser()
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Get integrations via RPC (handles RLS)
     const { data: integrations, error } = await supabase.rpc('get_household_integrations')
 
     if (error) {
-      console.error('Error fetching integrations:', error)
-      return NextResponse.json({ error: 'Failed to fetch integrations' }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: 'Failed to fetch integrations' })
     }
 
     // Filter to iSkole only
@@ -657,7 +656,6 @@ export async function GET() {
       })),
     })
   } catch (error) {
-    console.error('Error getting sync status:', error)
-    return NextResponse.json({ error: 'Failed to get status' }, { status: 500 })
+    return handleApiError(error, 'iskole sync status')
   }
 }

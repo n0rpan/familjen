@@ -6,6 +6,7 @@ import { formatDateISO } from '@/lib/utils'
 import { sanitizePromptInput } from '@/lib/sanitize'
 import { FEED_ASK_SCHEMA } from '@/lib/ai-schemas'
 import { getModel, STRUCTURED_OUTPUT_PROVIDER_OPTIONS } from '@/lib/ai-models'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 
 interface MessageContext {
   id: string
@@ -42,7 +43,7 @@ export async function POST(request: Request) {
   try {
     // CSRF protection
     if (!validateOrigin(request)) {
-      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+      return ApiErrors.invalidOrigin()
     }
 
     const supabase = await createClient()
@@ -52,17 +53,14 @@ export async function POST(request: Request) {
       data: { user },
     } = await supabase.auth.getUser()
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Check rate limit (use aiSuggest limit - similar AI operation)
     const rateLimitKey = createRateLimitKey(user.id, 'aiSuggest')
     const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.aiSuggest)
     if (rateLimit.limited) {
-      return NextResponse.json(
-        { error: `Too many requests. Try again in ${rateLimit.retryAfter} seconds.` },
-        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
-      )
+      return ApiErrors.rateLimit(rateLimit.retryAfter)
     }
 
     // Parse request body
@@ -74,10 +72,10 @@ export async function POST(request: Request) {
 
     // Validate question length (min 3, max 500 characters)
     if (!question || typeof question !== 'string' || question.trim().length < 3) {
-      return NextResponse.json({ error: 'Question is required (min 3 characters)' }, { status: 400 })
+      return ApiErrors.validation('Spørsmålet må være minst 3 tegn')
     }
     if (question.length > 500) {
-      return NextResponse.json({ error: 'Question too long (max 500 characters)' }, { status: 400 })
+      return ApiErrors.validation('Spørsmålet kan maks være 500 tegn')
     }
 
     // Get user's household
@@ -88,7 +86,7 @@ export async function POST(request: Request) {
       .single()
 
     if (!membership) {
-      return NextResponse.json({ error: 'No household found' }, { status: 400 })
+      return ApiErrors.notFound('Husstanden')
     }
 
     // Check if integrations are enabled
@@ -99,7 +97,7 @@ export async function POST(request: Request) {
       .single()
 
     if (!household?.external_integrations_enabled) {
-      return NextResponse.json({ error: 'External integrations not enabled' }, { status: 403 })
+      return ApiErrors.forbidden({ hint: 'Eksterne integrasjoner er ikke aktivert' })
     }
 
     // Fetch recent messages (last 200 for context)
@@ -121,7 +119,7 @@ export async function POST(request: Request) {
 
     if (messagesError) {
       console.error('Error fetching messages:', messagesError)
-      return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: messagesError.message })
     }
 
     if (!messages || messages.length === 0) {
@@ -157,8 +155,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(response)
   } catch (error) {
-    console.error('Feed ask error:', error)
-    return NextResponse.json({ error: 'Failed to process question' }, { status: 500 })
+    return handleApiError(error, 'feed ask')
   }
 }
 

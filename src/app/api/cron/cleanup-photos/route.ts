@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { verifyCronRequest } from '@/lib/cron-auth'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 
 /**
  * GET /api/cron/cleanup-photos
@@ -16,7 +17,7 @@ import { verifyCronRequest } from '@/lib/cron-auth'
 export async function GET(request: Request) {
   // Verify cron authorization
   if (!verifyCronRequest(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return ApiErrors.unauthorized()
   }
 
   console.log('[Cron] Starting cleanup job')
@@ -27,7 +28,7 @@ export async function GET(request: Request) {
 
   if (!supabaseUrl || !serviceRoleKey) {
     console.error('[Cron] Missing Supabase configuration')
-    return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
+    return ApiErrors.internal({ internalMessage: 'Missing Supabase configuration' })
   }
 
   const supabase = createServiceClient(supabaseUrl, serviceRoleKey)
@@ -44,7 +45,7 @@ export async function GET(request: Request) {
 
     if (fetchError) {
       console.error('[Cron] Error fetching expired photos:', fetchError)
-      return NextResponse.json({ error: 'Failed to fetch expired photos' }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: `Failed to fetch expired photos: ${fetchError.message}` })
     }
 
     if (!expiredPhotos || expiredPhotos.length === 0) {
@@ -94,7 +95,7 @@ export async function GET(request: Request) {
 
     if (deleteError) {
       console.error('[Cron] Error deleting photo records:', deleteError)
-      return NextResponse.json({ error: 'Failed to delete photo records' }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: `Failed to delete photo records: ${deleteError.message}` })
     }
 
     console.log(`[Cron] Photo cleanup: ${expiredPhotos.length} photos deleted, ${storageFilesDeleted} storage files removed`)
@@ -170,7 +171,6 @@ export async function GET(request: Request) {
       shoppingItemsDeleted,
     })
   } catch (error) {
-    console.error('[Cron] Cleanup error:', error)
-    return NextResponse.json({ error: 'Cleanup failed' }, { status: 500 })
+    return handleApiError(error, 'cron cleanup')
   }
 }

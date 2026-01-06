@@ -15,6 +15,7 @@ import { syncHouseholdICS as syncHouseholdICSShared } from '@/lib/household-ics-
 import { verifyCronRequest } from '@/lib/cron-auth'
 import { getModel } from '@/lib/ai-models'
 import { truncate, sanitizeString, sanitizeTime } from '@/lib/sanitize'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 
 type AnySupabaseClient = SupabaseClient<any, any, any>
 
@@ -27,7 +28,7 @@ type AnySupabaseClient = SupabaseClient<any, any, any>
 export async function GET(request: Request) {
   // Verify cron authorization
   if (!verifyCronRequest(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return ApiErrors.unauthorized()
   }
 
   console.log('[Cron] Starting scheduled integration sync')
@@ -38,7 +39,7 @@ export async function GET(request: Request) {
 
   if (!supabaseUrl || !serviceRoleKey) {
     console.error('[Cron] Missing Supabase configuration')
-    return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
+    return ApiErrors.internal({ internalMessage: 'Missing Supabase configuration' })
   }
 
   const supabase = createServiceClient(supabaseUrl, serviceRoleKey)
@@ -52,7 +53,7 @@ export async function GET(request: Request) {
 
     if (householdsError) {
       console.error('[Cron] Error fetching households:', householdsError)
-      return NextResponse.json({ error: 'Failed to fetch households' }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: `Failed to fetch households: ${householdsError.message}` })
     }
 
     if (!households || households.length === 0) {
@@ -78,7 +79,7 @@ export async function GET(request: Request) {
 
     if (integrationsError) {
       console.error('[Cron] Error fetching integrations:', integrationsError)
-      return NextResponse.json({ error: 'Failed to fetch integrations' }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: `Failed to fetch integrations: ${integrationsError.message}` })
     }
 
     if (!integrations || integrations.length === 0) {
@@ -567,8 +568,7 @@ export async function GET(request: Request) {
       },
     })
   } catch (error) {
-    console.error('[Cron] Sync error:', error)
-    return NextResponse.json({ error: 'Sync failed' }, { status: 500 })
+    return handleApiError(error, 'cron sync integrations')
   }
 }
 

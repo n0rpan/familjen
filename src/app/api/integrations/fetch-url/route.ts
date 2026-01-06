@@ -8,6 +8,7 @@ import { isUrlAllowed } from '@/lib/sanitize'
 import { parseICSContent } from '@/lib/ics-parser'
 import { formatDateISO } from '@/lib/utils'
 import { getModel } from '@/lib/ai-models'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 
 /**
  * POST /api/integrations/fetch-url
@@ -17,7 +18,7 @@ import { getModel } from '@/lib/ai-models'
 export async function POST(request: Request) {
   // CSRF protection
   if (!validateOrigin(request)) {
-    return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+    return ApiErrors.invalidOrigin()
   }
 
   try {
@@ -26,17 +27,14 @@ export async function POST(request: Request) {
     // Check authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
-      return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Rate limiting
     const rateLimitKey = createRateLimitKey(user.id, 'urlFetch')
     const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.urlFetch)
     if (rateLimit.limited) {
-      return NextResponse.json(
-        { error: `For mange forespørsler. Prøv igjen om ${rateLimit.retryAfter} sekunder.` },
-        { status: 429 }
-      )
+      return ApiErrors.rateLimit(rateLimit.retryAfter)
     }
 
     // Get user's household
@@ -47,14 +45,14 @@ export async function POST(request: Request) {
       .single()
 
     if (!member) {
-      return NextResponse.json({ error: 'Ingen husstand funnet' }, { status: 404 })
+      return ApiErrors.notFound('Husstanden')
     }
 
     const body = await request.json()
     const { sourceUrlId } = body
 
     if (!sourceUrlId) {
-      return NextResponse.json({ error: 'sourceUrlId mangler' }, { status: 400 })
+      return ApiErrors.validation('sourceUrlId er påkrevd')
     }
 
     // Get the source URL record
@@ -66,12 +64,12 @@ export async function POST(request: Request) {
       .single()
 
     if (fetchError || !sourceUrl) {
-      return NextResponse.json({ error: 'Kilde ikke funnet' }, { status: 404 })
+      return ApiErrors.notFound('Kilden')
     }
 
     // SSRF protection - validate URL before fetching
     if (!isUrlAllowed(sourceUrl.url)) {
-      return NextResponse.json({ error: 'URL ikke tillatt' }, { status: 400 })
+      return ApiErrors.validation('URL ikke tillatt')
     }
 
     // Fetch the content based on type
@@ -284,10 +282,7 @@ export async function POST(request: Request) {
         })
         .eq('id', sourceUrl.id)
 
-      return NextResponse.json({
-        error: 'Kunne ikke hente innhold',
-        details: fetchErr instanceof Error ? fetchErr.message : 'Unknown error',
-      }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: fetchErr instanceof Error ? fetchErr.message : 'Unknown error' })
     }
 
     // For HTML/calendar_page: Use the new sync function with proper event tracking
@@ -310,9 +305,7 @@ export async function POST(request: Request) {
     const syncResult = await syncCalendarSource(supabase, calendarSource, { model })
 
     if (!syncResult.success) {
-      return NextResponse.json({
-        error: syncResult.error || 'Synkronisering feilet',
-      }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: syncResult.error || 'Synkronisering feilet' })
     }
 
     // Build response message
@@ -342,8 +335,7 @@ export async function POST(request: Request) {
     })
 
   } catch (error) {
-    console.error('Fetch URL error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(error, 'fetch url')
   }
 }
 
@@ -359,7 +351,7 @@ export async function GET() {
     // Check authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
-      return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Get user's household
@@ -370,7 +362,7 @@ export async function GET() {
       .single()
 
     if (!member) {
-      return NextResponse.json({ error: 'Ingen husstand funnet' }, { status: 404 })
+      return ApiErrors.notFound('Husstanden')
     }
 
     // Get all source URLs
@@ -381,14 +373,13 @@ export async function GET() {
       .order('created_at', { ascending: false })
 
     if (error) {
-      return NextResponse.json({ error: 'Kunne ikke hente kilder' }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: 'Failed to fetch source URLs' })
     }
 
     return NextResponse.json({ sourceUrls })
 
   } catch (error) {
-    console.error('Get source URLs error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(error, 'get source urls')
   }
 }
 
@@ -404,14 +395,14 @@ export async function DELETE(request: Request) {
     // Check authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
-      return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
 
     if (!id) {
-      return NextResponse.json({ error: 'ID mangler' }, { status: 400 })
+      return ApiErrors.validation('ID er påkrevd')
     }
 
     // Delete is handled by RLS - only household members can delete their own URLs
@@ -421,13 +412,12 @@ export async function DELETE(request: Request) {
       .eq('id', id)
 
     if (error) {
-      return NextResponse.json({ error: 'Kunne ikke slette kilde' }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: 'Failed to delete source URL' })
     }
 
     return NextResponse.json({ success: true })
 
   } catch (error) {
-    console.error('Delete source URL error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(error, 'delete source url')
   }
 }

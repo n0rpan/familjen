@@ -7,17 +7,9 @@
  */
 
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase/server'
-
-function getAdminClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) {
-    throw new Error('Missing Supabase credentials')
-  }
-  return createClient(url, key)
-}
+import { createAdminClient } from '@/lib/supabase/admin'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 
 export async function GET() {
   try {
@@ -26,7 +18,7 @@ export async function GET() {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
     if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Check if user is admin
@@ -37,11 +29,11 @@ export async function GET() {
       .single()
 
     if (!allowedEmail?.is_admin) {
-      return NextResponse.json({ error: 'Forbidden - admin access required' }, { status: 403 })
+      return ApiErrors.adminRequired()
     }
 
     // Use admin client to bypass RLS for CI events
-    const adminClient = getAdminClient()
+    const adminClient = createAdminClient()
 
     // Get all verdict events
     const { data: events, error } = await adminClient
@@ -106,10 +98,6 @@ export async function GET() {
       },
     })
   } catch (error) {
-    console.error('Failed to get CI trend:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'CI trend')
   }
 }

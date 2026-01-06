@@ -4,36 +4,34 @@ import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '@
 import { sendInviteRequestSchema, validateRequest } from '@/lib/schemas'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 import { validateOrigin } from '@/lib/config'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 
 // POST /api/calendar/send-invite - Send pickup invite to work calendar
 export async function POST(request: Request) {
   try {
     // CSRF protection - validate same-origin request
     if (!validateOrigin(request)) {
-      return NextResponse.json({ error: 'Invalid request origin' }, { status: 403 })
+      return ApiErrors.invalidOrigin()
     }
 
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Check rate limit
     const rateLimitKey = createRateLimitKey(user.id, 'calendarInvite')
     const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.calendarInvite)
     if (rateLimit.limited) {
-      return NextResponse.json(
-        { error: `For mange forespørsler. Prøv igjen om ${rateLimit.retryAfter} sekunder.` },
-        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
-      )
+      return ApiErrors.rateLimit(rateLimit.retryAfter)
     }
 
     // Validate request body
     const validation = await validateRequest(request, sendInviteRequestSchema)
     if (!validation.success) {
-      return NextResponse.json({ error: validation.error }, { status: 400 })
+      return ApiErrors.validation(validation.error || 'Ugyldig forespørsel')
     }
     const { pickupId, syncToWorkCalendar } = validation.data
 
@@ -49,7 +47,7 @@ export async function POST(request: Request) {
       .single()
 
     if (pickupError || !pickup) {
-      return NextResponse.json({ error: 'Pickup not found' }, { status: 404 })
+      return ApiErrors.notFound('Hentingen')
     }
 
     // Get calendar tokens via RPC (bypasses admin-only RLS)
@@ -57,7 +55,7 @@ export async function POST(request: Request) {
       .rpc('get_household_calendar_tokens')
 
     if (tokensError || !tokensArray || tokensArray.length === 0) {
-      return NextResponse.json({ error: 'Calendar not connected' }, { status: 400 })
+      return ApiErrors.validation('Kalender er ikke tilkoblet')
     }
     const tokens = tokensArray[0]
 
@@ -89,10 +87,7 @@ export async function POST(request: Request) {
 
     // If turning ON sync, create/update calendar event
     if (!picker?.work_email) {
-      return NextResponse.json(
-        { error: 'Picker has no work email configured' },
-        { status: 400 }
-      )
+      return ApiErrors.validation('Henteren har ingen jobb-e-post konfigurert')
     }
 
     const eventDate = new Date(pickup.date)
@@ -163,10 +158,6 @@ export async function POST(request: Request) {
     })
 
   } catch (error) {
-    console.error('Send invite error:', error)
-    return NextResponse.json(
-      { error: 'Failed to send calendar invite' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'send invite')
   }
 }

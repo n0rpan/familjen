@@ -4,6 +4,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { validateOrigin } from '@/lib/config'
 import { syncHouseholdICS, type HouseholdICSSyncResult } from '@/lib/household-ics-sync'
 import { processHouseholdEventsWithAI } from '@/lib/integrations/household-event-extraction'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 
 /**
  * POST /api/calendar/household-ics-sync
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
 
     // User request: validate origin and auth
     if (!validateOrigin(request)) {
-      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+      return ApiErrors.invalidOrigin()
     }
 
     const supabase = await createClient()
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
       data: { user },
     } = await supabase.auth.getUser()
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Get user's household
@@ -45,12 +46,12 @@ export async function POST(request: Request) {
       .single()
 
     if (!membership) {
-      return NextResponse.json({ error: 'No household found' }, { status: 400 })
+      return ApiErrors.notFound('Husstanden')
     }
 
     // Only household admins can trigger sync
     if (!membership.is_household_admin) {
-      return NextResponse.json({ error: 'Only household admins can sync' }, { status: 403 })
+      return ApiErrors.forbidden({ hint: 'Kun husstandsadministratorer kan synkronisere' })
     }
 
     // Get household with ICS URL
@@ -61,7 +62,7 @@ export async function POST(request: Request) {
       .single()
 
     if (householdError || !household) {
-      return NextResponse.json({ error: 'Household not found' }, { status: 404 })
+      return ApiErrors.notFound('Husstanden')
     }
 
     if (!household.ics_calendar_url) {
@@ -98,8 +99,7 @@ export async function POST(request: Request) {
       error: result.error,
     })
   } catch (error) {
-    console.error('Household ICS sync error:', error)
-    return NextResponse.json({ error: 'Sync failed' }, { status: 500 })
+    return handleApiError(error, 'household ICS sync')
   }
 }
 
@@ -114,7 +114,7 @@ async function syncAllHouseholds(): Promise<NextResponse> {
 
   if (!supabaseUrl || !serviceRoleKey) {
     console.error('[Household ICS Cron] Missing Supabase configuration')
-    return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
+    return ApiErrors.internal({ internalMessage: 'Missing Supabase configuration' })
   }
 
   const supabase = createServiceClient(supabaseUrl, serviceRoleKey)
@@ -127,7 +127,7 @@ async function syncAllHouseholds(): Promise<NextResponse> {
 
   if (householdsError) {
     console.error('[Household ICS Cron] Error fetching households:', householdsError)
-    return NextResponse.json({ error: 'Failed to fetch households' }, { status: 500 })
+    return ApiErrors.internal({ internalMessage: 'Failed to fetch households' })
   }
 
   if (!households || households.length === 0) {
@@ -192,7 +192,7 @@ export async function GET(request: Request) {
   try {
     // Validate origin for security consistency
     if (!validateOrigin(request)) {
-      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+      return ApiErrors.invalidOrigin()
     }
 
     const supabase = await createClient()
@@ -202,7 +202,7 @@ export async function GET(request: Request) {
       data: { user },
     } = await supabase.auth.getUser()
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Get user's household membership
@@ -213,7 +213,7 @@ export async function GET(request: Request) {
       .single()
 
     if (!membership) {
-      return NextResponse.json({ error: 'No household found' }, { status: 404 })
+      return ApiErrors.notFound('Husstanden')
     }
 
     // Get household ICS status
@@ -224,7 +224,7 @@ export async function GET(request: Request) {
       .single()
 
     if (error || !household) {
-      return NextResponse.json({ error: 'Household not found' }, { status: 404 })
+      return ApiErrors.notFound('Husstanden')
     }
 
     return NextResponse.json({
@@ -233,7 +233,6 @@ export async function GET(request: Request) {
       syncError: household.ics_sync_error,
     })
   } catch (error) {
-    console.error('Household ICS status error:', error)
-    return NextResponse.json({ error: 'Failed to get status' }, { status: 500 })
+    return handleApiError(error, 'household ICS status')
   }
 }

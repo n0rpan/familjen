@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { validateOrigin } from '@/lib/config'
+import { ApiErrors } from '@/lib/api-errors'
 
 // GET is intentionally not supported to prevent CSRF attacks
 // Logout must be triggered via POST or client-side supabase.auth.signOut()
@@ -14,7 +15,7 @@ export async function GET() {
 export async function POST(request: Request) {
   // CSRF protection
   if (!validateOrigin(request)) {
-    return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+    return ApiErrors.invalidOrigin()
   }
 
   const supabase = await createClient()

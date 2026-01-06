@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { SHOPPING_CATEGORIES, type ShoppingCategory } from '@/lib/constants'
 import { getCommonItemCategory, normalizeItemName } from '@/lib/shopping-common-items'
 import { getModel } from '@/lib/ai-models'
+import { ApiErrors } from '@/lib/api-errors'
 
 // Request schema
 const categorizeItemSchema = z.object({
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
   try {
     // CSRF protection
     if (!validateOrigin(request)) {
-      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+      return ApiErrors.invalidOrigin()
     }
 
     const supabase = await createClient()
@@ -31,7 +32,7 @@ export async function POST(request: Request) {
     // Check authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
-      return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Parse request body

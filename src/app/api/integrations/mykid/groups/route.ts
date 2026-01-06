@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { validateOrigin } from '@/lib/config'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 import { MyKidClient, MyKidAuthError } from '@/lib/integrations/mykid'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 
 /**
  * GET /api/integrations/mykid/groups?integrationId=xxx
@@ -14,7 +15,7 @@ export async function GET(request: Request) {
   try {
     // CSRF protection
     if (!validateOrigin(request)) {
-      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+      return ApiErrors.invalidOrigin()
     }
 
     const supabase = await createClient()
@@ -24,17 +25,14 @@ export async function GET(request: Request) {
       data: { user },
     } = await supabase.auth.getUser()
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Check rate limit
     const rateLimitKey = createRateLimitKey(user.id, 'mykidGroups')
     const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.mykidTestConnection)
     if (rateLimit.limited) {
-      return NextResponse.json(
-        { error: `Too many requests. Try again in ${rateLimit.retryAfter} seconds.` },
-        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
-      )
+      return ApiErrors.rateLimit(rateLimit.retryAfter)
     }
 
     // Get integration ID from query params
@@ -42,7 +40,7 @@ export async function GET(request: Request) {
     const integrationId = searchParams.get('integrationId')
 
     if (!integrationId) {
-      return NextResponse.json({ error: 'integrationId is required' }, { status: 400 })
+      return ApiErrors.validation('integrationId er påkrevd')
     }
 
     // Get user's household
@@ -53,7 +51,7 @@ export async function GET(request: Request) {
       .single()
 
     if (!membership) {
-      return NextResponse.json({ error: 'No household found' }, { status: 400 })
+      return ApiErrors.notFound('Husstanden')
     }
 
     // Verify the integration belongs to the user's household
@@ -64,11 +62,11 @@ export async function GET(request: Request) {
       .single()
 
     if (intError || !integration) {
-      return NextResponse.json({ error: 'Integration not found' }, { status: 404 })
+      return ApiErrors.notFound('Integrasjonen')
     }
 
     if (integration.household_id !== membership.household_id) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+      return ApiErrors.forbidden()
     }
 
     // Get decrypted credentials
@@ -78,7 +76,7 @@ export async function GET(request: Request) {
     )
 
     if (credError || !credentials) {
-      return NextResponse.json({ error: 'Failed to decrypt credentials' }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: 'Failed to decrypt credentials' })
     }
 
     const { phone, password } = credentials as {
@@ -99,10 +97,7 @@ export async function GET(request: Request) {
           p_status: 'auth_failed',
           p_error: 'Invalid credentials',
         })
-        return NextResponse.json(
-          { error: 'Authentication failed - credentials may have changed' },
-          { status: 401 }
-        )
+        return ApiErrors.authFailed('MyKid')
       }
       throw error
     }
@@ -134,10 +129,6 @@ export async function GET(request: Request) {
       currentMappings: currentMappings || [],
     })
   } catch (error) {
-    console.error('MyKid groups fetch error:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch children. Please try again later.' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'mykid groups')
   }
 }

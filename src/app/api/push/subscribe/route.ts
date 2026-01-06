@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { validateOrigin } from '@/lib/config'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 
 export async function POST(request: Request) {
   try {
     // CSRF protection
     if (!validateOrigin(request)) {
-      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+      return ApiErrors.invalidOrigin()
     }
 
     const supabase = await createClient()
@@ -14,14 +15,14 @@ export async function POST(request: Request) {
     // Check authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
-      return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     const body = await request.json()
     const { subscription } = body
 
     if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
-      return NextResponse.json({ error: 'Ugyldig subscription' }, { status: 400 })
+      return ApiErrors.validation('Ugyldig subscription')
     }
 
     // Store the subscription
@@ -40,7 +41,7 @@ export async function POST(request: Request) {
 
     if (insertError) {
       console.error('Error saving push subscription:', insertError)
-      return NextResponse.json({ error: 'Kunne ikke lagre subscription' }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: insertError.message })
     }
 
     // Enable notifications for this member
@@ -51,8 +52,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Push subscribe error:', error)
-    return NextResponse.json({ error: 'Intern feil' }, { status: 500 })
+    return handleApiError(error, 'push subscribe')
   }
 }
 
@@ -60,7 +60,7 @@ export async function DELETE(request: Request) {
   try {
     // CSRF protection
     if (!validateOrigin(request)) {
-      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+      return ApiErrors.invalidOrigin()
     }
 
     const supabase = await createClient()
@@ -68,14 +68,14 @@ export async function DELETE(request: Request) {
     // Check authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
-      return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     const body = await request.json()
     const { endpoint } = body
 
     if (!endpoint) {
-      return NextResponse.json({ error: 'Mangler endpoint' }, { status: 400 })
+      return ApiErrors.validation('Mangler endpoint')
     }
 
     // Remove the subscription
@@ -87,7 +87,7 @@ export async function DELETE(request: Request) {
 
     if (deleteError) {
       console.error('Error removing push subscription:', deleteError)
-      return NextResponse.json({ error: 'Kunne ikke fjerne subscription' }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: deleteError.message })
     }
 
     // Check if user has any remaining subscriptions
@@ -107,7 +107,6 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Push unsubscribe error:', error)
-    return NextResponse.json({ error: 'Intern feil' }, { status: 500 })
+    return handleApiError(error, 'push unsubscribe')
   }
 }

@@ -31,6 +31,7 @@ import {
   revalidateStyringCache,
   revalidateAdminCache,
 } from '@/lib/data/server'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 
 export async function POST(request: NextRequest) {
   try {
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     const body = await request.json()
@@ -55,7 +56,7 @@ export async function POST(request: NextRequest) {
         .maybeSingle()
 
       if (!allowedEmail?.is_admin) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        return ApiErrors.adminRequired()
       }
 
       revalidateAdminCache()
@@ -63,7 +64,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!householdId) {
-      return NextResponse.json({ error: 'householdId required' }, { status: 400 })
+      return ApiErrors.validation('householdId er påkrevd')
     }
 
     // Verify user belongs to this household
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
 
     if (!membership) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      return ApiErrors.forbidden({ hint: 'Du er ikke medlem av denne husstanden' })
     }
 
     // Revalidate cache based on type
@@ -107,7 +108,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ revalidated: true })
   } catch (error) {
-    console.error('Revalidation error:', error)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return handleApiError(error, 'revalidate')
   }
 }

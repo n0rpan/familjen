@@ -4,6 +4,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { validateOrigin } from '@/lib/config'
 import { fetchAndParseICS, type ICSEvent } from '@/lib/ics-parser'
 import { formatDateISO, addDays } from '@/lib/utils'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 
 // Sync window: 90 days ahead
 const SYNC_DAYS_AHEAD = 90
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
 
     // User request: validate origin and auth
     if (!validateOrigin(request)) {
-      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+      return ApiErrors.invalidOrigin()
     }
 
     const supabase = await createClient()
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
       data: { user },
     } = await supabase.auth.getUser()
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Get user's household
@@ -56,7 +57,7 @@ export async function POST(request: Request) {
       .single()
 
     if (!membership) {
-      return NextResponse.json({ error: 'No household found' }, { status: 400 })
+      return ApiErrors.notFound('Husstanden')
     }
 
     // Parse request body for optional member filter
@@ -78,7 +79,7 @@ export async function POST(request: Request) {
 
     if (membersError) {
       console.error('Error fetching members:', membersError)
-      return NextResponse.json({ error: 'Failed to fetch members' }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: 'Failed to fetch members' })
     }
 
     if (!members || members.length === 0) {
@@ -110,8 +111,7 @@ export async function POST(request: Request) {
       },
     })
   } catch (error) {
-    console.error('ICS sync error:', error)
-    return NextResponse.json({ error: 'Sync failed' }, { status: 500 })
+    return handleApiError(error, 'ICS sync')
   }
 }
 
@@ -126,7 +126,7 @@ async function syncAllMembers(): Promise<NextResponse> {
 
   if (!supabaseUrl || !serviceRoleKey) {
     console.error('[ICS Cron] Missing Supabase configuration')
-    return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
+    return ApiErrors.internal({ internalMessage: 'Missing Supabase configuration' })
   }
 
   const supabase = createServiceClient(supabaseUrl, serviceRoleKey)
@@ -139,7 +139,7 @@ async function syncAllMembers(): Promise<NextResponse> {
 
   if (membersError) {
     console.error('[ICS Cron] Error fetching members:', membersError)
-    return NextResponse.json({ error: 'Failed to fetch members' }, { status: 500 })
+    return ApiErrors.internal({ internalMessage: 'Failed to fetch members' })
   }
 
   if (!members || members.length === 0) {
@@ -348,7 +348,7 @@ export async function GET() {
       data: { user },
     } = await supabase.auth.getUser()
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Get user's member record with ICS status
@@ -359,7 +359,7 @@ export async function GET() {
       .single()
 
     if (error || !member) {
-      return NextResponse.json({ error: 'Member not found' }, { status: 404 })
+      return ApiErrors.notFound('Medlemmet')
     }
 
     return NextResponse.json({
@@ -368,7 +368,6 @@ export async function GET() {
       syncError: member.ics_sync_error,
     })
   } catch (error) {
-    console.error('ICS status error:', error)
-    return NextResponse.json({ error: 'Failed to get status' }, { status: 500 })
+    return handleApiError(error, 'ICS status')
   }
 }

@@ -8,12 +8,13 @@ import {
   shouldNotify,
   type NotificationType,
 } from '@/lib/push-notifications'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 
 export async function POST(request: Request) {
   try {
     // CSRF protection
     if (!validateOrigin(request)) {
-      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+      return ApiErrors.invalidOrigin()
     }
 
     const supabase = await createClient()
@@ -21,17 +22,14 @@ export async function POST(request: Request) {
     // Check authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
-      return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Rate limit push notifications
     const rateLimitKey = createRateLimitKey(user.id, 'pushNotify')
     const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.pushNotify)
     if (rateLimit.limited) {
-      return NextResponse.json(
-        { error: `For mange forespørsler. Prøv igjen om ${rateLimit.retryAfter} sekunder.` },
-        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
-      )
+      return ApiErrors.rateLimit(rateLimit.retryAfter)
     }
 
     const body = await request.json()
@@ -43,7 +41,7 @@ export async function POST(request: Request) {
     }
 
     if (!type || !data) {
-      return NextResponse.json({ error: 'Mangler type eller data' }, { status: 400 })
+      return ApiErrors.validation('Mangler type eller data')
     }
 
     // Get user's household
@@ -54,7 +52,7 @@ export async function POST(request: Request) {
       .single()
 
     if (!member) {
-      return NextResponse.json({ error: 'Ikke medlem av husstand' }, { status: 403 })
+      return ApiErrors.forbidden({ hint: 'Ikke medlem av husstand' })
     }
 
     // Get all push subscriptions for household members with notifications enabled
@@ -63,7 +61,7 @@ export async function POST(request: Request) {
 
     if (subError) {
       console.error('Error getting subscriptions:', subError)
-      return NextResponse.json({ error: 'Kunne ikke hente subscriptions' }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: subError.message })
     }
 
     if (!subscriptions || subscriptions.length === 0) {
@@ -142,7 +140,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ sent, total: filteredSubs.length })
   } catch (error) {
-    console.error('Push notify error:', error)
-    return NextResponse.json({ error: 'Intern feil' }, { status: 500 })
+    return handleApiError(error, 'push notify')
   }
 }

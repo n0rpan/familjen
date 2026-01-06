@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 
 export interface OpenRouterModel {
   id: string
@@ -40,7 +41,7 @@ export async function GET(request: NextRequest) {
     // Check authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
-      return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Rate limit
@@ -55,7 +56,7 @@ export async function GET(request: NextRequest) {
 
     const apiKey = process.env.OPENROUTER_API_KEY
     if (!apiKey) {
-      return NextResponse.json({ error: 'OpenRouter API-nøkkel ikke konfigurert' }, { status: 500 })
+      return ApiErrors.configError({ internalMessage: 'OPENROUTER_API_KEY not configured' })
     }
 
     // Fetch models that support structured outputs (required for our app)
@@ -117,10 +118,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ models })
   } catch (error) {
-    console.error('Error fetching OpenRouter models:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch models' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'fetch OpenRouter models')
   }
 }

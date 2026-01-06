@@ -7,6 +7,7 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 
 interface MergedDuplicate {
   id: string
@@ -99,7 +100,7 @@ export async function GET() {
     error: authError,
   } = await supabase.auth.getUser()
   if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return ApiErrors.unauthorized()
   }
 
   // Get user's household
@@ -110,7 +111,7 @@ export async function GET() {
     .single()
 
   if (!member) {
-    return NextResponse.json({ error: 'Household not found' }, { status: 404 })
+    return ApiErrors.notFound('Husstanden')
   }
 
   const householdId = member.household_id
@@ -254,10 +255,6 @@ export async function GET() {
       mergedDuplicates: formattedMerged,
     })
   } catch (error) {
-    console.error('[Duplicates API] Error:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch duplicates' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'duplicates')
   }
 }

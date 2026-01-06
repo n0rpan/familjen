@@ -5,6 +5,7 @@ import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limi
 import { extractJSON } from '@/lib/json-extract'
 import { formatDateISO } from '@/lib/utils'
 import { getModel } from '@/lib/ai-models'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 
 interface ExtractedAction {
   type: 'task' | 'event' | 'reminder'
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
   try {
     // CSRF protection
     if (!validateOrigin(request)) {
-      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+      return ApiErrors.invalidOrigin()
     }
 
     const supabase = await createClient()
@@ -45,17 +46,14 @@ export async function POST(request: Request) {
       data: { user },
     } = await supabase.auth.getUser()
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Check rate limit
     const rateLimitKey = createRateLimitKey(user.id, 'aiSuggest')
     const rateLimit = await checkRateLimit(rateLimitKey, RATE_LIMITS.aiSuggest)
     if (rateLimit.limited) {
-      return NextResponse.json(
-        { error: `Too many requests. Try again in ${rateLimit.retryAfter} seconds.` },
-        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
-      )
+      return ApiErrors.rateLimit(rateLimit.retryAfter)
     }
 
     // Get user's household
@@ -66,7 +64,7 @@ export async function POST(request: Request) {
       .single()
 
     if (!membership) {
-      return NextResponse.json({ error: 'No household found' }, { status: 400 })
+      return ApiErrors.notFound('Husstanden')
     }
 
     // Parse request body for optional filters
@@ -104,7 +102,7 @@ export async function POST(request: Request) {
 
     if (messagesError) {
       console.error('Error fetching messages:', messagesError)
-      return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 })
+      return ApiErrors.internal({ internalMessage: messagesError.message })
     }
 
     if (!messages || messages.length === 0) {
@@ -186,8 +184,7 @@ export async function POST(request: Request) {
       errors: isAdmin ? errors : errors.length,
     })
   } catch (error) {
-    console.error('Extract actions error:', error)
-    return NextResponse.json({ error: 'Failed to extract actions' }, { status: 500 })
+    return handleApiError(error, 'extract actions')
   }
 }
 
@@ -341,7 +338,7 @@ export async function GET() {
       data: { user },
     } = await supabase.auth.getUser()
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Get pending suggestions count
@@ -369,7 +366,6 @@ export async function GET() {
       pendingSuggestions: pendingCount || 0,
     })
   } catch (error) {
-    console.error('Error getting extraction status:', error)
-    return NextResponse.json({ error: 'Failed to get status' }, { status: 500 })
+    return handleApiError(error, 'extraction status')
   }
 }

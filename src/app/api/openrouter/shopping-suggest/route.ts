@@ -4,6 +4,7 @@ import { getUserHousehold } from '@/lib/supabase/household'
 import { validateOrigin } from '@/lib/config'
 import { getCommonItemCategory } from '@/lib/shopping-common-items'
 import type { ShoppingCategory } from '@/lib/constants'
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 
 interface ShoppingSuggestion {
   name: string
@@ -17,7 +18,7 @@ export async function GET(request: Request) {
   try {
     // CSRF protection
     if (!validateOrigin(request)) {
-      return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+      return ApiErrors.invalidOrigin()
     }
 
     const supabase = await createClient()
@@ -25,13 +26,13 @@ export async function GET(request: Request) {
     // Check authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
-      return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Fetch household
     const { data: household, error: householdError } = await getUserHousehold(supabase)
     if (householdError || !household) {
-      return NextResponse.json({ error: 'Kunne ikke finne husstand' }, { status: 404 })
+      return ApiErrors.notFound('Husstanden')
     }
 
     // Get current week's dates
@@ -160,7 +161,6 @@ export async function GET(request: Request) {
       weekStart,
     })
   } catch (error) {
-    console.error('Shopping suggest error:', error)
-    return NextResponse.json({ error: 'En feil oppstod' }, { status: 500 })
+    return handleApiError(error, 'shopping suggest')
   }
 }

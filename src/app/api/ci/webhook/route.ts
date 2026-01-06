@@ -10,19 +10,10 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
-
-// Create admin client (bypasses RLS)
-function getAdminClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) {
-    throw new Error('Missing Supabase credentials')
-  }
-  return createClient(url, key)
-}
+import { ApiErrors, handleApiError } from '@/lib/api-errors'
 
 // Event types from CI
 export interface CIEvent {
@@ -81,21 +72,18 @@ export async function POST(request: NextRequest) {
 
     if (rateLimit.limited) {
       console.warn(`⚠️ CI webhook rate limited for IP: ${clientIp}`)
-      return NextResponse.json(
-        { error: 'Rate limit exceeded. Try again later.' },
-        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
-      )
+      return ApiErrors.rateLimit(rateLimit.retryAfter)
     }
 
     // Validate secret - REQUIRED
     if (!validateSecret(request)) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     const event = (await request.json()) as CIEvent
     console.log(`📬 CI webhook: ${event.type} for PR #${event.pr_number}`)
 
-    const supabase = getAdminClient()
+    const supabase = createAdminClient()
 
     // Store event in database
     const { error: insertError } = await supabase
@@ -121,11 +109,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('CI webhook error:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'CI webhook')
   }
 }
 
@@ -137,7 +121,7 @@ export async function GET() {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
     if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return ApiErrors.unauthorized()
     }
 
     // Check if user is admin
@@ -148,11 +132,11 @@ export async function GET() {
       .single()
 
     if (!allowedEmail?.is_admin) {
-      return NextResponse.json({ error: 'Forbidden - admin access required' }, { status: 403 })
+      return ApiErrors.adminRequired()
     }
 
     // Use admin client to bypass RLS for CI events
-    const adminClient = getAdminClient()
+    const adminClient = createAdminClient()
 
     // Get last 50 events
     const { data, error } = await adminClient
@@ -167,15 +151,11 @@ export async function GET() {
 
     return NextResponse.json({ events: data || [] })
   } catch (error) {
-    console.error('Failed to fetch CI events:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'CI events')
   }
 }
 
-async function notifyAdmins(supabase: ReturnType<typeof getAdminClient>, event: CIEvent) {
+async function notifyAdmins(supabase: ReturnType<typeof createAdminClient>, event: CIEvent) {
   // Get admin users with push subscriptions
   const { data: admins } = await supabase
     .from('allowed_emails')

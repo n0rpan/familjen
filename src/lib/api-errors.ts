@@ -302,6 +302,22 @@ export const ApiErrors = {
       }
     )
   },
+
+  /**
+   * 503 - External service unavailable.
+   * User action: Try again later.
+   */
+  serviceUnavailable(options?: ApiErrorOptions): NextResponse<ErrorResponse> {
+    return createErrorResponse(
+      'internal',
+      'Tjenesten er midlertidig utilgjengelig',
+      503,
+      {
+        hint: 'Prøv igjen om noen minutter',
+        ...options,
+      }
+    )
+  },
 }
 
 /**
