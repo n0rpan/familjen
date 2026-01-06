@@ -38,6 +38,7 @@ export async function FeedDataLoader({
         isDemo={isDemo}
         serviceFilter={serviceFilter}
         typeFilter={typeFilter}
+        dataTimestamp={data.timestamp}
       />
       {/* Cache data for instant loads on repeat visits */}
       {!isDemo && <FeedDataCacher householdId={householdId} data={data} />}

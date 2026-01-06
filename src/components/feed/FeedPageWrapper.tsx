@@ -19,6 +19,7 @@ import { useLanguage } from '@/lib/i18n/context'
 import { useFeed } from '@/hooks/data'
 import { useEventNotifications } from '@/hooks/data/useEventNotifications'
 import { FeedPageContent } from './FeedPageContent'
+import { FreshnessIndicator } from '@/components/FreshnessIndicator'
 import type { FeedFilter } from './FeedFilters'
 import type { FeedPageData } from '@/lib/data/server'
 import type { DuplicateSuggestion } from './DuplicateSuggestions'
@@ -36,6 +37,7 @@ interface FeedPageWrapperProps {
   isDemo: boolean
   serviceFilter?: string
   typeFilter?: string
+  dataTimestamp?: number
 }
 
 export function FeedPageWrapper({
@@ -44,6 +46,7 @@ export function FeedPageWrapper({
   isDemo,
   serviceFilter,
   typeFilter,
+  dataTimestamp,
 }: FeedPageWrapperProps) {
   const router = useRouter()
   const { t } = useLanguage()
@@ -282,7 +285,10 @@ export function FeedPageWrapper({
     return (
       <div className="page-container animate-fade-in">
         <div className="page-header mb-6">
-          <h1 className="page-title">{t.nav.feed}</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="page-title">{t.nav.feed}</h1>
+            <FreshnessIndicator timestamp={dataTimestamp} color="sage" />
+          </div>
           <p style={{ color: 'var(--muted)' }}>
             {t.feed?.subtitle || 'Meldinger, bilder og varsler fra Spond, barnehage og skole'}
           </p>
@@ -325,7 +331,10 @@ export function FeedPageWrapper({
   return (
     <div className="page-container animate-fade-in">
       <div className="page-header mb-6">
-        <h1 className="page-title">{t.nav.feed}</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="page-title">{t.nav.feed}</h1>
+          <FreshnessIndicator timestamp={dataTimestamp} color="sage" />
+        </div>
         <p style={{ color: 'var(--muted)' }}>
           {t.feed?.subtitle || 'Meldinger, bilder og varsler fra Spond, barnehage og skole'}
         </p>

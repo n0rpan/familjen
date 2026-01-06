@@ -40,6 +40,7 @@ import type {
 import { TransitionLink } from '@/components/TransitionLink'
 import dynamic from 'next/dynamic'
 import { RecentChanges } from '@/components/RecentChanges'
+import { FreshnessIndicator } from '@/components/FreshnessIndicator'
 import { useLanguage } from '@/lib/i18n/context'
 import { notifyPickupAssigned, notifyMealChanged, notifyTaskAdded, notifyEventAdded } from '@/lib/notify'
 import { nb, sv } from 'react-day-picker/locale'
@@ -86,6 +87,7 @@ interface WeekPageContentProps {
   weekNumber: number
   isCurrentWeek: boolean
   isDemo: boolean
+  dataTimestamp?: number
 }
 
 export function WeekPageContent({
@@ -108,6 +110,7 @@ export function WeekPageContent({
   weekNumber,
   isCurrentWeek,
   isDemo,
+  dataTimestamp,
 }: WeekPageContentProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -1286,9 +1289,12 @@ export function WeekPageContent({
       {/* Header with week navigation */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
-            {t.week.title}
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-semibold font-display" style={{ color: 'var(--foreground)' }}>
+              {t.week.title}
+            </h1>
+            <FreshnessIndicator timestamp={dataTimestamp} color="sage" />
+          </div>
           <p className="mt-1" style={{ color: 'var(--muted)' }}>
             {t.week.editPickup}
           </p>

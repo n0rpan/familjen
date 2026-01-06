@@ -75,6 +75,7 @@ export async function WeekDataLoader({ householdId, userId, week, year, isDemo }
         weekNumber={displayWeekNumber}
         isCurrentWeek={displayWeekNumber === currentWeekNumber && data.weekStart.getFullYear() === new Date().getFullYear()}
         isDemo={isDemo}
+        dataTimestamp={data.timestamp}
       />
       {/* Cache data for instant loads on repeat visits */}
       {cacheData && (
