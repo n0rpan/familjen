@@ -1536,6 +1536,45 @@ export function UniversalAIInput({
           }
           break
         }
+        case 'pickup': {
+          table = 'pickups'
+          // Pickups are unique per child+date - find the pickup to edit
+          const pickupChildId = inferChildId(action)
+          if (!pickupChildId) {
+            // Need clarification for which child
+            const clarificationAction: ParsedAction = {
+              ...action,
+              needsClarification: {
+                field: 'child_id',
+                question: 'Hvem sin henting skal endres?',
+                options: children.map(c => ({ label: c.name, value: c.id })),
+              },
+            }
+            setParsedActions(prev => prev.map(a => a === action ? clarificationAction : a))
+            return
+          }
+
+          const pickupDate = (action.data.date || formatDateISO(new Date())) as string
+          const { data: pickups } = await supabase
+            .from('pickups')
+            .select('*, children(name), household_members!pickups_picker_id_fkey(name)')
+            .eq('household_id', householdId)
+            .eq('child_id', pickupChildId)
+            .eq('date', pickupDate)
+            .limit(1)
+
+          if (pickups && pickups.length > 0) {
+            const pickup = pickups[0]
+            const childName = (pickup.children as { name: string } | null)?.name || ''
+            const pickerName = (pickup.household_members as { name: string } | null)?.name || 'Ingen'
+            matches = [{
+              id: pickup.id,
+              label: `${childName} hentes av ${pickerName}`,
+              sublabel: formatDisplayDate(pickup.date),
+            }]
+          }
+          break
+        }
         default:
           setError(t.errors.generic || 'Denne typen kan ikke redigeres')
           return
@@ -1698,6 +1737,23 @@ export function UniversalAIInput({
           if (action.data.new_description) updates.description = action.data.new_description
           if (action.data.new_price !== undefined) updates.price = action.data.new_price
           if (action.data.new_link) updates.link = action.data.new_link
+          break
+        }
+        case 'pickup': {
+          table = 'pickups'
+          const { data: pickup } = await supabase
+            .from('pickups')
+            .select('*')
+            .eq('id', recordId)
+            .single()
+
+          if (!pickup) throw new Error('Pickup not found')
+
+          previousState = { picker_id: pickup.picker_id }
+          // For pickup edit, the main change is picker_id (who picks up)
+          if (action.data.picker_id) {
+            updates.picker_id = action.data.picker_id
+          }
           break
         }
         default:
