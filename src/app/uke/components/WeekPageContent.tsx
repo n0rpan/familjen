@@ -18,7 +18,7 @@ import { useState, useMemo, useRef, useCallback, useEffect, startTransition } fr
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { WeekGrid } from '@/components/WeekGrid'
-import { formatDateISO, addDays, getWeekNumber, formatWeekHeaderLocalized } from '@/lib/utils'
+import { formatDateISO, addDays, getWeekNumber, getWeekStart, formatWeekHeaderLocalized } from '@/lib/utils'
 import type {
   Child,
   HouseholdMember,
@@ -302,8 +302,9 @@ export function WeekPageContent({
 
   // Helper: Revalidate cache and refresh server data
   // This ensures the cache is updated so next navigation shows fresh data
-  const refreshWithRevalidate = useCallback(() => {
-    revalidateWeek(householdId, weekStartStr)
+  const refreshWithRevalidate = useCallback(async () => {
+    // Await cache invalidation FIRST, then refresh to get fresh data
+    await revalidateWeek(householdId, weekStartStr)
     router.refresh()
   }, [householdId, weekStartStr, router])
 
@@ -764,18 +765,31 @@ export function WeekPageContent({
           if (eventMember) {
             const dateObj = new Date(eventForm.date)
             const dayName = t.date.weekdays[dateObj.getDay() === 0 ? 6 : dateObj.getDay() - 1]
+            const dayNum = dateObj.getDate()
+            const monthName = t.date.monthsShort[dateObj.getMonth()]
+            // Format: "Onsdag 28. jan" - gives context for future events
+            const fullDate = `${dayName} ${dayNum}. ${monthName}`
             const otherMemberIds = members
               .filter(m => m.id !== eventForm.member_id)
               .map(m => m.id)
-            notifyEventAdded(eventMember.name, eventForm.title, dayName, data.id, otherMemberIds)
+            notifyEventAdded(eventMember.name, eventForm.title, fullDate, data.id, otherMemberIds)
           }
         }
       }
 
       closeEventModal()
-      refreshWithRevalidate()
+
+      // Also revalidate the event's week if different from current viewing week
+      const eventWeekStart = getWeekStart(new Date(eventForm.date))
+      const eventWeekStartStr = formatDateISO(eventWeekStart)
+      if (eventWeekStartStr !== weekStartStr) {
+        await revalidateWeek(householdId, eventWeekStartStr)
+      }
+
+      await refreshWithRevalidate()
     } catch (err) {
       console.error('Error saving event:', err)
+      showMessage('error', t.errors.couldNotSaveEvent)
     } finally {
       setSaving(false)
     }

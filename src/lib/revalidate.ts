@@ -28,22 +28,24 @@ export function revalidateHousehold(householdId: string) {
 /**
  * Revalidate cached data for a specific week
  * Use after mutations that affect a single week
+ * @returns Promise that resolves when cache is invalidated
  */
-export function revalidateWeek(householdId: string, weekStart: Date | string) {
+export async function revalidateWeek(householdId: string, weekStart: Date | string): Promise<void> {
   if (!householdId || householdId === 'demo') return
 
   const weekStartStr = typeof weekStart === 'string'
     ? weekStart
     : weekStart.toISOString().split('T')[0]
 
-  // Fire and forget - don't block on this
-  fetch('/api/revalidate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ householdId, weekStart: weekStartStr }),
-  }).catch(err => {
+  try {
+    await fetch('/api/revalidate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ householdId, weekStart: weekStartStr }),
+    })
+  } catch (err) {
     console.warn('[revalidate] Failed to revalidate week cache:', err)
-  })
+  }
 }
 
 /**
