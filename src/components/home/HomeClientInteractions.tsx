@@ -65,7 +65,7 @@ export function HomeClientInteractions({ householdId, isDemo }: HomeClientIntera
 
     // Update IndexedDB cache with realtime change, then refresh UI
     // This keeps cache fresh for next cold start AND updates current view
-    const handleRealtimeChange = (
+    const handleRealtimeChange = async (
       table: string,
       payload: RealtimePostgresChangesPayload<Record<string, unknown>>
     ) => {
@@ -77,8 +77,8 @@ export function HomeClientInteractions({ householdId, isDemo }: HomeClientIntera
         updateCacheWithRealtimeChange(homeCacheKey, table, eventType, data as Record<string, unknown>)
       }
 
-      // Revalidate server cache and refresh current view
-      revalidateWeek(householdId, weekStartStr)
+      // Revalidate server cache FIRST, then refresh current view
+      await revalidateWeek(householdId, weekStartStr)
       router.refresh()
     }
 
