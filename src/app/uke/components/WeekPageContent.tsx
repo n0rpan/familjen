@@ -119,16 +119,29 @@ export function WeekPageContent({
   // Local state - initialized from props, updated by mutations and realtime
   const [saving, setSaving] = useState(false)
   const [syncingPickupId, setSyncingPickupId] = useState<string | null>(null)
-  const [children] = useState(initialChildren)
-  const [members] = useState(initialMembers)
+  const [children, setChildren] = useState(initialChildren)
+  const [members, setMembers] = useState(initialMembers)
   const [pickups, setPickups] = useState(initialPickups)
   const [meals, setMeals] = useState(initialMeals)
-  const [recipes] = useState(initialRecipes)
+  const [recipes, setRecipes] = useState(initialRecipes)
   const [memberEvents, setMemberEvents] = useState(initialMemberEvents)
   const [householdEvents, setHouseholdEvents] = useState(initialHouseholdEvents)
   const [externalEvents, setExternalEvents] = useState(initialExternalEvents)
   const [childTasks, setChildTasks] = useState(initialChildTasks)
   const [weekContextValue, setWeekContextValue] = useState(initialWeekContext)
+
+  // Sync state with props when server data changes (e.g., after router.refresh())
+  // This is needed because useState only uses the initial value on mount
+  useEffect(() => { setChildren(initialChildren) }, [initialChildren])
+  useEffect(() => { setMembers(initialMembers) }, [initialMembers])
+  useEffect(() => { setPickups(initialPickups) }, [initialPickups])
+  useEffect(() => { setMeals(initialMeals) }, [initialMeals])
+  useEffect(() => { setRecipes(initialRecipes) }, [initialRecipes])
+  useEffect(() => { setMemberEvents(initialMemberEvents) }, [initialMemberEvents])
+  useEffect(() => { setHouseholdEvents(initialHouseholdEvents) }, [initialHouseholdEvents])
+  useEffect(() => { setExternalEvents(initialExternalEvents) }, [initialExternalEvents])
+  useEffect(() => { setChildTasks(initialChildTasks) }, [initialChildTasks])
+  useEffect(() => { setWeekContextValue(initialWeekContext) }, [initialWeekContext])
 
   // AI suggestion state
   const [showSuggestionModal, setShowSuggestionModal] = useState(false)
