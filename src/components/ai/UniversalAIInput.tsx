@@ -481,6 +481,7 @@ export function UniversalAIInput({
           const questionMap: Record<string, string> = {
             add: 'Hvem skal hentes?',
             modify: 'Hvem sin henting skal endres?',
+            edit: 'Hvem sin henting skal endres?',
             delete: 'Hvem sin henting skal fjernes?',
           }
           return {
@@ -494,8 +495,8 @@ export function UniversalAIInput({
         }
         updatedAction.data.child_id = childId
 
-        // For add/modify, also infer picker_id if needed
-        if (action.operation === 'add' || action.operation === 'modify') {
+        // For add/modify/edit, also infer picker_id if needed
+        if (action.operation === 'add' || action.operation === 'modify' || action.operation === 'edit') {
           const pickerId = inferMemberId(action) || currentMember?.id
           updatedAction.data.picker_id = pickerId
         }
