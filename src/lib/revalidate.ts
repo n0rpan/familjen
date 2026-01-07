@@ -4,25 +4,33 @@
  * Call these functions after mutations to invalidate server cache.
  * This ensures fresh data on next navigation instead of stale cache.
  *
- * The revalidation is fire-and-forget - we don't wait for it to complete
- * since realtime will update the current view anyway.
+ * Key functions (awaitable - use before router.refresh() to avoid race conditions):
+ * - revalidateHousehold: Invalidates all cached data for a household
+ * - revalidateWeek: Invalidates cached data for a specific week
+ *
+ * Other functions are fire-and-forget for convenience (page-specific caches).
  */
 
 /**
  * Revalidate all cached data for a household
  * Use after mutations that affect multiple weeks (e.g., copying data)
+ * @returns Promise that resolves when cache is invalidated
  */
-export function revalidateHousehold(householdId: string) {
+export async function revalidateHousehold(householdId: string): Promise<void> {
   if (!householdId || householdId === 'demo') return
 
-  // Fire and forget - don't block on this
-  fetch('/api/revalidate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ householdId }),
-  }).catch(err => {
+  try {
+    const response = await fetch('/api/revalidate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ householdId }),
+    })
+    if (!response.ok) {
+      console.warn(`[revalidate] Household cache revalidation failed with status ${response.status}`)
+    }
+  } catch (err) {
     console.warn('[revalidate] Failed to revalidate household cache:', err)
-  })
+  }
 }
 
 /**
@@ -38,11 +46,14 @@ export async function revalidateWeek(householdId: string, weekStart: Date | stri
     : weekStart.toISOString().split('T')[0]
 
   try {
-    await fetch('/api/revalidate', {
+    const response = await fetch('/api/revalidate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ householdId, weekStart: weekStartStr }),
     })
+    if (!response.ok) {
+      console.warn(`[revalidate] Week cache revalidation failed with status ${response.status}`)
+    }
   } catch (err) {
     console.warn('[revalidate] Failed to revalidate week cache:', err)
   }

@@ -495,10 +495,18 @@ export function UniversalAIInput({
         }
         updatedAction.data.child_id = childId
 
-        // For add/modify/edit, also infer picker_id if needed
-        if (action.operation === 'add' || action.operation === 'modify' || action.operation === 'edit') {
+        // For add, infer picker_id or default to current user
+        // For modify/edit, only set if explicitly mentioned (don't default - ask for clarification)
+        if (action.operation === 'add') {
           const pickerId = inferMemberId(action) || currentMember?.id
           updatedAction.data.picker_id = pickerId
+        } else if (action.operation === 'modify' || action.operation === 'edit') {
+          const pickerId = inferMemberId(action)
+          if (pickerId) {
+            updatedAction.data.picker_id = pickerId
+          }
+          // If no picker specified for edit, let executeEdit handle it
+          // (it will show the current assignment and can ask for clarification)
         }
         break
       }
@@ -902,12 +910,14 @@ export function UniversalAIInput({
             return
           }
 
+          // Default to today if no date specified (consistent with edit behavior)
+          const pickupDate = (action.data.date || formatDateISO(new Date())) as string
           const { data: pickups } = await supabase
             .from('pickups')
             .select('*')
             .eq('household_id', householdId)
             .eq('child_id', childId)
-            .eq('date', action.data.date as string)
+            .eq('date', pickupDate)
             .limit(1)
 
           if (pickups && pickups.length > 0) {
@@ -1750,11 +1760,28 @@ export function UniversalAIInput({
 
           if (!pickup) throw new Error('Pickup not found')
 
-          previousState = { picker_id: pickup.picker_id }
-          // For pickup edit, the main change is picker_id (who picks up)
-          if (action.data.picker_id) {
-            updates.picker_id = action.data.picker_id
+          // If no new picker specified, ask for clarification
+          if (!action.data.picker_id) {
+            const clarificationAction: ParsedAction = {
+              ...action,
+              needsClarification: {
+                field: 'picker_id',
+                question: 'Hvem skal hente?',
+                options: members.map(m => ({ label: m.name, value: m.id })),
+              },
+            }
+            setParsedActions(prev => prev.map(a => a === action ? clarificationAction : a))
+            return
           }
+
+          // Only update if picker actually changed
+          if (action.data.picker_id === pickup.picker_id) {
+            setError('Hentingen er allerede satt til denne personen')
+            return
+          }
+
+          previousState = { picker_id: pickup.picker_id }
+          updates.picker_id = action.data.picker_id
           break
         }
         default:
@@ -1788,7 +1815,7 @@ export function UniversalAIInput({
       console.error('Edit error:', err)
       setError(t.errors.saveFailed)
     }
-  }, [supabase, t, onActionExecuted, router])
+  }, [supabase, t, onActionExecuted, router, members])
 
   const handleUndo = useCallback(async (executed: ExecutedAction) => {
     try {

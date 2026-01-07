@@ -130,18 +130,31 @@ export function WeekPageContent({
   const [childTasks, setChildTasks] = useState(initialChildTasks)
   const [weekContextValue, setWeekContextValue] = useState(initialWeekContext)
 
-  // Sync state with props when server data changes (e.g., after router.refresh())
-  // This is needed because useState only uses the initial value on mount
-  useEffect(() => { setChildren(initialChildren) }, [initialChildren])
-  useEffect(() => { setMembers(initialMembers) }, [initialMembers])
-  useEffect(() => { setPickups(initialPickups) }, [initialPickups])
-  useEffect(() => { setMeals(initialMeals) }, [initialMeals])
-  useEffect(() => { setRecipes(initialRecipes) }, [initialRecipes])
-  useEffect(() => { setMemberEvents(initialMemberEvents) }, [initialMemberEvents])
-  useEffect(() => { setHouseholdEvents(initialHouseholdEvents) }, [initialHouseholdEvents])
-  useEffect(() => { setExternalEvents(initialExternalEvents) }, [initialExternalEvents])
-  useEffect(() => { setChildTasks(initialChildTasks) }, [initialChildTasks])
-  useEffect(() => { setWeekContextValue(initialWeekContext) }, [initialWeekContext])
+  // Sync all state with props when server data changes (e.g., after router.refresh())
+  // Consolidated into single effect to avoid multiple re-renders and inconsistent intermediate states
+  useEffect(() => {
+    setChildren(initialChildren)
+    setMembers(initialMembers)
+    setPickups(initialPickups)
+    setMeals(initialMeals)
+    setRecipes(initialRecipes)
+    setMemberEvents(initialMemberEvents)
+    setHouseholdEvents(initialHouseholdEvents)
+    setExternalEvents(initialExternalEvents)
+    setChildTasks(initialChildTasks)
+    setWeekContextValue(initialWeekContext)
+  }, [
+    initialChildren,
+    initialMembers,
+    initialPickups,
+    initialMeals,
+    initialRecipes,
+    initialMemberEvents,
+    initialHouseholdEvents,
+    initialExternalEvents,
+    initialChildTasks,
+    initialWeekContext,
+  ])
 
   // AI suggestion state
   const [showSuggestionModal, setShowSuggestionModal] = useState(false)
@@ -748,7 +761,7 @@ export function WeekPageContent({
 
     try {
       if (editingEvent) {
-        await supabase
+        const { error } = await supabase
           .from('member_events')
           .update({
             member_id: eventForm.member_id,
@@ -758,8 +771,9 @@ export function WeekPageContent({
             end_date: eventForm.end_date || null,
           })
           .eq('id', editingEvent.id)
+        if (error) throw error
       } else {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('member_events')
           .insert({
             household_id: household.id,
@@ -772,6 +786,7 @@ export function WeekPageContent({
           })
           .select('id')
           .single()
+        if (error) throw error
 
         if (data?.id) {
           const eventMember = members.find(m => m.id === eventForm.member_id)
@@ -815,15 +830,17 @@ export function WeekPageContent({
     setSaving(true)
 
     try {
-      await supabase
+      const { error } = await supabase
         .from('member_events')
         .delete()
         .eq('id', editingEvent.id)
+      if (error) throw error
 
       closeEventModal()
       refreshWithRevalidate()
     } catch (err) {
       console.error('Error deleting event:', err)
+      showMessage('error', t.errors.deleteFailed)
     } finally {
       setSaving(false)
     }
