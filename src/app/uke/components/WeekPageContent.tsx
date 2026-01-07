@@ -117,6 +117,7 @@ export function WeekPageContent({
   const { language, t } = useLanguage()
 
   // Local state - initialized from props, updated by mutations and realtime
+  // IMPORTANT: When adding new state from props, also update the sync effect below (search: "Sync all state")
   const [saving, setSaving] = useState(false)
   const [syncingPickupId, setSyncingPickupId] = useState<string | null>(null)
   const [children, setChildren] = useState(initialChildren)
@@ -131,7 +132,10 @@ export function WeekPageContent({
   const [weekContextValue, setWeekContextValue] = useState(initialWeekContext)
 
   // Sync all state with props when server data changes (e.g., after router.refresh())
-  // Consolidated into single effect to avoid multiple re-renders and inconsistent intermediate states
+  // Consolidated into single effect to:
+  // 1. Avoid multiple re-renders when props change together
+  // 2. Prevent inconsistent intermediate states during refresh
+  // NOTE: When adding new prop-derived state above, add it here too!
   useEffect(() => {
     setChildren(initialChildren)
     setMembers(initialMembers)

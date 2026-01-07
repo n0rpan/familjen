@@ -912,13 +912,14 @@ export function UniversalAIInput({
 
           // Default to today if no date specified (consistent with edit behavior)
           const pickupDate = (action.data.date || formatDateISO(new Date())) as string
-          const { data: pickups } = await supabase
+          const { data: pickups, error: pickupError } = await supabase
             .from('pickups')
             .select('*')
             .eq('household_id', householdId)
             .eq('child_id', childId)
             .eq('date', pickupDate)
             .limit(1)
+          if (pickupError) throw pickupError
 
           if (pickups && pickups.length > 0) {
             await executeDeleteById({ ...action, data: { ...action.data, record_id: pickups[0].id, child_id: childId } })
@@ -1098,12 +1099,12 @@ export function UniversalAIInput({
         }
         case 'pickup': {
           table = 'pickups'
-          const { data: pickup } = await supabase
+          const { data: pickup, error: pickupError } = await supabase
             .from('pickups')
             .select('*')
             .eq('id', recordId)
             .single()
-
+          if (pickupError) throw pickupError
           if (!pickup) throw new Error('Pickup not found')
           deletedRecord = pickup
 
@@ -1566,18 +1567,19 @@ export function UniversalAIInput({
           }
 
           const pickupDate = (action.data.date || formatDateISO(new Date())) as string
-          const { data: pickups } = await supabase
+          const { data: pickups, error: pickupError } = await supabase
             .from('pickups')
             .select('*, children(name), household_members!pickups_picker_id_fkey(name)')
             .eq('household_id', householdId)
             .eq('child_id', pickupChildId)
             .eq('date', pickupDate)
             .limit(1)
+          if (pickupError) throw pickupError
 
           if (pickups && pickups.length > 0) {
             const pickup = pickups[0]
             const childName = (pickup.children as { name: string } | null)?.name || ''
-            const pickerName = (pickup.household_members as { name: string } | null)?.name || 'Ingen'
+            const pickerName = (pickup.household_members as { name: string } | null)?.name || t.week.noPickup
             matches = [{
               id: pickup.id,
               label: `${childName} hentes av ${pickerName}`,
@@ -1752,12 +1754,12 @@ export function UniversalAIInput({
         }
         case 'pickup': {
           table = 'pickups'
-          const { data: pickup } = await supabase
+          const { data: pickup, error: pickupError } = await supabase
             .from('pickups')
             .select('*')
             .eq('id', recordId)
             .single()
-
+          if (pickupError) throw pickupError
           if (!pickup) throw new Error('Pickup not found')
 
           // If no new picker specified, ask for clarification
