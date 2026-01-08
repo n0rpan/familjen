@@ -911,6 +911,16 @@ export interface TranslationStrings {
     undo: string
     parsing: string
     confirmDelete: string
+    // Clarification questions
+    clarifyPickupAdd: string
+    clarifyPickupEdit: string
+    clarifyPickupDelete: string
+    clarifyGeneric: string
+    clarifyWishlistOwner: string
+    clarifyWhichDelete: string
+    clarifyWhichEdit: string
+    clarifyWhichComplete: string
+    noChangesSpecified: string
   }
 
   // Home Control (Somfy)

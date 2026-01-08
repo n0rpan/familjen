@@ -886,6 +886,16 @@ export const sv: TranslationStrings = {
     undo: 'Ångra',
     parsing: 'Tolkar...',
     confirmDelete: 'Är du säker på att du vill ta bort detta?',
+    // Clarification questions
+    clarifyPickupAdd: 'Vem ska hämtas?',
+    clarifyPickupEdit: 'Vems hämtning ska ändras?',
+    clarifyPickupDelete: 'Vems hämtning ska tas bort?',
+    clarifyGeneric: 'Vem gäller detta?',
+    clarifyWishlistOwner: 'Vems önskelista?',
+    clarifyWhichDelete: 'Vilken vill du ta bort?',
+    clarifyWhichEdit: 'Vilken vill du ändra?',
+    clarifyWhichComplete: 'Vilken vill du markera som klar?',
+    noChangesSpecified: 'Inga ändringar angivna',
   },
 
   homeControl: {

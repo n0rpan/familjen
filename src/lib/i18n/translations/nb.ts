@@ -886,6 +886,16 @@ export const nb: TranslationStrings = {
     undo: 'Angre',
     parsing: 'Tolker...',
     confirmDelete: 'Er du sikker på at du vil slette dette?',
+    // Clarification questions
+    clarifyPickupAdd: 'Hvem skal hentes?',
+    clarifyPickupEdit: 'Hvem sin henting skal endres?',
+    clarifyPickupDelete: 'Hvem sin henting skal fjernes?',
+    clarifyGeneric: 'Hvem gjelder dette?',
+    clarifyWishlistOwner: 'Hvem sin ønskeliste?',
+    clarifyWhichDelete: 'Hvilken vil du slette?',
+    clarifyWhichEdit: 'Hvilken vil du endre?',
+    clarifyWhichComplete: 'Hvilken vil du markere som ferdig?',
+    noChangesSpecified: 'Ingen endringer spesifisert',
   },
 
   homeControl: {

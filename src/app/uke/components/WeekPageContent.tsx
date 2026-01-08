@@ -135,18 +135,21 @@ export function WeekPageContent({
   // Consolidated into single effect to:
   // 1. Avoid multiple re-renders when props change together
   // 2. Prevent inconsistent intermediate states during refresh
+  // 3. Uses startTransition to keep UI responsive during large state updates
   // NOTE: When adding new prop-derived state above, add it here too!
   useEffect(() => {
-    setChildren(initialChildren)
-    setMembers(initialMembers)
-    setPickups(initialPickups)
-    setMeals(initialMeals)
-    setRecipes(initialRecipes)
-    setMemberEvents(initialMemberEvents)
-    setHouseholdEvents(initialHouseholdEvents)
-    setExternalEvents(initialExternalEvents)
-    setChildTasks(initialChildTasks)
-    setWeekContextValue(initialWeekContext)
+    startTransition(() => {
+      setChildren(initialChildren)
+      setMembers(initialMembers)
+      setPickups(initialPickups)
+      setMeals(initialMeals)
+      setRecipes(initialRecipes)
+      setMemberEvents(initialMemberEvents)
+      setHouseholdEvents(initialHouseholdEvents)
+      setExternalEvents(initialExternalEvents)
+      setChildTasks(initialChildTasks)
+      setWeekContextValue(initialWeekContext)
+    })
   }, [
     initialChildren,
     initialMembers,
