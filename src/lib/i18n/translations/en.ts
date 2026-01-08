@@ -886,6 +886,16 @@ export const en: TranslationStrings = {
     undo: 'Undo',
     parsing: 'Parsing...',
     confirmDelete: 'Are you sure you want to delete this?',
+    // Clarification questions
+    clarifyPickupAdd: 'Who needs to be picked up?',
+    clarifyPickupEdit: 'Whose pickup should be changed?',
+    clarifyPickupDelete: 'Whose pickup should be removed?',
+    clarifyGeneric: 'Who does this apply to?',
+    clarifyWishlistOwner: 'Whose wishlist?',
+    clarifyWhichDelete: 'Which one do you want to delete?',
+    clarifyWhichEdit: 'Which one do you want to edit?',
+    clarifyWhichComplete: 'Which one do you want to mark as done?',
+    noChangesSpecified: 'No changes specified',
   },
 
   homeControl: {

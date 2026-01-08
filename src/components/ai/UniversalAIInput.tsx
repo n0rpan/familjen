@@ -479,16 +479,16 @@ export function UniversalAIInput({
         const childId = inferChildId(action)
         if (!childId) {
           const questionMap: Record<string, string> = {
-            add: 'Hvem skal hentes?',
-            modify: 'Hvem sin henting skal endres?',
-            edit: 'Hvem sin henting skal endres?',
-            delete: 'Hvem sin henting skal fjernes?',
+            add: t.ai.clarifyPickupAdd,
+            modify: t.ai.clarifyPickupEdit,
+            edit: t.ai.clarifyPickupEdit,
+            delete: t.ai.clarifyPickupDelete,
           }
           return {
             ...updatedAction,
             needsClarification: {
               field: 'child_id',
-              question: questionMap[action.operation] || 'Hvem gjelder dette?',
+              question: questionMap[action.operation] || t.ai.clarifyGeneric,
               options: children.map(c => ({ label: c.name, value: c.id })),
             },
           }
@@ -543,7 +543,7 @@ export function UniversalAIInput({
             ...updatedAction,
             needsClarification: {
               field: 'person_id',
-              question: 'Hvem sin ønskeliste?',
+              question: t.ai.clarifyWishlistOwner,
               options,
             },
           }
@@ -902,7 +902,7 @@ export function UniversalAIInput({
               ...action,
               needsClarification: {
                 field: 'child_id',
-                question: 'Hvem sin henting skal fjernes?',
+                question: t.ai.clarifyPickupDelete,
                 options: children.map(c => ({ label: c.name, value: c.id })),
               },
             }
@@ -1024,7 +1024,7 @@ export function UniversalAIInput({
           ...action,
           needsClarification: {
             field: 'record_id',
-            question: 'Hvilken vil du slette?',
+            question: t.ai.clarifyWhichDelete,
             options: matches.map(m => ({
               label: m.label,
               value: m.id,
@@ -1278,7 +1278,7 @@ export function UniversalAIInput({
           ...action,
           needsClarification: {
             field: 'record_id',
-            question: 'Hvilken vil du markere som ferdig?',
+            question: t.ai.clarifyWhichComplete,
             options: matches.map(m => ({
               label: m.label,
               value: m.id,
@@ -1558,7 +1558,7 @@ export function UniversalAIInput({
               ...action,
               needsClarification: {
                 field: 'child_id',
-                question: 'Hvem sin henting skal endres?',
+                question: t.ai.clarifyPickupEdit,
                 options: children.map(c => ({ label: c.name, value: c.id })),
               },
             }
@@ -1613,7 +1613,7 @@ export function UniversalAIInput({
           ...action,
           needsClarification: {
             field: 'record_id',
-            question: 'Hvilken vil du endre?',
+            question: t.ai.clarifyWhichEdit,
             options: matches.map(m => ({
               label: m.label,
               value: m.id,
@@ -1631,7 +1631,7 @@ export function UniversalAIInput({
       setError(t.errors.saveFailed)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- executeEditById and formatDisplayDate are stable
-  }, [householdId, supabase, t, inferChildId, inferMemberId])
+  }, [householdId, supabase, t, children, inferChildId, inferMemberId])
 
   // Execute edit when we have the specific record ID
   const executeEditById = useCallback(async (action: ParsedAction) => {
@@ -1798,7 +1798,7 @@ export function UniversalAIInput({
       }
 
       if (Object.keys(updates).length === 0) {
-        setError('Ingen endringer spesifisert')
+        setError(t.ai.noChangesSpecified)
         return
       }
 
