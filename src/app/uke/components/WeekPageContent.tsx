@@ -763,6 +763,9 @@ export function WeekPageContent({
 
     setSaving(true)
 
+    // Capture notification data before refresh (to send after data is synced)
+    let notificationData: { memberName: string; title: string; fullDate: string; eventId: string; otherMemberIds: string[] } | null = null
+
     try {
       if (editingEvent) {
         const { error } = await supabase
@@ -804,7 +807,7 @@ export function WeekPageContent({
             const otherMemberIds = members
               .filter(m => m.id !== eventForm.member_id)
               .map(m => m.id)
-            notifyEventAdded(eventMember.name, eventForm.title, fullDate, data.id, otherMemberIds)
+            notificationData = { memberName: eventMember.name, title: eventForm.title, fullDate, eventId: data.id, otherMemberIds }
           }
         }
       }
@@ -819,6 +822,11 @@ export function WeekPageContent({
       }
 
       await refreshWithRevalidate()
+
+      // Send notification AFTER data is synced to avoid race conditions
+      if (notificationData) {
+        notifyEventAdded(notificationData.memberName, notificationData.title, notificationData.fullDate, notificationData.eventId, notificationData.otherMemberIds)
+      }
     } catch (err) {
       console.error('Error saving event:', err)
       showMessage('error', t.errors.couldNotSaveEvent)
