@@ -416,10 +416,24 @@ All main pages have been converted to the PPR pattern for instant navigation:
 - Each page has `revalidate[Page]Cache()` - cache invalidation helper
 
 **Cache revalidation** is handled via `src/lib/revalidate.ts`:
+- `revalidateWeek(householdId, weekStart)` - Revalidate week page cache
+- `revalidateHousehold(householdId)` - Revalidate household data cache
 - `revalidateRecipes(householdId)` - Revalidate recipes cache
 - `revalidateShopping(householdId)` - Revalidate shopping lists cache
 - `revalidateStyring(householdId)` - Revalidate home control cache
 - `revalidateAdmin()` - Revalidate admin data cache
+
+**Important:** Revalidation functions are async and must be awaited before calling `router.refresh()` to avoid race conditions where the refresh fetches stale cache:
+
+```typescript
+// ✅ Correct - await revalidation before refresh
+await revalidateWeek(householdId, weekStartStr)
+await refreshWithRevalidate()  // or router.refresh()
+
+// ❌ Wrong - race condition, refresh may get stale data
+revalidateWeek(householdId, weekStartStr)  // fire-and-forget
+router.refresh()
+```
 
 ### SmartLoading (Route Loading with Cache)
 

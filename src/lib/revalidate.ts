@@ -11,6 +11,9 @@
  * Other functions are fire-and-forget for convenience (page-specific caches).
  */
 
+// Timeout for revalidation requests to prevent indefinite blocking
+const REVALIDATE_TIMEOUT_MS = 5000
+
 /**
  * Revalidate all cached data for a household
  * Use after mutations that affect multiple weeks (e.g., copying data)
@@ -19,17 +22,27 @@
 export async function revalidateHousehold(householdId: string): Promise<void> {
   if (!householdId || householdId === 'demo') return
 
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), REVALIDATE_TIMEOUT_MS)
+
   try {
     const response = await fetch('/api/revalidate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ householdId }),
+      signal: controller.signal,
     })
     if (!response.ok) {
       console.warn(`[revalidate] Household cache revalidation failed with status ${response.status}`)
     }
   } catch (err) {
-    console.warn('[revalidate] Failed to revalidate household cache:', err)
+    if (err instanceof Error && err.name === 'AbortError') {
+      console.warn('[revalidate] Household cache revalidation timed out')
+    } else {
+      console.warn('[revalidate] Failed to revalidate household cache:', err)
+    }
+  } finally {
+    clearTimeout(timeoutId)
   }
 }
 
@@ -45,17 +58,27 @@ export async function revalidateWeek(householdId: string, weekStart: Date | stri
     ? weekStart
     : weekStart.toISOString().split('T')[0]
 
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), REVALIDATE_TIMEOUT_MS)
+
   try {
     const response = await fetch('/api/revalidate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ householdId, weekStart: weekStartStr }),
+      signal: controller.signal,
     })
     if (!response.ok) {
       console.warn(`[revalidate] Week cache revalidation failed with status ${response.status}`)
     }
   } catch (err) {
-    console.warn('[revalidate] Failed to revalidate week cache:', err)
+    if (err instanceof Error && err.name === 'AbortError') {
+      console.warn('[revalidate] Week cache revalidation timed out')
+    } else {
+      console.warn('[revalidate] Failed to revalidate week cache:', err)
+    }
+  } finally {
+    clearTimeout(timeoutId)
   }
 }
 
