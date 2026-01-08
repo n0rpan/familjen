@@ -1585,6 +1585,12 @@ export function UniversalAIInput({
               label: `${childName} hentes av ${pickerName}`,
               sublabel: formatDisplayDate(pickup.date),
             }]
+          } else {
+            // No pickup found for this child+date - show helpful error
+            const childName = children.find(c => c.id === pickupChildId)?.name || ''
+            const dateDisplay = formatDisplayDate(pickupDate)
+            setError(`Ingen henting funnet for ${childName} ${dateDisplay}`)
+            return
           }
           break
         }
@@ -1756,7 +1762,7 @@ export function UniversalAIInput({
           table = 'pickups'
           const { data: pickup, error: pickupError } = await supabase
             .from('pickups')
-            .select('*')
+            .select('*, household_members!pickups_picker_id_fkey(name)')
             .eq('id', recordId)
             .single()
           if (pickupError) throw pickupError
@@ -1764,11 +1770,12 @@ export function UniversalAIInput({
 
           // If no new picker specified, ask for clarification
           if (!action.data.picker_id) {
+            const currentPickerName = (pickup.household_members as { name: string } | null)?.name || t.week.noPickup
             const clarificationAction: ParsedAction = {
               ...action,
               needsClarification: {
                 field: 'picker_id',
-                question: 'Hvem skal hente?',
+                question: `Hvem skal hente? (nå: ${currentPickerName})`,
                 options: members.map(m => ({ label: m.name, value: m.id })),
               },
             }
