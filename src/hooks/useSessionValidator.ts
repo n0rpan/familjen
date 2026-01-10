@@ -54,11 +54,13 @@ export function useSessionValidator() {
   const handleInvalidSession = useCallback(async () => {
     console.log('[SessionValidator] Session invalid, clearing caches and redirecting')
 
-    // Clear all local caches
+    // Clear all local caches (log errors but don't block redirect)
     await Promise.all([
       clearAllCache(),
       clearAllChanges(),
-    ]).catch(() => {})
+    ]).catch((err) => {
+      console.warn('[SessionValidator] Failed to clear caches:', err)
+    })
 
     // Small delay to let any UI updates complete
     await new Promise(resolve => setTimeout(resolve, REDIRECT_DELAY_MS))

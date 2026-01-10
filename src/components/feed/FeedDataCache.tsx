@@ -11,7 +11,7 @@
  * pattern with localStorage (sync) + IndexedDB (async).
  */
 
-import React, { useEffect, useState, type ReactNode } from 'react'
+import React, { useEffect, useState, useRef, type ReactNode } from 'react'
 import { getCached, setCache, isCacheFresh } from '@/lib/cache'
 import { setStoredHouseholdId } from '@/components/SmartLoading'
 import { getCachedSync, setCacheSync, isSyncCacheFresh } from '@/lib/cache-sync'
@@ -185,10 +185,39 @@ interface FeedDataCacherProps {
 }
 
 /**
+ * Generate a fingerprint for feed data to detect actual content changes
+ */
+function getFeedDataFingerprint(data: FeedPageData): string {
+  return [
+    data.integrationsEnabled,
+    data.integrations.length,
+    data.messages.length,
+    data.photos.length,
+    data.notifications.length,
+    data.duplicateSuggestions.length,
+    // Include first message ID for change detection
+    (data.messages[0] as { id?: string })?.id ?? '',
+  ].join('|')
+}
+
+/**
  * FeedDataCacher - Caches server-rendered data to localStorage + IndexedDB
+ *
+ * OPTIMIZATION: Uses fingerprint comparison to skip re-caching when
+ * data object reference changes but content is the same.
  */
 export function FeedDataCacher({ householdId, data }: FeedDataCacherProps) {
+  const lastFingerprintRef = useRef<string | null>(null)
+
   useEffect(() => {
+    const fingerprint = getFeedDataFingerprint(data)
+
+    // Skip re-caching if data content hasn't changed
+    if (lastFingerprintRef.current === fingerprint) {
+      return
+    }
+    lastFingerprintRef.current = fingerprint
+
     async function cacheData() {
       const cacheKey = CACHE_KEYS.feed(householdId)
       const dataWithVersion = { ...data, version: CACHE_VERSION }

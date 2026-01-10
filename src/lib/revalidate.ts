@@ -85,93 +85,147 @@ export async function revalidateWeek(householdId: string, weekStart: Date | stri
 /**
  * Revalidate cached recipes data
  * Use after recipe mutations (add, update, delete)
+ * @returns Promise that resolves when cache is invalidated (for optional awaiting)
  */
-export function revalidateRecipes(householdId: string) {
-  if (!householdId || householdId === 'demo') return
+export async function revalidateRecipes(householdId: string): Promise<boolean> {
+  if (!householdId || householdId === 'demo') return true
 
-  fetch('/api/revalidate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ householdId, type: 'recipes' }),
-  }).catch(err => {
+  try {
+    const response = await fetch('/api/revalidate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ householdId, type: 'recipes' }),
+    })
+    if (!response.ok) {
+      console.warn(`[revalidate] Recipes cache revalidation failed with status ${response.status}`)
+      return false
+    }
+    return true
+  } catch (err) {
     console.warn('[revalidate] Failed to revalidate recipes cache:', err)
-  })
+    return false
+  }
 }
 
 /**
  * Revalidate cached shopping data
  * Use after shopping list mutations
+ * @returns Promise that resolves when cache is invalidated (for optional awaiting)
  */
-export function revalidateShopping(householdId: string) {
-  if (!householdId || householdId === 'demo') return
+export async function revalidateShopping(householdId: string): Promise<boolean> {
+  if (!householdId || householdId === 'demo') return true
 
-  fetch('/api/revalidate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ householdId, type: 'shopping' }),
-  }).catch(err => {
+  try {
+    const response = await fetch('/api/revalidate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ householdId, type: 'shopping' }),
+    })
+    if (!response.ok) {
+      console.warn(`[revalidate] Shopping cache revalidation failed with status ${response.status}`)
+      return false
+    }
+    return true
+  } catch (err) {
     console.warn('[revalidate] Failed to revalidate shopping cache:', err)
-  })
+    return false
+  }
 }
 
 /**
  * Revalidate cached settings data
  * Use after settings mutations
+ * @returns Promise that resolves when cache is invalidated (for optional awaiting)
  */
-export function revalidateSettings(householdId: string) {
-  if (!householdId || householdId === 'demo') return
+export async function revalidateSettings(householdId: string): Promise<boolean> {
+  if (!householdId || householdId === 'demo') return true
 
-  fetch('/api/revalidate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ householdId, type: 'settings' }),
-  }).catch(err => {
+  try {
+    const response = await fetch('/api/revalidate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ householdId, type: 'settings' }),
+    })
+    if (!response.ok) {
+      console.warn(`[revalidate] Settings cache revalidation failed with status ${response.status}`)
+      return false
+    }
+    return true
+  } catch (err) {
     console.warn('[revalidate] Failed to revalidate settings cache:', err)
-  })
+    return false
+  }
 }
 
 /**
  * Revalidate cached feed data
  * Use after feed-related mutations
+ * @returns Promise that resolves when cache is invalidated (for optional awaiting)
  */
-export function revalidateFeed(householdId: string) {
-  if (!householdId || householdId === 'demo') return
+export async function revalidateFeed(householdId: string): Promise<boolean> {
+  if (!householdId || householdId === 'demo') return true
 
-  fetch('/api/revalidate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ householdId, type: 'feed' }),
-  }).catch(err => {
+  try {
+    const response = await fetch('/api/revalidate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ householdId, type: 'feed' }),
+    })
+    if (!response.ok) {
+      console.warn(`[revalidate] Feed cache revalidation failed with status ${response.status}`)
+      return false
+    }
+    return true
+  } catch (err) {
     console.warn('[revalidate] Failed to revalidate feed cache:', err)
-  })
+    return false
+  }
 }
 
 /**
  * Revalidate cached home control (styring) data
  * Use after device state changes
+ * @returns Promise that resolves when cache is invalidated (for optional awaiting)
  */
-export function revalidateStyring(householdId: string) {
-  if (!householdId || householdId === 'demo') return
+export async function revalidateStyring(householdId: string): Promise<boolean> {
+  if (!householdId || householdId === 'demo') return true
 
-  fetch('/api/revalidate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ householdId, type: 'styring' }),
-  }).catch(err => {
+  try {
+    const response = await fetch('/api/revalidate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ householdId, type: 'styring' }),
+    })
+    if (!response.ok) {
+      console.warn(`[revalidate] Styring cache revalidation failed with status ${response.status}`)
+      return false
+    }
+    return true
+  } catch (err) {
     console.warn('[revalidate] Failed to revalidate styring cache:', err)
-  })
+    return false
+  }
 }
 
 /**
  * Revalidate admin cache
  * Use after admin mutations (admin only)
+ * @returns Promise that resolves when cache is invalidated (for optional awaiting)
  */
-export function revalidateAdmin() {
-  fetch('/api/revalidate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'admin' }),
-  }).catch(err => {
+export async function revalidateAdmin(): Promise<boolean> {
+  try {
+    const response = await fetch('/api/revalidate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'admin' }),
+    })
+    if (!response.ok) {
+      console.warn(`[revalidate] Admin cache revalidation failed with status ${response.status}`)
+      return false
+    }
+    return true
+  } catch (err) {
     console.warn('[revalidate] Failed to revalidate admin cache:', err)
-  })
+    return false
+  }
 }

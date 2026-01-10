@@ -22,16 +22,19 @@ This report documents potential bugs, data integrity issues, and silent failures
 | #9 Missing realtime (11 tables) | ✅ FIXED | All tables now covered (Phases 5, 11-14) |
 | #10 Cache update errors | ✅ FIXED | Added error logging |
 | #11 Missing table mapping | ✅ FIXED | Expanded to 17 tables |
-| #12 JWT sync fire-and-forget | ⏳ TODO | Low priority |
+| #12 JWT sync fire-and-forget | ✅ FIXED | Added in-flight deduplication map |
 | #13 Inconsistent household ID | ✅ FIXED | /uke now uses getHouseholdIdFromSession() |
 | #14 Fragile auth cookie | ✅ FIXED | Added specific regex pattern |
 | #15 Cache timestamp | ✅ FIXED | Added `setCacheWithTimestamp()` |
-| #16 DataCacher re-caching | ⏳ TODO | Needs component updates |
+| #16 DataCacher re-caching | ✅ FIXED | Added fingerprint-based skip logic |
 | #17 Network error handling | ✅ FIXED | Added retry logic to session validator |
 | #18 Silent auth callback | ✅ FIXED | Added error logging |
 | #19 useRecipes demo state | ✅ FIXED | Added demo initializing fallback |
 | #20 useWishlists demo state | ✅ FIXED | Added demo initializing fallback |
 | #21 Session validator re-attempts | ✅ FIXED | Update timestamp after network errors |
+| #21b Silent IndexedDB in OfflineIndicator | ✅ FIXED | Added error logging |
+| #22 Fire-and-forget revalidation | ✅ FIXED | Made async with proper error handling |
+| #23 Empty catch on logout cache clear | ✅ FIXED | Added error logging |
 
 ---
 

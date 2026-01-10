@@ -8,7 +8,7 @@
  * 2. RecipesDataCacher: Caches server data to IndexedDB after it renders
  */
 
-import React, { useEffect, useState, type ReactNode } from 'react'
+import React, { useEffect, useState, useRef, type ReactNode } from 'react'
 import { getCached, setCache, isCacheFresh } from '@/lib/cache'
 import { setStoredHouseholdId } from '@/components/SmartLoading'
 import { getCachedSync, setCacheSync, isSyncCacheFresh } from '@/lib/cache-sync'
@@ -142,10 +142,37 @@ interface RecipesDataCacherProps {
 }
 
 /**
+ * Generate a fingerprint for recipes data to detect actual content changes
+ */
+function getRecipesDataFingerprint(data: RecipesPageData): string {
+  return [
+    data.household?.id ?? '',
+    data.recipes.length,
+    // Include first recipe ID for change detection
+    data.recipes[0]?.id ?? '',
+    // Include last recipe ID to detect additions
+    data.recipes[data.recipes.length - 1]?.id ?? '',
+  ].join('|')
+}
+
+/**
  * RecipesDataCacher - Caches server-rendered data to localStorage + IndexedDB
+ *
+ * OPTIMIZATION: Uses fingerprint comparison to skip re-caching when
+ * data object reference changes but content is the same.
  */
 export function RecipesDataCacher({ householdId, data }: RecipesDataCacherProps) {
+  const lastFingerprintRef = useRef<string | null>(null)
+
   useEffect(() => {
+    const fingerprint = getRecipesDataFingerprint(data)
+
+    // Skip re-caching if data content hasn't changed
+    if (lastFingerprintRef.current === fingerprint) {
+      return
+    }
+    lastFingerprintRef.current = fingerprint
+
     async function cacheData() {
       const cacheKey = CACHE_KEYS.recipes(householdId)
       const dataWithVersion = { ...data, version: CACHE_VERSION }

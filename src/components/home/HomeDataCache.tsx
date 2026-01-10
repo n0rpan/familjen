@@ -20,7 +20,7 @@
  * - Version mismatch causes cache to be ignored (falls back to skeleton)
  */
 
-import React, { useEffect, useState, useMemo, type ReactNode } from 'react'
+import React, { useEffect, useState, useMemo, useRef, type ReactNode } from 'react'
 import { getCached, setCache, isCacheFresh } from '@/lib/cache'
 import { getCachedSync, setCacheSync, isSyncCacheFresh } from '@/lib/cache-sync'
 import { CACHE_KEYS, CACHE_VERSION } from '@/lib/cache-constants'
@@ -274,6 +274,28 @@ interface HomeDataCacherProps {
 }
 
 /**
+ * Generate a fingerprint for home data to detect actual content changes
+ * Uses data counts and key IDs to avoid expensive JSON.stringify
+ */
+function getHomeDataFingerprint(data: CachedHomeData): string {
+  return [
+    data.household?.id ?? '',
+    data.children.length,
+    data.members.length,
+    data.pickups.length,
+    data.meals.length,
+    data.tasks.length,
+    data.memberEvents.length,
+    data.householdEvents.length,
+    data.externalEvents.length,
+    data.weekStart,
+    // Include first item IDs for change detection
+    data.pickups[0]?.id ?? '',
+    data.meals[0]?.id ?? '',
+  ].join('|')
+}
+
+/**
  * HomeDataCacher - Caches server-rendered data to localStorage + IndexedDB
  *
  * Include this as a child of HomeDataLoader to cache data after render.
@@ -282,9 +304,22 @@ interface HomeDataCacherProps {
  * Dual storage strategy:
  * - localStorage: Instant synchronous reads on next navigation
  * - IndexedDB: Durability, larger storage capacity, background sync
+ *
+ * OPTIMIZATION: Uses fingerprint comparison to skip re-caching when
+ * data object reference changes but content is the same.
  */
 export function HomeDataCacher({ householdId, data }: HomeDataCacherProps) {
+  const lastFingerprintRef = useRef<string | null>(null)
+
   useEffect(() => {
+    const fingerprint = getHomeDataFingerprint(data)
+
+    // Skip re-caching if data content hasn't changed
+    if (lastFingerprintRef.current === fingerprint) {
+      return
+    }
+    lastFingerprintRef.current = fingerprint
+
     async function cacheData() {
       const cacheKey = CACHE_KEYS.home(householdId)
       const dataWithVersion = { ...data, version: CACHE_VERSION }

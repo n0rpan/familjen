@@ -8,7 +8,7 @@
  * 2. SettingsDataCacher: Caches server data to IndexedDB after it renders
  */
 
-import React, { useEffect, useState, type ReactNode } from 'react'
+import React, { useEffect, useState, useRef, type ReactNode } from 'react'
 import { getCached, setCache, isCacheFresh } from '@/lib/cache'
 import { setStoredHouseholdId } from '@/components/SmartLoading'
 import { getCachedSync, setCacheSync, isSyncCacheFresh } from '@/lib/cache-sync'
@@ -152,10 +152,38 @@ interface SettingsDataCacherProps {
 }
 
 /**
+ * Generate a fingerprint for settings data to detect actual content changes
+ */
+function getSettingsDataFingerprint(data: SettingsPageData): string {
+  return [
+    data.household?.id ?? '',
+    data.members.length,
+    data.children.length,
+    data.connectedCalendarEmail ?? '',
+    // Include first member and child IDs for change detection
+    data.members[0]?.id ?? '',
+    data.children[0]?.id ?? '',
+  ].join('|')
+}
+
+/**
  * SettingsDataCacher - Caches server-rendered data to localStorage + IndexedDB
+ *
+ * OPTIMIZATION: Uses fingerprint comparison to skip re-caching when
+ * data object reference changes but content is the same.
  */
 export function SettingsDataCacher({ householdId, data }: SettingsDataCacherProps) {
+  const lastFingerprintRef = useRef<string | null>(null)
+
   useEffect(() => {
+    const fingerprint = getSettingsDataFingerprint(data)
+
+    // Skip re-caching if data content hasn't changed
+    if (lastFingerprintRef.current === fingerprint) {
+      return
+    }
+    lastFingerprintRef.current = fingerprint
+
     async function cacheData() {
       const cacheKey = CACHE_KEYS.settings(householdId)
       const dataWithVersion = { ...data, version: CACHE_VERSION }

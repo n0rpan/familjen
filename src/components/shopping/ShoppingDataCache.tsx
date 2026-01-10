@@ -8,7 +8,7 @@
  * 2. ShoppingDataCacher: Caches server data to IndexedDB after it renders
  */
 
-import React, { useEffect, useState, type ReactNode } from 'react'
+import React, { useEffect, useState, useRef, type ReactNode } from 'react'
 import { getCached, setCache, isCacheFresh } from '@/lib/cache'
 import { setStoredHouseholdId } from '@/components/SmartLoading'
 import { getCachedSync, setCacheSync, isSyncCacheFresh } from '@/lib/cache-sync'
@@ -142,10 +142,36 @@ interface ShoppingDataCacherProps {
 }
 
 /**
+ * Generate a fingerprint for shopping data to detect actual content changes
+ */
+function getShoppingDataFingerprint(data: ShoppingPageData): string {
+  return [
+    data.household?.id ?? '',
+    data.lists.length,
+    data.lists.reduce((sum, l) => sum + (l.items?.length ?? 0), 0),
+    data.lists[0]?.id ?? '',
+    data.timestamp ?? 0,
+  ].join('|')
+}
+
+/**
  * ShoppingDataCacher - Caches server-rendered data to localStorage + IndexedDB
+ *
+ * OPTIMIZATION: Uses fingerprint comparison to skip re-caching when
+ * data object reference changes but content is the same.
  */
 export function ShoppingDataCacher({ householdId, data }: ShoppingDataCacherProps) {
+  const lastFingerprintRef = useRef<string | null>(null)
+
   useEffect(() => {
+    const fingerprint = getShoppingDataFingerprint(data)
+
+    // Skip re-caching if data content hasn't changed
+    if (lastFingerprintRef.current === fingerprint) {
+      return
+    }
+    lastFingerprintRef.current = fingerprint
+
     async function cacheData() {
       const cacheKey = CACHE_KEYS.shopping(householdId)
       const dataWithVersion = { ...data, version: CACHE_VERSION }

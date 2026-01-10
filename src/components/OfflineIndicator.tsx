@@ -29,8 +29,9 @@ export function OfflineIndicator() {
         const count = await getPendingCount()
         setPendingCount(count)
         pendingCountRef.current = count
-      } catch {
-        // IndexedDB might not be available
+      } catch (error) {
+        // IndexedDB might not be available (e.g., private browsing mode)
+        console.warn('[OfflineIndicator] Failed to load pending count from IndexedDB:', error)
       }
     }
 
