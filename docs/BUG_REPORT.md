@@ -19,11 +19,11 @@ This report documents potential bugs, data integrity issues, and silent failures
 | #6 5-min stale session | ⏭️ SKIPPED | Per user request |
 | #7 SmartLoading wrong week | ⏳ TODO | Needs architecture change |
 | #8 Race condition UI update | ⏳ TODO | Complex to fix safely |
-| #9 Missing realtime (11 tables) | ✅ PARTIAL | Added to wishlists, recipes, shopping |
+| #9 Missing realtime (11 tables) | ✅ FIXED | All tables now covered (Phases 5, 11-14) |
 | #10 Cache update errors | ✅ FIXED | Added error logging |
 | #11 Missing table mapping | ✅ FIXED | Expanded to 17 tables |
 | #12 JWT sync fire-and-forget | ⏳ TODO | Low priority |
-| #13 Inconsistent household ID | ⏳ TODO | Needs page audits |
+| #13 Inconsistent household ID | ✅ FIXED | /uke now uses getHouseholdIdFromSession() |
 | #14 Fragile auth cookie | ✅ FIXED | Added specific regex pattern |
 | #15 Cache timestamp | ✅ FIXED | Added `setCacheWithTimestamp()` |
 | #16 DataCacher re-caching | ⏳ TODO | Needs component updates |
@@ -258,19 +258,17 @@ return  // ← App could crash/close here!
 
 | Table | Hook | Has Subscription? |
 |-------|------|-------------------|
-| member_events | useMemberEvents.ts | ❌ **MISSING** |
-| household_events | useHouseholdEvents.ts | ❌ **MISSING** |
-| external_events | useExternalEvents.ts | ❌ **MISSING** |
-| external_messages | useFeed.ts | ❌ **MISSING** |
-| external_photos | useFeed.ts | ❌ **MISSING** |
-| event_change_notifications | useFeed.ts | ❌ **MISSING** |
-| shopping_lists | useShoppingLists.ts | ❌ **MISSING** |
-| wishlist_items | useWishlists.ts | ❌ **MISSING** |
-| recipes | useRecipes.ts | ❌ **MISSING** |
+| member_events | useMemberEvents.ts | ✅ Fixed (Phase 11) |
+| household_events | useHouseholdEvents.ts | ✅ Fixed (Phase 12) |
+| external_events | useExternalEvents.ts | ✅ Fixed (Phase 13) |
+| external_messages | useFeed.ts | ✅ Fixed (Phase 14) |
+| external_photos | useFeed.ts | ✅ Fixed (Phase 14) |
+| event_change_notifications | useFeed.ts | ✅ Fixed (Phase 14) |
+| shopping_lists | useShoppingLists.ts | ✅ Fixed (Phase 5) |
+| wishlist_items | useWishlists.ts | ✅ Fixed (Phase 5) |
+| recipes | useRecipes.ts | ✅ Fixed (Phase 5) |
 
-**Impact:** When spouse makes changes to these tables, other family members won't see updates until manual refresh.
-
-**Fix:** Add `useRealtimeSubscription` to each hook.
+**Status:** ✅ ALL FIXED - All tables now have realtime subscriptions.
 
 ---
 
@@ -347,24 +345,18 @@ return memberData.household_id  // Returns before sync completes
 
 ### 13. Inconsistent Household ID Fallback Across Pages
 
+**Status:** ✅ FIXED (Phase 15)
+
 **Files:**
 - `src/app/page.tsx` (lines 80-103) - Has manual fallback ✅
-- `src/app/uke/page.tsx` (lines 84-88) - **No fallback** ❌
+- `src/app/uke/page.tsx` - Now uses `getHouseholdIdFromSession()` ✅
 - `src/app/feed/page.tsx` - Uses `getHouseholdIdFromSession()` ✅
+- All other pages - Use `getHouseholdIdFromSession()` ✅
 
-**Problem:** Week page doesn't check database:
-
-```typescript
-// uke/page.tsx
-const householdId = user.app_metadata?.household_id
-if (!householdId) {
-  redirect('/login')  // ❌ No database fallback!
-}
-```
-
-**Impact:** Newly invited users can't access `/uke` until JWT refreshes (requires logout/login).
-
-**Fix:** Use `getHouseholdIdFromSession()` consistently.
+**Fix Applied:** Week page now uses `getHouseholdIdFromSession()` which provides:
+- Fast path: JWT has household_id (>99% of users)
+- Slow path: DB fallback for stale JWTs
+- Fire-and-forget JWT sync for next page load
 
 ---
 
