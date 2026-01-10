@@ -40,11 +40,17 @@ export async function GET(request: Request) {
 
         // Load user's membership info (household_id + language preference)
         // This data is cached in JWT to avoid DB lookups on every page load
-        const { data: member } = await adminClient
+        const { data: member, error: memberError } = await adminClient
           .from('household_members')
           .select('household_id, language_preference')
           .eq('user_id', user.id)
           .single()
+
+        // Log error but don't fail - user can still access app (just no household)
+        // PGRST116 = no rows found, which is expected for new users
+        if (memberError && memberError.code !== 'PGRST116') {
+          console.error('[AuthCallback] Failed to fetch member data:', memberError)
+        }
 
         // Sync is_admin and household_id to user's app_metadata (JWT claims)
         // This allows pages to access household without DB lookup

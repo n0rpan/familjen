@@ -22,9 +22,13 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
 import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealtimeSubscription'
-import { formatDateISO } from '@/lib/utils'
+import { formatDateISO, generateTempId } from '@/lib/utils'
 import { createChildTaskSchema } from '@/lib/schemas'
-import { queueChange, updateQueuedInsert, removeQueuedInsert } from '@/lib/offline-queue'
+import {
+  safeQueueChange,
+  safeUpdateQueuedInsert,
+  safeRemoveQueuedInsert,
+} from '@/lib/offline-queue'
 import type { ChildTask, ChildTaskWithChild, Child } from '@/lib/types'
 
 export interface UseTasksOptions {
@@ -211,14 +215,21 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
 
     // If offline, queue the change for later sync
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      // Generate temp ID first so we can store it in the queue for later matching
-      const tempId = `temp-${Date.now()}`
-      await queueChange({
+      // Generate unique temp ID to avoid collisions
+      const tempId = generateTempId()
+
+      const result = await safeQueueChange({
         table: 'child_tasks',
         operation: 'insert',
         data: { ...task, _tempId: tempId } as Record<string, unknown>,
       })
-      // Optimistically add to local state with temporary ID
+
+      if (!result.success) {
+        // Queue failed - don't update UI, throw error to caller
+        throw new Error(`Kunne ikke lagre oppgaven offline: ${result.error}`)
+      }
+
+      // Only update UI after successful queue
       const tempTask: ChildTask = {
         ...task,
         id: tempId,
@@ -272,22 +283,28 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
 
     // If offline, queue the change for later sync
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      let result
       if (taskId.startsWith('temp-')) {
         // For temp items, update the queued insert's data directly
-        await updateQueuedInsert('child_tasks', '_tempId', taskId, updates)
+        result = await safeUpdateQueuedInsert('child_tasks', '_tempId', taskId, updates)
       } else {
         // For real items, queue a separate update operation
         // Include original updated_at for conflict detection during sync
         // Use ref to avoid re-renders from tasks dependency
         const existingTask = tasksRef.current.find(t => t.id === taskId)
-        await queueChange({
+        result = await safeQueueChange({
           table: 'child_tasks',
           operation: 'update',
           data: { id: taskId, ...updates } as Record<string, unknown>,
           originalUpdatedAt: existingTask?.updated_at ?? undefined,
         })
       }
-      // Optimistically update local state
+
+      if (!result.success) {
+        throw new Error(`Kunne ikke oppdatere oppgaven offline: ${result.error}`)
+      }
+
+      // Only update UI after successful queue
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t))
       return
     }
@@ -316,18 +333,24 @@ export function useTasks(options: UseTasksOptions = {}): UseTasksReturn {
 
     // If offline, queue the change for later sync
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      let result
       if (taskId.startsWith('temp-')) {
         // For temp items, remove the queued insert entirely
-        await removeQueuedInsert('child_tasks', '_tempId', taskId)
+        result = await safeRemoveQueuedInsert('child_tasks', '_tempId', taskId)
       } else {
         // For real items, queue a delete operation
-        await queueChange({
+        result = await safeQueueChange({
           table: 'child_tasks',
           operation: 'delete',
           data: { id: taskId },
         })
       }
-      // Optimistically remove from local state
+
+      if (!result.success) {
+        throw new Error(`Kunne ikke slette oppgaven offline: ${result.error}`)
+      }
+
+      // Only update UI after successful queue
       setTasks(prev => prev.filter(t => t.id !== taskId))
       return
     }

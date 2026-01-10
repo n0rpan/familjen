@@ -14,6 +14,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
+import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealtimeSubscription'
 import { getCached, setCache, isCacheFresh } from '@/lib/cache'
 import { CACHE_KEYS } from '@/lib/prefetch/pages'
 import type { ShoppingList, ShoppingListItem } from '@/lib/types'
@@ -143,6 +144,23 @@ export function useShoppingLists(): UseShoppingListsReturn {
       fetchData()
     })
   }, [isDemo, household?.id, initialFetchDone, fetchData])
+
+  // Subscribe to realtime changes for instant sync between family members
+  // Subscribe to both shopping_lists and shopping_list_items tables
+  useRealtimeSubscription<ShoppingList>({
+    table: 'shopping_lists',
+    filter: household?.id ? createHouseholdFilter(household.id) : undefined,
+    enabled: !isDemo && !!household?.id,
+    onAny: fetchData,
+  })
+
+  useRealtimeSubscription<ShoppingListItem>({
+    table: 'shopping_list_items',
+    // Note: shopping_list_items don't have household_id directly, so we refetch all
+    // The filter by list_id happens in fetchData()
+    enabled: !isDemo && !!household?.id,
+    onAny: fetchData,
+  })
 
   // Add list mutation
   const addList = useCallback(async (name: string): Promise<ShoppingList | null> => {

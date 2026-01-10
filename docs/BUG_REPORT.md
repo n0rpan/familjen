@@ -1,8 +1,34 @@
 # Familjen Bug Report - Stale Data, Silent Failures & Missing Updates
 
 Generated: 2026-01-10
+**Last Updated: 2026-01-10** (fixes applied)
 
 This report documents potential bugs, data integrity issues, and silent failures found during code review.
+
+---
+
+## Fix Status
+
+| Issue | Status | Commit |
+|-------|--------|--------|
+| #1 Unhandled queue rejections | ✅ FIXED | Added `safeQueueChange` wrappers |
+| #2 Sync loop exits early | ✅ FIXED | Added nested try-catch |
+| #3 Silent queue failures | ✅ FIXED | Return values now checked |
+| #4 Temp ID collision | ✅ FIXED | Added `generateTempId()` with random suffix |
+| #5 Middleware auth timeout | ✅ FIXED | Added 5s timeout with Promise.race |
+| #6 5-min stale session | ⏭️ SKIPPED | Per user request |
+| #7 SmartLoading wrong week | ⏳ TODO | Needs architecture change |
+| #8 Race condition UI update | ⏳ TODO | Complex to fix safely |
+| #9 Missing realtime (11 tables) | ✅ PARTIAL | Added to wishlists, recipes, shopping |
+| #10 Cache update errors | ✅ FIXED | Added error logging |
+| #11 Missing table mapping | ✅ FIXED | Expanded to 17 tables |
+| #12 JWT sync fire-and-forget | ⏳ TODO | Low priority |
+| #13 Inconsistent household ID | ⏳ TODO | Needs page audits |
+| #14 Fragile auth cookie | ✅ FIXED | Added specific regex pattern |
+| #15 Cache timestamp | ✅ FIXED | Added `setCacheWithTimestamp()` |
+| #16 DataCacher re-caching | ⏳ TODO | Needs component updates |
+| #17 Network error handling | ✅ FIXED | Added retry logic to session validator |
+| #18 Silent auth callback | ✅ FIXED | Added error logging |
 
 ---
 

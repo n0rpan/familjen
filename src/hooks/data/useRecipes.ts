@@ -14,6 +14,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
+import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealtimeSubscription'
 import type { Recipe } from '@/lib/types'
 
 export interface UseRecipesReturn {
@@ -69,6 +70,14 @@ export function useRecipes(): UseRecipesReturn {
       fetchData()
     }
   }, [isDemo, household?.id, initialFetchDone, fetchData])
+
+  // Subscribe to realtime changes for instant sync between family members
+  useRealtimeSubscription<Recipe>({
+    table: 'recipes',
+    filter: household?.id ? createHouseholdFilter(household.id) : undefined,
+    enabled: !isDemo && !!household?.id,
+    onAny: fetchData,
+  })
 
   // Add recipe mutation
   const addRecipe = useCallback(async (
