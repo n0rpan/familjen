@@ -447,10 +447,12 @@ Decide which tests to run and recommend any extended checks. Remember: when in d
     const data = await response.json()
     const content = data.choices?.[0]?.message?.content || ''
 
-    // Extract usage stats
+    // Extract usage stats (including API-returned cost if available)
     const usage = {
       inputTokens: data.usage?.prompt_tokens || 0,
       outputTokens: data.usage?.completion_tokens || 0,
+      // OpenRouter returns actual cost in usage.cost (preferred over estimates)
+      apiCost: data.usage?.cost ?? data.usage?.total_cost ?? undefined,
     }
 
     try {
@@ -698,9 +700,11 @@ async function main() {
 
       console.log('   ✓ LLM decision received')
 
-      // Record cost
-      const cost = calculateCost(FAST_MODEL!, result.usage.inputTokens, result.usage.outputTokens)
-      console.log(`   💰 Cost: ${formatCost(cost)} (${result.usage.inputTokens} in, ${result.usage.outputTokens} out)`)
+      // Record cost - prefer API-returned cost over estimates
+      const estimatedCost = calculateCost(FAST_MODEL!, result.usage.inputTokens, result.usage.outputTokens)
+      const cost = result.usage.apiCost ?? estimatedCost
+      const costSource = result.usage.apiCost !== undefined ? 'api' : 'estimate'
+      console.log(`   💰 Cost: ${formatCost(cost)} [${costSource}] (${result.usage.inputTokens} in, ${result.usage.outputTokens} out)`)
 
       recordLLMUsage({
         model: FAST_MODEL!,
