@@ -165,9 +165,9 @@ export function RecipesPageContent({ initialData, isDemo = false }: RecipesPageC
       setShowForm(false)
       setMessage({ type: 'success', text: t.success.saved })
 
-      // Revalidate cache and refresh
+      // Revalidate cache and refresh (await to avoid race condition)
       if (!isDemo && household?.id) {
-        revalidateRecipes(household.id)
+        await revalidateRecipes(household.id)
         router.refresh()
       }
     } catch {
@@ -194,7 +194,7 @@ export function RecipesPageContent({ initialData, isDemo = false }: RecipesPageC
     try {
       await deleteRecipe(id)
       if (!isDemo && household?.id) {
-        revalidateRecipes(household.id)
+        await revalidateRecipes(household.id)
         router.refresh()
       }
     } catch {
@@ -207,7 +207,7 @@ export function RecipesPageContent({ initialData, isDemo = false }: RecipesPageC
     try {
       await updateRecipe(id, { is_favorite: !currentValue })
       if (!isDemo && household?.id) {
-        revalidateRecipes(household.id)
+        await revalidateRecipes(household.id)
       }
     } catch {
       // Silent fail for favorite toggle

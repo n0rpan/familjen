@@ -63,6 +63,7 @@ import {
   formatCost,
   calculateCost,
 } from './lib/llm-utils'
+import { parseJsonFromResponse } from './ai-config'
 
 // ============================================
 // Configuration
@@ -286,6 +287,8 @@ interface LLMCallResult {
   usage: {
     inputTokens: number
     outputTokens: number
+    /** API-returned cost in USD (preferred over estimates when available) */
+    apiCost?: number
   }
 }
 
@@ -463,10 +466,10 @@ Decide which tests to run and recommend any extended checks. Remember: when in d
       }
       return { response: parsed, usage }
     } catch {
-      // Try to extract JSON from response
-      const jsonMatch = content.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]) as LLMResponse
+      // Try to extract JSON from response using balanced brace matching
+      const extracted = parseJsonFromResponse(content)
+      if (extracted) {
+        const parsed = extracted as LLMResponse
         if (!Array.isArray(parsed.extendedChecks)) {
           parsed.extendedChecks = []
         }
