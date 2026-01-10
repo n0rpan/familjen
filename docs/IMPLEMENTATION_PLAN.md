@@ -16,15 +16,16 @@ This document provides detailed implementation plans for fixing the bugs identif
 | 4 | SmartLoading week cache key | ⏳ DEFERRED (needs architecture change) |
 | 5 | Missing realtime subscriptions | ✅ COMPLETED (wishlists, recipes, shopping) |
 | 6 | Cache update error handling | ✅ COMPLETED |
-| 7 | Household ID consistency | ⏳ TODO → Phase 15 |
+| 7 | Household ID consistency | ✅ COMPLETED (Phase 15) |
 | 8 | Auth cookie detection | ✅ COMPLETED |
-| 9 | DataCacher dependencies | ⏳ DEFERRED (performance, not data correctness) |
+| 9 | DataCacher dependencies | ✅ COMPLETED (Phase 16) |
 | 10 | Session validator retry | ✅ COMPLETED |
 | **11** | **Add realtime to useMemberEvents** | ✅ COMPLETED |
 | **12** | **Add realtime to useHouseholdEvents** | ✅ COMPLETED |
 | **13** | **Add realtime to useExternalEvents** | ✅ COMPLETED |
 | **14** | **Add realtime to useFeed** | ✅ COMPLETED |
 | **15** | **Fix inconsistent household ID retrieval** | ✅ COMPLETED |
+| **16** | **Fix remaining quick-win bugs** | ✅ COMPLETED |
 
 ### Priority Rationale (2026-01-10)
 
@@ -34,9 +35,13 @@ After detailed analysis, the remaining issues fall into two categories:
 - Missing realtime subscriptions cause "data disappearing" between family members
 - Inconsistent household ID causes silent access failures for new users
 
+**Quick wins (Phase 16):**
+- JWT sync deduplication - prevents redundant DB calls
+- DataCacher fingerprinting - reduces unnecessary IndexedDB writes
+- Error logging improvements - better debugging
+
 **Deferred (acceptable tradeoffs):**
 - Phase 4: SmartLoading shows wrong week briefly - UX issue, not data loss
-- Phase 9: DataCacher re-caching - Performance issue, not data correctness
 
 ### Changes Made
 
@@ -132,6 +137,32 @@ After detailed analysis, the remaining issues fall into two categories:
 **Note:** Home page (`src/app/page.tsx`) keeps inline fallback pattern because it reuses
 the supabase client for children count query. All other pages use the shared
 `getHouseholdIdFromSession()` function.
+
+### Phase 16 - Quick Win Bug Fixes (2026-01-10)
+
+**src/lib/supabase/admin.ts:**
+- Added `inFlightSyncs` Map to track in-flight JWT sync operations
+- `syncUserMetadata()` now deduplicates concurrent calls for same user
+- Prevents redundant DB queries when user visits multiple pages rapidly
+
+**src/components/*/DataCache.tsx (all 6 files):**
+- Added fingerprint-based comparison to skip unnecessary re-caching
+- Each DataCacher now uses `useRef` to track last fingerprint
+- Fingerprints use data counts + first/last IDs for efficient comparison
+
+**src/components/OfflineIndicator.tsx:**
+- Empty catch block now logs warning for IndexedDB failures
+
+**src/lib/revalidate.ts:**
+- All fire-and-forget functions now return `Promise<boolean>`
+- Added proper try-catch with status code checking
+- Callers can now optionally await for confirmation
+
+**src/hooks/useSessionValidator.ts:**
+- Empty catch block now logs warning for cache clear failures
+
+**src/components/Header.tsx:**
+- Empty catch block now logs warning for cache clear on logout
 
 ---
 
