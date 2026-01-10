@@ -231,7 +231,7 @@ jobs:
   smart-selector:
     name: 🧠 Smart Test Selector
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     # Only run selector on PRs (push to main always runs protection tests)
     if: github.event_name == 'pull_request'
     outputs:
