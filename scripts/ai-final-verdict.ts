@@ -2276,38 +2276,76 @@ async function main() {
     console.log(`   ${verdictEmoji(review.verdict)} ${name}: ${review.verdict} (${review.confidence}% confidence)`)
   }
 
-  // ============================================
-  // MECHANICAL AGGREGATION - Reviewer verdicts determine outcome
-  // ============================================
-  // AI explains findings but cannot override failing reviewers
-  // This prevents confusing "Ready to merge" with FAIL verdicts shown
-
-  const failingReviewers = reviewerNames.filter(name => reviews[name].verdict === 'FAIL')
-  const warningReviewers = reviewerNames.filter(name => reviews[name].verdict === 'WARN')
-  const passingReviewers = reviewerNames.filter(name => reviews[name].verdict === 'PASS')
-
-  // Mechanical verdict: any FAIL = BLOCK, else PASS
-  const mechanicalVerdict = failingReviewers.length > 0 ? 'BLOCK' : 'PASS'
-
-  console.log(`\n📊 Mechanical aggregation:`)
-  console.log(`   ✅ Passed: ${passingReviewers.length} (${passingReviewers.join(', ') || 'none'})`)
-  console.log(`   ⚠️ Warnings: ${warningReviewers.length} (${warningReviewers.join(', ') || 'none'})`)
-  console.log(`   ❌ Failed: ${failingReviewers.length} (${failingReviewers.join(', ') || 'none'})`)
-  console.log(`   → Mechanical verdict: ${mechanicalVerdict}`)
-
   // Get PR metadata
   const prTitle = process.env.GITHUB_PR_TITLE || 'Unknown PR'
   const prBody = process.env.GITHUB_PR_BODY || ''
   const baseBranch = process.env.GITHUB_BASE_REF || 'main'
 
   // Get ALL files changed in the entire branch (from base to HEAD)
-  // This gives the AI full context of what's being implemented
+  // IMPORTANT: This must happen BEFORE mechanical verdict to filter pre-existing issues
   let changedFiles = ''
+  let changedFilesList: string[] = []
   try {
     changedFiles = execSync(`git diff --name-only origin/${baseBranch}...HEAD`, { encoding: 'utf-8' })
+    changedFilesList = changedFiles.trim().split('\n').filter(Boolean)
   } catch {
     changedFiles = 'Unable to get changed files'
+    changedFilesList = []
   }
+  const changedFilesSet = new Set(changedFilesList)
+
+  // Helper: Check if a finding is in a changed file
+  const isInChangedFiles = (file: string | undefined): boolean => {
+    if (!file || file === 'unknown') return true // Assume relevant if no file specified
+    return changedFilesSet.has(file) ||
+      [...changedFilesSet].some(cf => file.endsWith(cf) || cf.endsWith(file))
+  }
+
+  // Helper: Check if a reviewer has any NEW critical/warning issues (in changed files)
+  const hasNewBlockingIssues = (review: ReviewerOutput): boolean => {
+    const blockingFindings = review.findings.filter(f =>
+      f.severity === 'critical' || f.severity === 'warning'
+    )
+    return blockingFindings.some(f => isInChangedFiles(f.file))
+  }
+
+  // ============================================
+  // MECHANICAL AGGREGATION - Reviewer verdicts determine outcome
+  // ============================================
+  // CRITICAL: Only block on NEW issues (in changed files)
+  // Pre-existing failures shouldn't block unrelated PRs
+
+  const rawFailingReviewers = reviewerNames.filter(name => reviews[name].verdict === 'FAIL')
+  const rawWarningReviewers = reviewerNames.filter(name => reviews[name].verdict === 'WARN')
+  const passingReviewers = reviewerNames.filter(name => reviews[name].verdict === 'PASS')
+
+  // Filter: FAIL reviewers with only pre-existing issues become WARN
+  const failingReviewers: string[] = []
+  const warningReviewers: string[] = [...rawWarningReviewers]
+  const preExistingOnlyReviewers: string[] = []
+
+  for (const name of rawFailingReviewers) {
+    const review = reviews[name]
+    if (hasNewBlockingIssues(review)) {
+      failingReviewers.push(name)
+    } else {
+      // All issues are pre-existing - treat as warning, not failure
+      warningReviewers.push(name)
+      preExistingOnlyReviewers.push(name)
+    }
+  }
+
+  // Mechanical verdict: only block on NEW failures (in changed files)
+  const mechanicalVerdict = failingReviewers.length > 0 ? 'BLOCK' : 'PASS'
+
+  console.log(`\n📊 Mechanical aggregation:`)
+  console.log(`   ✅ Passed: ${passingReviewers.length} (${passingReviewers.join(', ') || 'none'})`)
+  console.log(`   ⚠️ Warnings: ${warningReviewers.length} (${warningReviewers.join(', ') || 'none'})`)
+  console.log(`   ❌ Failed: ${failingReviewers.length} (${failingReviewers.join(', ') || 'none'})`)
+  if (preExistingOnlyReviewers.length > 0) {
+    console.log(`   📦 Pre-existing only (downgraded to WARN): ${preExistingOnlyReviewers.join(', ')}`)
+  }
+  console.log(`   → Mechanical verdict: ${mechanicalVerdict}`)
 
   // Build the prompt
   const systemPrompt = `You are the FINAL decision maker for a PR to Familjen, a Norwegian family planning app.
@@ -2393,6 +2431,16 @@ If you don't verify, default to BLOCK.
 - Code that could corrupt family data → definitely block
 
 ## IMPORTANT: Pre-existing vs New Issues
+
+**The mechanical verdict ALREADY filters pre-existing issues.**
+
+Reviewers that FAIL but only have issues in unchanged files are automatically downgraded to WARN.
+You'll see this in the output: "Pre-existing only (downgraded to WARN): reviewer-name"
+
+This means if you see a FAIL verdict in the mechanical aggregation, it's because there ARE issues
+in files changed by this PR. Trust the mechanical verdict on this - it's already doing the work.
+
+**Your job is to verify the issues are REAL, not to re-check if they're pre-existing.**
 
 Look at the "Files Changed" list. If an issue is reported in a file NOT in that list:
 - It's PRE-EXISTING (existed before this PR)
