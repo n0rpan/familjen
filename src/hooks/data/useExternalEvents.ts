@@ -20,6 +20,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
 import { useHouseholdId } from './useHousehold'
+import { useRealtimeSubscription } from '@/hooks/useRealtimeSubscription'
 import { formatDateISO } from '@/lib/utils'
 import type { ExternalEvent } from '@/lib/types'
 
@@ -141,6 +142,16 @@ export function useExternalEvents(options: UseExternalEventsOptions = {}): UseEx
     }
   }, [isDemo, supabase, householdId, startDateStr, endDateStr, currentFetchKey])
 
+  // Subscribe to realtime changes for instant sync when integrations update
+  // Note: external_events doesn't have household_id directly, so we subscribe without filter
+  // and let fetchData() apply the proper join filter on refetch
+  useRealtimeSubscription<ExternalEvent>({
+    table: 'external_events',
+    enabled: !isDemo && !!householdId && isDeferralComplete,
+    onAny: fetchData,
+    deferMs: 0, // Already deferred via isDeferralComplete check
+  })
+
   // Fetch when household or date range changes (only after deferral complete)
   useEffect(() => {
     if (!isDemo && householdId && lastFetchKey !== currentFetchKey && isDeferralComplete) {
@@ -152,6 +163,16 @@ export function useExternalEvents(options: UseExternalEventsOptions = {}): UseEx
       abortControllerRef.current?.abort()
     }
   }, [isDemo, householdId, lastFetchKey, currentFetchKey, isDeferralComplete, fetchData])
+
+  // Demo mode initializing: show loading while demoState is not yet available
+  if (isDemo && !demoState) {
+    return {
+      events: [],
+      loading: true,
+      error: null,
+      refetch: () => {},
+    }
+  }
 
   // Demo mode: return demo data with filtering
   if (isDemo && demoState) {

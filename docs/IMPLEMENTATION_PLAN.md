@@ -13,13 +13,30 @@ This document provides detailed implementation plans for fixing the bugs identif
 | 1 | Offline queue error handling | ✅ COMPLETED |
 | 2 | Temp ID collision fix | ✅ COMPLETED |
 | 3 | Middleware auth timeout | ✅ COMPLETED |
-| 4 | SmartLoading week cache key | ⏳ TODO (needs architecture change) |
+| 4 | SmartLoading week cache key | ⏳ DEFERRED (needs architecture change) |
 | 5 | Missing realtime subscriptions | ✅ COMPLETED (wishlists, recipes, shopping) |
 | 6 | Cache update error handling | ✅ COMPLETED |
-| 7 | Household ID consistency | ⏳ TODO |
+| 7 | Household ID consistency | ⏳ TODO → Phase 15 |
 | 8 | Auth cookie detection | ✅ COMPLETED |
-| 9 | DataCacher dependencies | ⏳ TODO |
+| 9 | DataCacher dependencies | ⏳ DEFERRED (performance, not data correctness) |
 | 10 | Session validator retry | ✅ COMPLETED |
+| **11** | **Add realtime to useMemberEvents** | ✅ COMPLETED |
+| **12** | **Add realtime to useHouseholdEvents** | ✅ COMPLETED |
+| **13** | **Add realtime to useExternalEvents** | ✅ COMPLETED |
+| **14** | **Add realtime to useFeed** | ✅ COMPLETED |
+| **15** | **Fix inconsistent household ID retrieval** | ⏳ TODO |
+
+### Priority Rationale (2026-01-10)
+
+After detailed analysis, the remaining issues fall into two categories:
+
+**Critical for data sync (Phases 11-15):**
+- Missing realtime subscriptions cause "data disappearing" between family members
+- Inconsistent household ID causes silent access failures for new users
+
+**Deferred (acceptable tradeoffs):**
+- Phase 4: SmartLoading shows wrong week briefly - UX issue, not data loss
+- Phase 9: DataCacher re-caching - Performance issue, not data correctness
 
 ### Changes Made
 
@@ -79,6 +96,31 @@ This document provides detailed implementation plans for fixing the bugs identif
 
 **src/hooks/useSessionValidator.ts:**
 - Update `lastValidationRef` after network errors to prevent unnecessary re-attempts on visibility change
+
+### Realtime Subscription Additions (2026-01-10)
+
+**src/hooks/data/useMemberEvents.ts:**
+- Added `useRealtimeSubscription` import
+- Subscribe to `member_events` table with household filter
+- Added demo initializing state check
+
+**src/hooks/data/useHouseholdEvents.ts:**
+- Added `useRealtimeSubscription` import
+- Subscribe to `household_events` table with household filter
+- Added demo initializing state check
+
+**src/hooks/data/useExternalEvents.ts:**
+- Added `useRealtimeSubscription` import
+- Subscribe to `external_events` without filter (no direct household_id)
+- fetchData() applies proper join filter on refetch
+- Added demo initializing state check
+
+**src/hooks/data/useFeed.ts:**
+- Added three realtime subscriptions:
+  1. `event_change_notifications` with household filter
+  2. `external_messages` without filter (join-based)
+  3. `external_photos` without filter (join-based)
+- All trigger fetchData() for proper join-filtered refetch
 
 ---
 
