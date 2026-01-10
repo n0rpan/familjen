@@ -24,7 +24,7 @@ This document provides detailed implementation plans for fixing the bugs identif
 | **12** | **Add realtime to useHouseholdEvents** | ✅ COMPLETED |
 | **13** | **Add realtime to useExternalEvents** | ✅ COMPLETED |
 | **14** | **Add realtime to useFeed** | ✅ COMPLETED |
-| **15** | **Fix inconsistent household ID retrieval** | ⏳ TODO |
+| **15** | **Fix inconsistent household ID retrieval** | ✅ COMPLETED |
 
 ### Priority Rationale (2026-01-10)
 
@@ -121,6 +121,17 @@ After detailed analysis, the remaining issues fall into two categories:
   2. `external_messages` without filter (join-based)
   3. `external_photos` without filter (join-based)
 - All trigger fetchData() for proper join-filtered refetch
+
+### Household ID Consistency Fix (2026-01-10)
+
+**src/app/uke/page.tsx:**
+- Changed from direct `user.app_metadata?.household_id` access to `getHouseholdIdFromSession()`
+- Provides fallback to DB query when JWT is stale (new households, old tokens)
+- On no household, redirects to home (onboarding) instead of login
+
+**Note:** Home page (`src/app/page.tsx`) keeps inline fallback pattern because it reuses
+the supabase client for children count query. All other pages use the shared
+`getHouseholdIdFromSession()` function.
 
 ---
 
