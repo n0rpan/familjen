@@ -165,6 +165,19 @@ export function useRecipes(): UseRecipesReturn {
     }
   }
 
+  // Demo mode initializing: show loading
+  if (isDemo && !demoState) {
+    return {
+      recipes: [],
+      loading: true,
+      error: null,
+      addRecipe,
+      updateRecipe,
+      deleteRecipe,
+      refetch: () => {},
+    }
+  }
+
   // Derive loading state
   const shouldFetch = !!household?.id && !initialFetchDone && !isFetching
   const loading = householdLoading || shouldFetch || isFetching

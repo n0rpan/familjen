@@ -307,6 +307,19 @@ export function useWishlists(): UseWishlistsReturn {
     }
   }
 
+  // Demo mode initializing: show loading
+  if (isDemo && !demoState) {
+    return {
+      items: [],
+      loading: true,
+      error: null,
+      addItem,
+      updateItem,
+      deleteItem,
+      refetch: () => {},
+    }
+  }
+
   // Derive loading state
   const shouldFetch = !!household?.id && !initialFetchDone && !isFetching
   const loading = householdLoading || shouldFetch || isFetching

@@ -82,6 +82,8 @@ export function useSessionValidator() {
         // Network error after all retries - don't invalidate, user might be offline
         if (isNetworkError(error)) {
           console.warn('[SessionValidator] Network error after retries, staying logged in')
+          // Update timestamp to prevent immediate re-attempts on visibility change
+          lastValidationRef.current = Date.now()
           return false
         }
 
@@ -108,6 +110,8 @@ export function useSessionValidator() {
       }
 
       // Don't redirect on network errors - user might be temporarily offline
+      // Update timestamp to prevent immediate re-attempts on visibility change
+      lastValidationRef.current = Date.now()
       return false
     }
   }, [handleInvalidSession])

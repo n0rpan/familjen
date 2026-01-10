@@ -29,6 +29,9 @@ This report documents potential bugs, data integrity issues, and silent failures
 | #16 DataCacher re-caching | ⏳ TODO | Needs component updates |
 | #17 Network error handling | ✅ FIXED | Added retry logic to session validator |
 | #18 Silent auth callback | ✅ FIXED | Added error logging |
+| #19 useRecipes demo state | ✅ FIXED | Added demo initializing fallback |
+| #20 useWishlists demo state | ✅ FIXED | Added demo initializing fallback |
+| #21 Session validator re-attempts | ✅ FIXED | Update timestamp after network errors |
 
 ---
 

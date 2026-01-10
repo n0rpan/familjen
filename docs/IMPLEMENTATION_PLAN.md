@@ -64,9 +64,21 @@ This document provides detailed implementation plans for fixing the bugs identif
 
 **src/hooks/data/useRecipes.ts:**
 - Added realtime subscription
+- Added demo initializing state fallback (code review fix)
 
 **src/hooks/data/useShoppingLists.ts:**
 - Added realtime subscriptions for both lists and items
+
+### Code Review Fixes (2026-01-10)
+
+**src/hooks/data/useRecipes.ts:**
+- Added missing demo initializing state (prevents flash of empty data)
+
+**src/hooks/data/useWishlists.ts:**
+- Added missing demo initializing state (prevents flash of empty data)
+
+**src/hooks/useSessionValidator.ts:**
+- Update `lastValidationRef` after network errors to prevent unnecessary re-attempts on visibility change
 
 ---
 
