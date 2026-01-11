@@ -24,6 +24,29 @@ const VALIDATION_INTERVAL_MS = 5 * 60 * 1000
 // After validation failure, wait before redirecting (show any pending UI updates)
 const REDIRECT_DELAY_MS = 100
 
+// Retry settings for transient network errors
+const MAX_VALIDATION_RETRIES = 2
+const RETRY_DELAY_MS = 2000
+
+/**
+ * Check if an error is likely a network error (transient, should retry)
+ */
+function isNetworkError(error: unknown): boolean {
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase()
+    return (
+      msg.includes('fetch') ||
+      msg.includes('network') ||
+      msg.includes('timeout') ||
+      msg.includes('failed to fetch') ||
+      msg.includes('load failed') ||
+      msg.includes('econnrefused') ||
+      msg.includes('enotfound')
+    )
+  }
+  return false
+}
+
 export function useSessionValidator() {
   const supabaseRef = useRef(createClient())
   const lastValidationRef = useRef<number>(0)
@@ -31,11 +54,13 @@ export function useSessionValidator() {
   const handleInvalidSession = useCallback(async () => {
     console.log('[SessionValidator] Session invalid, clearing caches and redirecting')
 
-    // Clear all local caches
+    // Clear all local caches (log errors but don't block redirect)
     await Promise.all([
       clearAllCache(),
       clearAllChanges(),
-    ]).catch(() => {})
+    ]).catch((err) => {
+      console.warn('[SessionValidator] Failed to clear caches:', err)
+    })
 
     // Small delay to let any UI updates complete
     await new Promise(resolve => setTimeout(resolve, REDIRECT_DELAY_MS))
@@ -44,11 +69,32 @@ export function useSessionValidator() {
     window.location.href = '/login'
   }, [])
 
-  const validateSession = useCallback(async () => {
+  const validateSession = useCallback(async (retryCount = 0): Promise<boolean> => {
     try {
       const { data: { user }, error } = await supabaseRef.current.auth.getUser()
 
-      if (error || !user) {
+      if (error) {
+        // Check if it's a network error that we should retry
+        if (isNetworkError(error) && retryCount < MAX_VALIDATION_RETRIES) {
+          console.log(`[SessionValidator] Network error, retrying in ${RETRY_DELAY_MS}ms... (attempt ${retryCount + 1}/${MAX_VALIDATION_RETRIES})`)
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS))
+          return validateSession(retryCount + 1)
+        }
+
+        // Network error after all retries - don't invalidate, user might be offline
+        if (isNetworkError(error)) {
+          console.warn('[SessionValidator] Network error after retries, staying logged in')
+          // Update timestamp to prevent immediate re-attempts on visibility change
+          lastValidationRef.current = Date.now()
+          return false
+        }
+
+        // Auth error (not network) - session is truly invalid
+        await handleInvalidSession()
+        return false
+      }
+
+      if (!user) {
         await handleInvalidSession()
         return false
       }
@@ -57,7 +103,17 @@ export function useSessionValidator() {
       return true
     } catch (err) {
       console.error('[SessionValidator] Validation error:', err)
+
+      // Retry on unexpected errors that might be transient
+      if (isNetworkError(err) && retryCount < MAX_VALIDATION_RETRIES) {
+        console.log(`[SessionValidator] Error, retrying in ${RETRY_DELAY_MS}ms...`)
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS))
+        return validateSession(retryCount + 1)
+      }
+
       // Don't redirect on network errors - user might be temporarily offline
+      // Update timestamp to prevent immediate re-attempts on visibility change
+      lastValidationRef.current = Date.now()
       return false
     }
   }, [handleInvalidSession])

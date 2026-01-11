@@ -20,8 +20,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
+import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealtimeSubscription'
 import { createWishlistItemSchema, updateWishlistItemSchema } from '@/lib/schemas'
-import { queueChange, updateQueuedInsert, removeQueuedInsert } from '@/lib/offline-queue'
+import {
+  safeQueueChange,
+  safeUpdateQueuedInsert,
+  safeRemoveQueuedInsert,
+} from '@/lib/offline-queue'
+import { generateTempId } from '@/lib/utils'
 import type { WishlistItem } from '@/lib/types'
 
 export interface UseWishlistsReturn {
@@ -84,6 +90,14 @@ export function useWishlists(): UseWishlistsReturn {
     }
   }, [isDemo, household?.id, initialFetchDone, fetchData])
 
+  // Subscribe to realtime changes for instant sync between family members
+  useRealtimeSubscription<WishlistItem>({
+    table: 'wishlist_items',
+    filter: household?.id ? createHouseholdFilter(household.id) : undefined,
+    enabled: !isDemo && !!household?.id,
+    onAny: fetchData,
+  })
+
   // Refetch when coming back online (syncs temp items with server data)
   useEffect(() => {
     if (isDemo || typeof window === 'undefined') return
@@ -129,14 +143,20 @@ export function useWishlists(): UseWishlistsReturn {
 
     // If offline, queue the change for later sync
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      // Generate temp ID first so we can store it in the queue for later matching
-      const tempId = `temp-${Date.now()}`
-      await queueChange({
+      // Generate unique temp ID to avoid collisions
+      const tempId = generateTempId()
+
+      const result = await safeQueueChange({
         table: 'wishlist_items',
         operation: 'insert',
         data: { ...item, _tempId: tempId } as Record<string, unknown>,
       })
-      // Optimistically add to local state with temporary ID
+
+      if (!result.success) {
+        throw new Error(`Kunne ikke lagre ønsket offline: ${result.error}`)
+      }
+
+      // Only update UI after successful queue
       const tempItem: WishlistItem = {
         ...item,
         id: tempId,
@@ -189,22 +209,28 @@ export function useWishlists(): UseWishlistsReturn {
 
     // If offline, queue the change for later sync
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      let result
       if (itemId.startsWith('temp-')) {
         // For temp items, update the queued insert's data directly
-        await updateQueuedInsert('wishlist_items', '_tempId', itemId, updates)
+        result = await safeUpdateQueuedInsert('wishlist_items', '_tempId', itemId, updates)
       } else {
         // For real items, queue a separate update operation
         // Include original updated_at for conflict detection during sync
         // Use ref to avoid dependency on items array (prevents unnecessary re-renders)
         const existingItem = itemsRef.current.find(i => i.id === itemId)
-        await queueChange({
+        result = await safeQueueChange({
           table: 'wishlist_items',
           operation: 'update',
           data: { id: itemId, ...updates } as Record<string, unknown>,
           originalUpdatedAt: existingItem?.updated_at ?? undefined,
         })
       }
-      // Optimistically update local state
+
+      if (!result.success) {
+        throw new Error(`Kunne ikke oppdatere ønsket offline: ${result.error}`)
+      }
+
+      // Only update UI after successful queue
       setItems(prev => prev.map(i => i.id === itemId ? { ...i, ...updates } : i))
       return
     }
@@ -233,18 +259,24 @@ export function useWishlists(): UseWishlistsReturn {
 
     // If offline, queue the change for later sync
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      let result
       if (itemId.startsWith('temp-')) {
         // For temp items, remove the queued insert entirely
-        await removeQueuedInsert('wishlist_items', '_tempId', itemId)
+        result = await safeRemoveQueuedInsert('wishlist_items', '_tempId', itemId)
       } else {
         // For real items, queue a delete operation
-        await queueChange({
+        result = await safeQueueChange({
           table: 'wishlist_items',
           operation: 'delete',
           data: { id: itemId },
         })
       }
-      // Optimistically remove from local state
+
+      if (!result.success) {
+        throw new Error(`Kunne ikke slette ønsket offline: ${result.error}`)
+      }
+
+      // Only update UI after successful queue
       setItems(prev => prev.filter(i => i.id !== itemId))
       return
     }
@@ -272,6 +304,19 @@ export function useWishlists(): UseWishlistsReturn {
       updateItem,
       deleteItem,
       refetch: () => {}, // No-op in demo
+    }
+  }
+
+  // Demo mode initializing: show loading
+  if (isDemo && !demoState) {
+    return {
+      items: [],
+      loading: true,
+      error: null,
+      addItem,
+      updateItem,
+      deleteItem,
+      refetch: () => {},
     }
   }
 

@@ -23,8 +23,10 @@ describe('createHouseholdFilter', () => {
     expect(createHouseholdFilter(uuid)).toBe(`household_id=eq.${uuid}`)
   })
 
-  it('handles any string', () => {
-    expect(createHouseholdFilter('test')).toBe('household_id=eq.test')
+  it('returns undefined for invalid UUID', () => {
+    expect(createHouseholdFilter('test')).toBeUndefined()
+    expect(createHouseholdFilter('')).toBeUndefined()
+    expect(createHouseholdFilter('not-a-uuid')).toBeUndefined()
   })
 })
 
@@ -32,6 +34,12 @@ describe('createListFilter', () => {
   it('creates a valid list filter', () => {
     const uuid = '550e8400-e29b-41d4-a716-446655440000'
     expect(createListFilter(uuid)).toBe(`list_id=eq.${uuid}`)
+  })
+
+  it('returns undefined for invalid UUID', () => {
+    expect(createListFilter('test')).toBeUndefined()
+    expect(createListFilter('')).toBeUndefined()
+    expect(createListFilter('not-a-uuid')).toBeUndefined()
   })
 })
 

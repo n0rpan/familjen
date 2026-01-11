@@ -15,11 +15,15 @@ const VALIDATION_COOKIE = 'familjen-auth-validated'
 // Only validate with Supabase server every 5 minutes (instant navigation between validations)
 const VALIDATION_INTERVAL_MS = 5 * 60 * 1000
 
+// Timeout for auth validation call to prevent hanging requests
+const AUTH_TIMEOUT_MS = 5000
+
 // Check if request has a Supabase auth cookie (quick check without calling auth API)
 function hasAuthCookie(request: NextRequest): boolean {
   const cookies = request.cookies.getAll()
   // Supabase auth cookies are named like: sb-<project-ref>-auth-token
-  return cookies.some(cookie => cookie.name.includes('-auth-token'))
+  // Use specific pattern to avoid matching cookies from other services
+  return cookies.some(cookie => /^sb-[a-z0-9]+-auth-token/.test(cookie.name))
 }
 
 // Check if request is in demo mode
@@ -99,8 +103,28 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  // Validate session with Supabase (network call)
-  const { data: { user } } = await supabase.auth.getUser()
+  // Validate session with Supabase (network call with timeout)
+  let user = null
+  try {
+    const authPromise = supabase.auth.getUser()
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Auth timeout')), AUTH_TIMEOUT_MS)
+    })
+
+    const result = await Promise.race([authPromise, timeoutPromise])
+    user = result.data.user
+  } catch (error) {
+    console.warn('[Middleware] Auth validation failed or timed out:', error)
+    // On timeout/error for non-protected routes, allow through
+    // Background validator will catch invalid sessions later
+    if (!isProtectedPath) {
+      return NextResponse.next({ request })
+    }
+    // For protected paths, redirect to login on timeout/error
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    return NextResponse.redirect(url)
+  }
 
   // Protected routes - redirect to login if session is invalid/expired
   if (!user && isProtectedPath) {

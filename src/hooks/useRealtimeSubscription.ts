@@ -243,18 +243,20 @@ export function useRealtimeSubscription<T extends object>({
   }
 }
 
-// Helper to create a household filter string
-export function createHouseholdFilter(householdId: string): string {
+// Validation regexes (defined before filter helpers that use them)
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// Helper to create a household filter string (with UUID validation)
+export function createHouseholdFilter(householdId: string): string | undefined {
+  if (!UUID_REGEX.test(householdId)) return undefined
   return `household_id=eq.${householdId}`
 }
 
-// Helper to create a list_id filter for a single shopping list
-export function createListFilter(listId: string): string {
+// Helper to create a list_id filter for a single shopping list (with UUID validation)
+export function createListFilter(listId: string): string | undefined {
+  if (!UUID_REGEX.test(listId)) return undefined
   return `list_id=eq.${listId}`
 }
-
-// Validation regexes
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const COLUMN_REGEX = /^[a-z_][a-z0-9_]*$/i
 
 /**

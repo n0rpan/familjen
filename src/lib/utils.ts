@@ -340,3 +340,15 @@ export function normalizePath(path: string): string {
     ? withoutQuery.slice(0, -1)
     : withoutQuery
 }
+
+/**
+ * Generate a unique temporary ID for offline items.
+ * Uses timestamp + random suffix to avoid collisions when multiple items
+ * are created in the same millisecond.
+ *
+ * @example
+ * generateTempId() // => 'temp-1702500000000-x7k2m9'
+ */
+export function generateTempId(): string {
+  return `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}

@@ -1313,17 +1313,43 @@ scripts/
 ├── ai-security-review.ts     # 🆕 OWASP Top 10 security scanning
 ├── ai-pr-quality.ts          # 🆕 PR description/size/commit quality
 ├── ai-dependency-review.ts   # 🆕 Dependency security and license review
-├── ai-bundle-size.ts         # 🆕 Bundle size tracking with AI suggestions
-├── ai-changelog.ts           # 🆕 Auto-generates release notes from commits
-├── ai-visual-validation.ts   # Evaluates screenshots (non-blocking)
+├── ai-bundle-size.ts         # 📦 Bundle size tracking (manual use, not in CI)
+├── ai-changelog.ts           # 📦 Auto-generates release notes (manual use, not in CI)
+├── ai-visual-review.ts       # 📦 Baseline comparison (local, requires baselines)
+├── ai-visual-validation.ts   # Evaluates screenshots against design system (CI)
 ├── ai-pr-test-generator.ts   # Generates PR-specific E2E test scenarios
 ├── api-test-reporter.ts      # Converts Vitest results to ReviewerOutput
 ├── e2e-test-reporter.ts      # Converts Playwright results to ReviewerOutput
 ├── ai-final-verdict.ts       # The "super AI" supervisor (BLOCKING)
 └── lib/
     ├── pr-state.ts           # Tracks test results across PR commits
-    └── dependency-graph.ts   # Analyzes file dependencies
+    ├── dependency-graph.ts   # Analyzes file dependencies
+    └── llm-utils.ts          # Cost tracking, diff caching, audit trail, selector feedback
 ```
+
+### LLM Utilities (scripts/lib/llm-utils.ts)
+
+Core utilities shared across all AI scripts:
+
+| Function | Purpose |
+|----------|---------|
+| `calculateCost(model, inputTokens, outputTokens)` | Estimate cost using model-specific pricing |
+| `recordLLMUsage(usage)` | Record API call to `ci-state/llm-usage.jsonl` |
+| `checkCostLimit()` | Check against $0.50 warning / $2.00 hard limit |
+| `getCostSummary()` | Get aggregated cost breakdown by operation and model |
+| `hashDiff(diff)` | Generate SHA256 hash for caching decisions |
+| `getCachedDecision(hash)` | Retrieve cached selector decision (24h TTL) |
+| `cacheDecision(...)` | Save decision to avoid redundant LLM calls |
+| `logAuditEntry(entry)` | Record decisions to `ci-state/audit-trail.jsonl` |
+| `recordSelectorFeedback(feedback)` | Track selector accuracy for improvement |
+| `formatCost(usd)` | Format cost for display (e.g., "$0.0042" or "$0.42¢") |
+| `generateCostSummaryMarkdown()` | Generate cost table for PR comment |
+
+**Cost tracking**: All AI scripts record usage to `ci-state/llm-usage.jsonl`. Use `getCostSummary()` to get breakdown by operation and model.
+
+**Diff caching**: Same PR diff = same selector decision (saves API calls on push-after-push). Cache expires after 24 hours.
+
+**Audit trail**: All decisions logged to `ci-state/audit-trail.jsonl` with reasoning for debugging and accuracy tracking.
 
 ### Environment Variables
 
@@ -1491,7 +1517,57 @@ npm run ai:visual-validate             # Validates screenshots against design sy
 
 # Final verdict (aggregates all reviewers, only run after other reviews)
 npm run ai:final-verdict               # Requires ai-reviews/*.json files
+
+# Additional scripts (run via npx tsx)
+npx tsx scripts/ai-security-review.ts --base origin/main
+npx tsx scripts/ai-pr-quality.ts
+npx tsx scripts/ai-dependency-review.ts --base origin/main
+npx tsx scripts/ai-pr-labeler.ts
+npx tsx scripts/ai-pr-test-generator.ts --base origin/main
 ```
+
+### Troubleshooting AI CI
+
+**Common errors and solutions:**
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `OPENROUTER_API_KEY is required` | Missing env var | Add `OPENROUTER_API_KEY` to GitHub Secrets |
+| `OPENROUTER_FAST_MODEL is required` | Missing env var | Add `OPENROUTER_FAST_MODEL` to GitHub Secrets |
+| `OpenRouter API error: 401` | Invalid API key | Regenerate key at openrouter.ai and update secret |
+| `OpenRouter API error: 404` | Invalid model ID | Check model exists: `curl openrouter.ai/api/v1/models` |
+| `OpenRouter API error: 429` | Rate limited | Wait 1 minute and re-run workflow |
+| `LLM call timed out` | Model overloaded | Re-run workflow, or use faster model |
+| `Failed to parse structured response` | Model returned invalid JSON | Check model supports JSON mode |
+| `Cost limit exceeded: $X >= $2` | Too many LLM calls | Reduce tool loops or increase limit in llm-utils.ts |
+
+**Debugging locally:**
+
+```bash
+# Test selector without LLM (dry run)
+npx tsx scripts/ai-test-selector.ts --dry-run --base main
+
+# Check what files changed
+git diff --name-only origin/main
+
+# Verify API key works
+curl -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+  https://openrouter.ai/api/v1/models | jq '.data[0].id'
+
+# Check ci-state files created
+ls -la ci-state/
+cat ci-state/llm-usage.jsonl  # Cost tracking
+cat ci-state/audit-trail.jsonl  # Decision log
+```
+
+**CI workflow issues:**
+
+| Issue | Solution |
+|-------|----------|
+| Selector runs but tests don't skip | Check `ci-state/test-selection.json` for decisions |
+| Final verdict always blocks | Check all reviewer artifacts uploaded correctly |
+| Visual validation fails | Ensure Vercel preview is deployed before running |
+| E2E tests timeout | Increase timeout in workflow or check preview health |
 
 ### Migration Review
 

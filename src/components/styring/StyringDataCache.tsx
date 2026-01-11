@@ -8,7 +8,7 @@
  * 2. StyringDataCacher: Caches server data to IndexedDB after it renders
  */
 
-import React, { useEffect, useState, type ReactNode } from 'react'
+import React, { useEffect, useState, useRef, type ReactNode } from 'react'
 import { getCached, setCache, isCacheFresh } from '@/lib/cache'
 import { setStoredHouseholdId } from '@/components/SmartLoading'
 import { getCachedSync, setCacheSync, isSyncCacheFresh } from '@/lib/cache-sync'
@@ -142,10 +142,39 @@ interface StyringDataCacherProps {
 }
 
 /**
+ * Generate a fingerprint for styring data to detect actual content changes
+ */
+function getStyringDataFingerprint(data: StyringPageData): string {
+  return [
+    data.accounts.length,
+    data.somfyDevices.length,
+    data.toshibaDevices.length,
+    data.melcloudDevices.length,
+    data.groups.length,
+    // Include first device ID for change detection
+    data.somfyDevices[0]?.id ?? '',
+    data.accounts[0]?.id ?? '',
+  ].join('|')
+}
+
+/**
  * StyringDataCacher - Caches server-rendered data to localStorage + IndexedDB
+ *
+ * OPTIMIZATION: Uses fingerprint comparison to skip re-caching when
+ * data object reference changes but content is the same.
  */
 export function StyringDataCacher({ householdId, data }: StyringDataCacherProps) {
+  const lastFingerprintRef = useRef<string | null>(null)
+
   useEffect(() => {
+    const fingerprint = getStyringDataFingerprint(data)
+
+    // Skip re-caching if data content hasn't changed
+    if (lastFingerprintRef.current === fingerprint) {
+      return
+    }
+    lastFingerprintRef.current = fingerprint
+
     async function cacheData() {
       const cacheKey = CACHE_KEYS.styring(householdId)
       const dataWithVersion = { ...data, version: CACHE_VERSION }

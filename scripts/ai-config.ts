@@ -623,19 +623,97 @@ export async function callOpenRouterStructured<T>(
 }
 
 /**
- * Fallback parser for models that don't support structured outputs
+ * Fallback parser for models that don't support structured outputs.
+ *
+ * Strategy (in order of preference):
+ * 1. Extract from markdown code block (most specific, handles ```json ... ```)
+ * 2. Find first balanced JSON object from start of content (handles raw JSON)
+ * 3. Find first balanced JSON object anywhere in content (fallback)
+ *
+ * The balanced brace matching prevents greedy regex from matching
+ * the wrong object when multiple JSON objects exist in the response.
  */
 export function parseJsonFromResponse(content: string): Record<string, unknown> | null {
-  // Try to find JSON in the response (handles markdown code blocks)
-  const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/) || content.match(/(\{[\s\S]*\})/)
-  if (!jsonMatch) {
-    return null
+  // Strategy 1: Try markdown code block first (most reliable)
+  const codeBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (codeBlockMatch) {
+    try {
+      return JSON.parse(codeBlockMatch[1].trim())
+    } catch {
+      // Code block content wasn't valid JSON, continue to next strategy
+    }
   }
-  try {
-    return JSON.parse(jsonMatch[1] || jsonMatch[0])
-  } catch {
-    return null
+
+  // Strategy 2: Try to extract balanced JSON object from start
+  const trimmed = content.trim()
+  if (trimmed.startsWith('{')) {
+    const extracted = extractBalancedJson(trimmed)
+    if (extracted) {
+      try {
+        return JSON.parse(extracted)
+      } catch {
+        // Continue to next strategy
+      }
+    }
   }
+
+  // Strategy 3: Find first { and try to extract balanced object
+  const firstBrace = content.indexOf('{')
+  if (firstBrace >= 0) {
+    const extracted = extractBalancedJson(content.slice(firstBrace))
+    if (extracted) {
+      try {
+        return JSON.parse(extracted)
+      } catch {
+        // All strategies failed
+      }
+    }
+  }
+
+  return null
+}
+
+/**
+ * Extract a balanced JSON object from a string.
+ * Counts braces to find matching closing brace, respecting string literals.
+ */
+function extractBalancedJson(str: string): string | null {
+  if (!str.startsWith('{')) return null
+
+  let depth = 0
+  let inString = false
+  let escape = false
+
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i]
+
+    if (escape) {
+      escape = false
+      continue
+    }
+
+    if (char === '\\' && inString) {
+      escape = true
+      continue
+    }
+
+    if (char === '"' && !escape) {
+      inString = !inString
+      continue
+    }
+
+    if (inString) continue
+
+    if (char === '{') depth++
+    if (char === '}') {
+      depth--
+      if (depth === 0) {
+        return str.slice(0, i + 1)
+      }
+    }
+  }
+
+  return null // No balanced closing brace found
 }
 
 /**

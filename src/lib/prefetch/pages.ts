@@ -373,7 +373,7 @@ export async function prefetchAllPages(householdId: string): Promise<void> {
  * Prefetch settings page data (household info, members, children)
  */
 export async function prefetchSettingsData(householdId: string): Promise<void> {
-  const cacheKey = `settings-${householdId}`
+  const cacheKey = CACHE_KEYS.settings(householdId)
 
   // Skip if already cached and fresh
   const cached = await getCached(cacheKey)

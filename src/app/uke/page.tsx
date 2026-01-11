@@ -20,6 +20,7 @@
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { getSessionLocal } from '@/lib/supabase/server'
+import { getHouseholdIdFromSession } from '@/lib/data/server'
 import { getWeekStart, getWeekStartFromWeekNumber } from '@/lib/utils'
 import { WeekDataLoader } from './components/WeekDataLoader'
 import { WeekCacheFallback } from './components/WeekDataCache'
@@ -81,10 +82,11 @@ export default async function WeekPage({ searchParams }: PageProps) {
     redirect('/login')
   }
 
-  // Get household ID from JWT
-  const householdId = user.app_metadata?.household_id as string | undefined
+  // Get household ID with fallback to DB if JWT is stale
+  const householdId = await getHouseholdIdFromSession()
   if (!householdId) {
-    redirect('/login')
+    // No household - redirect to home where user can see onboarding options
+    redirect('/')
   }
 
   const { week, year } = parseWeekParam(params.uke)

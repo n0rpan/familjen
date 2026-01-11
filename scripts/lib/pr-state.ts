@@ -301,20 +301,34 @@ export function getCurrentCommitSha(): string {
 export function getPRChangedFiles(baseBranch: string): string[] {
   // Normalize: strip leading 'origin/' if present to avoid 'origin/origin/main'
   const normalizedBase = baseBranch.replace(/^origin\//, '')
+  const cmd = `git diff --name-only origin/${normalizedBase}...HEAD`
+
+  console.log(`   🔍 Running: ${cmd}`)
 
   try {
-    const output = execSync(`git diff --name-only origin/${normalizedBase}...HEAD`, {
+    const output = execSync(cmd, {
       encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'], // Capture stderr too
     })
-    return output.trim().split('\n').filter(Boolean)
-  } catch {
+    const files = output.trim().split('\n').filter(Boolean)
+    console.log(`   ✓ Found ${files.length} changed files`)
+    return files
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    console.warn(`   ⚠️ Primary diff failed: ${errorMsg}`)
+
     // Fallback to last commit
+    const fallbackCmd = 'git diff --name-only HEAD~1'
+    console.log(`   🔍 Fallback: ${fallbackCmd}`)
+
     try {
-      return execSync('git diff --name-only HEAD~1', { encoding: 'utf-8' })
-        .trim()
-        .split('\n')
-        .filter(Boolean)
-    } catch {
+      const output = execSync(fallbackCmd, { encoding: 'utf-8' })
+      const files = output.trim().split('\n').filter(Boolean)
+      console.log(`   ✓ Fallback found ${files.length} files`)
+      return files
+    } catch (fallbackError) {
+      const fallbackMsg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+      console.warn(`   ⚠️ Fallback also failed: ${fallbackMsg}`)
       return []
     }
   }

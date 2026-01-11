@@ -273,3 +273,76 @@ export async function removeQueuedInsert(
     }
   })
 }
+
+// ============================================================================
+// Safe Wrappers - Return success/error instead of throwing
+// ============================================================================
+
+/**
+ * Result of a safe queue operation
+ */
+export interface QueueOperationResult {
+  success: boolean
+  error?: string
+  id?: string // For queueChange, returns the generated ID
+}
+
+/**
+ * Safe wrapper for queueChange that catches errors and returns a result object.
+ * Use this in components to avoid unhandled promise rejections.
+ */
+export async function safeQueueChange(change: QueueChangeOptions): Promise<QueueOperationResult> {
+  try {
+    const id = await queueChange(change)
+    return { success: true, id }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to queue change'
+    console.error('[OfflineQueue] Failed to queue change:', error)
+    return { success: false, error: message }
+  }
+}
+
+/**
+ * Safe wrapper for updateQueuedInsert that catches errors and returns a result object.
+ * Returns success: false if item not found OR if an error occurred.
+ */
+export async function safeUpdateQueuedInsert(
+  table: string,
+  matchField: string,
+  matchValue: unknown,
+  updates: Record<string, unknown>
+): Promise<QueueOperationResult> {
+  try {
+    const updated = await updateQueuedInsert(table, matchField, matchValue, updates)
+    if (!updated) {
+      return { success: false, error: 'Item not found in queue' }
+    }
+    return { success: true }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to update queued item'
+    console.error('[OfflineQueue] Failed to update queued insert:', error)
+    return { success: false, error: message }
+  }
+}
+
+/**
+ * Safe wrapper for removeQueuedInsert that catches errors and returns a result object.
+ * Returns success: false if item not found OR if an error occurred.
+ */
+export async function safeRemoveQueuedInsert(
+  table: string,
+  matchField: string,
+  matchValue: unknown
+): Promise<QueueOperationResult> {
+  try {
+    const removed = await removeQueuedInsert(table, matchField, matchValue)
+    if (!removed) {
+      return { success: false, error: 'Item not found in queue' }
+    }
+    return { success: true }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to remove queued item'
+    console.error('[OfflineQueue] Failed to remove queued insert:', error)
+    return { success: false, error: message }
+  }
+}

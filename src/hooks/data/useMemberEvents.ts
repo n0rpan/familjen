@@ -15,6 +15,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
+import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealtimeSubscription'
 import { formatDateISO } from '@/lib/utils'
 import type { MemberEvent } from '@/lib/types'
 
@@ -110,6 +111,14 @@ export function useMemberEvents(options: UseMemberEventsOptions = {}): UseMember
     }
   }, [isDemo, supabase, household?.id, startDateStr, endDateStr, currentFetchKey])
 
+  // Subscribe to realtime changes for instant sync between family members
+  useRealtimeSubscription<MemberEvent>({
+    table: 'member_events',
+    filter: household?.id ? createHouseholdFilter(household.id) : undefined,
+    enabled: !isDemo && !!household?.id,
+    onAny: fetchData,
+  })
+
   // Fetch when household or date range changes
   useEffect(() => {
     if (!isDemo && household?.id && lastFetchKey !== currentFetchKey) {
@@ -191,6 +200,19 @@ export function useMemberEvents(options: UseMemberEventsOptions = {}): UseMember
       throw err
     }
   }, [isDemo, supabase, fetchData])
+
+  // Demo mode initializing: show loading while demoState is not yet available
+  if (isDemo && !demoState) {
+    return {
+      events: [],
+      loading: true,
+      error: null,
+      addEvent,
+      updateEvent,
+      deleteEvent,
+      refetch: () => {},
+    }
+  }
 
   // Demo mode: return demo data with filtering
   if (isDemo && demoState) {

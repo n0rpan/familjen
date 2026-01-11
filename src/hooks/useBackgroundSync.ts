@@ -94,19 +94,34 @@ export function useBackgroundSync() {
       for (const change of changes) {
         try {
           await processChange(supabase, change)
-          await removeChange(change.id)
+
+          // Nested try-catch to prevent queue cleanup errors from stopping the loop
+          try {
+            await removeChange(change.id)
+          } catch (cleanupError) {
+            console.error('[BackgroundSync] Failed to remove synced change from queue:', cleanupError)
+            // Continue to next change - the sync was successful even if cleanup failed
+          }
+
           console.log(`[BackgroundSync] Synced: ${change.table} ${change.operation}`)
           dispatchSyncEvent(SYNC_EVENTS.SYNC_SUCCESS, { table: change.table, operation: change.operation })
         } catch (error) {
           console.warn(`[BackgroundSync] Failed to sync change:`, error)
 
           const droppedAfterRetries = change.retries >= MAX_RETRIES
-          if (droppedAfterRetries) {
-            // Give up after max retries
-            console.error(`[BackgroundSync] Removing failed change after ${MAX_RETRIES} retries:`, change)
-            await removeChange(change.id)
-          } else {
-            await incrementRetry(change.id)
+
+          // Nested try-catch to prevent queue state errors from stopping the loop
+          try {
+            if (droppedAfterRetries) {
+              // Give up after max retries
+              console.error(`[BackgroundSync] Removing failed change after ${MAX_RETRIES} retries:`, change)
+              await removeChange(change.id)
+            } else {
+              await incrementRetry(change.id)
+            }
+          } catch (cleanupError) {
+            console.error('[BackgroundSync] Failed to update queue state:', cleanupError)
+            // Continue to next change - don't exit the loop
           }
 
           // Dispatch failure event so UI can show toast

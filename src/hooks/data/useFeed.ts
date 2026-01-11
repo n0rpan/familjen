@@ -12,6 +12,7 @@ import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
 import { useChildren } from './useChildren'
 import { useTasks } from './useTasks'
+import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealtimeSubscription'
 import { getCached, setCache, isCacheFresh } from '@/lib/cache'
 import { CACHE_KEYS } from '@/lib/prefetch/pages'
 import type { FeedMessage } from '@/components/feed/MessageCard'
@@ -314,6 +315,31 @@ export function useFeed(): UseFeedReturn {
     await fetch('/api/integrations/extract-actions', { method: 'POST' })
     await fetchData()
   }, [isDemo, fetchData])
+
+  // Subscribe to realtime changes for instant sync between family members
+  // event_change_notifications has household_id, so we can filter
+  useRealtimeSubscription<EventNotification>({
+    table: 'event_change_notifications',
+    filter: household?.id ? createHouseholdFilter(household.id) : undefined,
+    enabled: !isDemo && !!household?.id,
+    onAny: fetchData,
+  })
+
+  // external_messages doesn't have household_id directly, subscribe without filter
+  // fetchData will apply proper join filter
+  useRealtimeSubscription<FeedMessage>({
+    table: 'external_messages',
+    enabled: !isDemo && !!household?.id,
+    onAny: fetchData,
+  })
+
+  // external_photos doesn't have household_id directly, subscribe without filter
+  // fetchData will apply proper join filter
+  useRealtimeSubscription<FeedPhoto>({
+    table: 'external_photos',
+    enabled: !isDemo && !!household?.id,
+    onAny: fetchData,
+  })
 
   // Check for prefetched cache and do initial fetch
   useEffect(() => {

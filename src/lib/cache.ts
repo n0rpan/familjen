@@ -263,6 +263,45 @@ export function isCacheFresh(entry: CacheEntry | null, maxAge: number): boolean 
 export const DEFAULT_MAX_AGE = 3 * 60 * 1000
 
 /**
+ * Store data in cache with a specific timestamp (for preserving original fetch time)
+ * Used when updating cache with realtime changes - preserves original data freshness
+ */
+export async function setCacheWithTimestamp<T>(
+  key: string,
+  data: T,
+  timestamp: number,
+  retryCount = 0
+): Promise<void> {
+  try {
+    const db = await openDB()
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite')
+      const store = tx.objectStore(STORE_NAME)
+
+      const entry: CacheEntry<T> = {
+        key,
+        data,
+        timestamp, // Use provided timestamp instead of Date.now()
+      }
+
+      tx.onabort = () => reject(tx.error)
+
+      const request = store.put(entry)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve()
+    })
+  } catch (error) {
+    if (isRecoverableError(error) && retryCount < 1) {
+      console.log('[Cache] Recoverable error, resetting connection and retrying:', error)
+      resetConnection()
+      return setCacheWithTimestamp<T>(key, data, timestamp, retryCount + 1)
+    }
+    console.warn('[Cache] Failed to set cache with timestamp:', error)
+  }
+}
+
+/**
  * Update cached data with a realtime change
  * This keeps the cache fresh for the next cold start without a server round-trip
  *
@@ -291,16 +330,34 @@ export async function updateCacheWithRealtimeChange<T extends Record<string, unk
     // Find the array field that corresponds to this table
     // Map table names to cache data fields
     const tableToField: Record<string, string> = {
+      // Core data
       pickups: 'pickups',
       meals: 'meals',
       child_tasks: 'tasks',
+      children: 'children',
+      household_members: 'members',
+      // Events
       member_events: 'memberEvents',
       household_events: 'householdEvents',
       external_events: 'externalEvents',
+      // Integrations
+      external_messages: 'messages',
+      external_photos: 'photos',
+      event_change_notifications: 'notifications',
+      // Shopping & Wishlists
+      shopping_lists: 'shoppingLists',
+      shopping_list_items: 'items',
+      wishlist_items: 'wishlistItems',
+      // Recipes
+      recipes: 'recipes',
     }
 
     const arrayField = tableToField[table]
-    if (!arrayField || !Array.isArray(cacheData[arrayField])) return
+    if (!arrayField) {
+      console.warn(`[Cache] Unknown table "${table}" - cannot update cache`)
+      return
+    }
+    if (!Array.isArray(cacheData[arrayField])) return
 
     const array = cacheData[arrayField] as Record<string, unknown>[]
     const id = data[idField]
@@ -327,8 +384,8 @@ export async function updateCacheWithRealtimeChange<T extends Record<string, unk
       }
     }
 
-    // Update the cache with modified data (preserves original timestamp)
-    await setCache(key, cacheData)
+    // Update the cache with modified data, preserving original timestamp
+    await setCacheWithTimestamp(key, cacheData, cached.timestamp)
     console.log(`[Cache] Updated ${table} cache with ${event}`)
   } catch (error) {
     console.warn('[Cache] Failed to update cache with realtime change:', error)
