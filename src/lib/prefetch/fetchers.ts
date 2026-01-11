@@ -6,13 +6,19 @@
 import { createClient } from '@/lib/supabase/client'
 import { getCached, setCache, isCacheFresh, DEFAULT_MAX_AGE } from '@/lib/cache'
 import { formatDateISO, addDays, getWeekStart, type Holiday } from '@/lib/utils'
+import { CACHE_KEYS } from '@/lib/cache-constants'
 import type { WeekCacheData, ShoppingCacheData, SettingsCacheData } from '@/lib/types'
 
 /**
  * Generate cache key for week data
+ * NOTE: Uses weekOffset for internal cache, but CACHE_KEYS.week uses weekStart date
+ * For consistency, we compute weekStart and use CACHE_KEYS.week
  */
 export function getWeekCacheKey(householdId: string, weekOffset: number = 0): string {
-  return `week:${householdId}:${weekOffset}`
+  const today = new Date()
+  const weekStart = addDays(getWeekStart(today), weekOffset * 7)
+  const weekStartStr = formatDateISO(weekStart)
+  return CACHE_KEYS.week(householdId, weekStartStr)
 }
 
 /**
@@ -136,16 +142,18 @@ export async function fetchAndCacheWeekData(householdId: string, weekOffset: num
 
 /**
  * Generate cache key for shopping data
+ * @deprecated Use CACHE_KEYS.shopping() from cache-constants.ts directly
  */
 export function getShoppingCacheKey(householdId: string): string {
-  return `shopping:${householdId}`
+  return CACHE_KEYS.shopping(householdId)
 }
 
 /**
  * Generate cache key for recipes data
+ * @deprecated Use CACHE_KEYS.recipes() from cache-constants.ts directly
  */
 export function getRecipesCacheKey(householdId: string): string {
-  return `recipes:${householdId}`
+  return CACHE_KEYS.recipes(householdId)
 }
 
 /**
@@ -262,9 +270,10 @@ export async function prefetchRecipesData(householdId: string): Promise<void> {
 
 /**
  * Generate cache key for settings data
+ * @deprecated Use CACHE_KEYS.settings() from cache-constants.ts directly
  */
 export function getSettingsCacheKey(householdId: string): string {
-  return `settings:${householdId}`
+  return CACHE_KEYS.settings(householdId)
 }
 
 /**
