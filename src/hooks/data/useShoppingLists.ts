@@ -103,6 +103,7 @@ export function useShoppingLists(): UseShoppingListsReturn {
 
       // Update cache for next navigation (silent, don't await)
       setCache(CACHE_KEYS.shopping(household.id), {
+        household,
         lists: listsData,
         items: itemsData || [],
         timestamp: Date.now(),

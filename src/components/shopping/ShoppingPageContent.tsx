@@ -328,6 +328,7 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
 
       const cacheKey = CACHE_KEYS.shopping(householdData.id)
       const cacheData = {
+        household: householdData,
         lists: listsData,
         items: itemsData || [],
         timestamp: Date.now(),
@@ -397,6 +398,7 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
       const listsOnly = lists.map(({ items: _, ...list }) => list as ShoppingList)
       const cacheKey = CACHE_KEYS.shopping(household.id)
       const cacheData = {
+        household,
         lists: listsOnly,
         items: allItems,
         timestamp: Date.now(),

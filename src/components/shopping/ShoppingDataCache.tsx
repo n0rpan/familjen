@@ -28,16 +28,34 @@ export interface CachedShoppingData {
 }
 
 /**
- * Transform cached data (lists + items separate) to ShoppingPageData format (lists with items)
+ * Transform cached data to ShoppingPageData format (lists with items)
+ *
+ * Handles two cache formats:
+ * 1. ShoppingDataCacher format: lists already have items attached (ShoppingPageData)
+ * 2. ShoppingPageContent format: lists and items stored separately (CachedShoppingData)
  */
 export function transformCachedData(cached: CachedShoppingData): ShoppingPageData {
+  // Check if lists already have items attached (from ShoppingDataCacher)
+  const firstList = cached.lists[0]
+  const listsHaveItems = firstList && Array.isArray((firstList as ShoppingListWithItems).items)
+
+  if (listsHaveItems) {
+    // Cache was written by ShoppingDataCacher - lists already have items
+    return {
+      household: cached.household ?? null,
+      lists: cached.lists as unknown as ShoppingListWithItems[],
+      timestamp: cached.timestamp,
+    }
+  }
+
+  // Cache was written by ShoppingPageContent - combine lists with items
   const listsWithItems: ShoppingListWithItems[] = cached.lists.map(list => ({
     ...list,
-    items: cached.items.filter(item => item.list_id === list.id),
+    items: (cached.items || []).filter(item => item.list_id === list.id),
   }))
 
   return {
-    household: cached.household,
+    household: cached.household ?? null,
     lists: listsWithItems,
     timestamp: cached.timestamp,
   }
