@@ -642,13 +642,14 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
       return
     }
 
-    // Success - update with real ID
+    // Success - update with real ID, then clear pending (realtime can handle future updates)
     pendingChanges.current.add(data.id)
     setLists(prev => prev.map(list =>
       list.id === listId
         ? { ...list, items: list.items.map(item => item.id === tempId ? data : item) }
         : list
     ))
+    pendingChanges.current.delete(data.id)
 
     // Background categorization
     if (!cachedCategory) {
@@ -748,8 +749,10 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
           ),
         }))
       )
-      pendingChanges.current.delete(itemId)
     }
+
+    // Clear pending change tracking (success or fail - realtime can handle future updates)
+    pendingChanges.current.delete(itemId)
   }
 
   const deleteItem = useCallback((itemId: string) => {
@@ -841,8 +844,10 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
           ? { ...l, items: [...boughtItems, ...l.items] }
           : l
       ))
-      boughtIds.forEach(id => pendingChanges.current.delete(id))
     }
+
+    // Clear pending change tracking (success or fail - realtime can handle future updates)
+    boughtIds.forEach(id => pendingChanges.current.delete(id))
   }
 
   const handleKeyDown = (e: React.KeyboardEvent, listId: string) => {
@@ -897,13 +902,14 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
       return
     }
 
-    // Success - update with real ID
+    // Success - update with real ID, then clear pending (realtime can handle future updates)
     pendingChanges.current.add(data.id)
     setLists(prev => prev.map(list =>
       list.id === mainList.id
         ? { ...list, items: list.items.map(item => item.id === tempId ? data : item) }
         : list
     ))
+    pendingChanges.current.delete(data.id)
   }, [lists, supabase])
 
   // Get final loading/error values for conditional rendering
