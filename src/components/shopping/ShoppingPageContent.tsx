@@ -136,19 +136,6 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
           console.error('Failed to delete item from database:', error)
           return false
         }
-
-        // Verify deletion - RLS can silently block without error
-        const { data: stillExists } = await supabase
-          .from('shopping_list_items')
-          .select('id')
-          .eq('id', item.id)
-          .maybeSingle()
-
-        if (stillExists) {
-          console.error('Delete verification failed - item still exists:', item.id)
-          return false
-        }
-
         pendingChanges.current.delete(item.id)
         return true
       } catch (error) {
@@ -723,36 +710,14 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
           ),
         }))
       )
-      pendingChanges.current.delete(itemId)
-      return
     }
 
-    // Verify update succeeded by checking current value (RLS can block silently)
-    const { data: verifyData, error: verifyError } = await supabase
-      .from('shopping_list_items')
-      .select('is_bought')
-      .eq('id', itemId)
-      .maybeSingle()
-
-    if (verifyError || !verifyData || verifyData.is_bought !== newValue) {
-      console.error('Update verification failed:', {
-        verifyError: verifyError?.message,
-        verifyData,
-        expected: newValue,
-        itemId,
-      })
-      setLists(prev =>
-        prev.map(list => ({
-          ...list,
-          items: list.items.map(item =>
-            item.id === itemId ? { ...item, is_bought: currentValue } : item
-          ),
-        }))
-      )
-    }
-
-    // Clear pending change tracking (success or fail - realtime can handle future updates)
+    // Clear pending change tracking
     pendingChanges.current.delete(itemId)
+
+    // Refresh from server in background to sync cache with reality
+    // This handles stale cache items and silent RLS failures
+    refreshData()
   }
 
   const deleteItem = useCallback((itemId: string) => {
@@ -826,28 +791,13 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
           ? { ...l, items: [...boughtItems, ...l.items] }
           : l
       ))
-      boughtIds.forEach(id => pendingChanges.current.delete(id))
-      return
     }
 
-    // Verify deletion by checking if items still exist (RLS can block silently)
-    const { data: remainingItems } = await supabase
-      .from('shopping_list_items')
-      .select('id')
-      .in('id', boughtIds)
-
-    if (remainingItems && remainingItems.length > 0) {
-      console.error('Failed to delete items: RLS blocked deletion (session expired?)')
-      // Rollback - restore the bought items
-      setLists(prev => prev.map(l =>
-        l.id === listId
-          ? { ...l, items: [...boughtItems, ...l.items] }
-          : l
-      ))
-    }
-
-    // Clear pending change tracking (success or fail - realtime can handle future updates)
+    // Clear pending change tracking
     boughtIds.forEach(id => pendingChanges.current.delete(id))
+
+    // Refresh from server in background to sync cache with reality
+    refreshData()
   }
 
   const handleKeyDown = (e: React.KeyboardEvent, listId: string) => {
