@@ -16,7 +16,7 @@ import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
 import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealtimeSubscription'
 import { getCached, setCache, isCacheFresh } from '@/lib/cache'
-import { CACHE_KEYS } from '@/lib/prefetch/pages'
+import { CACHE_KEYS, CACHE_VERSION } from '@/lib/cache-constants'
 import type { ShoppingList, ShoppingListItem } from '@/lib/types'
 
 // Cache max age - 3 minutes (same as prefetch)
@@ -102,9 +102,11 @@ export function useShoppingLists(): UseShoppingListsReturn {
       setLists(listsWithItems)
 
       // Update cache for next navigation (silent, don't await)
-      setCache<ShoppingCacheData>(CACHE_KEYS.shopping(household.id), {
+      setCache(CACHE_KEYS.shopping(household.id), {
         lists: listsData,
         items: itemsData || [],
+        timestamp: Date.now(),
+        version: CACHE_VERSION,
       }).catch(() => {})
     } catch (err) {
       console.error('Error fetching shopping lists:', err)

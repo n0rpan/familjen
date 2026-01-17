@@ -52,6 +52,7 @@ export interface WeekCacheData {
   weekStartStr: string
   weekEndStr: string
   timestamp: number
+  version?: number  // Cache version for schema validation
 }
 
 // Shopping list cache data
@@ -59,6 +60,7 @@ export interface ShoppingCacheData {
   lists: ShoppingList[]
   items: ShoppingListItem[]
   timestamp: number
+  version?: number  // Cache version for schema validation
 }
 
 // Settings page cache data
@@ -69,6 +71,7 @@ export interface SettingsCacheData {
   myProfile: HouseholdMember | null
   connectedCalendarEmail: string | null
   timestamp: number
+  version?: number  // Cache version for schema validation
 }
 
 // Audit fields shared by most entities

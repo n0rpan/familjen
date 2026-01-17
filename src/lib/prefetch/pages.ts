@@ -44,7 +44,7 @@ export async function prefetchFeedData(householdId: string): Promise<void> {
 
     if (!householdData?.external_integrations_enabled) {
       // Cache that integrations are disabled
-      await setCache(cacheKey, { integrationsEnabled: false })
+      await setCache(cacheKey, { integrationsEnabled: false, version: CACHE_VERSION })
       return
     }
 
@@ -112,6 +112,7 @@ export async function prefetchFeedData(householdId: string): Promise<void> {
       integrationChildren: integrationChildrenResult.data || [],
       photos: photosResult.data || [],
       notifications: notificationsResult.data || [],
+      version: CACHE_VERSION,
     })
   } catch (error) {
     console.warn('[Prefetch] Failed to prefetch feed data:', error)
@@ -144,7 +145,7 @@ export async function prefetchShoppingData(householdId: string): Promise<void> {
       .order('sort_order', { ascending: true })
 
     if (!listsData || listsData.length === 0) {
-      await setCache(cacheKey, { lists: [], items: [] })
+      await setCache(cacheKey, { lists: [], items: [], version: CACHE_VERSION })
       return
     }
 
@@ -159,6 +160,7 @@ export async function prefetchShoppingData(householdId: string): Promise<void> {
     await setCache(cacheKey, {
       lists: listsData,
       items: itemsData || [],
+      version: CACHE_VERSION,
     })
   } catch (error) {
     console.warn('[Prefetch] Failed to prefetch shopping data:', error)
@@ -189,6 +191,7 @@ export async function prefetchRecipesData(householdId: string): Promise<void> {
 
     await setCache(cacheKey, {
       recipes: recipesData || [],
+      version: CACHE_VERSION,
     })
   } catch (error) {
     console.warn('[Prefetch] Failed to prefetch recipes data:', error)
@@ -405,6 +408,7 @@ export async function prefetchSettingsData(householdId: string): Promise<void> {
       household: householdResult.data,
       members: membersResult.data || [],
       children: childrenResult.data || [],
+      version: CACHE_VERSION,
     })
   } catch (error) {
     console.warn('[Prefetch] Failed to prefetch settings data:', error)

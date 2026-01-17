@@ -21,6 +21,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useDataSource } from './useDataSource'
 import { useAuthState } from '../useAuthState'
 import { getCached, setCache, isCacheFresh, deleteCache } from '@/lib/cache'
+import { CACHE_VERSION } from '@/lib/cache-constants'
 import type { Household, HouseholdMember } from '@/lib/types'
 
 // Cache household data for 5 minutes
@@ -30,6 +31,7 @@ const HOUSEHOLD_CACHE_MAX_AGE = 5 * 60 * 1000
 interface CachedHouseholdData {
   household: Household
   currentMember: HouseholdMember
+  version?: number
 }
 
 export interface UseHouseholdReturn {
@@ -117,6 +119,7 @@ export function useHousehold(): UseHouseholdReturn {
         await setCache<CachedHouseholdData>(HOUSEHOLD_CACHE_KEY, {
           household: householdData,
           currentMember: member,
+          version: CACHE_VERSION,
         })
       } else {
         setLoading(false)

@@ -23,9 +23,10 @@ import { DEFAULT_FILTER_CATEGORIES, DEFAULT_CATEGORY_ORDER } from '@/lib/constan
 import {
   getCachedShoppingData,
   fetchAndCacheShoppingData,
-  getShoppingCacheKey,
 } from '@/lib/prefetch/fetchers'
 import { setCache } from '@/lib/cache'
+import { setCacheSync } from '@/lib/cache-sync'
+import { CACHE_VERSION, CACHE_KEYS } from '@/lib/cache-constants'
 import type { ShoppingCacheData } from '@/lib/types'
 import type { ShoppingPageData } from '@/lib/data/server'
 
@@ -325,12 +326,15 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
       const listsWithItems = combineListsWithItems(listsData, itemsData || [])
       setLists(listsWithItems)
 
-      const cacheData: ShoppingCacheData = {
+      const cacheKey = CACHE_KEYS.shopping(householdData.id)
+      const cacheData = {
         lists: listsData,
         items: itemsData || [],
         timestamp: Date.now(),
+        version: CACHE_VERSION,
       }
-      await setCache(getShoppingCacheKey(householdData.id), cacheData)
+      setCacheSync(cacheKey, cacheData)
+      await setCache(cacheKey, cacheData)
     } catch (err) {
       console.error('Shopping list error:', err)
       setError(err instanceof Error ? err.message : tRef.current.errors.generic)
@@ -391,12 +395,17 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     cacheDebounceRef.current = setTimeout(async () => {
       const allItems = lists.flatMap(l => l.items)
       const listsOnly = lists.map(({ items: _, ...list }) => list as ShoppingList)
-      const cacheData: ShoppingCacheData = {
+      const cacheKey = CACHE_KEYS.shopping(household.id)
+      const cacheData = {
         lists: listsOnly,
         items: allItems,
         timestamp: Date.now(),
+        version: CACHE_VERSION,
       }
-      await setCache(getShoppingCacheKey(household.id), cacheData)
+      // Update localStorage first (sync) for instant reads on next navigation
+      setCacheSync(cacheKey, cacheData)
+      // Then update IndexedDB (async) for durability
+      await setCache(cacheKey, cacheData)
     }, 500)
 
     return () => {
