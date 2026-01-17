@@ -386,36 +386,76 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [refreshData])
 
+  // Cache update logic - extracted so it can be called immediately or debounced
   const cacheDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingCacheRef = useRef<{ household: Household; lists: ListWithItems[] } | null>(null)
+
+  const flushCache = useCallback(() => {
+    if (cacheDebounceRef.current) {
+      clearTimeout(cacheDebounceRef.current)
+      cacheDebounceRef.current = null
+    }
+    const pending = pendingCacheRef.current
+    if (!pending) return
+
+    const { household: h, lists: l } = pending
+    const allItems = l.flatMap(list => list.items)
+    const listsOnly = l.map(({ items: _, ...list }) => list as ShoppingList)
+    const cacheKey = CACHE_KEYS.shopping(h.id)
+    const cacheData = {
+      household: h,
+      lists: listsOnly,
+      items: allItems,
+      timestamp: Date.now(),
+      version: CACHE_VERSION,
+    }
+    // Sync write to localStorage (instant for next navigation)
+    setCacheSync(cacheKey, cacheData)
+    // Async write to IndexedDB (fire and forget on flush)
+    setCache(cacheKey, cacheData).catch(() => {})
+    pendingCacheRef.current = null
+  }, [])
+
   useEffect(() => {
     if (!household || lists.length === 0) return
+
+    // Store pending cache data
+    pendingCacheRef.current = { household, lists }
 
     if (cacheDebounceRef.current) {
       clearTimeout(cacheDebounceRef.current)
     }
-    cacheDebounceRef.current = setTimeout(async () => {
-      const allItems = lists.flatMap(l => l.items)
-      const listsOnly = lists.map(({ items: _, ...list }) => list as ShoppingList)
-      const cacheKey = CACHE_KEYS.shopping(household.id)
-      const cacheData = {
-        household,
-        lists: listsOnly,
-        items: allItems,
-        timestamp: Date.now(),
-        version: CACHE_VERSION,
-      }
-      // Update localStorage first (sync) for instant reads on next navigation
-      setCacheSync(cacheKey, cacheData)
-      // Then update IndexedDB (async) for durability
-      await setCache(cacheKey, cacheData)
+    cacheDebounceRef.current = setTimeout(() => {
+      flushCache()
     }, 500)
 
     return () => {
       if (cacheDebounceRef.current) {
         clearTimeout(cacheDebounceRef.current)
+        cacheDebounceRef.current = null
       }
     }
-  }, [household, lists])
+  }, [household, lists, flushCache])
+
+  // Flush cache immediately when navigating away or app goes to background
+  useEffect(() => {
+    const handleBeforeUnload = () => flushCache()
+    const handleVisibilityHidden = () => {
+      if (document.visibilityState === 'hidden') {
+        flushCache()
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    document.addEventListener('visibilitychange', handleVisibilityHidden)
+
+    // Also flush on unmount (component navigation)
+    return () => {
+      flushCache()
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      document.removeEventListener('visibilitychange', handleVisibilityHidden)
+    }
+  }, [flushCache])
 
   const listIds = useMemo(() => lists.map(l => l.id), [lists])
 
