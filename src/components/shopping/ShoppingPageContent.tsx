@@ -386,33 +386,39 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [refreshData])
 
-  const cacheDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Cache update logic:
+  // - localStorage: Write IMMEDIATELY on every change (crash protection, sync & fast)
+  // - IndexedDB: Debounce writes (more expensive async operation)
+  const indexedDBDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   useEffect(() => {
     if (!household || lists.length === 0) return
 
-    if (cacheDebounceRef.current) {
-      clearTimeout(cacheDebounceRef.current)
+    const allItems = lists.flatMap(l => l.items)
+    const listsOnly = lists.map(({ items: _, ...list }) => list as ShoppingList)
+    const cacheKey = CACHE_KEYS.shopping(household.id)
+    const cacheData = {
+      household,
+      lists: listsOnly,
+      items: allItems,
+      timestamp: Date.now(),
+      version: CACHE_VERSION,
     }
-    cacheDebounceRef.current = setTimeout(async () => {
-      const allItems = lists.flatMap(l => l.items)
-      const listsOnly = lists.map(({ items: _, ...list }) => list as ShoppingList)
-      const cacheKey = CACHE_KEYS.shopping(household.id)
-      const cacheData = {
-        household,
-        lists: listsOnly,
-        items: allItems,
-        timestamp: Date.now(),
-        version: CACHE_VERSION,
-      }
-      // Update localStorage first (sync) for instant reads on next navigation
-      setCacheSync(cacheKey, cacheData)
-      // Then update IndexedDB (async) for durability
+
+    // Write to localStorage IMMEDIATELY (sync, fast, crash protection)
+    setCacheSync(cacheKey, cacheData)
+
+    // Debounce IndexedDB writes (async, more expensive)
+    if (indexedDBDebounceRef.current) {
+      clearTimeout(indexedDBDebounceRef.current)
+    }
+    indexedDBDebounceRef.current = setTimeout(async () => {
       await setCache(cacheKey, cacheData)
     }, 500)
 
     return () => {
-      if (cacheDebounceRef.current) {
-        clearTimeout(cacheDebounceRef.current)
+      if (indexedDBDebounceRef.current) {
+        clearTimeout(indexedDBDebounceRef.current)
       }
     }
   }, [household, lists])
@@ -612,50 +618,55 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
       .select()
       .single()
 
-    if (data) {
-      pendingChanges.current.add(data.id)
-      setLists(prev => prev.map(list =>
-        list.id === listId
-          ? { ...list, items: list.items.map(item => item.id === tempId ? data : item) }
-          : list
-      ))
-
-      if (!cachedCategory) {
-        fetch('/api/openrouter/categorize-item', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ itemName: text }),
-        })
-          .then(res => res.ok ? res.json() : null)
-          .then(catData => {
-            if (catData?.category && catData.category !== initialCategory) {
-              setCachedCategory(text, catData.category)
-              supabase
-                .from('shopping_list_items')
-                .update({ category: catData.category })
-                .eq('id', data.id)
-                .then(() => {
-                  setLists(prev => prev.map(list =>
-                    list.id === listId
-                      ? {
-                          ...list,
-                          items: list.items.map(item =>
-                            item.id === data.id ? { ...item, category: catData.category } : item
-                          ),
-                        }
-                      : list
-                  ))
-                })
-            }
-          })
-          .catch(() => {})
-      }
-    } else if (error) {
+    // Check for explicit error OR RLS blocking (no data returned)
+    if (error || !data) {
+      console.error('Failed to add item:', error?.message || 'RLS blocked insert (session expired?)')
       setLists(prev => prev.map(list =>
         list.id === listId
           ? { ...list, items: list.items.filter(item => item.id !== tempId) }
           : list
       ))
+      return
+    }
+
+    // Success - update with real ID
+    pendingChanges.current.add(data.id)
+    setLists(prev => prev.map(list =>
+      list.id === listId
+        ? { ...list, items: list.items.map(item => item.id === tempId ? data : item) }
+        : list
+    ))
+
+    // Background categorization
+    if (!cachedCategory) {
+      fetch('/api/openrouter/categorize-item', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemName: text }),
+      })
+        .then(res => res.ok ? res.json() : null)
+        .then(catData => {
+          if (catData?.category && catData.category !== initialCategory) {
+            setCachedCategory(text, catData.category)
+            supabase
+              .from('shopping_list_items')
+              .update({ category: catData.category })
+              .eq('id', data.id)
+              .then(() => {
+                setLists(prev => prev.map(list =>
+                  list.id === listId
+                    ? {
+                        ...list,
+                        items: list.items.map(item =>
+                          item.id === data.id ? { ...item, category: catData.category } : item
+                        ),
+                      }
+                    : list
+                ))
+              })
+          }
+        })
+        .catch(() => {})
     }
   }
 
@@ -668,20 +679,43 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
       return
     }
 
-    // Production mode
+    // Production mode - optimistic update with rollback on failure
     pendingChanges.current.add(itemId)
+    const newValue = !currentValue
+
+    // Optimistic update
     setLists(prev =>
       prev.map(list => ({
         ...list,
         items: list.items.map(item =>
-          item.id === itemId ? { ...item, is_bought: !currentValue } : item
+          item.id === itemId ? { ...item, is_bought: newValue } : item
         ),
       }))
     )
-    await supabase
+
+    // Database update with error handling
+    // Use .select() to verify the update actually happened (RLS can silently block updates)
+    const { data, error } = await supabase
       .from('shopping_list_items')
-      .update({ is_bought: !currentValue })
+      .update({ is_bought: newValue })
       .eq('id', itemId)
+      .select('id')
+      .maybeSingle()
+
+    // Check for explicit error OR RLS blocking (no data returned)
+    if (error || !data) {
+      console.error('Failed to update item:', error?.message || 'RLS blocked update (session expired?)')
+      // Rollback optimistic update
+      setLists(prev =>
+        prev.map(list => ({
+          ...list,
+          items: list.items.map(item =>
+            item.id === itemId ? { ...item, is_bought: currentValue } : item
+          ),
+        }))
+      )
+      pendingChanges.current.delete(itemId)
+    }
   }
 
   const deleteItem = useCallback((itemId: string) => {
@@ -732,16 +766,49 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
       return
     }
 
-    // Production mode
+    // Production mode - optimistic update with rollback on failure
+    const boughtItems = list.items.filter(i => i.is_bought)
     boughtIds.forEach(id => pendingChanges.current.add(id))
 
+    // Optimistic update
     setLists(prev => prev.map(l =>
       l.id === listId
         ? { ...l, items: l.items.filter(item => !item.is_bought) }
         : l
     ))
 
-    await supabase.from('shopping_list_items').delete().in('id', boughtIds)
+    // Database delete with error handling
+    // Check if items still exist after delete to detect RLS blocking
+    const { error } = await supabase.from('shopping_list_items').delete().in('id', boughtIds)
+
+    if (error) {
+      console.error('Failed to clear bought items:', error)
+      // Rollback - restore the bought items
+      setLists(prev => prev.map(l =>
+        l.id === listId
+          ? { ...l, items: [...boughtItems, ...l.items] }
+          : l
+      ))
+      boughtIds.forEach(id => pendingChanges.current.delete(id))
+      return
+    }
+
+    // Verify deletion by checking if items still exist (RLS can block silently)
+    const { data: remainingItems } = await supabase
+      .from('shopping_list_items')
+      .select('id')
+      .in('id', boughtIds)
+
+    if (remainingItems && remainingItems.length > 0) {
+      console.error('Failed to delete items: RLS blocked deletion (session expired?)')
+      // Rollback - restore the bought items
+      setLists(prev => prev.map(l =>
+        l.id === listId
+          ? { ...l, items: [...boughtItems, ...l.items] }
+          : l
+      ))
+      boughtIds.forEach(id => pendingChanges.current.delete(id))
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent, listId: string) => {
@@ -785,20 +852,24 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
       .select()
       .single()
 
-    if (data) {
-      pendingChanges.current.add(data.id)
-      setLists(prev => prev.map(list =>
-        list.id === mainList.id
-          ? { ...list, items: list.items.map(item => item.id === tempId ? data : item) }
-          : list
-      ))
-    } else if (error) {
+    // Check for explicit error OR RLS blocking (no data returned)
+    if (error || !data) {
+      console.error('Failed to add suggestion item:', error?.message || 'RLS blocked insert (session expired?)')
       setLists(prev => prev.map(list =>
         list.id === mainList.id
           ? { ...list, items: list.items.filter(item => item.id !== tempId) }
           : list
       ))
+      return
     }
+
+    // Success - update with real ID
+    pendingChanges.current.add(data.id)
+    setLists(prev => prev.map(list =>
+      list.id === mainList.id
+        ? { ...list, items: list.items.map(item => item.id === tempId ? data : item) }
+        : list
+    ))
   }, [lists, supabase])
 
   // Get final loading/error values for conditional rendering
