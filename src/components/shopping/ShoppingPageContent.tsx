@@ -136,6 +136,19 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
           console.error('Failed to delete item from database:', error)
           return false
         }
+
+        // Verify deletion - RLS can silently block without error
+        const { data: stillExists } = await supabase
+          .from('shopping_list_items')
+          .select('id')
+          .eq('id', item.id)
+          .maybeSingle()
+
+        if (stillExists) {
+          console.error('Delete verification failed - item still exists:', item.id)
+          return false
+        }
+
         pendingChanges.current.delete(item.id)
         return true
       } catch (error) {
@@ -693,19 +706,56 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
       }))
     )
 
-    // Database update with error handling
-    // Use .select() to verify the update actually happened (RLS can silently block updates)
-    const { data, error } = await supabase
+    // Debug: verify we have a valid session
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      console.error('No valid session for update - user needs to re-login')
+      setLists(prev =>
+        prev.map(list => ({
+          ...list,
+          items: list.items.map(item =>
+            item.id === itemId ? { ...item, is_bought: currentValue } : item
+          ),
+        }))
+      )
+      pendingChanges.current.delete(itemId)
+      return
+    }
+
+    // Database update
+    const { error } = await supabase
       .from('shopping_list_items')
       .update({ is_bought: newValue })
       .eq('id', itemId)
-      .select('id')
+
+    if (error) {
+      console.error('Failed to update item:', error.message, error)
+      setLists(prev =>
+        prev.map(list => ({
+          ...list,
+          items: list.items.map(item =>
+            item.id === itemId ? { ...item, is_bought: currentValue } : item
+          ),
+        }))
+      )
+      pendingChanges.current.delete(itemId)
+      return
+    }
+
+    // Verify update succeeded by checking current value (RLS can block silently)
+    const { data: verifyData, error: verifyError } = await supabase
+      .from('shopping_list_items')
+      .select('is_bought')
+      .eq('id', itemId)
       .maybeSingle()
 
-    // Check for explicit error OR RLS blocking (no data returned)
-    if (error || !data) {
-      console.error('Failed to update item:', error?.message || 'RLS blocked update (session expired?)')
-      // Rollback optimistic update
+    if (verifyError || !verifyData || verifyData.is_bought !== newValue) {
+      console.error('Update verification failed:', {
+        verifyError: verifyError?.message,
+        verifyData,
+        expected: newValue,
+        itemId,
+      })
       setLists(prev =>
         prev.map(list => ({
           ...list,
