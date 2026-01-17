@@ -97,7 +97,12 @@ function getInitialWeekCacheState(householdId: string, weekStartStr: string): Ca
   const cacheKey = CACHE_KEYS.week(householdId, weekStartStr)
   const syncCached = getCachedSync<CachedWeekData>(cacheKey)
 
-  if (syncCached && isSyncCacheFresh(syncCached, CACHE_MAX_AGE)) {
+  // Check freshness AND version - old cache without version should be ignored
+  if (
+    syncCached &&
+    isSyncCacheFresh(syncCached, CACHE_MAX_AGE) &&
+    syncCached.data.version === CACHE_VERSION
+  ) {
     return syncCached.data
   }
 
