@@ -109,7 +109,12 @@ function getInitialFeedCacheState(householdId: string): CachedFeedData | null {
   const cacheKey = CACHE_KEYS.feed(householdId)
   const syncCached = getCachedSync<CachedFeedData>(cacheKey)
 
-  if (syncCached && isSyncCacheFresh(syncCached, CACHE_MAX_AGE)) {
+  // Check freshness AND version - old cache without version should be ignored
+  if (
+    syncCached &&
+    isSyncCacheFresh(syncCached, CACHE_MAX_AGE) &&
+    syncCached.data.version === CACHE_VERSION
+  ) {
     return syncCached.data
   }
 

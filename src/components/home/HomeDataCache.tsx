@@ -189,7 +189,12 @@ function getInitialCacheState(householdId: string): {
   const cacheKey = CACHE_KEYS.home(householdId)
   const syncCached = getCachedSync<CachedHomeData>(cacheKey)
 
-  if (syncCached && isSyncCacheFresh(syncCached, CACHE_MAX_AGE)) {
+  // Check freshness AND version - old cache without version should be ignored
+  if (
+    syncCached &&
+    isSyncCacheFresh(syncCached, CACHE_MAX_AGE) &&
+    syncCached.data.version === CACHE_VERSION
+  ) {
     return { data: syncCached.data, timestamp: syncCached.timestamp }
   }
 

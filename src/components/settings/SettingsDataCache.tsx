@@ -64,7 +64,12 @@ function getInitialSettingsCacheState(householdId: string): CachedSettingsData |
   const cacheKey = CACHE_KEYS.settings(householdId)
   const syncCached = getCachedSync<CachedSettingsData>(cacheKey)
 
-  if (syncCached && isSyncCacheFresh(syncCached, CACHE_MAX_AGE)) {
+  // Check freshness AND version - old cache without version should be ignored
+  if (
+    syncCached &&
+    isSyncCacheFresh(syncCached, CACHE_MAX_AGE) &&
+    syncCached.data.version === CACHE_VERSION
+  ) {
     return syncCached.data
   }
 
