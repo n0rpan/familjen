@@ -137,6 +137,17 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
           return false
         }
         pendingChanges.current.delete(item.id)
+
+        // Invalidate server cache so next navigation shows fresh data
+        const currentHousehold = householdRef.current
+        if (currentHousehold) {
+          fetch('/api/revalidate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ householdId: currentHousehold.id, type: 'shopping' }),
+          }).catch(() => {})
+        }
+
         return true
       } catch (error) {
         console.error('Failed to delete item from database:', error)
@@ -362,11 +373,20 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     loadData(false, (cb) => cb())
   }, [loadData])
 
-  const refreshData = useCallback(async () => {
+  const refreshData = useCallback(async (revalidateServerCache = false) => {
     const currentHousehold = householdRef.current
     if (!currentHousehold) return
 
     try {
+      // Optionally invalidate server cache (for mutations)
+      if (revalidateServerCache) {
+        fetch('/api/revalidate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ householdId: currentHousehold.id, type: 'shopping' }),
+        }).catch(() => {}) // Fire and forget
+      }
+
       const freshData = await fetchAndCacheShoppingData(currentHousehold.id)
       const listsWithItems = combineListsWithItems(freshData.lists, freshData.items)
       setLists(listsWithItems)
@@ -638,6 +658,13 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     ))
     pendingChanges.current.delete(data.id)
 
+    // Invalidate server cache so next navigation shows fresh data
+    fetch('/api/revalidate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ householdId: household?.id, type: 'shopping' }),
+    }).catch(() => {})
+
     // Background categorization
     if (!cachedCategory) {
       fetch('/api/openrouter/categorize-item', {
@@ -716,8 +743,8 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     pendingChanges.current.delete(itemId)
 
     // Refresh from server in background to sync cache with reality
-    // This handles stale cache items and silent RLS failures
-    refreshData()
+    // Also invalidate server cache so next navigation shows fresh data
+    refreshData(true)
   }
 
   const deleteItem = useCallback((itemId: string) => {
@@ -797,7 +824,8 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     boughtIds.forEach(id => pendingChanges.current.delete(id))
 
     // Refresh from server in background to sync cache with reality
-    refreshData()
+    // Also invalidate server cache so next navigation shows fresh data
+    refreshData(true)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent, listId: string) => {
@@ -860,7 +888,14 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
         : list
     ))
     pendingChanges.current.delete(data.id)
-  }, [lists, supabase])
+
+    // Invalidate server cache so next navigation shows fresh data
+    fetch('/api/revalidate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ householdId: household?.id, type: 'shopping' }),
+    }).catch(() => {})
+  }, [lists, supabase, household])
 
   // Get final loading/error values for conditional rendering
   // Same logic as finalLists: PPR uses local state, client-only demo uses hooks
