@@ -136,20 +136,18 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
           console.error('Failed to delete item from database:', error)
           return false
         }
+        pendingChanges.current.delete(item.id)
 
-        // Verify deletion - RLS can silently block without error
-        const { data: stillExists } = await supabase
-          .from('shopping_list_items')
-          .select('id')
-          .eq('id', item.id)
-          .maybeSingle()
-
-        if (stillExists) {
-          console.error('Delete verification failed - item still exists:', item.id)
-          return false
+        // Invalidate server cache so next navigation shows fresh data
+        const currentHousehold = householdRef.current
+        if (currentHousehold) {
+          fetch('/api/revalidate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ householdId: currentHousehold.id, type: 'shopping' }),
+          }).catch(() => {})
         }
 
-        pendingChanges.current.delete(item.id)
         return true
       } catch (error) {
         console.error('Failed to delete item from database:', error)
@@ -375,11 +373,20 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     loadData(false, (cb) => cb())
   }, [loadData])
 
-  const refreshData = useCallback(async () => {
+  const refreshData = useCallback(async (revalidateServerCache = false) => {
     const currentHousehold = householdRef.current
     if (!currentHousehold) return
 
     try {
+      // Optionally invalidate server cache (for mutations)
+      if (revalidateServerCache) {
+        fetch('/api/revalidate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ householdId: currentHousehold.id, type: 'shopping' }),
+        }).catch(() => {}) // Fire and forget
+      }
+
       const freshData = await fetchAndCacheShoppingData(currentHousehold.id)
       const listsWithItems = combineListsWithItems(freshData.lists, freshData.items)
       setLists(listsWithItems)
@@ -651,6 +658,13 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     ))
     pendingChanges.current.delete(data.id)
 
+    // Invalidate server cache so next navigation shows fresh data
+    fetch('/api/revalidate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ householdId: household?.id, type: 'shopping' }),
+    }).catch(() => {})
+
     // Background categorization
     if (!cachedCategory) {
       fetch('/api/openrouter/categorize-item', {
@@ -723,36 +737,14 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
           ),
         }))
       )
-      pendingChanges.current.delete(itemId)
-      return
     }
 
-    // Verify update succeeded by checking current value (RLS can block silently)
-    const { data: verifyData, error: verifyError } = await supabase
-      .from('shopping_list_items')
-      .select('is_bought')
-      .eq('id', itemId)
-      .maybeSingle()
-
-    if (verifyError || !verifyData || verifyData.is_bought !== newValue) {
-      console.error('Update verification failed:', {
-        verifyError: verifyError?.message,
-        verifyData,
-        expected: newValue,
-        itemId,
-      })
-      setLists(prev =>
-        prev.map(list => ({
-          ...list,
-          items: list.items.map(item =>
-            item.id === itemId ? { ...item, is_bought: currentValue } : item
-          ),
-        }))
-      )
-    }
-
-    // Clear pending change tracking (success or fail - realtime can handle future updates)
+    // Clear pending change tracking
     pendingChanges.current.delete(itemId)
+
+    // Refresh from server in background to sync cache with reality
+    // Also invalidate server cache so next navigation shows fresh data
+    refreshData(true)
   }
 
   const deleteItem = useCallback((itemId: string) => {
@@ -826,28 +818,14 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
           ? { ...l, items: [...boughtItems, ...l.items] }
           : l
       ))
-      boughtIds.forEach(id => pendingChanges.current.delete(id))
-      return
     }
 
-    // Verify deletion by checking if items still exist (RLS can block silently)
-    const { data: remainingItems } = await supabase
-      .from('shopping_list_items')
-      .select('id')
-      .in('id', boughtIds)
-
-    if (remainingItems && remainingItems.length > 0) {
-      console.error('Failed to delete items: RLS blocked deletion (session expired?)')
-      // Rollback - restore the bought items
-      setLists(prev => prev.map(l =>
-        l.id === listId
-          ? { ...l, items: [...boughtItems, ...l.items] }
-          : l
-      ))
-    }
-
-    // Clear pending change tracking (success or fail - realtime can handle future updates)
+    // Clear pending change tracking
     boughtIds.forEach(id => pendingChanges.current.delete(id))
+
+    // Refresh from server in background to sync cache with reality
+    // Also invalidate server cache so next navigation shows fresh data
+    refreshData(true)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent, listId: string) => {
@@ -910,7 +888,14 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
         : list
     ))
     pendingChanges.current.delete(data.id)
-  }, [lists, supabase])
+
+    // Invalidate server cache so next navigation shows fresh data
+    fetch('/api/revalidate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ householdId: household?.id, type: 'shopping' }),
+    }).catch(() => {})
+  }, [lists, supabase, household])
 
   // Get final loading/error values for conditional rendering
   // Same logic as finalLists: PPR uses local state, client-only demo uses hooks
