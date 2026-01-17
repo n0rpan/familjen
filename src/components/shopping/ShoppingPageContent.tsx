@@ -674,20 +674,39 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
       return
     }
 
-    // Production mode
+    // Production mode - optimistic update with rollback on failure
     pendingChanges.current.add(itemId)
+    const newValue = !currentValue
+
+    // Optimistic update
     setLists(prev =>
       prev.map(list => ({
         ...list,
         items: list.items.map(item =>
-          item.id === itemId ? { ...item, is_bought: !currentValue } : item
+          item.id === itemId ? { ...item, is_bought: newValue } : item
         ),
       }))
     )
-    await supabase
+
+    // Database update with error handling
+    const { error } = await supabase
       .from('shopping_list_items')
-      .update({ is_bought: !currentValue })
+      .update({ is_bought: newValue })
       .eq('id', itemId)
+
+    if (error) {
+      console.error('Failed to update item:', error)
+      // Rollback optimistic update
+      setLists(prev =>
+        prev.map(list => ({
+          ...list,
+          items: list.items.map(item =>
+            item.id === itemId ? { ...item, is_bought: currentValue } : item
+          ),
+        }))
+      )
+      pendingChanges.current.delete(itemId)
+    }
   }
 
   const deleteItem = useCallback((itemId: string) => {
@@ -738,16 +757,30 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
       return
     }
 
-    // Production mode
+    // Production mode - optimistic update with rollback on failure
+    const boughtItems = list.items.filter(i => i.is_bought)
     boughtIds.forEach(id => pendingChanges.current.add(id))
 
+    // Optimistic update
     setLists(prev => prev.map(l =>
       l.id === listId
         ? { ...l, items: l.items.filter(item => !item.is_bought) }
         : l
     ))
 
-    await supabase.from('shopping_list_items').delete().in('id', boughtIds)
+    // Database delete with error handling
+    const { error } = await supabase.from('shopping_list_items').delete().in('id', boughtIds)
+
+    if (error) {
+      console.error('Failed to clear bought items:', error)
+      // Rollback - restore the bought items
+      setLists(prev => prev.map(l =>
+        l.id === listId
+          ? { ...l, items: [...boughtItems, ...l.items] }
+          : l
+      ))
+      boughtIds.forEach(id => pendingChanges.current.delete(id))
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent, listId: string) => {
