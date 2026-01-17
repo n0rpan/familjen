@@ -706,8 +706,15 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
       }))
     )
 
-    // Debug: verify we have a valid session
+    // Debug: verify we have a valid session and check user ID
     const { data: { session } } = await supabase.auth.getSession()
+    console.log('[Shopping Debug] Session check:', {
+      hasSession: !!session,
+      userId: session?.user?.id,
+      email: session?.user?.email,
+      provider: session?.user?.app_metadata?.provider,
+    })
+
     if (!session) {
       console.error('No valid session for update - user needs to re-login')
       setLists(prev =>
@@ -721,6 +728,19 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
       pendingChanges.current.delete(itemId)
       return
     }
+
+    // Debug: check household membership
+    const { data: membership } = await supabase
+      .from('household_members')
+      .select('user_id, household_id, email')
+      .eq('user_id', session.user.id)
+      .maybeSingle()
+    console.log('[Shopping Debug] Membership check:', {
+      currentUserId: session.user.id,
+      membershipFound: !!membership,
+      membershipUserId: membership?.user_id,
+      membershipEmail: membership?.email,
+    })
 
     // Database update
     const { error } = await supabase
