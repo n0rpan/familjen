@@ -366,8 +366,8 @@ export function SettingsPageContent({ initialData, isDemo: propIsDemo }: Setting
         // Update localStorage first (sync) for instant reads on next navigation
         setCacheSync(cacheKey, cacheData)
         // Then update IndexedDB (async) for durability
-        setCache(cacheKey, cacheData).catch(() => {
-          // Ignore cache errors
+        setCache(cacheKey, cacheData).catch((err) => {
+          console.warn('[SettingsCache] Failed to update IndexedDB:', err)
         })
       }
     } catch (err) {

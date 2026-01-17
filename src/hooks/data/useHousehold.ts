@@ -31,7 +31,7 @@ const HOUSEHOLD_CACHE_MAX_AGE = 5 * 60 * 1000
 interface CachedHouseholdData {
   household: Household
   currentMember: HouseholdMember
-  version?: number
+  version: number  // Required - cache ignored without matching version
 }
 
 export interface UseHouseholdReturn {
