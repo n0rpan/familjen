@@ -3,7 +3,7 @@
 import { ShoppingPageSkeleton } from '@/components/Skeleton'
 import { SmartLoading } from '@/components/SmartLoading'
 import { ShoppingPageContent } from '@/components/shopping/ShoppingPageContent'
-import type { CachedShoppingData } from '@/components/shopping/ShoppingDataCache'
+import { transformCachedData, type CachedShoppingData } from '@/components/shopping/ShoppingDataCache'
 
 /**
  * Shopping page loading state
@@ -16,9 +16,11 @@ export default function ShoppingLoading() {
     <SmartLoading page="shopping" skeleton={<ShoppingPageSkeleton />}>
       {(rawData) => {
         const data = rawData as CachedShoppingData
+        // Transform cached data to combine lists with their items
+        const transformedData = transformCachedData(data)
         return (
           <ShoppingPageContent
-            initialData={data}
+            initialData={transformedData}
             isDemo={false}
           />
         )
