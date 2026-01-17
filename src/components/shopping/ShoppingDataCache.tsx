@@ -15,11 +15,50 @@ import { getCachedSync, setCacheSync, isSyncCacheFresh } from '@/lib/cache-sync'
 import { CACHE_KEYS, CACHE_VERSION } from '@/lib/cache-constants'
 import { ShoppingPageContent } from './ShoppingPageContent'
 import { ShoppingPageSkeleton } from '@/components/Skeleton'
-import type { ShoppingPageData } from '@/lib/data/server'
+import type { ShoppingPageData, ShoppingListWithItems } from '@/lib/data/server'
+import type { ShoppingList, ShoppingListItem, Household } from '@/lib/types'
 
-// Shape of cached shopping data
-export interface CachedShoppingData extends ShoppingPageData {
+// Shape of cached shopping data (lists and items stored separately for efficiency)
+export interface CachedShoppingData {
+  household: Household | null
+  lists: ShoppingList[]  // Lists WITHOUT items attached
+  items: ShoppingListItem[]  // Items stored separately
+  timestamp: number
   version?: number
+}
+
+/**
+ * Transform cached data to ShoppingPageData format (lists with items)
+ *
+ * Handles two cache formats:
+ * 1. ShoppingDataCacher format: lists already have items attached (ShoppingPageData)
+ * 2. ShoppingPageContent format: lists and items stored separately (CachedShoppingData)
+ */
+export function transformCachedData(cached: CachedShoppingData): ShoppingPageData {
+  // Check if lists already have items attached (from ShoppingDataCacher)
+  const firstList = cached.lists[0]
+  const listsHaveItems = firstList && Array.isArray((firstList as ShoppingListWithItems).items)
+
+  if (listsHaveItems) {
+    // Cache was written by ShoppingDataCacher - lists already have items
+    return {
+      household: cached.household ?? null,
+      lists: cached.lists as unknown as ShoppingListWithItems[],
+      timestamp: cached.timestamp,
+    }
+  }
+
+  // Cache was written by ShoppingPageContent - combine lists with items
+  const listsWithItems: ShoppingListWithItems[] = cached.lists.map(list => ({
+    ...list,
+    items: (cached.items || []).filter(item => item.list_id === list.id),
+  }))
+
+  return {
+    household: cached.household ?? null,
+    lists: listsWithItems,
+    timestamp: cached.timestamp,
+  }
 }
 
 // Max age for cached data: 30 minutes
@@ -127,10 +166,12 @@ export function ShoppingCacheFallback({ householdId }: ShoppingCacheFallbackProp
 
   // If we have valid cached data, show it immediately
   if (cachedData) {
+    // Transform cached data to combine lists with their items
+    const transformedData = transformCachedData(cachedData)
     return (
       <CacheErrorBoundary fallback={<ShoppingPageSkeleton />}>
         <ShoppingPageContent
-          initialData={cachedData}
+          initialData={transformedData}
           isDemo={false}
         />
       </CacheErrorBoundary>
