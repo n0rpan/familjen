@@ -6,7 +6,7 @@
 import { createClient } from '@/lib/supabase/client'
 import { getCached, setCache, isCacheFresh, DEFAULT_MAX_AGE } from '@/lib/cache'
 import { formatDateISO, addDays, getWeekStart, type Holiday } from '@/lib/utils'
-import { CACHE_KEYS } from '@/lib/cache-constants'
+import { CACHE_KEYS, CACHE_VERSION } from '@/lib/cache-constants'
 import type { WeekCacheData, ShoppingCacheData, SettingsCacheData } from '@/lib/types'
 
 /**
@@ -132,6 +132,7 @@ export async function fetchAndCacheWeekData(householdId: string, weekOffset: num
     weekStartStr,
     weekEndStr,
     timestamp: Date.now(),
+    version: CACHE_VERSION,
   }
 
   // Cache the data
@@ -202,7 +203,7 @@ export async function fetchAndCacheShoppingData(householdId: string): Promise<Sh
     .order('sort_order')
 
   if (!lists?.length) {
-    const emptyData: ShoppingCacheData = { lists: [], items: [], timestamp: Date.now() }
+    const emptyData = { lists: [], items: [], timestamp: Date.now(), version: CACHE_VERSION }
     await setCache(cacheKey, emptyData)
     return emptyData
   }
@@ -214,10 +215,11 @@ export async function fetchAndCacheShoppingData(householdId: string): Promise<Sh
     .in('list_id', listIds)
     .order('created_at', { ascending: false })
 
-  const shoppingData: ShoppingCacheData = {
+  const shoppingData = {
     lists,
     items: items || [],
     timestamp: Date.now(),
+    version: CACHE_VERSION,
   }
 
   await setCache(cacheKey, shoppingData)
@@ -262,7 +264,7 @@ export async function prefetchRecipesData(householdId: string): Promise<void> {
       .eq('household_id', householdId)
       .order('name')
 
-    await setCache(cacheKey, { recipes: recipes || [] })
+    await setCache(cacheKey, { recipes: recipes || [], version: CACHE_VERSION })
   } catch (error) {
     console.warn('[Prefetch] Failed to prefetch recipes data:', error)
   }

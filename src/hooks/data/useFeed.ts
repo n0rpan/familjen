@@ -14,7 +14,7 @@ import { useChildren } from './useChildren'
 import { useTasks } from './useTasks'
 import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealtimeSubscription'
 import { getCached, setCache, isCacheFresh } from '@/lib/cache'
-import { CACHE_KEYS } from '@/lib/prefetch/pages'
+import { CACHE_KEYS, CACHE_VERSION } from '@/lib/cache-constants'
 import type { FeedMessage } from '@/components/feed/MessageCard'
 import type { FeedPhoto } from '@/components/feed/PhotoGallery'
 import type { FeedReminder } from '@/components/feed/ReminderCard'
@@ -271,13 +271,14 @@ export function useFeed(): UseFeedReturn {
       setNotifications((notificationsData || []) as EventNotification[])
 
       // Update cache for next navigation (silent, don't await)
-      setCache<FeedCacheData>(CACHE_KEYS.feed(hId), {
+      setCache(CACHE_KEYS.feed(hId), {
         integrationsEnabled: true,
         integrations: integrationsData || [],
         messages: messagesData || [],
         integrationChildren: integrationChildrenData || [],
         photos: photosData || [],
         notifications: notificationsData || [],
+        version: CACHE_VERSION,
       }).catch(() => {})
     } catch (err) {
       console.error('Error loading feed data:', err)

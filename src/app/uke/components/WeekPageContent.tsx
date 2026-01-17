@@ -228,6 +228,25 @@ export function WeekPageContent({
   const supabase = useMemo(() => createClient(), [])
   const realtime = useRealtimeOptional()
 
+  // Date range strings for realtime filtering and default date calculation
+  // Moved before useEffect that depends on getDefaultDate
+  const weekStartStr = formatDateISO(weekStart)
+  const weekEndStr = formatDateISO(weekEnd)
+
+  // Helper: Get default date for new events/tasks
+  // Returns today if today is within the viewed week, otherwise returns weekStart (Monday)
+  // This prevents accidentally creating events on past dates when opening the add modal
+  const getDefaultDate = useCallback((): string => {
+    const today = new Date()
+    const todayStr = formatDateISO(today)
+    // Check if today is within the viewed week
+    if (todayStr >= weekStartStr && todayStr <= weekEndStr) {
+      return todayStr
+    }
+    // If viewing a different week, default to the start of that week
+    return weekStartStr
+  }, [weekStartStr, weekEndStr])
+
   /**
    * AI Prefill Navigation Handler
    *
@@ -261,21 +280,22 @@ export function WeekPageContent({
         if (stored) {
           const data = JSON.parse(stored) as MemberEventPrefillData
 
-          // Prefill form
+          // Prefill form - use AI date if provided, otherwise today (if within week) or week start
+          const defaultDate = getDefaultDate()
           setEventForm({
             member_id: data.member_id || (members[0]?.id || ''),
             title: data.title || '',
             event_type: data.event_type || 'other',
-            date: data.date || formatDateISO(weekStart),
+            date: data.date || defaultDate,
             end_date: data.end_date || '',
           })
 
           localStorage.removeItem(PREFILL_STORAGE_KEYS.memberEvent)
         } else {
-          // No prefill data - just set default date
+          // No prefill data - use today (if within week) or week start
           setEventForm(prev => ({
             ...prev,
-            date: formatDateISO(weekStart),
+            date: getDefaultDate(),
           }))
         }
         setShowEventModal(true)
@@ -292,22 +312,23 @@ export function WeekPageContent({
         if (stored) {
           const data = JSON.parse(stored) as ChildTaskPrefillData
 
-          // Prefill form
+          // Prefill form - use AI date if provided, otherwise today (if within week) or week start
+          const defaultDate = getDefaultDate()
           setTaskForm({
             child_id: data.child_id || (children[0]?.id || ''),
             title: data.title || '',
             task_type: data.task_type || 'reminder',
-            date: data.date || formatDateISO(weekStart),
+            date: data.date || defaultDate,
             time: data.time || '',
             notes: data.notes || '',
           })
 
           localStorage.removeItem(PREFILL_STORAGE_KEYS.childTask)
         } else {
-          // No prefill data - just set default date
+          // No prefill data - use today (if within week) or week start
           setTaskForm(prev => ({
             ...prev,
-            date: formatDateISO(weekStart),
+            date: getDefaultDate(),
           }))
         }
         setShowTaskModal(true)
@@ -322,16 +343,12 @@ export function WeekPageContent({
     url.searchParams.delete('addEvent')
     url.searchParams.delete('addTask')
     window.history.replaceState({}, '', url.toString())
-  }, [searchParams, members, children, weekStart])
+  }, [searchParams, members, children, getDefaultDate])
 
   // Demo mode helper
   const showDemoMessage = useCallback((): void => {
     showMessage('error', t.common.viewOnly || 'View only in demo mode')
   }, [t.common.viewOnly])
-
-  // Date range strings for realtime filtering
-  const weekStartStr = formatDateISO(weekStart)
-  const weekEndStr = formatDateISO(weekEnd)
 
   // Helper: Revalidate cache and refresh server data
   // This ensures the cache is updated so next navigation shows fresh data
@@ -748,7 +765,7 @@ export function WeekPageContent({
         member_id: members.find(m => m.is_parent)?.id || members[0]?.id || '',
         title: '',
         event_type: 'other',
-        date: formatDateISO(weekStart),
+        date: getDefaultDate(),
         end_date: '',
       })
     }
@@ -876,7 +893,7 @@ export function WeekPageContent({
       setEditingHouseholdEvent(null)
       setHouseholdEventForm({
         title: '',
-        date: formatDateISO(weekStart),
+        date: getDefaultDate(),
         end_date: '',
         time: '',
         location: '',
@@ -980,7 +997,7 @@ export function WeekPageContent({
         child_id: childId || children[0]?.id || '',
         title: '',
         task_type: 'reminder',
-        date: date || formatDateISO(weekStart),
+        date: date || getDefaultDate(),
         time: '',
         notes: '',
       })

@@ -4,8 +4,10 @@ import { useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Child, HouseholdMember, Household, ChildColor, SettingsCacheData } from '@/lib/types'
-import { getCachedSettingsData, getSettingsCacheKey } from '@/lib/prefetch/fetchers'
+import { getCachedSettingsData } from '@/lib/prefetch/fetchers'
 import { setCache, clearAllCache } from '@/lib/cache'
+import { setCacheSync } from '@/lib/cache-sync'
+import { CACHE_VERSION, CACHE_KEYS } from '@/lib/cache-constants'
 import { clearAllChanges } from '@/lib/offline-queue'
 import { CHILD_COLORS } from '@/lib/colors'
 import { User } from '@supabase/supabase-js'
@@ -351,17 +353,21 @@ export function SettingsPageContent({ initialData, isDemo: propIsDemo }: Setting
 
       // Update cache with fresh data
       if (householdIdRef.current && householdData) {
-        const cacheKey = getSettingsCacheKey(householdIdRef.current)
-        const cacheData: SettingsCacheData = {
+        const cacheKey = CACHE_KEYS.settings(householdIdRef.current)
+        const cacheData = {
           household: householdData,
           members: membersResult.data || [],
           children: childrenResult.data || [],
           myProfile: myMember || null,
           connectedCalendarEmail: freshCalendarEmail,
           timestamp: Date.now(),
+          version: CACHE_VERSION,
         }
-        setCache(cacheKey, cacheData).catch(() => {
-          // Ignore cache errors
+        // Update localStorage first (sync) for instant reads on next navigation
+        setCacheSync(cacheKey, cacheData)
+        // Then update IndexedDB (async) for durability
+        setCache(cacheKey, cacheData).catch((err) => {
+          console.warn('[SettingsCache] Failed to update IndexedDB:', err)
         })
       }
     } catch (err) {
