@@ -16,6 +16,7 @@ import { getCached, setCache, isCacheFresh } from '@/lib/cache'
 import { setStoredHouseholdId } from '@/components/SmartLoading'
 import { getCachedSync, setCacheSync, isSyncCacheFresh } from '@/lib/cache-sync'
 import { CACHE_KEYS, CACHE_VERSION } from '@/lib/cache-constants'
+import { safeTransformMessages, safeTransformPhotos } from '@/lib/feed-transforms'
 import { FeedPageContent, type FeedPageContentProps } from './FeedPageContent'
 import { FeedPageSkeleton } from '@/components/Skeleton'
 import type { FeedPageData } from '@/lib/data/server'
@@ -43,11 +44,23 @@ export interface CachedFeedData extends FeedPageData {
  * to skeleton gracefully. This is intentional to avoid duplicating type definitions.
  */
 export function computeFeedPropsFromCache(cachedData: CachedFeedData): FeedPageContentProps {
-  // Type assertions through unknown are needed because FeedPageData uses
-  // Record<string, unknown>[] for Supabase flexibility. Runtime shape is correct.
+  // Validate cached data structure before transformation
+  // Log warnings for corrupted cache to help debug issues without crashing
+  if (!cachedData.messages || !Array.isArray(cachedData.messages)) {
+    console.warn('[FeedCache] Invalid or missing messages in cached data, using empty array')
+  }
+  if (!cachedData.photos || !Array.isArray(cachedData.photos)) {
+    console.warn('[FeedCache] Invalid or missing photos in cached data, using empty array')
+  }
+
+  // Use safe transformation utilities that handle both raw and already-transformed data
+  // These return empty arrays for invalid input, preventing crashes
+  const transformedMessages = safeTransformMessages(cachedData.messages)
+  const transformedPhotos = safeTransformPhotos(cachedData.photos)
+
   return {
-    messages: cachedData.messages as unknown as FeedPageContentProps['messages'],
-    photos: cachedData.photos as unknown as FeedPageContentProps['photos'],
+    messages: transformedMessages,
+    photos: transformedPhotos,
     // Reminders are AI-generated at render time, not cached
     reminders: [],
     notifications: cachedData.notifications as unknown as FeedPageContentProps['notifications'],
