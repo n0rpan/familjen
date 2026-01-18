@@ -127,9 +127,9 @@ export function MessageCard({ message, integrationChildren = [] }: Props) {
     ? integrationContext.childNames.join(', ')
     : null
 
-  // For personal messages, add "DM" indicator
+  // For personal messages, add direct message indicator
   const badgeLabel = isPersonalChat
-    ? `${serviceStyle.label} · DM`
+    ? `${serviceStyle.label} · ${t.feed.directMessage}`
     : childNamesDisplay
       ? `${serviceStyle.label} · ${childNamesDisplay}`
       : serviceStyle.label

@@ -407,7 +407,7 @@ async function syncIntegration(
               ...mapped.rawData,
               // Add chat metadata for UI display
               _chatName: chat.name,
-              _chatType: chat.type || (isPersonalChat ? 'personal' : 'group'),
+              _chatType: isPersonalChat ? 'personal' : (chat.type || 'group'),
               _isPersonalChat: isPersonalChat,
             },
           })

@@ -485,6 +485,7 @@ export const sv: TranslationStrings = {
     showLess: 'Visa mindre',
     comment: 'kommentar',
     comments: 'kommentarer',
+    directMessage: 'Direktmeddelande',
     // Integrations disabled state
     integrationsDisabled: 'Integrationer inte aktiverade',
     contactAdmin: 'Kontakta administratören för att aktivera integrationer för ditt hushåll.',

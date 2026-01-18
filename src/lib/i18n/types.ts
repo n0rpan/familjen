@@ -493,6 +493,7 @@ export interface TranslationStrings {
     showLess: string
     comment: string
     comments: string
+    directMessage: string
     // Integrations disabled state
     integrationsDisabled: string
     contactAdmin: string

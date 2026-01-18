@@ -485,6 +485,7 @@ export const nb: TranslationStrings = {
     showLess: 'Vis mindre',
     comment: 'kommentar',
     comments: 'kommentarer',
+    directMessage: 'Direktemelding',
     // Integrations disabled state
     integrationsDisabled: 'Integrasjoner ikke aktivert',
     contactAdmin: 'Kontakt administrator for å aktivere integrasjoner for din husstand.',
