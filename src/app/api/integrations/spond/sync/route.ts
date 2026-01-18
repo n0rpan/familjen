@@ -5,7 +5,7 @@ import { SpondClient, SpondAuthError, SpondError } from '@/lib/integrations/spon
 import { ApiErrors, handleApiError } from '@/lib/api-errors'
 import { addDays } from '@/lib/utils'
 import { processMessagesWithAI } from '@/lib/integrations/ai-extraction'
-import { revalidateFeedCache } from '@/lib/data/server'
+import { revalidateHouseholdCache } from '@/lib/data/server'
 import {
   handleSyncSetup,
   getMappingsForIntegrations,
@@ -105,8 +105,8 @@ export async function POST(request: Request) {
     // Collect chat errors for debugging
     const chatErrors = results.filter((r) => r.chatError).map((r) => r.chatError)
 
-    // Revalidate feed cache so fresh data shows immediately
-    revalidateFeedCache(householdId)
+    // Revalidate all household caches so fresh data shows on feed and week pages
+    revalidateHouseholdCache(householdId)
 
     return NextResponse.json({
       success: failureCount === 0,

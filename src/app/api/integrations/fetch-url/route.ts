@@ -9,7 +9,7 @@ import { parseICSContent } from '@/lib/ics-parser'
 import { formatDateISO } from '@/lib/utils'
 import { getModel } from '@/lib/ai-models'
 import { ApiErrors, handleApiError } from '@/lib/api-errors'
-import { revalidateFeedCache } from '@/lib/data/server'
+import { revalidateHouseholdCache } from '@/lib/data/server'
 
 /**
  * POST /api/integrations/fetch-url
@@ -202,7 +202,7 @@ export async function POST(request: Request) {
         }
 
         // Revalidate feed cache so fresh data shows immediately
-        revalidateFeedCache(member.household_id)
+        revalidateHouseholdCache(member.household_id)
 
         return NextResponse.json({
           success: true,
@@ -328,7 +328,7 @@ export async function POST(request: Request) {
     }
 
     // Revalidate feed cache so fresh data shows immediately
-    revalidateFeedCache(member.household_id)
+    revalidateHouseholdCache(member.household_id)
 
     return NextResponse.json({
       ...syncResult,

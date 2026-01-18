@@ -5,6 +5,8 @@ import { sendInviteRequestSchema, validateRequest } from '@/lib/schemas'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 import { validateOrigin } from '@/lib/config'
 import { ApiErrors, handleApiError } from '@/lib/api-errors'
+import { revalidateWeekCache } from '@/lib/data/server'
+import { getWeekStart, formatDateISO } from '@/lib/utils'
 
 // POST /api/calendar/send-invite - Send pickup invite to work calendar
 export async function POST(request: Request) {
@@ -82,6 +84,10 @@ export async function POST(request: Request) {
         })
         .eq('id', pickupId)
 
+      // Revalidate week cache so UI reflects the change
+      const weekStart = getWeekStart(new Date(pickup.date))
+      revalidateWeekCache(pickup.household_id, formatDateISO(weekStart))
+
       return NextResponse.json({ success: true, action: 'removed' })
     }
 
@@ -149,6 +155,10 @@ export async function POST(request: Request) {
         work_calendar_event_id: eventId
       })
       .eq('id', pickupId)
+
+    // Revalidate week cache so UI reflects the change
+    const weekStart = getWeekStart(new Date(pickup.date))
+    revalidateWeekCache(pickup.household_id, formatDateISO(weekStart))
 
     return NextResponse.json({
       success: true,

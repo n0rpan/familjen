@@ -607,6 +607,9 @@ export function WeekPageContent({
 
     if (error) {
       console.error('Error saving week context:', error)
+    } else {
+      // Revalidate so other household members see the update
+      await refreshWithRevalidate()
     }
     setSavingContext(false)
   }

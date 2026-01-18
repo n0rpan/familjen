@@ -10,7 +10,7 @@ import {
   sendNewEventNotification,
   type SyncedEvent,
 } from '@/lib/integrations/shared/deletion-handler'
-import { revalidateFeedCache } from '@/lib/data/server'
+import { revalidateHouseholdCache } from '@/lib/data/server'
 import sharp from 'sharp'
 
 interface SyncResult {
@@ -67,8 +67,8 @@ export async function POST(request: Request) {
     const successCount = results.filter((r) => r.success).length
     const failureCount = results.filter((r) => !r.success).length
 
-    // Revalidate feed cache so fresh data shows immediately
-    revalidateFeedCache(householdId)
+    // Revalidate all household caches so fresh data shows on feed and week pages
+    revalidateHouseholdCache(householdId)
 
     return NextResponse.json({
       success: failureCount === 0,
