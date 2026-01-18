@@ -5,6 +5,7 @@ import { KidplanClient, KidplanAuthError, KidplanError } from '@/lib/integration
 import { ApiErrors, handleApiError } from '@/lib/api-errors'
 import { addDays } from '@/lib/utils'
 import { handleSyncSetup, getSyncStartDate, HISTORICAL_SYNC_DAYS } from '@/lib/integrations/shared'
+import { revalidateFeedCache } from '@/lib/data/server'
 import sharp from 'sharp'
 
 interface SyncResult {
@@ -54,6 +55,9 @@ export async function POST(request: Request) {
     const totalPhotos = results.reduce((sum, r) => sum + r.photosCount, 0)
     const successCount = results.filter((r) => r.success).length
     const failureCount = results.filter((r) => !r.success).length
+
+    // Revalidate feed cache so fresh data shows immediately
+    revalidateFeedCache(householdId)
 
     return NextResponse.json({
       success: failureCount === 0,

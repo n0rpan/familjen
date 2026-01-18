@@ -6,6 +6,7 @@ import { ApiErrors, handleApiError } from '@/lib/api-errors'
 import { addDays } from '@/lib/utils'
 import { handleSyncSetup, getSyncStartDate, HISTORICAL_SYNC_DAYS, FUTURE_SYNC_DAYS } from '@/lib/integrations/shared'
 import { sendNewEventNotification } from '@/lib/integrations/shared/deletion-handler'
+import { revalidateFeedCache } from '@/lib/data/server'
 
 interface SyncResult {
   integrationId: string
@@ -56,6 +57,9 @@ export async function POST(request: Request) {
     const totalEvents = results.reduce((sum, r) => sum + r.eventsCount, 0)
     const successCount = results.filter((r) => r.success).length
     const failureCount = results.filter((r) => !r.success).length
+
+    // Revalidate feed cache so fresh data shows immediately
+    revalidateFeedCache(householdId)
 
     return NextResponse.json({
       success: failureCount === 0,

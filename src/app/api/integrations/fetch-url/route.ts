@@ -9,6 +9,7 @@ import { parseICSContent } from '@/lib/ics-parser'
 import { formatDateISO } from '@/lib/utils'
 import { getModel } from '@/lib/ai-models'
 import { ApiErrors, handleApiError } from '@/lib/api-errors'
+import { revalidateFeedCache } from '@/lib/data/server'
 
 /**
  * POST /api/integrations/fetch-url
@@ -200,6 +201,9 @@ export async function POST(request: Request) {
           duplicateSuggestionsCreated = dedupeResult.suggestionsCreated
         }
 
+        // Revalidate feed cache so fresh data shows immediately
+        revalidateFeedCache(member.household_id)
+
         return NextResponse.json({
           success: true,
           eventsFound: icsEvents.length,
@@ -322,6 +326,9 @@ export async function POST(request: Request) {
     if (syncResult.eventsRemoved > 0) {
       parts.push(`${syncResult.eventsRemoved} fjernet`)
     }
+
+    // Revalidate feed cache so fresh data shows immediately
+    revalidateFeedCache(member.household_id)
 
     return NextResponse.json({
       ...syncResult,

@@ -12,7 +12,8 @@ import { formatDateISO } from '@/lib/utils'
 import { getModel } from '@/lib/ai-models'
 
 // Confidence thresholds
-const HIGH_CONFIDENCE_THRESHOLD = 0.9
+// 0.95 is more conservative for auto-merge to avoid merging unrelated events
+const HIGH_CONFIDENCE_THRESHOLD = 0.95
 const MEDIUM_CONFIDENCE_THRESHOLD = 0.6
 
 /**
@@ -136,7 +137,7 @@ Common VALID duplicate patterns:
 Consider:
 - SEMANTIC MEANING first - understand what the event actually says
 - "åpent" (open) is the OPPOSITE of "stengt/ferie/fri" (closed)
-- Date proximity (±1 day could be same event)
+- Events must be on the same day or adjacent days to be duplicates
 - Norwegian abbreviations: "Planl." = "Planlegging", "bhg" = "barnehage"
 
 Respond with a JSON array of evaluations.`
@@ -321,12 +322,12 @@ async function findPotentialDuplicates(
       if (newEvent.source_url_id && newEvent.source_url_id === existingEvent.source_url_id) continue
       if (newEvent.integration_id && newEvent.integration_id === existingEvent.integration_id) continue
 
-      // Check date proximity (±3 days)
+      // Check date proximity (±1 day to be more conservative)
       const daysDiff = Math.abs(
         (new Date(newEvent.event_date).getTime() - new Date(existingEvent.event_date).getTime()) /
           (1000 * 60 * 60 * 24)
       )
-      if (daysDiff > 3) continue
+      if (daysDiff > 1) continue
 
       pairsToCheck.push({ eventA: newEvent, eventB: existingEvent })
     }
