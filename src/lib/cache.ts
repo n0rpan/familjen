@@ -7,7 +7,7 @@
  * - IndexedDB: Async reads, larger capacity, durability
  */
 
-import { clearAllCacheSync, deleteCacheSync } from './cache-sync'
+import { clearAllCacheSync, deleteCacheSync, deleteCacheSyncByPrefix } from './cache-sync'
 
 // Key for SmartLoading household ID (also defined in SmartLoading.tsx)
 const HOUSEHOLD_ID_KEY = 'familjen-current-household'
@@ -215,6 +215,52 @@ export async function deleteCache(key: string, retryCount = 0): Promise<void> {
       return deleteCache(key, retryCount + 1)
     }
     console.warn('[Cache] Failed to delete from IndexedDB:', error)
+  }
+}
+
+/**
+ * Delete all cache entries matching a prefix
+ * Useful for clearing all week caches (week-{householdId}-*) at once
+ * Deletes from both localStorage and IndexedDB
+ */
+export async function deleteCacheByPrefix(prefix: string, retryCount = 0): Promise<void> {
+  // Delete from localStorage first (synchronous)
+  deleteCacheSyncByPrefix(prefix)
+
+  // Then delete from IndexedDB (async) using a cursor
+  try {
+    const db = await openDB()
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite')
+      const store = tx.objectStore(STORE_NAME)
+
+      // Handle transaction abort (connection issue)
+      tx.onabort = () => reject(tx.error)
+
+      const request = store.openCursor()
+      request.onerror = () => reject(request.error)
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result
+        if (cursor) {
+          if (cursor.key.toString().startsWith(prefix)) {
+            cursor.delete()
+          }
+          cursor.continue()
+        } else {
+          // Cursor exhausted, we're done
+          resolve()
+        }
+      }
+    })
+  } catch (error) {
+    // If it's a recoverable error and we haven't retried yet, reset and retry
+    if (isRecoverableError(error) && retryCount < 1) {
+      console.log('[Cache] Recoverable error, resetting connection and retrying:', error)
+      resetConnection()
+      return deleteCacheByPrefix(prefix, retryCount + 1)
+    }
+    console.warn('[Cache] Failed to delete by prefix from IndexedDB:', error)
   }
 }
 
