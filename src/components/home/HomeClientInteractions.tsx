@@ -52,6 +52,11 @@ export function HomeClientInteractions({ householdId, isDemo }: HomeClientIntera
     enabled: !isDemo,
   })
 
+  // Debounce timer for realtime events - prevents flooding when many events arrive at once
+  // (e.g., syncing multiple pickups or meals simultaneously)
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const DEBOUNCE_MS = 500 // Wait 500ms after last event before refreshing
+
   // Realtime subscriptions for the current week
   useEffect(() => {
     if (isDemo || !supabaseRef.current) return
@@ -63,23 +68,34 @@ export function HomeClientInteractions({ householdId, isDemo }: HomeClientIntera
     const weekEndStr = formatDateISO(weekEnd)
     const homeCacheKey = CACHE_KEYS.home(householdId)
 
-    // Update IndexedDB cache with realtime change, then refresh UI
+    // Debounced refresh - coalesces rapid events into one refresh
+    const scheduleRefresh = () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current)
+      }
+      debounceTimerRef.current = setTimeout(async () => {
+        await revalidateWeek(householdId, weekStartStr)
+        router.refresh()
+        debounceTimerRef.current = null
+      }, DEBOUNCE_MS)
+    }
+
+    // Update IndexedDB cache with realtime change, then schedule debounced refresh
     // This keeps cache fresh for next cold start AND updates current view
-    const handleRealtimeChange = async (
+    const handleRealtimeChange = (
       table: string,
       payload: RealtimePostgresChangesPayload<Record<string, unknown>>
     ) => {
       const eventType = payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE'
       const data = eventType === 'DELETE' ? payload.old : payload.new
 
-      // Update IndexedDB cache (async, don't await)
+      // Update IndexedDB cache immediately (async, don't await)
       if (data && typeof data === 'object') {
         updateCacheWithRealtimeChange(homeCacheKey, table, eventType, data as Record<string, unknown>)
       }
 
-      // Revalidate server cache FIRST, then refresh current view
-      await revalidateWeek(householdId, weekStartStr)
-      router.refresh()
+      // Schedule debounced refresh (coalesces multiple rapid events)
+      scheduleRefresh()
     }
 
     // Subscribe to changes for pickups, meals, and tasks in the current week
@@ -156,7 +172,12 @@ export function HomeClientInteractions({ householdId, isDemo }: HomeClientIntera
       )
       .subscribe()
 
+    // Cleanup: clear pending timer and remove channel
     return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current)
+        debounceTimerRef.current = null
+      }
       supabase.removeChannel(channel)
     }
   }, [householdId, isDemo, router])
