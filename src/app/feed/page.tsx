@@ -6,7 +6,7 @@
  * Unauthenticated users are redirected to /login at the middleware level.
  *
  * Uses PPR pattern for instant navigation:
- * - Server component fetches data with unstable_cache
+ * - Server component fetches fresh data from database
  * - Suspense shows skeleton while streaming
  * - FeedDataLoader passes data to FeedPageWrapper
  */
