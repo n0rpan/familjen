@@ -119,6 +119,28 @@ export function deleteCacheSync(key: string): void {
 }
 
 /**
+ * Delete all cache entries matching a prefix from localStorage
+ * Useful for clearing all week caches (week-{householdId}-*) at once
+ */
+export function deleteCacheSyncByPrefix(prefix: string): void {
+  if (!isLocalStorageAvailable()) return
+
+  try {
+    const fullPrefix = STORAGE_PREFIX + prefix
+    const keysToRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key?.startsWith(fullPrefix)) {
+        keysToRemove.push(key)
+      }
+    }
+    keysToRemove.forEach(key => localStorage.removeItem(key))
+  } catch {
+    // Ignore errors
+  }
+}
+
+/**
  * Clear all familjen cache entries from localStorage
  */
 export function clearAllCacheSync(): void {

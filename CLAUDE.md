@@ -174,7 +174,7 @@ if (cached.data.version === CACHE_VERSION) {
 - `src/lib/prefetch/pages.ts` - `prefetchHomeData` function
 - `src/components/home/HomeClientInteractions.tsx` - Realtime subscriptions + cache updates
 
-**Cache invalidation:**
+**Client-side cache invalidation:**
 | Scenario | Behavior |
 |----------|----------|
 | Logout | `clearAllCache()` clears localStorage + IndexedDB |
@@ -183,6 +183,29 @@ if (cached.data.version === CACHE_VERSION) {
 | Schema change | Increment `CACHE_VERSION` - old cache ignored |
 | Render error | `CacheErrorBoundary` catches and falls back to skeleton |
 | Session expired | `useSessionValidator` clears caches and redirects to login |
+
+**Server-side cache invalidation:**
+
+The server uses Next.js `unstable_cache` with `revalidateTag()` for cache invalidation:
+
+| Function | What it clears | When to use |
+|----------|---------------|-------------|
+| `revalidateHouseholdCache(id)` | ALL caches for household (feed, week, home, settings, etc.) | After cron sync, integration sync, major data changes |
+| `revalidateWeekCache(id, weekStart)` | Specific week page cache | After pickup/meal/task changes |
+| `revalidateFeedCache(id)` | Feed page cache | After message/photo sync |
+| `revalidateRecipesCache(id)` | Recipes page cache | After recipe changes |
+| `revalidateShoppingCache(id)` | Shopping page cache | After shopping list changes |
+| `revalidateSettingsCache(id)` | Settings page cache | After household/member changes |
+
+**Pull-to-refresh cache clearing (3-step process):**
+1. **Client cache** - `deleteCache()` or `deleteCacheByPrefix()` clears localStorage + IndexedDB
+2. **Server cache** - Calls `/api/revalidate` to invalidate server-side `unstable_cache`
+3. **Fresh fetch** - `router.refresh()` fetches new data from invalidated cache
+
+**Key files for server cache:**
+- `src/lib/data/server.ts` - Revalidation helper functions
+- `src/app/api/revalidate/route.ts` - API endpoint for client-triggered revalidation
+- `src/components/AppShell.tsx` - Pull-to-refresh implementation
 
 **Error handling:**
 The `*CacheFallback` wraps page content in a `CacheErrorBoundary`. If cached data causes a render error despite version checks (e.g., missing required fields), the boundary catches it and gracefully falls back to the skeleton.

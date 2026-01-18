@@ -3,6 +3,8 @@
 import { useRouter, usePathname } from 'next/navigation'
 import { useCallback, useState, useRef, useEffect } from 'react'
 import { setTransitionDirection, clearTransitionDirection } from './TransitionLink'
+import { deleteCache, deleteCacheByPrefix } from '@/lib/cache'
+import { CACHE_KEYS } from '@/lib/cache-constants'
 
 interface AppShellProps {
   children: React.ReactNode
@@ -80,11 +82,68 @@ export function AppShell({ children }: AppShellProps) {
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true)
+
+    const householdId = localStorage.getItem('familjen-household-id')
+
+    // Step 1: Clear client-side cache (localStorage + IndexedDB)
+    try {
+      if (householdId) {
+        // Week page is special - it has multiple cache keys (one per week viewed)
+        // so we use prefix deletion to clear all week caches
+        if (pathname === '/uke') {
+          await deleteCacheByPrefix(`week-${householdId}-`)
+        } else {
+          // Map pathname to cache key
+          const cacheKeyMap: Record<string, (id: string) => string> = {
+            '/': CACHE_KEYS.home,
+            '/feed': CACHE_KEYS.feed,
+            '/handleliste': CACHE_KEYS.shopping,
+            '/oppskrifter': CACHE_KEYS.recipes,
+            '/innstillinger': CACHE_KEYS.settings,
+            '/styring': CACHE_KEYS.styring,
+          }
+          const getCacheKey = cacheKeyMap[pathname]
+          if (getCacheKey) {
+            await deleteCache(getCacheKey(householdId))
+          }
+        }
+      }
+    } catch {
+      // Client cache clear failed - continue anyway
+    }
+
+    // Step 2: Revalidate server-side cache via API
+    // This ensures we don't just re-fetch stale server cache
+    try {
+      if (householdId) {
+        // Map pathname to revalidation type for targeted cache invalidation
+        const revalidateTypeMap: Record<string, string | undefined> = {
+          '/feed': 'feed',
+          '/handleliste': 'shopping',
+          '/oppskrifter': 'recipes',
+          '/innstillinger': 'settings',
+          '/styring': 'styring',
+          // Home and week pages revalidate all household data (no type = full revalidation)
+        }
+
+        const type = revalidateTypeMap[pathname]
+
+        await fetch('/api/revalidate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ householdId, type }),
+        })
+      }
+    } catch {
+      // Server revalidation failed - continue anyway, user will still get cached data
+    }
+
+    // Step 3: Refresh the page to fetch fresh data
     router.refresh()
     // Wait a bit for the refresh to complete
     await new Promise(resolve => setTimeout(resolve, 500))
     setIsRefreshing(false)
-  }, [router])
+  }, [router, pathname])
 
   useEffect(() => {
     // Only enable pull-to-refresh in PWA mode

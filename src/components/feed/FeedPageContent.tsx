@@ -400,18 +400,6 @@ export function FeedPageContent({
         />
       )}
 
-      {/* Event change notifications (calendar source removals) - only in production */}
-      {!isDemo && notifications.length > 0 && activeFilter === 'all' && (
-        <EventChangeNotificationList
-          notifications={notifications}
-          onDismiss={onDismissNotification || (async () => false)}
-          onRestore={onRestoreNotification || (async () => ({ success: false }))}
-          onDismissAll={onDismissAllNotifications || (async () => ({ success: false, count: 0 }))}
-          onRestoreAll={onRestoreAllNotifications || (async () => ({ success: false, count: 0 }))}
-          syncing={notificationsSyncing}
-        />
-      )}
-
       {/* Empty state */}
       {hasNoContent && notifications.length === 0 ? (
         <div
@@ -515,6 +503,18 @@ export function FeedPageContent({
                 ))}
               </div>
             </section>
+          )}
+
+          {/* Event change notifications (calendar source removals) - shown at bottom, collapsed by default */}
+          {!isDemo && notifications.length > 0 && activeFilter === 'all' && (
+            <EventChangeNotificationList
+              notifications={notifications}
+              onDismiss={onDismissNotification || (async () => false)}
+              onRestore={onRestoreNotification || (async () => ({ success: false }))}
+              onDismissAll={onDismissAllNotifications || (async () => ({ success: false, count: 0 }))}
+              onRestoreAll={onRestoreAllNotifications || (async () => ({ success: false, count: 0 }))}
+              syncing={notificationsSyncing}
+            />
           )}
 
           {/* No results for current filter */}

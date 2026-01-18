@@ -1,19 +1,30 @@
 /**
  * Event Deduplication Service
  *
- * Detects and handles duplicate events across different sources using AI.
- * - High confidence (>0.9): Auto-merge (hide duplicate, keep one)
- * - Medium confidence (0.6-0.9): Create suggestion for user review
- * - Low confidence (<0.6): No action
+ * Detects potential duplicate events across different sources using AI.
+ * All potential duplicates are shown as suggestions for user review.
+ *
+ * Configuration:
+ * - AUTO_MERGE_ENABLED: When false (default), all duplicates go to user review
+ * - SUGGESTION_CONFIDENCE_THRESHOLD: Minimum confidence (0.6) to create a suggestion
+ * - DATE_PROXIMITY_DAYS: Events must be within ±1 day to be considered duplicates
  */
 
 import { SupabaseClient } from '@supabase/supabase-js'
 import { formatDateISO } from '@/lib/utils'
 import { getModel } from '@/lib/ai-models'
 
-// Confidence thresholds
-const HIGH_CONFIDENCE_THRESHOLD = 0.9
-const MEDIUM_CONFIDENCE_THRESHOLD = 0.6
+// Auto-merge configuration
+// DISABLED by default - prevents incorrect automatic merging of events with similar dates
+// To enable auto-merge in the future, set to true and configure AUTO_MERGE_CONFIDENCE_THRESHOLD
+const AUTO_MERGE_ENABLED = false
+const AUTO_MERGE_CONFIDENCE_THRESHOLD = 0.9 // Only used when AUTO_MERGE_ENABLED is true
+
+// Suggestion threshold - duplicates with confidence >= this value create user review suggestions
+const SUGGESTION_CONFIDENCE_THRESHOLD = 0.6
+
+// Date proximity - events must be within ±1 day to be considered potential duplicates
+const DATE_PROXIMITY_DAYS = 1
 
 /**
  * Combine results from two queries, deduplicating by ID.
@@ -136,7 +147,7 @@ Common VALID duplicate patterns:
 Consider:
 - SEMANTIC MEANING first - understand what the event actually says
 - "åpent" (open) is the OPPOSITE of "stengt/ferie/fri" (closed)
-- Date proximity (±1 day could be same event)
+- Events must be on the same day or adjacent days to be duplicates
 - Norwegian abbreviations: "Planl." = "Planlegging", "bhg" = "barnehage"
 
 Respond with a JSON array of evaluations.`
@@ -321,12 +332,12 @@ async function findPotentialDuplicates(
       if (newEvent.source_url_id && newEvent.source_url_id === existingEvent.source_url_id) continue
       if (newEvent.integration_id && newEvent.integration_id === existingEvent.integration_id) continue
 
-      // Check date proximity (±3 days)
+      // Check date proximity - events must be within ±DATE_PROXIMITY_DAYS to be duplicates
       const daysDiff = Math.abs(
         (new Date(newEvent.event_date).getTime() - new Date(existingEvent.event_date).getTime()) /
           (1000 * 60 * 60 * 24)
       )
-      if (daysDiff > 3) continue
+      if (daysDiff > DATE_PROXIMITY_DAYS) continue
 
       pairsToCheck.push({ eventA: newEvent, eventB: existingEvent })
     }
@@ -353,7 +364,7 @@ async function findPotentialDuplicates(
   )
 
   for (const result of allResults) {
-    if (!result.isDuplicate || result.confidence < MEDIUM_CONFIDENCE_THRESHOLD) {
+    if (!result.isDuplicate || result.confidence < SUGGESTION_CONFIDENCE_THRESHOLD) {
       continue
     }
 
@@ -437,7 +448,7 @@ export async function deduplicateEvents(
     if (processedPairs.has(pairKey)) continue
     processedPairs.add(pairKey)
 
-    if (candidate.confidence >= HIGH_CONFIDENCE_THRESHOLD) {
+    if (AUTO_MERGE_ENABLED && candidate.confidence >= AUTO_MERGE_CONFIDENCE_THRESHOLD) {
       // Auto-merge: Hide the newer event (the one just synced)
       const keepEvent =
         candidate.eventA.id < candidate.eventB.id ? candidate.eventA : candidate.eventB
@@ -691,7 +702,7 @@ export async function deduplicateAllEvents(
   const processedPairs = new Set<string>()
 
   for (const llmResult of allLLMResults) {
-    if (!llmResult.isDuplicate || llmResult.confidence < MEDIUM_CONFIDENCE_THRESHOLD) {
+    if (!llmResult.isDuplicate || llmResult.confidence < SUGGESTION_CONFIDENCE_THRESHOLD) {
       continue
     }
 
@@ -710,7 +721,7 @@ export async function deduplicateAllEvents(
     if (processedPairs.has(pairKey)) continue
     processedPairs.add(pairKey)
 
-    if (llmResult.confidence >= HIGH_CONFIDENCE_THRESHOLD) {
+    if (AUTO_MERGE_ENABLED && llmResult.confidence >= AUTO_MERGE_CONFIDENCE_THRESHOLD) {
       // Auto-merge: Hide the newer event (by ID)
       const keepEvent = pair.eventA.id < pair.eventB.id ? pair.eventA : pair.eventB
       const hideEvent = pair.eventA.id < pair.eventB.id ? pair.eventB : pair.eventA
