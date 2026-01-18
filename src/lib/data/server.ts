@@ -592,13 +592,24 @@ async function fetchFeedDataCore(householdId: string): Promise<FeedPageData> {
   const supabase = createAdminClient()
 
   // Check if integrations are enabled
-  const { data: householdData } = await supabase
+  const { data: householdData, error: householdError } = await supabase
     .from('households')
     .select('external_integrations_enabled')
     .eq('id', householdId)
     .single()
 
+  // Log errors to help debug silent failures
+  if (householdError) {
+    console.error('[fetchFeedDataCore] Failed to fetch household:', householdError.message, { householdId })
+  }
+
   if (!householdData?.external_integrations_enabled) {
+    // Log why we're returning disabled state
+    if (!householdData) {
+      console.warn('[fetchFeedDataCore] No household data found, returning disabled state', { householdId })
+    } else {
+      console.log('[fetchFeedDataCore] Integrations disabled for household', { householdId })
+    }
     return {
       integrationsEnabled: false,
       integrations: [],

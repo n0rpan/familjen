@@ -616,6 +616,12 @@ export function AdminPageContent({ initialData, currentUserId }: AdminPageConten
       setHouseholds((prev) =>
         prev.map((h) => (h.id === householdId ? { ...h, external_integrations_enabled: enabled } : h))
       )
+      // Invalidate feed cache for this household so they see the change immediately
+      fetch('/api/revalidate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ householdId, type: 'feed' }),
+      }).catch(() => {}) // Fire and forget
       showMessage('success', enabled ? t.admin.integrationsEnabled : t.admin.integrationsDisabledMsg)
     }
     setSaving(false)
