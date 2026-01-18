@@ -299,12 +299,14 @@ export function FeedPageWrapper({
       )
       .subscribe()
 
-    // Cleanup: clear pending timer and remove channel
+    // Cleanup: clear pending timer, reset throttle state, and remove channel
     return () => {
       if (pendingRefreshRef.current) {
         clearTimeout(pendingRefreshRef.current)
         pendingRefreshRef.current = null
       }
+      // Reset throttle timestamp so first event after re-subscribe is instant
+      lastRefreshRef.current = 0
       supabase.removeChannel(channel)
     }
   }, [householdId, isDemo, refreshFeed, supabase])
