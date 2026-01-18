@@ -27,7 +27,7 @@
  * ```
  */
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   revalidateWeek,
@@ -101,6 +101,15 @@ export function useRefreshWithRevalidate(householdId: string | null): RefreshWit
   // If a request is in-flight, new callers await the existing promise instead of starting a new one
   const inFlightRef = useRef<Map<string, Promise<void>>>(new Map())
 
+  // Track mounted state to prevent setState after unmount
+  const isMountedRef = useRef(true)
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
+
   /**
    * Wrapper that prevents concurrent calls and tracks pending state.
    * If a request of the same type is already in-flight, returns that promise.
@@ -118,8 +127,8 @@ export function useRefreshWithRevalidate(householdId: string | null): RefreshWit
       setIsPending(true)
       const promise = operation().finally(() => {
         inFlightRef.current.delete(type)
-        // Only clear pending if no other operations are in-flight
-        if (inFlightRef.current.size === 0) {
+        // Only clear pending if mounted and no other operations are in-flight
+        if (isMountedRef.current && inFlightRef.current.size === 0) {
           setIsPending(false)
         }
       })
@@ -144,8 +153,8 @@ export function useRefreshWithRevalidate(householdId: string | null): RefreshWit
           : formatDateISO(weekStart)
         : formatDateISO(getWeekStart(new Date()))
 
-      // Use week-specific key to allow different weeks to refresh independently
-      const dedupeKey = `week-${weekStartStr}`
+      // Use household+week-specific key to allow different weeks/households to refresh independently
+      const dedupeKey = `${householdId}-week-${weekStartStr}`
 
       await withDeduplication(dedupeKey, async () => {
         await revalidateWeek(householdId, weekStartStr)
@@ -161,7 +170,7 @@ export function useRefreshWithRevalidate(householdId: string | null): RefreshWit
       return
     }
 
-    await withDeduplication('household', async () => {
+    await withDeduplication(`${householdId}-household`, async () => {
       await revalidateHousehold(householdId)
       router.refresh()
     })
@@ -173,7 +182,7 @@ export function useRefreshWithRevalidate(householdId: string | null): RefreshWit
       return
     }
 
-    await withDeduplication('feed', async () => {
+    await withDeduplication(`${householdId}-feed`, async () => {
       await revalidateFeed(householdId)
       router.refresh()
     })
@@ -185,7 +194,7 @@ export function useRefreshWithRevalidate(householdId: string | null): RefreshWit
       return
     }
 
-    await withDeduplication('recipes', async () => {
+    await withDeduplication(`${householdId}-recipes`, async () => {
       await revalidateRecipes(householdId)
       router.refresh()
     })
@@ -197,7 +206,7 @@ export function useRefreshWithRevalidate(householdId: string | null): RefreshWit
       return
     }
 
-    await withDeduplication('shopping', async () => {
+    await withDeduplication(`${householdId}-shopping`, async () => {
       await revalidateShopping(householdId)
       router.refresh()
     })
@@ -209,7 +218,7 @@ export function useRefreshWithRevalidate(householdId: string | null): RefreshWit
       return
     }
 
-    await withDeduplication('settings', async () => {
+    await withDeduplication(`${householdId}-settings`, async () => {
       await revalidateSettings(householdId)
       router.refresh()
     })
@@ -221,7 +230,7 @@ export function useRefreshWithRevalidate(householdId: string | null): RefreshWit
       return
     }
 
-    await withDeduplication('styring', async () => {
+    await withDeduplication(`${householdId}-styring`, async () => {
       await revalidateStyring(householdId)
       router.refresh()
     })

@@ -49,6 +49,7 @@ import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealt
 import { useRealtimeOptional } from '@/lib/realtime/context'
 import { MemberEventModal, HouseholdEventModal, ChildTaskModal, ExternalEventModal } from './index'
 import type { ExternalEventLocalOverrides, Holiday } from '@/lib/types'
+import { useRefreshWithRevalidate } from '@/hooks/useRefreshWithRevalidate'
 import { revalidateWeek } from '@/lib/revalidate'
 import {
   PREFILL_STORAGE_KEYS,
@@ -115,6 +116,7 @@ export function WeekPageContent({
   const router = useRouter()
   const searchParams = useSearchParams()
   const { language, t } = useLanguage()
+  const { refreshWeek } = useRefreshWithRevalidate(householdId)
 
   // Local state - initialized from props, updated by mutations and realtime
   // IMPORTANT: When adding new state from props, also update the sync effect below (search: "Sync all state")
@@ -350,14 +352,6 @@ export function WeekPageContent({
     showMessage('error', t.common.viewOnly || 'View only in demo mode')
   }, [t.common.viewOnly])
 
-  // Helper: Revalidate cache and refresh server data
-  // This ensures the cache is updated so next navigation shows fresh data
-  const refreshWithRevalidate = useCallback(async () => {
-    // Await cache invalidation FIRST, then refresh to get fresh data
-    await revalidateWeek(householdId, weekStartStr)
-    router.refresh()
-  }, [householdId, weekStartStr, router])
-
   // Navigate to a specific week
   const navigateToWeek = useCallback((targetWeekNumber: number, targetYear?: number) => {
     const yearParam = targetYear ? `${targetYear}-${String(targetWeekNumber).padStart(2, '0')}` : String(targetWeekNumber)
@@ -395,24 +389,24 @@ export function WeekPageContent({
     newRecord: Pickup | null,
     oldRecord: Pickup | null
   ) => {
-    refreshWithRevalidate()
-  }, [refreshWithRevalidate])
+    refreshWeek(weekStartStr)
+  }, [refreshWeek, weekStartStr])
 
   const handleMealRealtime = useCallback(() => {
-    refreshWithRevalidate()
-  }, [refreshWithRevalidate])
+    refreshWeek(weekStartStr)
+  }, [refreshWeek, weekStartStr])
 
   const handleTaskRealtime = useCallback(() => {
-    refreshWithRevalidate()
-  }, [refreshWithRevalidate])
+    refreshWeek(weekStartStr)
+  }, [refreshWeek, weekStartStr])
 
   const handleEventRealtime = useCallback(() => {
-    refreshWithRevalidate()
-  }, [refreshWithRevalidate])
+    refreshWeek(weekStartStr)
+  }, [refreshWeek, weekStartStr])
 
   const handleHouseholdEventRealtime = useCallback(() => {
-    refreshWithRevalidate()
-  }, [refreshWithRevalidate])
+    refreshWeek(weekStartStr)
+  }, [refreshWeek, weekStartStr])
 
   // Subscribe to realtime changes
   useRealtimeSubscription<Pickup>({
@@ -497,7 +491,7 @@ export function WeekPageContent({
         }
       }
 
-      refreshWithRevalidate()
+      refreshWeek(weekStartStr)
     } catch (error) {
       console.error('Error saving pickup:', error)
       showMessage('error', t.errors.saveFailed)
@@ -554,7 +548,7 @@ export function WeekPageContent({
         }
       }
 
-      refreshWithRevalidate()
+      refreshWeek(weekStartStr)
     } catch (error) {
       console.error('Error saving meal:', error)
       showMessage('error', t.errors.saveFailed)
@@ -579,7 +573,7 @@ export function WeekPageContent({
       } else {
         showMessage('success', sync ? t.week.sendToWorkCalendar : t.week.removeFromWorkCalendar)
       }
-      refreshWithRevalidate()
+      refreshWeek(weekStartStr)
     } catch (error) {
       console.error('Calendar sync error:', error)
       showMessage('error', t.errors.calendarSyncFailed)
@@ -609,7 +603,7 @@ export function WeekPageContent({
       console.error('Error saving week context:', error)
     } else {
       // Revalidate so other household members see the update
-      await refreshWithRevalidate()
+      await refreshWeek(weekStartStr)
     }
     setSavingContext(false)
   }
@@ -663,7 +657,7 @@ export function WeekPageContent({
       }
 
       showMessage('success', t.success.copied)
-      refreshWithRevalidate()
+      refreshWeek(weekStartStr)
     } catch (err) {
       console.error('Error copying last week:', err)
       showMessage('error', t.errors.saveFailed)
@@ -695,7 +689,7 @@ export function WeekPageContent({
       ])
 
       showMessage('success', t.success.cleared)
-      refreshWithRevalidate()
+      refreshWeek(weekStartStr)
     } catch (err) {
       console.error('Error clearing week:', err)
       showMessage('error', t.errors.saveFailed)
@@ -742,7 +736,7 @@ export function WeekPageContent({
       if (error) throw error
 
       showMessage('success', t.success.saved)
-      refreshWithRevalidate()
+      refreshWeek(weekStartStr)
     } catch (err) {
       console.error('Error setting quick pickups:', err)
       showMessage('error', t.errors.saveFailed)
@@ -844,7 +838,7 @@ export function WeekPageContent({
         await revalidateWeek(householdId, eventWeekStartStr)
       }
 
-      await refreshWithRevalidate()
+      await refreshWeek(weekStartStr)
 
       // Send notification AFTER data is synced to avoid race conditions
       if (notificationData) {
@@ -872,7 +866,7 @@ export function WeekPageContent({
       if (error) throw error
 
       closeEventModal()
-      refreshWithRevalidate()
+      refreshWeek(weekStartStr)
     } catch (err) {
       console.error('Error deleting event:', err)
       showMessage('error', t.errors.deleteFailed)
@@ -948,7 +942,7 @@ export function WeekPageContent({
       }
 
       closeHouseholdEventModal()
-      refreshWithRevalidate()
+      refreshWeek(weekStartStr)
     } catch (err) {
       console.error('Error saving household event:', err)
     } finally {
@@ -974,7 +968,7 @@ export function WeekPageContent({
         .eq('id', editingHouseholdEvent.id)
 
       closeHouseholdEventModal()
-      refreshWithRevalidate()
+      refreshWeek(weekStartStr)
     } catch (err) {
       console.error('Error deleting household event:', err)
     } finally {
@@ -1057,7 +1051,7 @@ export function WeekPageContent({
       }
 
       closeTaskModal()
-      refreshWithRevalidate()
+      refreshWeek(weekStartStr)
     } catch (err) {
       console.error('Error saving task:', err)
     } finally {
@@ -1078,7 +1072,7 @@ export function WeekPageContent({
         .eq('id', editingTask.id)
 
       closeTaskModal()
-      refreshWithRevalidate()
+      refreshWeek(weekStartStr)
     } catch (err) {
       console.error('Error deleting task:', err)
     } finally {
@@ -1099,7 +1093,7 @@ export function WeekPageContent({
         })
         .eq('id', taskId)
 
-      refreshWithRevalidate()
+      refreshWeek(weekStartStr)
     } catch (err) {
       console.error('Error toggling task:', err)
     } finally {
@@ -1149,7 +1143,7 @@ export function WeekPageContent({
       if (error) throw error
 
       closeExternalEventModal()
-      refreshWithRevalidate()
+      refreshWeek(weekStartStr)
       showMessage('success', t.success.saved)
     } catch (err) {
       console.error('Error saving external event:', err)

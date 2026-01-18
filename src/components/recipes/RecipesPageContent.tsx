@@ -14,7 +14,7 @@ import { useRecipes, useShoppingLists } from '@/hooks/data'
 import type { Recipe, Household } from '@/lib/types'
 import { useLanguage } from '@/lib/i18n/context'
 import { RecipesPagePartialSkeleton } from '@/components/Skeleton'
-import { revalidateRecipes } from '@/lib/revalidate'
+import { useRefreshWithRevalidate } from '@/hooks/useRefreshWithRevalidate'
 import type { RecipesPageData } from '@/lib/data/server'
 import { PREFILL_STORAGE_KEYS, type RecipePrefillData } from '@/lib/ai-action-routing'
 
@@ -33,6 +33,9 @@ export function RecipesPageContent({ initialData, isDemo = false }: RecipesPageC
 
   // State initialized from server data
   const [household, setHousehold] = useState<Household | null>(initialData?.household || null)
+
+  // Use the refresh hook - safe to call with null householdId
+  const { refreshRecipes } = useRefreshWithRevalidate(household?.id || null)
   const [recipesData, setRecipesData] = useState<Recipe[]>(initialData?.recipes || [])
 
   // Track whether form was opened from AI navigation (for future UX enhancements)
@@ -165,10 +168,9 @@ export function RecipesPageContent({ initialData, isDemo = false }: RecipesPageC
       setShowForm(false)
       setMessage({ type: 'success', text: t.success.saved })
 
-      // Revalidate cache and refresh (await to avoid race condition)
-      if (!isDemo && household?.id) {
-        await revalidateRecipes(household.id)
-        router.refresh()
+      // Revalidate cache and refresh (hook handles both atomically)
+      if (!isDemo) {
+        await refreshRecipes()
       }
     } catch {
       setMessage({ type: 'error', text: t.errors.saveFailed })
@@ -193,9 +195,8 @@ export function RecipesPageContent({ initialData, isDemo = false }: RecipesPageC
 
     try {
       await deleteRecipe(id)
-      if (!isDemo && household?.id) {
-        await revalidateRecipes(household.id)
-        router.refresh()
+      if (!isDemo) {
+        await refreshRecipes()
       }
     } catch {
       setMessage({ type: 'error', text: t.errors.saveFailed })
@@ -206,8 +207,8 @@ export function RecipesPageContent({ initialData, isDemo = false }: RecipesPageC
   const toggleFavorite = async (id: string, currentValue: boolean) => {
     try {
       await updateRecipe(id, { is_favorite: !currentValue })
-      if (!isDemo && household?.id) {
-        await revalidateRecipes(household.id)
+      if (!isDemo) {
+        await refreshRecipes()
       }
     } catch {
       // Silent fail for favorite toggle
