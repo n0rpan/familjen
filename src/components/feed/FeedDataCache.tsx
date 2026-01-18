@@ -16,6 +16,7 @@ import { getCached, setCache, isCacheFresh } from '@/lib/cache'
 import { setStoredHouseholdId } from '@/components/SmartLoading'
 import { getCachedSync, setCacheSync, isSyncCacheFresh } from '@/lib/cache-sync'
 import { CACHE_KEYS, CACHE_VERSION } from '@/lib/cache-constants'
+import { transformFeedMessages, transformFeedPhotos } from '@/lib/feed-transforms'
 import { FeedPageContent, type FeedPageContentProps } from './FeedPageContent'
 import { FeedPageSkeleton } from '@/components/Skeleton'
 import type { FeedPageData } from '@/lib/data/server'
@@ -43,30 +44,14 @@ export interface CachedFeedData extends FeedPageData {
  * to skeleton gracefully. This is intentional to avoid duplicating type definitions.
  */
 export function computeFeedPropsFromCache(cachedData: CachedFeedData): FeedPageContentProps {
-  // Type assertions through unknown are needed because FeedPageData uses
-  // Record<string, unknown>[] for Supabase flexibility. Runtime shape is correct.
-
-  // Transform messages to flatten nested external_integrations data
-  const transformedMessages = cachedData.messages.map((m: Record<string, unknown>) => ({
-    ...m,
-    service: ((m.external_integrations as Record<string, unknown> | undefined)?.service as string) || 'spond',
-    integration_name: (m.external_integrations as Record<string, unknown> | undefined)?.display_name as string | null,
-    child_name: (m.children as { name: string } | null)?.name || null,
-  }))
-
-  // Transform photos to flatten nested external_integrations data
-  const transformedPhotos = cachedData.photos.map((p: Record<string, unknown>) => {
-    const transformed = {
-      ...p,
-      service: ((p.external_integrations as Record<string, unknown> | undefined)?.service as string) || 'spond',
-      child_name: (p.children as { name: string } | null)?.name || null,
-    }
-    return transformed as unknown as FeedPageContentProps['photos'][0]
-  })
+  // Use shared transformation utilities for messages and photos
+  // These handle flattening nested external_integrations data
+  const transformedMessages = transformFeedMessages(cachedData.messages as Record<string, unknown>[])
+  const transformedPhotos = transformFeedPhotos(cachedData.photos as Record<string, unknown>[])
 
   return {
-    messages: transformedMessages as FeedPageContentProps['messages'],
-    photos: transformedPhotos as FeedPageContentProps['photos'],
+    messages: transformedMessages,
+    photos: transformedPhotos,
     // Reminders are AI-generated at render time, not cached
     reminders: [],
     notifications: cachedData.notifications as unknown as FeedPageContentProps['notifications'],

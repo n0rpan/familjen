@@ -4,7 +4,7 @@
  * Uses Partial Prerendering for instant navigation:
  * - Static shell renders immediately
  * - Dynamic content streams via Suspense
- * - Server-side caching with unstable_cache (1 year TTL)
+ * - Server-side caching with unstable_cache (5 minute TTL)
  * - Realtime subscriptions handle live updates
  *
  * Cache fallback (WeekCacheFallback) shows IndexedDB cached data while

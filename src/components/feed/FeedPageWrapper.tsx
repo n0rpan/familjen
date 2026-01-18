@@ -18,6 +18,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import { useFeed } from '@/hooks/data'
 import { useEventNotifications } from '@/hooks/data/useEventNotifications'
+import { transformFeedMessages, transformFeedPhotos } from '@/lib/feed-transforms'
 import { FeedPageContent } from './FeedPageContent'
 import { FreshnessIndicator } from '@/components/FreshnessIndicator'
 import type { FeedFilter } from './FeedFilters'
@@ -61,29 +62,13 @@ export function FeedPageWrapper({
   )
 
   // Transform initial data to match FeedPageContent expectations
-  // Messages from server have nested external_integrations.service, need to flatten
-  const [messages, setMessages] = useState<FeedMessage[]>(() => {
-    const rawMessages = initialData.messages || []
-    return rawMessages.map((m: Record<string, unknown>) => ({
-      ...m,
-      // Flatten nested integration data
-      service: ((m.external_integrations as Record<string, unknown> | undefined)?.service as string) || 'spond',
-      integration_name: (m.external_integrations as Record<string, unknown> | undefined)?.display_name as string | null,
-      child_name: (m.children as { name: string } | null)?.name || null,
-    })) as FeedMessage[]
-  })
-  // Photos also have nested integration data
-  const [photos, setPhotos] = useState<FeedPhoto[]>(() => {
-    const rawPhotos = initialData.photos || []
-    return rawPhotos.map((p: Record<string, unknown>) => {
-      const transformed = {
-        ...p,
-        service: ((p.external_integrations as Record<string, unknown> | undefined)?.service as string) || 'spond',
-        child_name: (p.children as { name: string } | null)?.name || null,
-      }
-      return transformed as unknown as FeedPhoto
-    })
-  })
+  // Messages/photos from server have nested external_integrations, need to flatten
+  const [messages, setMessages] = useState<FeedMessage[]>(() =>
+    transformFeedMessages((initialData.messages || []) as Record<string, unknown>[])
+  )
+  const [photos, setPhotos] = useState<FeedPhoto[]>(() =>
+    transformFeedPhotos((initialData.photos || []) as Record<string, unknown>[])
+  )
   const [notifications, setNotificationsState] = useState<EventNotification[]>(
     initialData.notifications as unknown as EventNotification[] || []
   )

@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react'
 import type { IntegrationChild } from './FeedPageContent'
 import { useLanguage } from '@/lib/i18n/context'
 import { getLocale, formatDateShort } from '@/lib/utils'
+import { stripHtmlAndDecode } from '@/lib/feed-transforms'
 
 // Spond comment structure from raw_data
 interface SpondComment {
@@ -134,22 +135,8 @@ export function MessageCard({ message, integrationChildren = [] }: Props) {
       ? `${serviceStyle.label} · ${childNamesDisplay}`
       : serviceStyle.label
 
-  // Decode HTML entities (e.g., &nbsp; → space, &aring; → å)
-  const decodeHtmlEntities = (html: string) => {
-    if (typeof document === 'undefined') return html
-    const textarea = document.createElement('textarea')
-    textarea.innerHTML = html
-    return textarea.value
-  }
-
-  // Strip HTML tags and decode entities for preview
-  const stripHtml = (html: string) => {
-    const stripped = html.replace(/<[^>]*>/g, ' ')
-    const decoded = decodeHtmlEntities(stripped)
-    return decoded.replace(/\s+/g, ' ').trim()
-  }
-
-  const plainBody = stripHtml(message.body)
+  // Strip HTML tags and decode entities for preview (uses shared utility with reusable textarea)
+  const plainBody = stripHtmlAndDecode(message.body)
   const isLong = plainBody.length > 200
   const displayBody = expanded || !isLong ? plainBody : plainBody.substring(0, 200) + '...'
 
