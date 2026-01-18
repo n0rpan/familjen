@@ -665,35 +665,6 @@ export function getDemoFeedPageData(): FeedPageData {
 }
 
 // ============================================================================
-// Cache Revalidation Helpers (No-ops)
-// ============================================================================
-// NOTE: These functions are kept for API compatibility but do nothing.
-// We removed server-side caching (unstable_cache) because it caused stale
-// data to overwrite fresher client-side cache after realtime updates.
-// Client-side cache (localStorage/IndexedDB) provides instant navigation.
-
-/**
- * Revalidate feed cache (no-op - server cache removed)
- */
-export function revalidateFeedCache(_householdId: string) {
-  // No-op: server cache removed, client cache is always fresh
-}
-
-/**
- * Revalidate all cached data for a household (no-op - server cache removed)
- */
-export function revalidateHouseholdCache(_householdId: string) {
-  // No-op: server cache removed, client cache is always fresh
-}
-
-/**
- * Revalidate cached data for a specific week (no-op - server cache removed)
- */
-export function revalidateWeekCache(_householdId: string, _weekStartStr: string) {
-  // No-op: server cache removed, client cache is always fresh
-}
-
-// ============================================================================
 // Settings Page Data
 // ============================================================================
 
@@ -773,13 +744,6 @@ export function getDemoSettingsPageData(): SettingsPageData {
   }
 }
 
-/**
- * Revalidate settings cache (no-op - server cache removed)
- */
-export function revalidateSettingsCache(_householdId: string) {
-  // No-op: server cache removed, client cache is always fresh
-}
-
 // ============================================================================
 // Recipes Page Data
 // ============================================================================
@@ -833,13 +797,6 @@ export function getDemoRecipesPageData(): RecipesPageData {
     household: demoState.household,
     recipes: demoState.recipes,
   }
-}
-
-/**
- * Revalidate recipes cache (no-op - server cache removed)
- */
-export function revalidateRecipesCache(_householdId: string) {
-  // No-op: server cache removed, client cache is always fresh
 }
 
 // ============================================================================
@@ -905,13 +862,6 @@ export function getDemoShoppingPageData(): ShoppingPageData {
     lists: demoState.shoppingLists,
     timestamp: Date.now(),
   }
-}
-
-/**
- * Revalidate shopping cache (no-op - server cache removed)
- */
-export function revalidateShoppingCache(_householdId: string) {
-  // No-op: server cache removed, client cache is always fresh
 }
 
 // ============================================================================
@@ -1079,13 +1029,6 @@ export function getDemoStyringPageData(): StyringPageData {
   }
 }
 
-/**
- * Revalidate styring cache (no-op - server cache removed)
- */
-export function revalidateStyringCache(_householdId: string) {
-  // No-op: server cache removed, client cache is always fresh
-}
-
 // ============================================================================
 // Admin Page Data
 // ============================================================================
@@ -1216,9 +1159,3 @@ export function getDemoAdminPageData(): AdminPageData {
   }
 }
 
-/**
- * Revalidate admin cache (no-op - server cache removed)
- */
-export function revalidateAdminCache() {
-  // No-op: server cache removed, client cache is always fresh
-}

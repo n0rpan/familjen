@@ -3,16 +3,16 @@
 /**
  * useRefreshWithRevalidate Hook
  *
- * Ensures server cache is invalidated BEFORE calling router.refresh().
- * This prevents the race condition where router.refresh() fetches stale data
- * because unstable_cache hasn't been invalidated yet.
+ * Provides deduplicated router.refresh() calls with pending state tracking.
+ * Prevents multiple concurrent refresh operations and provides UI feedback.
  *
  * Features:
  * - Request deduplication: concurrent calls are coalesced into one
- * - Pending state tracking: prevents redundant API calls
+ * - Pending state tracking: prevents redundant refreshes
  * - Type-safe refresh functions for each page type
  *
- * ALWAYS use this hook instead of calling router.refresh() directly after mutations.
+ * NOTE: Server-side cache (unstable_cache) was removed, so revalidation is no
+ * longer needed. This hook now just provides deduplication and pending state.
  *
  * @example
  * ```typescript
@@ -20,7 +20,7 @@
  *
  * // After a mutation:
  * await supabase.from('pickups').update(data)
- * await refreshWeek(weekStart) // Revalidates cache THEN refreshes
+ * await refreshWeek(weekStart) // Deduplicated refresh
  *
  * // Check pending state for UI feedback:
  * <button disabled={isPending}>Save</button>
@@ -29,15 +29,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import {
-  revalidateWeek,
-  revalidateHousehold,
-  revalidateFeed,
-  revalidateRecipes,
-  revalidateShopping,
-  revalidateSettings,
-  revalidateStyring,
-} from '@/lib/revalidate'
 import { formatDateISO, getWeekStart } from '@/lib/utils'
 
 export interface RefreshWithRevalidateResult {
@@ -86,9 +77,9 @@ export interface RefreshWithRevalidateResult {
 }
 
 /**
- * Hook that provides safe refresh functions that always revalidate cache first.
+ * Hook that provides deduplicated refresh functions with pending state.
  *
- * @param householdId - The household ID (required for cache invalidation)
+ * @param householdId - The household ID (used for deduplication keys)
  * @returns Object with typed refresh functions for different page types + isPending state
  */
 export function useRefreshWithRevalidate(householdId: string | null): RefreshWithRevalidateResult {
@@ -141,11 +132,6 @@ export function useRefreshWithRevalidate(householdId: string | null): RefreshWit
 
   const refreshWeek = useCallback(
     async (weekStart?: Date | string) => {
-      if (!householdId || householdId === 'demo') {
-        router.refresh()
-        return
-      }
-
       // Default to current week if not provided
       const weekStartStr = weekStart
         ? typeof weekStart === 'string'
@@ -154,10 +140,9 @@ export function useRefreshWithRevalidate(householdId: string | null): RefreshWit
         : formatDateISO(getWeekStart(new Date()))
 
       // Use household+week-specific key to allow different weeks/households to refresh independently
-      const dedupeKey = `${householdId}-week-${weekStartStr}`
+      const dedupeKey = householdId ? `${householdId}-week-${weekStartStr}` : `week-${weekStartStr}`
 
       await withDeduplication(dedupeKey, async () => {
-        await revalidateWeek(householdId, weekStartStr)
         router.refresh()
       })
     },
@@ -165,73 +150,49 @@ export function useRefreshWithRevalidate(householdId: string | null): RefreshWit
   )
 
   const refreshHousehold = useCallback(async () => {
-    if (!householdId || householdId === 'demo') {
-      router.refresh()
-      return
-    }
+    const dedupeKey = householdId ? `${householdId}-household` : 'household'
 
-    await withDeduplication(`${householdId}-household`, async () => {
-      await revalidateHousehold(householdId)
+    await withDeduplication(dedupeKey, async () => {
       router.refresh()
     })
   }, [householdId, router, withDeduplication])
 
   const refreshFeed = useCallback(async () => {
-    if (!householdId || householdId === 'demo') {
-      router.refresh()
-      return
-    }
+    const dedupeKey = householdId ? `${householdId}-feed` : 'feed'
 
-    await withDeduplication(`${householdId}-feed`, async () => {
-      await revalidateFeed(householdId)
+    await withDeduplication(dedupeKey, async () => {
       router.refresh()
     })
   }, [householdId, router, withDeduplication])
 
   const refreshRecipes = useCallback(async () => {
-    if (!householdId || householdId === 'demo') {
-      router.refresh()
-      return
-    }
+    const dedupeKey = householdId ? `${householdId}-recipes` : 'recipes'
 
-    await withDeduplication(`${householdId}-recipes`, async () => {
-      await revalidateRecipes(householdId)
+    await withDeduplication(dedupeKey, async () => {
       router.refresh()
     })
   }, [householdId, router, withDeduplication])
 
   const refreshShopping = useCallback(async () => {
-    if (!householdId || householdId === 'demo') {
-      router.refresh()
-      return
-    }
+    const dedupeKey = householdId ? `${householdId}-shopping` : 'shopping'
 
-    await withDeduplication(`${householdId}-shopping`, async () => {
-      await revalidateShopping(householdId)
+    await withDeduplication(dedupeKey, async () => {
       router.refresh()
     })
   }, [householdId, router, withDeduplication])
 
   const refreshSettings = useCallback(async () => {
-    if (!householdId || householdId === 'demo') {
-      router.refresh()
-      return
-    }
+    const dedupeKey = householdId ? `${householdId}-settings` : 'settings'
 
-    await withDeduplication(`${householdId}-settings`, async () => {
-      await revalidateSettings(householdId)
+    await withDeduplication(dedupeKey, async () => {
       router.refresh()
     })
   }, [householdId, router, withDeduplication])
 
   const refreshStyring = useCallback(async () => {
-    if (!householdId || householdId === 'demo') {
-      router.refresh()
-      return
-    }
+    const dedupeKey = householdId ? `${householdId}-styring` : 'styring'
 
-    await withDeduplication(`${householdId}-styring`, async () => {
-      await revalidateStyring(householdId)
+    await withDeduplication(dedupeKey, async () => {
       router.refresh()
     })
   }, [householdId, router, withDeduplication])

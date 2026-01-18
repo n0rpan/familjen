@@ -10,7 +10,6 @@ import { formatDateISO, addDays } from '@/lib/utils'
 import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '@/lib/rate-limit'
 import { maskEmail } from '@/lib/email-mask'
 import { ApiErrors, handleApiError } from '@/lib/api-errors'
-import { revalidateHouseholdCache } from '@/lib/data/server'
 import type { UnmatchedCalendarInvite } from '@/lib/types'
 
 // POST /api/calendar/sync - Sync events from Gmail calendar invites
@@ -157,11 +156,6 @@ export async function POST(request: Request) {
           affectedHouseholds.add(event.household_id)
         }
       }
-    }
-
-    // Revalidate caches for affected households so week page shows fresh data
-    for (const householdId of affectedHouseholds) {
-      revalidateHouseholdCache(householdId)
     }
 
     // Note: We don't auto-delete events since Gmail retains emails

@@ -16,7 +16,6 @@ import { verifyCronRequest } from '@/lib/cron-auth'
 import { getModel } from '@/lib/ai-models'
 import { truncate, sanitizeString, sanitizeTime } from '@/lib/sanitize'
 import { ApiErrors, handleApiError } from '@/lib/api-errors'
-import { revalidateHouseholdCache } from '@/lib/data/server'
 
 type AnySupabaseClient = SupabaseClient<any, any, any>
 
@@ -530,31 +529,6 @@ export async function GET(request: Request) {
       }
     }
     console.log(`[Cron] Deduplication total: ${deduplicationAutoMerged} auto-merged, ${deduplicationSuggestionsCreated} suggestions`)
-
-    // Revalidate all caches for affected households (feed, week, home, etc.)
-    // This ensures users see fresh data after integrations sync
-    const affectedHouseholdIds = new Set(results.map(r => r.householdId))
-    const householdNameMap = new Map(households.map(h => [h.id, h.name]))
-
-    console.log(`[Cron] Starting cache revalidation for ${affectedHouseholdIds.size} affected households`)
-
-    let revalidationErrors = 0
-    for (const householdId of affectedHouseholdIds) {
-      try {
-        revalidateHouseholdCache(householdId)
-        const householdName = householdNameMap.get(householdId) || householdId
-        console.log(`[Cron] Cache revalidated for household: ${householdName}`)
-      } catch (revalidateError) {
-        revalidationErrors++
-        console.error(`[Cron] Cache revalidation failed for ${householdId}:`, revalidateError)
-      }
-    }
-
-    if (revalidationErrors > 0) {
-      console.warn(`[Cron] Cache revalidation completed with ${revalidationErrors} errors`)
-    } else {
-      console.log(`[Cron] Cache revalidation completed successfully for ${affectedHouseholdIds.size} households`)
-    }
 
     // Summary
     const successCount = results.filter((r) => r.success).length

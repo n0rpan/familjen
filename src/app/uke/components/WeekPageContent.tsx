@@ -50,7 +50,6 @@ import { useRealtimeOptional } from '@/lib/realtime/context'
 import { MemberEventModal, HouseholdEventModal, ChildTaskModal, ExternalEventModal } from './index'
 import type { ExternalEventLocalOverrides, Holiday } from '@/lib/types'
 import { useRefreshWithRevalidate } from '@/hooks/useRefreshWithRevalidate'
-import { revalidateWeek } from '@/lib/revalidate'
 import {
   PREFILL_STORAGE_KEYS,
   type MemberEventPrefillData,
@@ -831,13 +830,7 @@ export function WeekPageContent({
 
       closeEventModal()
 
-      // Also revalidate the event's week if different from current viewing week
-      const eventWeekStart = getWeekStart(new Date(eventForm.date))
-      const eventWeekStartStr = formatDateISO(eventWeekStart)
-      if (eventWeekStartStr !== weekStartStr) {
-        await revalidateWeek(householdId, eventWeekStartStr)
-      }
-
+      // Refresh the week being viewed - server always returns fresh data
       await refreshWeek(weekStartStr)
 
       // Send notification AFTER data is synced to avoid race conditions
