@@ -19,6 +19,7 @@ import { useLanguage } from '@/lib/i18n/context'
 import { useFeed } from '@/hooks/data'
 import { useEventNotifications } from '@/hooks/data/useEventNotifications'
 import { safeTransformMessages, safeTransformPhotos } from '@/lib/feed-transforms'
+import { useRefreshWithRevalidate } from '@/hooks/useRefreshWithRevalidate'
 import { FeedPageContent } from './FeedPageContent'
 import { FreshnessIndicator } from '@/components/FreshnessIndicator'
 import type { FeedFilter } from './FeedFilters'
@@ -52,6 +53,7 @@ export function FeedPageWrapper({
   const router = useRouter()
   const { t } = useLanguage()
   const supabase = useMemo(() => isDemo ? null : createClient(), [isDemo])
+  const { refreshFeed } = useRefreshWithRevalidate(householdId)
 
   // State for duplicate management
   const [duplicateSuggestions, setDuplicateSuggestions] = useState<DuplicateSuggestion[]>(
@@ -249,8 +251,8 @@ export function FeedPageWrapper({
           schema: 'public',
           table: 'external_messages',
         },
-        () => {
-          router.refresh()
+        async () => {
+          await refreshFeed()
         }
       )
       .on(
@@ -260,8 +262,8 @@ export function FeedPageWrapper({
           schema: 'public',
           table: 'external_photos',
         },
-        () => {
-          router.refresh()
+        async () => {
+          await refreshFeed()
         }
       )
       .on(
@@ -271,8 +273,8 @@ export function FeedPageWrapper({
           schema: 'public',
           table: 'ai_suggestions',
         },
-        () => {
-          router.refresh()
+        async () => {
+          await refreshFeed()
         }
       )
       .subscribe()
@@ -280,7 +282,7 @@ export function FeedPageWrapper({
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [householdId, isDemo, router, supabase])
+  }, [householdId, isDemo, refreshFeed, supabase])
 
   // Not enabled state
   if (!isDemo && !initialData.integrationsEnabled) {

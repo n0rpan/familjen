@@ -280,6 +280,7 @@ export function HomePageContent({
           childTasks={childTasks}
           holidays={holidays}
           weekStart={weekStart}
+          householdId={householdId}
           showFromToday={true}
         />
       </div>

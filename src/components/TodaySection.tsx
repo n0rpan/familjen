@@ -1,13 +1,13 @@
 'use client'
 
 import { useState, useMemo, useCallback, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { TodayOverview } from './TodayOverview'
 import { MemberEventModal, HouseholdEventModal, ChildTaskModal, ExternalEventModal } from '@/app/uke/components'
 import type { DaySummary, HouseholdEvent, MemberEvent, ExternalEvent, ChildTask, HouseholdMember, Child, ChildTaskType, MemberEventType, ExternalEventLocalOverrides } from '@/lib/types'
 import type { Holiday } from '@/lib/utils'
 import { useLanguage } from '@/lib/i18n/context'
+import { useRefreshWithRevalidate } from '@/hooks/useRefreshWithRevalidate'
 
 interface TodaySectionProps {
   summary: DaySummary | null
@@ -19,7 +19,7 @@ interface TodaySectionProps {
 
 export function TodaySection({ summary, holidays = [], members, children, householdId }: TodaySectionProps) {
   const { t } = useLanguage()
-  const router = useRouter()
+  const { refreshWeek } = useRefreshWithRevalidate(householdId)
   const supabase = useMemo(() => createClient(), [])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -135,14 +135,14 @@ export function TodaySection({ summary, holidays = [], members, children, househ
         if (dbError) throw dbError
       }
       closeMemberEventModal()
-      router.refresh()
+      await refreshWeek()
     } catch (err) {
       console.error('Error saving member event:', err)
       showError(t.errors.couldNotSaveEvent)
     } finally {
       setSaving(false)
     }
-  }, [editingMemberEvent, memberEventForm, supabase, closeMemberEventModal, router, showError, t.errors.couldNotSaveEvent])
+  }, [editingMemberEvent, memberEventForm, supabase, closeMemberEventModal, refreshWeek, showError, t.errors.couldNotSaveEvent])
 
   const deleteMemberEvent = useCallback(async () => {
     if (!editingMemberEvent) return
@@ -156,14 +156,14 @@ export function TodaySection({ summary, holidays = [], members, children, househ
       if (dbError) throw dbError
 
       closeMemberEventModal()
-      router.refresh()
+      await refreshWeek()
     } catch (err) {
       console.error('Error deleting member event:', err)
       showError(t.errors.deleteFailed)
     } finally {
       setSaving(false)
     }
-  }, [editingMemberEvent, supabase, closeMemberEventModal, router, showError, t.errors.deleteFailed])
+  }, [editingMemberEvent, supabase, closeMemberEventModal, refreshWeek, showError, t.errors.deleteFailed])
 
   // Household event handlers
   const handleHouseholdEventClick = useCallback((event: HouseholdEvent) => {
@@ -214,14 +214,14 @@ export function TodaySection({ summary, holidays = [], members, children, househ
         if (dbError) throw dbError
       }
       closeHouseholdEventModal()
-      router.refresh()
+      await refreshWeek()
     } catch (err) {
       console.error('Error saving household event:', err)
       showError(t.errors.couldNotSaveEvent)
     } finally {
       setSaving(false)
     }
-  }, [editingHouseholdEvent, householdEventForm, supabase, closeHouseholdEventModal, router, showError, t.errors.couldNotSaveEvent])
+  }, [editingHouseholdEvent, householdEventForm, supabase, closeHouseholdEventModal, refreshWeek, showError, t.errors.couldNotSaveEvent])
 
   const deleteHouseholdEvent = useCallback(async () => {
     if (!editingHouseholdEvent) return
@@ -240,14 +240,14 @@ export function TodaySection({ summary, holidays = [], members, children, househ
       if (dbError) throw dbError
 
       closeHouseholdEventModal()
-      router.refresh()
+      await refreshWeek()
     } catch (err) {
       console.error('Error deleting household event:', err)
       showError(t.errors.deleteFailed)
     } finally {
       setSaving(false)
     }
-  }, [editingHouseholdEvent, supabase, closeHouseholdEventModal, router, showError, t.errors.deleteFailed])
+  }, [editingHouseholdEvent, supabase, closeHouseholdEventModal, refreshWeek, showError, t.errors.deleteFailed])
 
   // External event handlers
   const handleExternalEventClick = useCallback((event: ExternalEvent) => {
@@ -280,14 +280,14 @@ export function TodaySection({ summary, holidays = [], members, children, househ
       if (dbError) throw dbError
 
       closeExternalEventModal()
-      router.refresh()
+      await refreshWeek()
     } catch (err) {
       console.error('Error saving external event:', err)
       showError(t.errors.couldNotSaveEvent)
     } finally {
       setSaving(false)
     }
-  }, [editingExternalEvent, supabase, closeExternalEventModal, router, showError, t.errors.couldNotSaveEvent])
+  }, [editingExternalEvent, supabase, closeExternalEventModal, refreshWeek, showError, t.errors.couldNotSaveEvent])
 
   // Task handlers
   const handleTaskClick = useCallback((task: ChildTask) => {
@@ -336,14 +336,14 @@ export function TodaySection({ summary, holidays = [], members, children, househ
         if (dbError) throw dbError
       }
       closeTaskModal()
-      router.refresh()
+      await refreshWeek()
     } catch (err) {
       console.error('Error saving task:', err)
       showError(t.errors.couldNotSaveTask)
     } finally {
       setSaving(false)
     }
-  }, [editingTask, taskForm, supabase, closeTaskModal, router, showError, t.errors.couldNotSaveTask])
+  }, [editingTask, taskForm, supabase, closeTaskModal, refreshWeek, showError, t.errors.couldNotSaveTask])
 
   const deleteTask = useCallback(async () => {
     if (!editingTask) return
@@ -357,14 +357,14 @@ export function TodaySection({ summary, holidays = [], members, children, househ
       if (dbError) throw dbError
 
       closeTaskModal()
-      router.refresh()
+      await refreshWeek()
     } catch (err) {
       console.error('Error deleting task:', err)
       showError(t.errors.deleteFailed)
     } finally {
       setSaving(false)
     }
-  }, [editingTask, supabase, closeTaskModal, router, showError, t.errors.deleteFailed])
+  }, [editingTask, supabase, closeTaskModal, refreshWeek, showError, t.errors.deleteFailed])
 
   const toggleTaskStatus = useCallback(async () => {
     if (!editingTask) return
@@ -377,14 +377,14 @@ export function TodaySection({ summary, holidays = [], members, children, househ
         .eq('id', editingTask.id)
       if (dbError) throw dbError
       closeTaskModal()
-      router.refresh()
+      await refreshWeek()
     } catch (err) {
       console.error('Error toggling task status:', err)
       showError(t.errors.couldNotSaveTask)
     } finally {
       setSaving(false)
     }
-  }, [editingTask, supabase, closeTaskModal, router, showError, t.errors.couldNotSaveTask])
+  }, [editingTask, supabase, closeTaskModal, refreshWeek, showError, t.errors.couldNotSaveTask])
 
   return (
     <>
