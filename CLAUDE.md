@@ -472,12 +472,14 @@ All main pages have been converted to the PPR pattern for instant navigation:
 import { useRefreshWithRevalidate } from '@/hooks/useRefreshWithRevalidate'
 
 function MyComponent({ householdId }: { householdId: string }) {
-  const { refreshWeek, refreshHousehold, refreshFeed } = useRefreshWithRevalidate(householdId)
+  const { refreshWeek, refreshHousehold, refreshFeed, isPending } = useRefreshWithRevalidate(householdId)
 
   const handleSave = async () => {
     await supabase.from('pickups').update(data).eq('id', id)
     await refreshWeek(weekStart)  // ✅ Revalidates cache THEN refreshes
   }
+
+  return <button disabled={isPending}>Save</button>  // ✅ Disable while syncing
 }
 ```
 
@@ -495,6 +497,15 @@ router.refresh()
 router.refresh()
 ```
 
+**Hook Features:**
+
+| Feature | Description |
+|---------|-------------|
+| `isPending` | Boolean state for UI feedback (disable buttons, show spinners) |
+| Request deduplication | Concurrent calls coalesce into one - no wasted API calls |
+| Week-specific keys | `refreshWeek()` with different dates can run independently |
+| Demo mode bypass | Returns early with just `router.refresh()` for demo mode |
+
 **Available refresh functions:**
 | Function | When to use |
 |----------|-------------|
@@ -505,6 +516,38 @@ router.refresh()
 | `refreshShopping()` | After shopping list changes |
 | `refreshSettings()` | After settings changes |
 | `refreshStyring()` | After home control changes |
+
+**Realtime Event Debouncing:**
+
+When handling realtime events (Supabase postgres_changes), always debounce refresh calls to prevent flooding:
+
+```typescript
+// ✅ Correct - debounced realtime handler
+const debounceRef = useRef<NodeJS.Timeout | null>(null)
+const DEBOUNCE_MS = 500
+
+useEffect(() => {
+  const debouncedRefresh = () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(async () => {
+      await refreshFeed()
+      debounceRef.current = null
+    }, DEBOUNCE_MS)
+  }
+
+  const channel = supabase
+    .channel('my-channel')
+    .on('postgres_changes', { table: 'messages' }, debouncedRefresh)
+    .subscribe()
+
+  return () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    supabase.removeChannel(channel)
+  }
+}, [refreshFeed, supabase])
+```
+
+Without debouncing, syncing 50 messages would trigger 50 separate API calls.
 
 **Key file:** `src/hooks/useRefreshWithRevalidate.ts`
 

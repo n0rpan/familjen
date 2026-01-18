@@ -12,8 +12,7 @@
  * Receives initial data from server (PPR) and manages local state.
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import { useFeed } from '@/hooks/data'
@@ -50,7 +49,6 @@ export function FeedPageWrapper({
   typeFilter,
   dataTimestamp,
 }: FeedPageWrapperProps) {
-  const router = useRouter()
   const { t } = useLanguage()
   const supabase = useMemo(() => isDemo ? null : createClient(), [isDemo])
   const { refreshFeed } = useRefreshWithRevalidate(householdId)
@@ -238,9 +236,25 @@ export function FeedPageWrapper({
     }
   }
 
+  // Debounce ref for realtime updates - prevents flooding when many events arrive at once
+  // (e.g., syncing 50 messages would otherwise trigger 50 separate refreshFeed calls)
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const DEBOUNCE_MS = 500 // Wait 500ms after last event before refreshing
+
   // Realtime subscriptions for feed updates (production only)
   useEffect(() => {
     if (isDemo || !supabase) return
+
+    // Debounced refresh handler - coalesces rapid events into one refresh
+    const debouncedRefresh = () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current)
+      }
+      debounceTimerRef.current = setTimeout(async () => {
+        await refreshFeed()
+        debounceTimerRef.current = null
+      }, DEBOUNCE_MS)
+    }
 
     const channel = supabase
       .channel(`feed-realtime-${householdId}`)
@@ -251,9 +265,7 @@ export function FeedPageWrapper({
           schema: 'public',
           table: 'external_messages',
         },
-        async () => {
-          await refreshFeed()
-        }
+        debouncedRefresh
       )
       .on(
         'postgres_changes',
@@ -262,9 +274,7 @@ export function FeedPageWrapper({
           schema: 'public',
           table: 'external_photos',
         },
-        async () => {
-          await refreshFeed()
-        }
+        debouncedRefresh
       )
       .on(
         'postgres_changes',
@@ -273,13 +283,16 @@ export function FeedPageWrapper({
           schema: 'public',
           table: 'ai_suggestions',
         },
-        async () => {
-          await refreshFeed()
-        }
+        debouncedRefresh
       )
       .subscribe()
 
+    // Cleanup: clear pending timer and remove channel
     return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current)
+        debounceTimerRef.current = null
+      }
       supabase.removeChannel(channel)
     }
   }, [householdId, isDemo, refreshFeed, supabase])
