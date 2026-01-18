@@ -494,6 +494,7 @@ export interface TranslationStrings {
     comment: string
     comments: string
     directMessage: string
+    conversationWith: string
     // Integrations disabled state
     integrationsDisabled: string
     contactAdmin: string

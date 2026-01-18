@@ -90,9 +90,9 @@ export function MessageCard({ message, integrationChildren = [] }: Props) {
   }, [message.integration_id, message.child_name, integrationChildren])
 
   // Combine group names from Spond raw_data and integration mapping
-  // For personal chats, use the chat name (which is the other person's name)
+  // For personal chats, show "Conversation with [name]" instead of just the name
   const groupName = isPersonalChat && chatName
-    ? chatName
+    ? t.feed.conversationWith.replace('{name}', chatName)
     : (spondGroupName || integrationContext.groupName)
 
   // Format date with localization
@@ -168,8 +168,8 @@ export function MessageCard({ message, integrationChildren = [] }: Props) {
         </span>
       </div>
 
-      {/* Sender */}
-      {message.sender_name && (
+      {/* Sender - hide for personal chats since we can't reliably know who sent each message */}
+      {message.sender_name && !isPersonalChat && (
         <p className="text-sm font-medium mb-1" style={{ color: 'var(--foreground)' }}>
           {message.sender_name}
         </p>
