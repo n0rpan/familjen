@@ -5,14 +5,17 @@
  * They're designed for PPR (Partial Prerendering) - static shell with streaming dynamic content.
  *
  * Key features:
- * - Uses unstable_cache for cross-request caching (instant navigation)
- * - Cache per household+week, shared between household members
+ * - Always fetches fresh data from database (no server-side caching)
+ * - Client-side cache (localStorage/IndexedDB) provides instant navigation
  * - Realtime subscriptions on client handle live updates
- * - User-specific data (currentMember) derived after cache lookup
+ * - User-specific data (currentMember) derived after data lookup
+ *
+ * NOTE: We removed unstable_cache because it caused stale data to overwrite
+ * fresher client-side cache after realtime updates. For a low-traffic family app,
+ * always-fresh data is better than the complexity of cache invalidation.
  */
 
 import { cache } from 'react'
-import { unstable_cache, revalidateTag } from 'next/cache'
 import { createClient, getSessionLocal } from '@/lib/supabase/server'
 import { createAdminClient, syncUserMetadata } from '@/lib/supabase/admin'
 import { formatDateISO, addDays, getWeekStart, getWeekNumber, getWeekStartFromWeekNumber, type Holiday } from '@/lib/utils'
@@ -76,30 +79,8 @@ export interface DemoData extends HomePageData {
 }
 
 /**
- * Server-side cache TTL for unstable_cache
- *
- * ## Why 5 minutes?
- *
- * Trade-off considerations:
- * - **Shorter TTL**: More database queries, but fresher data if revalidation fails
- * - **Longer TTL**: Less database load, but stale data lingers if revalidation misses
- *
- * We chose 5 minutes because:
- * 1. Primary invalidation is via revalidateTag() after mutations - this is instant
- * 2. 5 min is short enough to self-heal if revalidation somehow fails
- * 3. 5 min is long enough to handle burst traffic without hammering the database
- * 4. For a family app, 5-minute-stale data is acceptable (pickups don't change that fast)
- *
- * This TTL applies to all pages (home, week, feed, settings, etc.) via unstable_cache.
- *
- * Previous value was 1 year which caused stale data issues when revalidation failed.
- */
-const CACHE_TTL = 5 * 60 // 5 minutes in seconds
-
-/**
  * Core data fetcher - uses admin client to bypass RLS
  * Safe because we explicitly filter by householdId
- * This function is wrapped with unstable_cache for cross-request caching
  */
 async function fetchHomeDataCore(
   householdId: string,
@@ -227,32 +208,8 @@ async function fetchHomeDataCore(
 }
 
 /**
- * Create cached version of home data fetcher with household-specific tag
- * Cache key: household ID + week start date
- * Shared between all household members for efficiency
- *
- * Tags allow targeted revalidation after mutations:
- * - revalidateTag(`household-${householdId}`, 'default') invalidates all data for that household
- */
-function getCachedHomeData(
-  householdId: string,
-  weekStartStr: string,
-  weekEndStr: string,
-  currentYear: number
-) {
-  return unstable_cache(
-    () => fetchHomeDataCore(householdId, weekStartStr, weekEndStr, currentYear),
-    ['home-page-data', householdId, weekStartStr],
-    {
-      revalidate: CACHE_TTL,
-      tags: [`household-${householdId}`, `week-${householdId}-${weekStartStr}`]
-    }
-  )()
-}
-
-/**
  * Fetch all data needed for the home page
- * Uses cached data for instant navigation, realtime handles updates
+ * Always fetches fresh data - client-side cache provides instant navigation
  *
  * @param householdId - The household ID
  * @param userId - Optional user ID for currentMember lookup (avoids extra auth call)
@@ -266,17 +223,17 @@ export const fetchHomePageData = cache(async (householdId: string, userId?: stri
   const weekEndStr = formatDateISO(weekEnd)
   const currentYear = today.getFullYear()
 
-  // Get cached data (shared between household members)
-  const cachedData = await getCachedHomeData(householdId, weekStartStr, weekEndStr, currentYear)
+  // Fetch fresh data from database
+  const data = await fetchHomeDataCore(householdId, weekStartStr, weekEndStr, currentYear)
 
-  // Find current member from cached data using passed userId
+  // Find current member using passed userId
   // No network call needed - userId comes from local session (middleware validated)
   const currentMember = userId
-    ? cachedData.members.find(m => m.user_id === userId) || null
+    ? data.members.find(m => m.user_id === userId) || null
     : null
 
   return {
-    ...cachedData,
+    ...data,
     currentMember,
     weekStart,
     weekEnd,
@@ -288,27 +245,9 @@ export const fetchHomePageData = cache(async (householdId: string, userId?: stri
 export type WeekPageData = HomePageData
 
 /**
- * Create cached version for week page with household-specific tag
- * Uses same tags as home page so revalidation works for both
- */
-function getCachedWeekData(
-  householdId: string,
-  weekStartStr: string,
-  weekEndStr: string,
-  currentYear: number
-) {
-  return unstable_cache(
-    () => fetchHomeDataCore(householdId, weekStartStr, weekEndStr, currentYear),
-    ['week-page-data', householdId, weekStartStr],
-    {
-      revalidate: CACHE_TTL,
-      tags: [`household-${householdId}`, `week-${householdId}-${weekStartStr}`]
-    }
-  )()
-}
-
-/**
  * Fetch all data needed for the week page
+ * Always fetches fresh data - client-side cache provides instant navigation
+ *
  * @param householdId - The household ID
  * @param week - Optional week number (1-53). Defaults to current week.
  * @param year - Optional year. Defaults to current year or inferred from week.
@@ -330,17 +269,17 @@ export const fetchWeekPageData = cache(async (
   const weekEndStr = formatDateISO(weekEnd)
   const currentYear = weekStart.getFullYear()
 
-  // Get cached data (shared between household members)
-  const cachedData = await getCachedWeekData(householdId, weekStartStr, weekEndStr, currentYear)
+  // Fetch fresh data from database
+  const data = await fetchHomeDataCore(householdId, weekStartStr, weekEndStr, currentYear)
 
-  // Find current member from cached data using passed userId
+  // Find current member using passed userId
   // No network call needed - userId comes from local session (middleware validated)
   const currentMember = userId
-    ? cachedData.members.find(m => m.user_id === userId) || null
+    ? data.members.find(m => m.user_id === userId) || null
     : null
 
   return {
-    ...cachedData,
+    ...data,
     currentMember,
     weekStart,
     weekEnd,
@@ -592,24 +531,13 @@ async function fetchFeedDataCore(householdId: string): Promise<FeedPageData> {
   const supabase = createAdminClient()
 
   // Check if integrations are enabled
-  const { data: householdData, error: householdError } = await supabase
+  const { data: householdData } = await supabase
     .from('households')
     .select('external_integrations_enabled')
     .eq('id', householdId)
     .single()
 
-  // Log errors to help debug silent failures
-  if (householdError) {
-    console.error('[fetchFeedDataCore] Failed to fetch household:', householdError.message, { householdId })
-  }
-
   if (!householdData?.external_integrations_enabled) {
-    // Log why we're returning disabled state
-    if (!householdData) {
-      console.warn('[fetchFeedDataCore] No household data found, returning disabled state', { householdId })
-    } else {
-      console.log('[fetchFeedDataCore] Integrations disabled for household', { householdId })
-    }
     return {
       integrationsEnabled: false,
       integrations: [],
@@ -710,24 +638,11 @@ async function fetchFeedDataCore(householdId: string): Promise<FeedPageData> {
 }
 
 /**
- * Cached version of feed data fetcher
- */
-function getCachedFeedData(householdId: string) {
-  return unstable_cache(
-    () => fetchFeedDataCore(householdId),
-    ['feed-page-data', householdId],
-    {
-      revalidate: CACHE_TTL,
-      tags: [`household-${householdId}`, `feed-${householdId}`]
-    }
-  )()
-}
-
-/**
  * Fetch all data needed for the feed page
+ * Always fetches fresh data - client-side cache provides instant navigation
  */
 export const fetchFeedPageData = cache(async (householdId: string): Promise<FeedPageData> => {
-  return getCachedFeedData(householdId)
+  return fetchFeedDataCore(householdId)
 })
 
 /**
@@ -749,31 +664,33 @@ export function getDemoFeedPageData(): FeedPageData {
   }
 }
 
-/**
- * Revalidate feed cache
- */
-export function revalidateFeedCache(householdId: string) {
-  revalidateTag(`feed-${householdId}`, 'default')
-}
-
 // ============================================================================
-// Cache Revalidation Helpers
+// Cache Revalidation Helpers (No-ops)
 // ============================================================================
+// NOTE: These functions are kept for API compatibility but do nothing.
+// We removed server-side caching (unstable_cache) because it caused stale
+// data to overwrite fresher client-side cache after realtime updates.
+// Client-side cache (localStorage/IndexedDB) provides instant navigation.
 
 /**
- * Revalidate all cached data for a household
- * Call this after mutations to ensure fresh data on next navigation
+ * Revalidate feed cache (no-op - server cache removed)
  */
-export function revalidateHouseholdCache(householdId: string) {
-  revalidateTag(`household-${householdId}`, 'default')
+export function revalidateFeedCache(_householdId: string) {
+  // No-op: server cache removed, client cache is always fresh
 }
 
 /**
- * Revalidate cached data for a specific week
- * More targeted than revalidating all household data
+ * Revalidate all cached data for a household (no-op - server cache removed)
  */
-export function revalidateWeekCache(householdId: string, weekStartStr: string) {
-  revalidateTag(`week-${householdId}-${weekStartStr}`, 'default')
+export function revalidateHouseholdCache(_householdId: string) {
+  // No-op: server cache removed, client cache is always fresh
+}
+
+/**
+ * Revalidate cached data for a specific week (no-op - server cache removed)
+ */
+export function revalidateWeekCache(_householdId: string, _weekStartStr: string) {
+  // No-op: server cache removed, client cache is always fresh
 }
 
 // ============================================================================
@@ -835,24 +752,11 @@ async function fetchSettingsDataCore(householdId: string): Promise<SettingsPageD
 }
 
 /**
- * Cached version of settings data fetcher
- */
-function getCachedSettingsData(householdId: string) {
-  return unstable_cache(
-    () => fetchSettingsDataCore(householdId),
-    ['settings-page-data', householdId],
-    {
-      revalidate: CACHE_TTL,
-      tags: [`household-${householdId}`, `settings-${householdId}`]
-    }
-  )()
-}
-
-/**
  * Fetch all data needed for the settings page
+ * Always fetches fresh data - client-side cache provides instant navigation
  */
 export const fetchSettingsPageData = cache(async (householdId: string): Promise<SettingsPageData> => {
-  return getCachedSettingsData(householdId)
+  return fetchSettingsDataCore(householdId)
 })
 
 /**
@@ -870,10 +774,10 @@ export function getDemoSettingsPageData(): SettingsPageData {
 }
 
 /**
- * Revalidate settings cache
+ * Revalidate settings cache (no-op - server cache removed)
  */
-export function revalidateSettingsCache(householdId: string) {
-  revalidateTag(`settings-${householdId}`, 'default')
+export function revalidateSettingsCache(_householdId: string) {
+  // No-op: server cache removed, client cache is always fresh
 }
 
 // ============================================================================
@@ -912,24 +816,11 @@ async function fetchRecipesDataCore(householdId: string): Promise<RecipesPageDat
 }
 
 /**
- * Cached version of recipes data fetcher
- */
-function getCachedRecipesData(householdId: string) {
-  return unstable_cache(
-    () => fetchRecipesDataCore(householdId),
-    ['recipes-page-data', householdId],
-    {
-      revalidate: CACHE_TTL,
-      tags: [`household-${householdId}`, `recipes-${householdId}`]
-    }
-  )()
-}
-
-/**
  * Fetch all data needed for the recipes page
+ * Always fetches fresh data - client-side cache provides instant navigation
  */
 export const fetchRecipesPageData = cache(async (householdId: string): Promise<RecipesPageData> => {
-  return getCachedRecipesData(householdId)
+  return fetchRecipesDataCore(householdId)
 })
 
 /**
@@ -945,10 +836,10 @@ export function getDemoRecipesPageData(): RecipesPageData {
 }
 
 /**
- * Revalidate recipes cache
+ * Revalidate recipes cache (no-op - server cache removed)
  */
-export function revalidateRecipesCache(householdId: string) {
-  revalidateTag(`recipes-${householdId}`, 'default')
+export function revalidateRecipesCache(_householdId: string) {
+  // No-op: server cache removed, client cache is always fresh
 }
 
 // ============================================================================
@@ -996,24 +887,11 @@ async function fetchShoppingDataCore(householdId: string): Promise<ShoppingPageD
 }
 
 /**
- * Cached version of shopping data fetcher
- */
-function getCachedShoppingData(householdId: string) {
-  return unstable_cache(
-    () => fetchShoppingDataCore(householdId),
-    ['shopping-page-data', householdId],
-    {
-      revalidate: CACHE_TTL,
-      tags: [`household-${householdId}`, `shopping-${householdId}`]
-    }
-  )()
-}
-
-/**
  * Fetch all data needed for the shopping page
+ * Always fetches fresh data - client-side cache provides instant navigation
  */
 export const fetchShoppingPageData = cache(async (householdId: string): Promise<ShoppingPageData> => {
-  return getCachedShoppingData(householdId)
+  return fetchShoppingDataCore(householdId)
 })
 
 /**
@@ -1030,10 +908,10 @@ export function getDemoShoppingPageData(): ShoppingPageData {
 }
 
 /**
- * Revalidate shopping cache
+ * Revalidate shopping cache (no-op - server cache removed)
  */
-export function revalidateShoppingCache(householdId: string) {
-  revalidateTag(`shopping-${householdId}`, 'default')
+export function revalidateShoppingCache(_householdId: string) {
+  // No-op: server cache removed, client cache is always fresh
 }
 
 // ============================================================================
@@ -1181,24 +1059,11 @@ async function fetchStyringDataCore(householdId: string): Promise<StyringPageDat
 }
 
 /**
- * Cached version of styring data fetcher
- */
-function getCachedStyringData(householdId: string) {
-  return unstable_cache(
-    () => fetchStyringDataCore(householdId),
-    ['styring-page-data', householdId],
-    {
-      revalidate: 60, // Shorter cache for device state (60 seconds)
-      tags: [`household-${householdId}`, `styring-${householdId}`]
-    }
-  )()
-}
-
-/**
  * Fetch all data needed for the styring page
+ * Always fetches fresh data - device state changes frequently
  */
 export const fetchStyringPageData = cache(async (householdId: string): Promise<StyringPageData> => {
-  return getCachedStyringData(householdId)
+  return fetchStyringDataCore(householdId)
 })
 
 /**
@@ -1215,10 +1080,10 @@ export function getDemoStyringPageData(): StyringPageData {
 }
 
 /**
- * Revalidate styring cache
+ * Revalidate styring cache (no-op - server cache removed)
  */
-export function revalidateStyringCache(householdId: string) {
-  revalidateTag(`styring-${householdId}`, 'default')
+export function revalidateStyringCache(_householdId: string) {
+  // No-op: server cache removed, client cache is always fresh
 }
 
 // ============================================================================
@@ -1316,24 +1181,11 @@ async function fetchAdminDataCore(): Promise<AdminPageData> {
 }
 
 /**
- * Cached version of admin data fetcher (short cache for admin data)
- */
-function getCachedAdminData() {
-  return unstable_cache(
-    () => fetchAdminDataCore(),
-    ['admin-page-data'],
-    {
-      revalidate: 30, // Short cache for admin data (30 seconds)
-      tags: ['admin-data']
-    }
-  )()
-}
-
-/**
  * Fetch all data needed for the admin page
+ * Always fetches fresh data - admin data should always be current
  */
 export const fetchAdminPageData = cache(async (): Promise<AdminPageData> => {
-  return getCachedAdminData()
+  return fetchAdminDataCore()
 })
 
 /**
@@ -1365,8 +1217,8 @@ export function getDemoAdminPageData(): AdminPageData {
 }
 
 /**
- * Revalidate admin cache
+ * Revalidate admin cache (no-op - server cache removed)
  */
 export function revalidateAdminCache() {
-  revalidateTag('admin-data', 'default')
+  // No-op: server cache removed, client cache is always fresh
 }
