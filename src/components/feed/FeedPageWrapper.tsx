@@ -61,12 +61,29 @@ export function FeedPageWrapper({
   )
 
   // Transform initial data to match FeedPageContent expectations
-  const [messages, setMessages] = useState<FeedMessage[]>(
-    initialData.messages as unknown as FeedMessage[] || []
-  )
-  const [photos, setPhotos] = useState<FeedPhoto[]>(
-    initialData.photos as unknown as FeedPhoto[] || []
-  )
+  // Messages from server have nested external_integrations.service, need to flatten
+  const [messages, setMessages] = useState<FeedMessage[]>(() => {
+    const rawMessages = initialData.messages || []
+    return rawMessages.map((m: Record<string, unknown>) => ({
+      ...m,
+      // Flatten nested integration data
+      service: ((m.external_integrations as Record<string, unknown> | undefined)?.service as string) || 'spond',
+      integration_name: (m.external_integrations as Record<string, unknown> | undefined)?.display_name as string | null,
+      child_name: (m.children as { name: string } | null)?.name || null,
+    })) as FeedMessage[]
+  })
+  // Photos also have nested integration data
+  const [photos, setPhotos] = useState<FeedPhoto[]>(() => {
+    const rawPhotos = initialData.photos || []
+    return rawPhotos.map((p: Record<string, unknown>) => {
+      const transformed = {
+        ...p,
+        service: ((p.external_integrations as Record<string, unknown> | undefined)?.service as string) || 'spond',
+        child_name: (p.children as { name: string } | null)?.name || null,
+      }
+      return transformed as unknown as FeedPhoto
+    })
+  })
   const [notifications, setNotificationsState] = useState<EventNotification[]>(
     initialData.notifications as unknown as EventNotification[] || []
   )

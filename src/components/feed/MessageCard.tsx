@@ -134,9 +134,19 @@ export function MessageCard({ message, integrationChildren = [] }: Props) {
       ? `${serviceStyle.label} · ${childNamesDisplay}`
       : serviceStyle.label
 
-  // Strip HTML tags for preview
+  // Decode HTML entities (e.g., &nbsp; → space, &aring; → å)
+  const decodeHtmlEntities = (html: string) => {
+    if (typeof document === 'undefined') return html
+    const textarea = document.createElement('textarea')
+    textarea.innerHTML = html
+    return textarea.value
+  }
+
+  // Strip HTML tags and decode entities for preview
   const stripHtml = (html: string) => {
-    return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+    const stripped = html.replace(/<[^>]*>/g, ' ')
+    const decoded = decodeHtmlEntities(stripped)
+    return decoded.replace(/\s+/g, ' ').trim()
   }
 
   const plainBody = stripHtml(message.body)

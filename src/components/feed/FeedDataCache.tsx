@@ -45,9 +45,28 @@ export interface CachedFeedData extends FeedPageData {
 export function computeFeedPropsFromCache(cachedData: CachedFeedData): FeedPageContentProps {
   // Type assertions through unknown are needed because FeedPageData uses
   // Record<string, unknown>[] for Supabase flexibility. Runtime shape is correct.
+
+  // Transform messages to flatten nested external_integrations data
+  const transformedMessages = cachedData.messages.map((m: Record<string, unknown>) => ({
+    ...m,
+    service: ((m.external_integrations as Record<string, unknown> | undefined)?.service as string) || 'spond',
+    integration_name: (m.external_integrations as Record<string, unknown> | undefined)?.display_name as string | null,
+    child_name: (m.children as { name: string } | null)?.name || null,
+  }))
+
+  // Transform photos to flatten nested external_integrations data
+  const transformedPhotos = cachedData.photos.map((p: Record<string, unknown>) => {
+    const transformed = {
+      ...p,
+      service: ((p.external_integrations as Record<string, unknown> | undefined)?.service as string) || 'spond',
+      child_name: (p.children as { name: string } | null)?.name || null,
+    }
+    return transformed as unknown as FeedPageContentProps['photos'][0]
+  })
+
   return {
-    messages: cachedData.messages as unknown as FeedPageContentProps['messages'],
-    photos: cachedData.photos as unknown as FeedPageContentProps['photos'],
+    messages: transformedMessages as FeedPageContentProps['messages'],
+    photos: transformedPhotos as FeedPageContentProps['photos'],
     // Reminders are AI-generated at render time, not cached
     reminders: [],
     notifications: cachedData.notifications as unknown as FeedPageContentProps['notifications'],
