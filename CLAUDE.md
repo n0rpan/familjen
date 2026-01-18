@@ -129,7 +129,7 @@ Every page benefits from these layers (in order of user experience):
 
 ### IndexedDB Cache Hydration (PWA Instant Load)
 
-After a PWA update, the server-side cache (`unstable_cache`) is cold because it's tied to the deployment. This causes a delay while data is fetched from Supabase. To solve this, we use IndexedDB caching on the client side that persists across deployments.
+Client-side caching (localStorage + IndexedDB) provides instant page loads by showing cached data immediately while the server fetches fresh data in the background (stale-while-revalidate pattern).
 
 **Dual Storage Strategy:**
 - **localStorage** (sync): Instant reads during initial render - no skeleton flash
@@ -184,44 +184,12 @@ if (cached.data.version === CACHE_VERSION) {
 | Render error | `CacheErrorBoundary` catches and falls back to skeleton |
 | Session expired | `useSessionValidator` clears caches and redirects to login |
 
-**Server-side cache invalidation:**
-
-The server uses Next.js `unstable_cache` with `revalidateTag()` for cache invalidation:
-
-| Function | What it clears | When to use |
-|----------|---------------|-------------|
-| `revalidateHouseholdCache(id)` | ALL caches for household (feed, week, home, settings, etc.) | After cron sync, integration sync, major data changes |
-| `revalidateWeekCache(id, weekStart)` | Specific week page cache | After pickup/meal/task changes |
-| `revalidateFeedCache(id)` | Feed page cache | After message/photo sync |
-| `revalidateRecipesCache(id)` | Recipes page cache | After recipe changes |
-| `revalidateShoppingCache(id)` | Shopping page cache | After shopping list changes |
-| `revalidateSettingsCache(id)` | Settings page cache | After household/member changes |
-
-**Server-side cache TTL (safety net):**
-
-The `unstable_cache` uses a **5-minute TTL** as a safety net. This is intentionally short:
-
-| Aspect | Value | Rationale |
-|--------|-------|-----------|
-| TTL | 5 minutes | Short enough to self-heal if revalidation fails |
-| Primary invalidation | `revalidateTag()` | Instant cache clear after mutations |
-| Previous TTL | 1 year | Caused stale data when revalidation failed |
-
-**Trade-off reasoning:**
-- **Shorter TTL** = more database queries, but fresher data if revalidation misses
-- **Longer TTL** = less load, but stale data lingers on revalidation failure
-- **5 minutes** balances both: handles burst traffic, self-heals failures, acceptable staleness for family app
-
-This applies to all pages via `unstable_cache` in `src/lib/data/server.ts`.
-
-**Pull-to-refresh cache clearing (3-step process):**
+**Pull-to-refresh cache clearing (2-step process):**
 1. **Client cache** - `deleteCache()` or `deleteCacheByPrefix()` clears localStorage + IndexedDB
-2. **Server cache** - Calls `/api/revalidate` to invalidate server-side `unstable_cache`
-3. **Fresh fetch** - `router.refresh()` fetches new data from invalidated cache
+2. **Fresh fetch** - `router.refresh()` fetches fresh data from the database
 
-**Key files for server cache:**
-- `src/lib/data/server.ts` - Revalidation helper functions
-- `src/app/api/revalidate/route.ts` - API endpoint for client-triggered revalidation
+**Key files:**
+- `src/lib/data/server.ts` - Server-side data fetching (always fresh, no server cache)
 - `src/components/AppShell.tsx` - Pull-to-refresh implementation
 
 **Error handling:**
@@ -452,21 +420,10 @@ All main pages have been converted to the PPR pattern for instant navigation:
 | Admin | `/admin` | PPR | `AdminDataLoader` | No demo mode, requires admin auth |
 
 **Server-side data fetching** is centralized in `src/lib/data/server.ts`:
-- Each page has `fetch[Page]PageData()` - cached server function
+- Each page has `fetch[Page]PageData()` - fetches fresh data from database (no server cache)
 - Each page has `getDemo[Page]PageData()` - demo data generator
-- Each page has `revalidate[Page]Cache()` - cache invalidation helper
 
-**Cache revalidation** is handled via `src/lib/revalidate.ts`:
-- `revalidateWeek(householdId, weekStart)` - Revalidate week page cache
-- `revalidateHousehold(householdId)` - Revalidate household data cache
-- `revalidateRecipes(householdId)` - Revalidate recipes cache
-- `revalidateShopping(householdId)` - Revalidate shopping lists cache
-- `revalidateStyring(householdId)` - Revalidate home control cache
-- `revalidateAdmin()` - Revalidate admin data cache
-
-**Important:** Revalidation functions are async and must be awaited before calling `router.refresh()` to avoid race conditions where the refresh fetches stale cache.
-
-**Use the `useRefreshWithRevalidate` hook** to ensure correct cache invalidation:
+**Use the `useRefreshWithRevalidate` hook** for deduplicated refreshes with pending state:
 
 ```typescript
 import { useRefreshWithRevalidate } from '@/hooks/useRefreshWithRevalidate'
@@ -476,25 +433,11 @@ function MyComponent({ householdId }: { householdId: string }) {
 
   const handleSave = async () => {
     await supabase.from('pickups').update(data).eq('id', id)
-    await refreshWeek(weekStart)  // ✅ Revalidates cache THEN refreshes
+    await refreshWeek(weekStart)  // ✅ Deduplicated refresh with pending state
   }
 
   return <button disabled={isPending}>Save</button>  // ✅ Disable while syncing
 }
-```
-
-**NEVER call `router.refresh()` directly after mutations** - use the hook instead:
-
-```typescript
-// ✅ Correct - use the hook
-await refreshWeek(weekStart)
-
-// ❌ Wrong - race condition, refresh may fetch stale cache
-await revalidateWeek(householdId, weekStartStr)
-router.refresh()
-
-// ❌ Very wrong - missing revalidation entirely
-router.refresh()
 ```
 
 **Hook Features:**
@@ -504,7 +447,6 @@ router.refresh()
 | `isPending` | Boolean state for UI feedback (disable buttons, show spinners) |
 | Request deduplication | Concurrent calls coalesce into one - no wasted API calls |
 | Week-specific keys | `refreshWeek()` with different dates can run independently |
-| Demo mode bypass | Returns early with just `router.refresh()` for demo mode |
 
 **Available refresh functions:**
 | Function | When to use |
