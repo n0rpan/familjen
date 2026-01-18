@@ -112,33 +112,7 @@ export function AppShell({ children }: AppShellProps) {
       // Client cache clear failed - continue anyway
     }
 
-    // Step 2: Revalidate server-side cache via API
-    // This ensures we don't just re-fetch stale server cache
-    try {
-      if (householdId) {
-        // Map pathname to revalidation type for targeted cache invalidation
-        const revalidateTypeMap: Record<string, string | undefined> = {
-          '/feed': 'feed',
-          '/handleliste': 'shopping',
-          '/oppskrifter': 'recipes',
-          '/innstillinger': 'settings',
-          '/styring': 'styring',
-          // Home and week pages revalidate all household data (no type = full revalidation)
-        }
-
-        const type = revalidateTypeMap[pathname]
-
-        await fetch('/api/revalidate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ householdId, type }),
-        })
-      }
-    } catch {
-      // Server revalidation failed - continue anyway, user will still get cached data
-    }
-
-    // Step 3: Refresh the page to fetch fresh data
+    // Step 2: Refresh the page to fetch fresh data (server always returns fresh data)
     router.refresh()
     // Wait a bit for the refresh to complete
     await new Promise(resolve => setTimeout(resolve, 500))
