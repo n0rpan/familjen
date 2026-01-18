@@ -75,9 +75,25 @@ export interface DemoData extends HomePageData {
   isDemo: true
 }
 
-// Cache TTL: 5 minutes as safety net
-// Primary invalidation is via revalidateTag(), but short TTL ensures
-// stale data self-heals even if revalidation fails
+/**
+ * Server-side cache TTL for unstable_cache
+ *
+ * ## Why 5 minutes?
+ *
+ * Trade-off considerations:
+ * - **Shorter TTL**: More database queries, but fresher data if revalidation fails
+ * - **Longer TTL**: Less database load, but stale data lingers if revalidation misses
+ *
+ * We chose 5 minutes because:
+ * 1. Primary invalidation is via revalidateTag() after mutations - this is instant
+ * 2. 5 min is short enough to self-heal if revalidation somehow fails
+ * 3. 5 min is long enough to handle burst traffic without hammering the database
+ * 4. For a family app, 5-minute-stale data is acceptable (pickups don't change that fast)
+ *
+ * This TTL applies to all pages (home, week, feed, settings, etc.) via unstable_cache.
+ *
+ * Previous value was 1 year which caused stale data issues when revalidation failed.
+ */
 const CACHE_TTL = 5 * 60 // 5 minutes in seconds
 
 /**

@@ -16,7 +16,7 @@ import { getCached, setCache, isCacheFresh } from '@/lib/cache'
 import { setStoredHouseholdId } from '@/components/SmartLoading'
 import { getCachedSync, setCacheSync, isSyncCacheFresh } from '@/lib/cache-sync'
 import { CACHE_KEYS, CACHE_VERSION } from '@/lib/cache-constants'
-import { transformFeedMessages, transformFeedPhotos } from '@/lib/feed-transforms'
+import { safeTransformMessages, safeTransformPhotos } from '@/lib/feed-transforms'
 import { FeedPageContent, type FeedPageContentProps } from './FeedPageContent'
 import { FeedPageSkeleton } from '@/components/Skeleton'
 import type { FeedPageData } from '@/lib/data/server'
@@ -44,10 +44,10 @@ export interface CachedFeedData extends FeedPageData {
  * to skeleton gracefully. This is intentional to avoid duplicating type definitions.
  */
 export function computeFeedPropsFromCache(cachedData: CachedFeedData): FeedPageContentProps {
-  // Use shared transformation utilities for messages and photos
-  // These handle flattening nested external_integrations data
-  const transformedMessages = transformFeedMessages(cachedData.messages as Record<string, unknown>[])
-  const transformedPhotos = transformFeedPhotos(cachedData.photos as Record<string, unknown>[])
+  // Use safe transformation utilities that handle both raw and already-transformed data
+  // This prevents double-transformation if cached data structure differs from fresh data
+  const transformedMessages = safeTransformMessages(cachedData.messages)
+  const transformedPhotos = safeTransformPhotos(cachedData.photos)
 
   return {
     messages: transformedMessages,

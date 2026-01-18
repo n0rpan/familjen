@@ -6,8 +6,8 @@
  *
  * Used by:
  * - FeedPageWrapper (server-rendered data)
- * - FeedDataCache (cached data)
- * - useFeed hook (client-fetched data)
+ * - FeedDataCache (cached data hydration)
+ * - MessageCard (HTML entity decoding)
  */
 
 import type { FeedMessage } from '@/components/feed/MessageCard'
@@ -63,25 +63,37 @@ export interface RawFeedPhoto {
   } | null
 }
 
-type ServiceType = 'spond' | 'kidplan' | 'iskole' | 'mykid'
+/**
+ * Known integration service types.
+ * 'unknown' is used as fallback when service data is missing or invalid,
+ * displayed with neutral gray styling to avoid misleading users.
+ */
+export type ServiceType = 'spond' | 'kidplan' | 'iskole' | 'mykid' | 'unknown'
+
+const KNOWN_SERVICES: readonly ServiceType[] = ['spond', 'kidplan', 'iskole', 'mykid'] as const
 
 /**
- * Validate and normalize service type
- * Returns the service if valid, logs warning and returns 'spond' if not
+ * Validate and normalize service type.
+ *
+ * Returns the service if valid, otherwise returns 'unknown' and logs a warning.
+ * Using 'unknown' (not 'spond') as default prevents misleading attribution -
+ * if we don't know the source, we shouldn't claim it's from Spond.
  */
 function normalizeService(service: unknown, context: string): ServiceType {
-  const validServices: ServiceType[] = ['spond', 'kidplan', 'iskole', 'mykid']
-
-  if (typeof service === 'string' && validServices.includes(service as ServiceType)) {
+  if (typeof service === 'string' && KNOWN_SERVICES.includes(service as ServiceType)) {
     return service as ServiceType
   }
 
-  // Log warning in development to help debug data issues
-  if (process.env.NODE_ENV === 'development' && service !== undefined) {
-    console.warn(`[Feed] Unknown service type "${service}" for ${context}, defaulting to 'spond'`)
+  // Log warning to help debug data issues (missing external_integrations join, etc.)
+  // In production, this indicates a data integrity issue that should be investigated
+  if (service !== undefined && service !== null) {
+    console.warn(`[Feed] Unknown service type "${service}" for ${context}, using 'unknown'`)
+  } else {
+    // Missing service usually means the external_integrations join failed
+    console.warn(`[Feed] Missing service for ${context} - check Supabase query includes external_integrations`)
   }
 
-  return 'spond'
+  return 'unknown'
 }
 
 /**
@@ -144,17 +156,121 @@ export function transformFeedPhotos(rawPhotos: Record<string, unknown>[]): FeedP
 }
 
 /**
- * Decode HTML entities (e.g., &nbsp; → space, &aring; → å)
+ * Type guard to check if cached data needs transformation.
  *
- * Uses a reusable textarea element to avoid creating DOM elements on each call.
- * Safe for SSR - returns input unchanged when document is not available.
+ * Cached data may be in two states:
+ * 1. Raw format (from server cache) - has nested external_integrations
+ * 2. Already transformed (from client cache) - has flat service field
+ *
+ * This prevents double-transformation which would lose data.
+ */
+export function needsTransformation(data: Record<string, unknown>[]): boolean {
+  if (!Array.isArray(data) || data.length === 0) return false
+
+  const first = data[0]
+  if (!first || typeof first !== 'object') return false
+
+  // If it has nested external_integrations, it needs transformation
+  // If it already has a flat 'service' string, it's already transformed
+  const hasNestedIntegrations = 'external_integrations' in first && first.external_integrations !== null
+  const hasDirectService = 'service' in first && typeof first.service === 'string'
+
+  return hasNestedIntegrations || !hasDirectService
+}
+
+/**
+ * Safely transform messages, handling both raw and already-transformed data.
+ */
+export function safeTransformMessages(data: unknown): FeedMessage[] {
+  if (!Array.isArray(data)) return []
+
+  // If data is empty, return empty array
+  if (data.length === 0) return []
+
+  // Check if already transformed (has service as string, no nested external_integrations)
+  const first = data[0] as Record<string, unknown>
+  const isAlreadyTransformed =
+    typeof first.service === 'string' &&
+    !('external_integrations' in first && first.external_integrations !== null)
+
+  if (isAlreadyTransformed) {
+    // Already in FeedMessage format, just cast
+    return data as FeedMessage[]
+  }
+
+  // Needs transformation from raw Supabase format
+  return transformFeedMessages(data as Record<string, unknown>[])
+}
+
+/**
+ * Safely transform photos, handling both raw and already-transformed data.
+ */
+export function safeTransformPhotos(data: unknown): FeedPhoto[] {
+  if (!Array.isArray(data)) return []
+
+  // If data is empty, return empty array
+  if (data.length === 0) return []
+
+  // Check if already transformed (no nested external_integrations or children)
+  const first = data[0] as Record<string, unknown>
+  const isAlreadyTransformed =
+    !('external_integrations' in first && first.external_integrations !== null) &&
+    !('children' in first && first.children !== null && typeof (first.children as Record<string, unknown>).name === 'string')
+
+  if (isAlreadyTransformed) {
+    // Already in FeedPhoto format, just cast
+    return data as FeedPhoto[]
+  }
+
+  // Needs transformation from raw Supabase format
+  return transformFeedPhotos(data as Record<string, unknown>[])
+}
+
+/**
+ * Decode HTML entities (e.g., &nbsp; → space, &aring; → å, &oslash; → ø)
+ *
+ * ## Implementation Notes
+ *
+ * Uses textarea.innerHTML which is a **safe** and standard technique for HTML entity
+ * decoding. This is NOT an XSS vulnerability because:
+ *
+ * 1. **Textarea is a "raw text element"** - The HTML spec defines <textarea> as a raw
+ *    text element that only accepts text content, not HTML markup. Scripts, event
+ *    handlers, and HTML tags inside textarea are treated as literal text.
+ *
+ * 2. **innerHTML assignment triggers entity parsing but not script execution**:
+ *    ```js
+ *    textarea.innerHTML = '<img src=x onerror=alert(1)>'
+ *    // onerror NEVER executes - textarea treats it as literal text
+ *    // textarea.value = '<img src=x onerror=alert(1)>' (unchanged)
+ *
+ *    textarea.innerHTML = '&amp;nbsp;&aring;'
+ *    // Entities ARE decoded
+ *    // textarea.value = ' å' (decoded correctly)
+ *    ```
+ *
+ * 3. **Why not textContent?** - Using textContent would NOT decode entities:
+ *    ```js
+ *    textarea.textContent = '&amp;'  // textarea.value = '&amp;' (not decoded!)
+ *    textarea.innerHTML = '&amp;'    // textarea.value = '&' (decoded correctly!)
+ *    ```
+ *
+ * ## Singleton Textarea
+ *
+ * We reuse a single textarea element for performance. This is safe in PWA contexts:
+ * - Single small DOM element (~200 bytes)
+ * - No event listeners or references that could leak
+ * - Automatically garbage collected if module is unloaded
+ *
+ * @see https://html.spec.whatwg.org/multipage/syntax.html#raw-text-elements
  */
 let _textarea: HTMLTextAreaElement | null = null
 
 export function decodeHtmlEntities(html: string): string {
+  // Safe for SSR - return unchanged when document is not available
   if (typeof document === 'undefined') return html
 
-  // Reuse textarea element for performance
+  // Reuse textarea element for performance (see documentation above)
   if (!_textarea) {
     _textarea = document.createElement('textarea')
   }
@@ -164,10 +280,15 @@ export function decodeHtmlEntities(html: string): string {
 }
 
 /**
- * Strip HTML tags and decode entities for plain text display
+ * Strip HTML tags and decode entities for plain text display.
+ *
+ * Used for message previews where we want readable text without formatting.
  */
 export function stripHtmlAndDecode(html: string): string {
+  // First strip HTML tags (replace with space to preserve word boundaries)
   const stripped = html.replace(/<[^>]*>/g, ' ')
+  // Then decode HTML entities
   const decoded = decodeHtmlEntities(stripped)
+  // Normalize whitespace
   return decoded.replace(/\s+/g, ' ').trim()
 }

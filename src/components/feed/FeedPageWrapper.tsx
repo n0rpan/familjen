@@ -18,7 +18,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import { useFeed } from '@/hooks/data'
 import { useEventNotifications } from '@/hooks/data/useEventNotifications'
-import { transformFeedMessages, transformFeedPhotos } from '@/lib/feed-transforms'
+import { safeTransformMessages, safeTransformPhotos } from '@/lib/feed-transforms'
 import { FeedPageContent } from './FeedPageContent'
 import { FreshnessIndicator } from '@/components/FreshnessIndicator'
 import type { FeedFilter } from './FeedFilters'
@@ -62,12 +62,12 @@ export function FeedPageWrapper({
   )
 
   // Transform initial data to match FeedPageContent expectations
-  // Messages/photos from server have nested external_integrations, need to flatten
+  // Safe transforms handle both raw (nested external_integrations) and already-transformed data
   const [messages, setMessages] = useState<FeedMessage[]>(() =>
-    transformFeedMessages((initialData.messages || []) as Record<string, unknown>[])
+    safeTransformMessages(initialData.messages || [])
   )
   const [photos, setPhotos] = useState<FeedPhoto[]>(() =>
-    transformFeedPhotos((initialData.photos || []) as Record<string, unknown>[])
+    safeTransformPhotos(initialData.photos || [])
   )
   const [notifications, setNotificationsState] = useState<EventNotification[]>(
     initialData.notifications as unknown as EventNotification[] || []

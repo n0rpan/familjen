@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react'
 import type { IntegrationChild } from './FeedPageContent'
 import { useLanguage } from '@/lib/i18n/context'
 import { getLocale, formatDateShort } from '@/lib/utils'
-import { stripHtmlAndDecode } from '@/lib/feed-transforms'
+import { stripHtmlAndDecode, type ServiceType } from '@/lib/feed-transforms'
 
 // Spond comment structure from raw_data
 interface SpondComment {
@@ -39,7 +39,7 @@ export interface FeedMessage {
   body: string
   message_date: string
   source_type: string
-  service: 'spond' | 'kidplan' | 'iskole' | 'mykid'
+  service: ServiceType
   child_name?: string | null
   integration_name?: string | null
   raw_data?: unknown
@@ -113,15 +113,16 @@ export function MessageCard({ message, integrationChildren = [] }: Props) {
     return formatDateShort(dateStr, language)
   }
 
-  // Service badge colors
-  const serviceColors: Record<string, { bg: string; text: string; label: string }> = {
+  // Service badge colors - 'unknown' uses neutral gray to avoid misleading attribution
+  const serviceColors: Record<ServiceType, { bg: string; text: string; label: string }> = {
     spond: { bg: 'rgba(126, 182, 196, 0.2)', text: 'var(--color-sky)', label: 'Spond' },
     kidplan: { bg: 'rgba(131, 166, 151, 0.2)', text: 'var(--color-sage)', label: 'Kidplan' },
     iskole: { bg: 'rgba(178, 154, 198, 0.2)', text: 'var(--color-lavender)', label: 'iSkole' },
     mykid: { bg: 'rgba(232, 180, 120, 0.2)', text: 'var(--color-honey)', label: 'MyKid' },
+    unknown: { bg: 'rgba(128, 128, 128, 0.2)', text: 'var(--muted)', label: 'Melding' },
   }
 
-  const serviceStyle = serviceColors[message.service] || serviceColors.spond
+  const serviceStyle = serviceColors[message.service]
 
   // Build badge label with child names from integration context
   const childNamesDisplay = integrationContext.childNames.length > 0
@@ -135,8 +136,9 @@ export function MessageCard({ message, integrationChildren = [] }: Props) {
       ? `${serviceStyle.label} · ${childNamesDisplay}`
       : serviceStyle.label
 
-  // Strip HTML tags and decode entities for preview (uses shared utility with reusable textarea)
-  const plainBody = stripHtmlAndDecode(message.body)
+  // Strip HTML tags and decode entities for preview
+  // Memoized to avoid repeated HTML parsing on re-renders (e.g., when expanding/collapsing)
+  const plainBody = useMemo(() => stripHtmlAndDecode(message.body), [message.body])
   const isLong = plainBody.length > 200
   const displayBody = expanded || !isLong ? plainBody : plainBody.substring(0, 200) + '...'
 
