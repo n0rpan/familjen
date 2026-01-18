@@ -44,8 +44,17 @@ export interface CachedFeedData extends FeedPageData {
  * to skeleton gracefully. This is intentional to avoid duplicating type definitions.
  */
 export function computeFeedPropsFromCache(cachedData: CachedFeedData): FeedPageContentProps {
+  // Validate cached data structure before transformation
+  // Log warnings for corrupted cache to help debug issues without crashing
+  if (!cachedData.messages || !Array.isArray(cachedData.messages)) {
+    console.warn('[FeedCache] Invalid or missing messages in cached data, using empty array')
+  }
+  if (!cachedData.photos || !Array.isArray(cachedData.photos)) {
+    console.warn('[FeedCache] Invalid or missing photos in cached data, using empty array')
+  }
+
   // Use safe transformation utilities that handle both raw and already-transformed data
-  // This prevents double-transformation if cached data structure differs from fresh data
+  // These return empty arrays for invalid input, preventing crashes
   const transformedMessages = safeTransformMessages(cachedData.messages)
   const transformedPhotos = safeTransformPhotos(cachedData.photos)
 

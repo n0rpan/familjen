@@ -197,6 +197,23 @@ The server uses Next.js `unstable_cache` with `revalidateTag()` for cache invali
 | `revalidateShoppingCache(id)` | Shopping page cache | After shopping list changes |
 | `revalidateSettingsCache(id)` | Settings page cache | After household/member changes |
 
+**Server-side cache TTL (safety net):**
+
+The `unstable_cache` uses a **5-minute TTL** as a safety net. This is intentionally short:
+
+| Aspect | Value | Rationale |
+|--------|-------|-----------|
+| TTL | 5 minutes | Short enough to self-heal if revalidation fails |
+| Primary invalidation | `revalidateTag()` | Instant cache clear after mutations |
+| Previous TTL | 1 year | Caused stale data when revalidation failed |
+
+**Trade-off reasoning:**
+- **Shorter TTL** = more database queries, but fresher data if revalidation misses
+- **Longer TTL** = less load, but stale data lingers on revalidation failure
+- **5 minutes** balances both: handles burst traffic, self-heals failures, acceptable staleness for family app
+
+This applies to all pages via `unstable_cache` in `src/lib/data/server.ts`.
+
 **Pull-to-refresh cache clearing (3-step process):**
 1. **Client cache** - `deleteCache()` or `deleteCacheByPrefix()` clears localStorage + IndexedDB
 2. **Server cache** - Calls `/api/revalidate` to invalidate server-side `unstable_cache`
@@ -2157,6 +2174,36 @@ Filter categories:
 - **Barnehage** - Kidplan + MyKid messages
 - **Bilder** - Photos from all services
 - **Påminnelser** - AI-extracted reminders
+
+**Feed Data Transformations (`src/lib/feed-transforms.ts`):**
+
+Messages and photos from Supabase have nested `external_integrations` data that needs flattening for UI components:
+
+```typescript
+// Raw from Supabase (nested)
+{ id: '...', body: '...', external_integrations: { service: 'iskole' } }
+
+// Transformed for UI (flat)
+{ id: '...', body: '...', service: 'iskole' }
+```
+
+**Key functions:**
+- `safeTransformMessages(data)` - Transforms messages, handles both raw and already-transformed data
+- `safeTransformPhotos(data)` - Transforms photos with same safety
+- `stripHtmlAndDecode(html)` - Strips HTML tags and decodes entities (e.g., `&aring;` → `å`)
+- `decodeHtmlEntities(html)` - Decodes HTML entities using textarea.innerHTML (safe technique)
+
+**Service type handling:**
+- Known services: `spond`, `kidplan`, `iskole`, `mykid`
+- Unknown/missing service defaults to `'unknown'` with neutral gray badge
+- Logs warnings to help debug missing `external_integrations` joins
+
+**HTML Entity Decoding Safety:**
+The `decodeHtmlEntities` function uses `textarea.innerHTML` which is safe because:
+- `<textarea>` is a "raw text element" per HTML spec
+- Scripts/event handlers inside textarea are treated as literal text, never executed
+- This is the standard technique for HTML entity decoding
+- See detailed documentation in `src/lib/feed-transforms.ts`
 
 ### Calendar Source Extraction (Kalenderkilder)
 

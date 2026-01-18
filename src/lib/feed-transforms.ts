@@ -156,29 +156,6 @@ export function transformFeedPhotos(rawPhotos: Record<string, unknown>[]): FeedP
 }
 
 /**
- * Type guard to check if cached data needs transformation.
- *
- * Cached data may be in two states:
- * 1. Raw format (from server cache) - has nested external_integrations
- * 2. Already transformed (from client cache) - has flat service field
- *
- * This prevents double-transformation which would lose data.
- */
-export function needsTransformation(data: Record<string, unknown>[]): boolean {
-  if (!Array.isArray(data) || data.length === 0) return false
-
-  const first = data[0]
-  if (!first || typeof first !== 'object') return false
-
-  // If it has nested external_integrations, it needs transformation
-  // If it already has a flat 'service' string, it's already transformed
-  const hasNestedIntegrations = 'external_integrations' in first && first.external_integrations !== null
-  const hasDirectService = 'service' in first && typeof first.service === 'string'
-
-  return hasNestedIntegrations || !hasDirectService
-}
-
-/**
  * Safely transform messages, handling both raw and already-transformed data.
  */
 export function safeTransformMessages(data: unknown): FeedMessage[] {
