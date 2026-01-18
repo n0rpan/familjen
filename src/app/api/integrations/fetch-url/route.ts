@@ -201,7 +201,7 @@ export async function POST(request: Request) {
           duplicateSuggestionsCreated = dedupeResult.suggestionsCreated
         }
 
-        // Revalidate feed cache so fresh data shows immediately
+        // Revalidate all household caches so fresh data shows on feed and week pages
         revalidateHouseholdCache(member.household_id)
 
         return NextResponse.json({
@@ -327,7 +327,7 @@ export async function POST(request: Request) {
       parts.push(`${syncResult.eventsRemoved} fjernet`)
     }
 
-    // Revalidate feed cache so fresh data shows immediately
+    // Revalidate all household caches so fresh data shows on feed and week pages
     revalidateHouseholdCache(member.household_id)
 
     return NextResponse.json({
