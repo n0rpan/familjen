@@ -228,8 +228,7 @@ if (targetPath === currentPath) {
 const handleRealtimeChange = async (table, payload) => {
   // Update IndexedDB (for next cold start)
   updateCacheWithRealtimeChange(homeCacheKey, table, eventType, data)
-  // Revalidate server cache, then refresh current view
-  await revalidateWeek(householdId, weekStartStr)
+  // Refresh to fetch fresh data from server
   router.refresh()
 }
 ```
