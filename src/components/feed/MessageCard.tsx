@@ -22,6 +22,10 @@ interface SpondPostRaw {
   group?: { id: string; name: string }
   subGroup?: { id: string; name: string }
   comments?: SpondComment[]
+  // Chat metadata added during sync for personal messages
+  _chatName?: string
+  _chatType?: string
+  _isPersonalChat?: boolean
 }
 
 export interface FeedMessage {
@@ -57,6 +61,10 @@ export function MessageCard({ message, integrationChildren = [] }: Props) {
   const spondGroupName = spondData?.group?.name || spondData?.subGroup?.name
   const comments = spondData?.comments || []
 
+  // For personal/direct messages, use chat name as context
+  const isPersonalChat = spondData?._isPersonalChat || spondData?._chatType === 'personal'
+  const chatName = spondData?._chatName
+
   // Get children and group name for this integration
   const integrationContext = useMemo(() => {
     // If message already has child_name from direct relation, use that
@@ -82,7 +90,10 @@ export function MessageCard({ message, integrationChildren = [] }: Props) {
   }, [message.integration_id, message.child_name, integrationChildren])
 
   // Combine group names from Spond raw_data and integration mapping
-  const groupName = spondGroupName || integrationContext.groupName
+  // For personal chats, show "Conversation with [name]" instead of just the name
+  const groupName = isPersonalChat && chatName
+    ? t.feed.conversationWith.replace('{name}', chatName)
+    : (spondGroupName || integrationContext.groupName)
 
   // Format date with localization
   const formatDate = (dateStr: string) => {
@@ -115,9 +126,13 @@ export function MessageCard({ message, integrationChildren = [] }: Props) {
   const childNamesDisplay = integrationContext.childNames.length > 0
     ? integrationContext.childNames.join(', ')
     : null
-  const badgeLabel = childNamesDisplay
-    ? `${serviceStyle.label} · ${childNamesDisplay}`
-    : serviceStyle.label
+
+  // For personal messages, add direct message indicator
+  const badgeLabel = isPersonalChat
+    ? `${serviceStyle.label} · ${t.feed.directMessage}`
+    : childNamesDisplay
+      ? `${serviceStyle.label} · ${childNamesDisplay}`
+      : serviceStyle.label
 
   // Strip HTML tags for preview
   const stripHtml = (html: string) => {
@@ -153,8 +168,8 @@ export function MessageCard({ message, integrationChildren = [] }: Props) {
         </span>
       </div>
 
-      {/* Sender */}
-      {message.sender_name && (
+      {/* Sender - hide for personal chats since we can't reliably know who sent each message */}
+      {message.sender_name && !isPersonalChat && (
         <p className="text-sm font-medium mb-1" style={{ color: 'var(--foreground)' }}>
           {message.sender_name}
         </p>

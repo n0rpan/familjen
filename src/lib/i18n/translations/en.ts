@@ -485,6 +485,8 @@ export const en: TranslationStrings = {
     showLess: 'Show less',
     comment: 'comment',
     comments: 'comments',
+    directMessage: 'Direct message',
+    conversationWith: 'Conversation with {name}',
     // Integrations disabled state
     integrationsDisabled: 'Integrations not enabled',
     contactAdmin: 'Contact your administrator to enable integrations for your household.',
