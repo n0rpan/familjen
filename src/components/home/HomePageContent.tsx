@@ -14,7 +14,6 @@ import { WeekSection } from '@/components/WeekSection'
 import { UniversalAIInput } from '@/components/ai'
 import { SuggestionBanner } from '@/components/integrations/SuggestionReview'
 import { RecentPhotos } from '@/components/RecentPhotos'
-import { HomeRefreshWrapper } from '@/components/HomeRefreshWrapper'
 import { TransitionLink } from '@/components/TransitionLink'
 import { useLanguage } from '@/lib/i18n/context'
 import type {
@@ -247,6 +246,7 @@ export function HomePageContent({
         members={members}
         children={children}
         householdId={householdId}
+        isDemo={isDemo}
       />
 
       {/* AI Heads Up - Week lookahead */}
@@ -280,16 +280,15 @@ export function HomePageContent({
           childTasks={childTasks}
           holidays={holidays}
           weekStart={weekStart}
+          householdId={householdId}
           showFromToday={true}
+          isDemo={isDemo}
         />
       </div>
     </div>
   )
 
-  // Wrap in HomeRefreshWrapper for production, or return directly for demo
-  if (isDemo) {
-    return content
-  }
-
-  return <HomeRefreshWrapper>{content}</HomeRefreshWrapper>
+  // RealtimeWrapper (in layout.tsx) handles visibility-change refreshes for all pages
+  // with proper cache revalidation before router.refresh()
+  return content
 }

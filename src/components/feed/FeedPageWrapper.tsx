@@ -12,13 +12,13 @@
  * Receives initial data from server (PPR) and manages local state.
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
 import { useFeed } from '@/hooks/data'
 import { useEventNotifications } from '@/hooks/data/useEventNotifications'
 import { safeTransformMessages, safeTransformPhotos } from '@/lib/feed-transforms'
+import { useRefreshWithRevalidate } from '@/hooks/useRefreshWithRevalidate'
 import { FeedPageContent } from './FeedPageContent'
 import { FreshnessIndicator } from '@/components/FreshnessIndicator'
 import type { FeedFilter } from './FeedFilters'
@@ -49,9 +49,9 @@ export function FeedPageWrapper({
   typeFilter,
   dataTimestamp,
 }: FeedPageWrapperProps) {
-  const router = useRouter()
   const { t } = useLanguage()
   const supabase = useMemo(() => isDemo ? null : createClient(), [isDemo])
+  const { refreshFeed } = useRefreshWithRevalidate(householdId)
 
   // State for duplicate management
   const [duplicateSuggestions, setDuplicateSuggestions] = useState<DuplicateSuggestion[]>(
@@ -236,9 +236,37 @@ export function FeedPageWrapper({
     }
   }
 
+  // Throttle state for realtime events - prevents flooding while keeping first update instant
+  // Throttle (not debounce): first event fires immediately, then limits rate for subsequent events
+  const lastRefreshRef = useRef<number>(0)
+  const pendingRefreshRef = useRef<NodeJS.Timeout | null>(null)
+  const THROTTLE_MS = 500 // Minimum time between refreshes
+
   // Realtime subscriptions for feed updates (production only)
   useEffect(() => {
     if (isDemo || !supabase) return
+
+    // Throttled refresh - first event is INSTANT, subsequent events are rate-limited
+    // This ensures spouse-to-spouse updates are immediate while preventing flood during bulk sync
+    const throttledRefresh = () => {
+      const now = Date.now()
+      const timeSinceLastRefresh = now - lastRefreshRef.current
+
+      if (timeSinceLastRefresh >= THROTTLE_MS) {
+        // Enough time has passed - refresh immediately
+        lastRefreshRef.current = now
+        refreshFeed()
+      } else if (!pendingRefreshRef.current) {
+        // Schedule a refresh for when throttle window expires
+        const delay = THROTTLE_MS - timeSinceLastRefresh
+        pendingRefreshRef.current = setTimeout(() => {
+          lastRefreshRef.current = Date.now()
+          pendingRefreshRef.current = null
+          refreshFeed()
+        }, delay)
+      }
+      // If there's already a pending refresh, do nothing (it will pick up all changes)
+    }
 
     const channel = supabase
       .channel(`feed-realtime-${householdId}`)
@@ -249,9 +277,7 @@ export function FeedPageWrapper({
           schema: 'public',
           table: 'external_messages',
         },
-        () => {
-          router.refresh()
-        }
+        throttledRefresh
       )
       .on(
         'postgres_changes',
@@ -260,9 +286,7 @@ export function FeedPageWrapper({
           schema: 'public',
           table: 'external_photos',
         },
-        () => {
-          router.refresh()
-        }
+        throttledRefresh
       )
       .on(
         'postgres_changes',
@@ -271,16 +295,21 @@ export function FeedPageWrapper({
           schema: 'public',
           table: 'ai_suggestions',
         },
-        () => {
-          router.refresh()
-        }
+        throttledRefresh
       )
       .subscribe()
 
+    // Cleanup: clear pending timer, reset throttle state, and remove channel
     return () => {
+      if (pendingRefreshRef.current) {
+        clearTimeout(pendingRefreshRef.current)
+        pendingRefreshRef.current = null
+      }
+      // Reset throttle timestamp so first event after re-subscribe is instant
+      lastRefreshRef.current = 0
       supabase.removeChannel(channel)
     }
-  }, [householdId, isDemo, router, supabase])
+  }, [householdId, isDemo, refreshFeed, supabase])
 
   // Not enabled state
   if (!isDemo && !initialData.integrationsEnabled) {

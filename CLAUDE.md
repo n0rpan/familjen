@@ -257,10 +257,11 @@ if (targetPath === currentPath) {
 ```typescript
 // src/components/home/HomeClientInteractions.tsx
 // When spouse changes data, update IndexedDB cache + UI
-const handleRealtimeChange = (table, payload) => {
+const handleRealtimeChange = async (table, payload) => {
   // Update IndexedDB (for next cold start)
   updateCacheWithRealtimeChange(homeCacheKey, table, eventType, data)
-  // Refresh current view
+  // Revalidate server cache, then refresh current view
+  await revalidateWeek(householdId, weekStartStr)
   router.refresh()
 }
 ```
@@ -463,17 +464,92 @@ All main pages have been converted to the PPR pattern for instant navigation:
 - `revalidateStyring(householdId)` - Revalidate home control cache
 - `revalidateAdmin()` - Revalidate admin data cache
 
-**Important:** Revalidation functions are async and must be awaited before calling `router.refresh()` to avoid race conditions where the refresh fetches stale cache:
+**Important:** Revalidation functions are async and must be awaited before calling `router.refresh()` to avoid race conditions where the refresh fetches stale cache.
+
+**Use the `useRefreshWithRevalidate` hook** to ensure correct cache invalidation:
 
 ```typescript
-// ✅ Correct - await revalidation before refresh
-await revalidateWeek(householdId, weekStartStr)
-await refreshWithRevalidate()  // or router.refresh()
+import { useRefreshWithRevalidate } from '@/hooks/useRefreshWithRevalidate'
 
-// ❌ Wrong - race condition, refresh may get stale data
-revalidateWeek(householdId, weekStartStr)  // fire-and-forget
+function MyComponent({ householdId }: { householdId: string }) {
+  const { refreshWeek, refreshHousehold, refreshFeed, isPending } = useRefreshWithRevalidate(householdId)
+
+  const handleSave = async () => {
+    await supabase.from('pickups').update(data).eq('id', id)
+    await refreshWeek(weekStart)  // ✅ Revalidates cache THEN refreshes
+  }
+
+  return <button disabled={isPending}>Save</button>  // ✅ Disable while syncing
+}
+```
+
+**NEVER call `router.refresh()` directly after mutations** - use the hook instead:
+
+```typescript
+// ✅ Correct - use the hook
+await refreshWeek(weekStart)
+
+// ❌ Wrong - race condition, refresh may fetch stale cache
+await revalidateWeek(householdId, weekStartStr)
+router.refresh()
+
+// ❌ Very wrong - missing revalidation entirely
 router.refresh()
 ```
+
+**Hook Features:**
+
+| Feature | Description |
+|---------|-------------|
+| `isPending` | Boolean state for UI feedback (disable buttons, show spinners) |
+| Request deduplication | Concurrent calls coalesce into one - no wasted API calls |
+| Week-specific keys | `refreshWeek()` with different dates can run independently |
+| Demo mode bypass | Returns early with just `router.refresh()` for demo mode |
+
+**Available refresh functions:**
+| Function | When to use |
+|----------|-------------|
+| `refreshWeek(weekStart?)` | After pickup/meal/event/task changes |
+| `refreshHousehold()` | After AI actions or cross-week changes |
+| `refreshFeed()` | After message/photo changes |
+| `refreshRecipes()` | After recipe changes |
+| `refreshShopping()` | After shopping list changes |
+| `refreshSettings()` | After settings changes |
+| `refreshStyring()` | After home control changes |
+
+**Realtime Event Debouncing:**
+
+When handling realtime events (Supabase postgres_changes), always debounce refresh calls to prevent flooding:
+
+```typescript
+// ✅ Correct - debounced realtime handler
+const debounceRef = useRef<NodeJS.Timeout | null>(null)
+const DEBOUNCE_MS = 500
+
+useEffect(() => {
+  const debouncedRefresh = () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(async () => {
+      await refreshFeed()
+      debounceRef.current = null
+    }, DEBOUNCE_MS)
+  }
+
+  const channel = supabase
+    .channel('my-channel')
+    .on('postgres_changes', { table: 'messages' }, debouncedRefresh)
+    .subscribe()
+
+  return () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    supabase.removeChannel(channel)
+  }
+}, [refreshFeed, supabase])
+```
+
+Without debouncing, syncing 50 messages would trigger 50 separate API calls.
+
+**Key file:** `src/hooks/useRefreshWithRevalidate.ts`
 
 ### SmartLoading (Route Loading with Cache)
 

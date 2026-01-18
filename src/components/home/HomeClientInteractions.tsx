@@ -13,13 +13,12 @@
  */
 
 import { useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { usePrefetchAdjacentWeeks } from '@/hooks/usePrefetchAdjacentWeeks'
 import { usePrefetchRoutes, KEY_ROUTES, SECONDARY_ROUTES } from '@/hooks/usePrefetchRoutes'
 import { usePrefetchAllPages } from '@/hooks/usePrefetchAllPages'
+import { useRefreshWithRevalidate } from '@/hooks/useRefreshWithRevalidate'
 import { formatDateISO, getWeekStart, addDays } from '@/lib/utils'
-import { revalidateWeek } from '@/lib/revalidate'
 import { updateCacheWithRealtimeChange } from '@/lib/cache'
 import { CACHE_KEYS } from '@/lib/cache-constants'
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
@@ -30,7 +29,7 @@ interface HomeClientInteractionsProps {
 }
 
 export function HomeClientInteractions({ householdId, isDemo }: HomeClientInteractionsProps) {
-  const router = useRouter()
+  const { refreshWeek } = useRefreshWithRevalidate(householdId)
   const supabaseRef = useRef(isDemo ? null : createClient())
 
   // Prefetch adjacent weeks for instant navigation to /uke
@@ -52,6 +51,12 @@ export function HomeClientInteractions({ householdId, isDemo }: HomeClientIntera
     enabled: !isDemo,
   })
 
+  // Throttle state for realtime events - prevents flooding while keeping first update instant
+  // Throttle (not debounce): first event fires immediately, then limits rate for subsequent events
+  const lastRefreshRef = useRef<number>(0)
+  const pendingRefreshRef = useRef<NodeJS.Timeout | null>(null)
+  const THROTTLE_MS = 500 // Minimum time between refreshes
+
   // Realtime subscriptions for the current week
   useEffect(() => {
     if (isDemo || !supabaseRef.current) return
@@ -63,23 +68,45 @@ export function HomeClientInteractions({ householdId, isDemo }: HomeClientIntera
     const weekEndStr = formatDateISO(weekEnd)
     const homeCacheKey = CACHE_KEYS.home(householdId)
 
-    // Update IndexedDB cache with realtime change, then refresh UI
+    // Throttled refresh - first event is INSTANT, subsequent events are rate-limited
+    // This ensures spouse-to-spouse updates are immediate while preventing flood during bulk sync
+    // Uses the hook for proper deduplication and cache invalidation
+    const scheduleRefresh = () => {
+      const now = Date.now()
+      const timeSinceLastRefresh = now - lastRefreshRef.current
+
+      if (timeSinceLastRefresh >= THROTTLE_MS) {
+        // Enough time has passed - refresh immediately
+        lastRefreshRef.current = now
+        refreshWeek(weekStartStr) // Hook handles revalidation + router.refresh() with deduplication
+      } else if (!pendingRefreshRef.current) {
+        // Schedule a refresh for when throttle window expires
+        const delay = THROTTLE_MS - timeSinceLastRefresh
+        pendingRefreshRef.current = setTimeout(() => {
+          lastRefreshRef.current = Date.now()
+          pendingRefreshRef.current = null
+          refreshWeek(weekStartStr)
+        }, delay)
+      }
+      // If there's already a pending refresh, do nothing (it will pick up all changes)
+    }
+
+    // Update IndexedDB cache with realtime change, then schedule throttled refresh
     // This keeps cache fresh for next cold start AND updates current view
-    const handleRealtimeChange = async (
+    const handleRealtimeChange = (
       table: string,
       payload: RealtimePostgresChangesPayload<Record<string, unknown>>
     ) => {
       const eventType = payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE'
       const data = eventType === 'DELETE' ? payload.old : payload.new
 
-      // Update IndexedDB cache (async, don't await)
+      // Update IndexedDB cache immediately (async, don't await)
       if (data && typeof data === 'object') {
         updateCacheWithRealtimeChange(homeCacheKey, table, eventType, data as Record<string, unknown>)
       }
 
-      // Revalidate server cache FIRST, then refresh current view
-      await revalidateWeek(householdId, weekStartStr)
-      router.refresh()
+      // Schedule throttled refresh (first is instant, subsequent are rate-limited)
+      scheduleRefresh()
     }
 
     // Subscribe to changes for pickups, meals, and tasks in the current week
@@ -156,10 +183,17 @@ export function HomeClientInteractions({ householdId, isDemo }: HomeClientIntera
       )
       .subscribe()
 
+    // Cleanup: clear pending timer, reset throttle state, and remove channel
     return () => {
+      if (pendingRefreshRef.current) {
+        clearTimeout(pendingRefreshRef.current)
+        pendingRefreshRef.current = null
+      }
+      // Reset throttle timestamp so first event after re-subscribe is instant
+      lastRefreshRef.current = 0
       supabase.removeChannel(channel)
     }
-  }, [householdId, isDemo, router])
+  }, [householdId, isDemo, refreshWeek])
 
   // This component doesn't render anything visible
   return null

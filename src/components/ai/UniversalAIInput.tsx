@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useMemo, useEffect, startTransition } fr
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/lib/i18n/context'
+import { useRefreshWithRevalidate } from '@/hooks/useRefreshWithRevalidate'
 import type {
   ParsedAction,
   ActionType,
@@ -68,6 +69,7 @@ export function UniversalAIInput({
   const searchParams = useSearchParams()
   const isDemo = searchParams.get('demo') === 'true'
   const supabase = useMemo(() => createClient(), [])
+  const { refreshHousehold } = useRefreshWithRevalidate(householdId)
 
   const [input, setInput] = useState('')
   const [isParsing, setIsParsing] = useState(false)
@@ -796,13 +798,13 @@ export function UniversalAIInput({
 
       // Notify parent and refresh page data
       onActionExecuted?.()
-      router.refresh()
+      await refreshHousehold()
     } catch (err) {
       console.error('Execute action error:', err)
       setError(t.errors.saveFailed)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- executeDelete/Complete/Edit are stable callbacks defined below
-  }, [householdId, supabase, t, onActionExecuted, router, validateAndPrepareAction])
+  }, [householdId, supabase, t, onActionExecuted, refreshHousehold, validateAndPrepareAction])
 
   // Keep ref updated for circular dependency resolution
   executeActionRef.current = executeAction
@@ -1179,12 +1181,12 @@ export function UniversalAIInput({
       setParsedActions(prev => prev.filter(a => a !== action))
       setPendingConfirmation(null)
       onActionExecuted?.()
-      router.refresh()
+      await refreshHousehold()
     } catch (err) {
       console.error('Delete error:', err)
       setError(t.errors.saveFailed)
     }
-  }, [supabase, t, onActionExecuted, router])
+  }, [supabase, t, onActionExecuted, refreshHousehold])
 
   // Execute COMPLETE operation with disambiguation
   const executeComplete = useCallback(async (action: ParsedAction) => {
@@ -1360,12 +1362,12 @@ export function UniversalAIInput({
       setParsedActions(prev => prev.filter(a => a !== action))
       setPendingConfirmation(null)
       onActionExecuted?.()
-      router.refresh()
+      await refreshHousehold()
     } catch (err) {
       console.error('Complete error:', err)
       setError(t.errors.saveFailed)
     }
-  }, [supabase, t, onActionExecuted, router])
+  }, [supabase, t, onActionExecuted, refreshHousehold])
 
   // Helper to format date for display
   const formatDisplayDate = (dateStr: string) => {
@@ -1819,12 +1821,12 @@ export function UniversalAIInput({
       setParsedActions(prev => prev.filter(a => a !== action))
       setPendingConfirmation(null)
       onActionExecuted?.()
-      router.refresh()
+      await refreshHousehold()
     } catch (err) {
       console.error('Edit error:', err)
       setError(t.errors.saveFailed)
     }
-  }, [supabase, t, onActionExecuted, router, members])
+  }, [supabase, t, onActionExecuted, refreshHousehold, members])
 
   const handleUndo = useCallback(async (executed: ExecutedAction) => {
     try {
@@ -1896,12 +1898,12 @@ export function UniversalAIInput({
 
       setExecutedActions(prev => prev.filter(e => e !== executed))
       onActionExecuted?.()
-      router.refresh()
+      await refreshHousehold()
     } catch (err) {
       console.error('Undo error:', err)
       setError(t.errors.generic || 'Kunne ikke angre')
     }
-  }, [supabase, t, onActionExecuted, router])
+  }, [supabase, t, onActionExecuted, refreshHousehold])
 
   const handleActionClick = useCallback((action: ParsedAction) => {
     if (action.needsClarification) {

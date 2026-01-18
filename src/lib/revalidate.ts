@@ -85,147 +85,189 @@ export async function revalidateWeek(householdId: string, weekStart: Date | stri
 /**
  * Revalidate cached recipes data
  * Use after recipe mutations (add, update, delete)
- * @returns Promise that resolves when cache is invalidated (for optional awaiting)
+ * @returns Promise that resolves when cache is invalidated
  */
-export async function revalidateRecipes(householdId: string): Promise<boolean> {
-  if (!householdId || householdId === 'demo') return true
+export async function revalidateRecipes(householdId: string): Promise<void> {
+  if (!householdId || householdId === 'demo') return
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), REVALIDATE_TIMEOUT_MS)
 
   try {
     const response = await fetch('/api/revalidate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ householdId, type: 'recipes' }),
+      signal: controller.signal,
     })
     if (!response.ok) {
       console.warn(`[revalidate] Recipes cache revalidation failed with status ${response.status}`)
-      return false
     }
-    return true
   } catch (err) {
-    console.warn('[revalidate] Failed to revalidate recipes cache:', err)
-    return false
+    if (err instanceof Error && err.name === 'AbortError') {
+      console.warn('[revalidate] Recipes cache revalidation timed out')
+    } else {
+      console.warn('[revalidate] Failed to revalidate recipes cache:', err)
+    }
+  } finally {
+    clearTimeout(timeoutId)
   }
 }
 
 /**
  * Revalidate cached shopping data
  * Use after shopping list mutations
- * @returns Promise that resolves when cache is invalidated (for optional awaiting)
+ * @returns Promise that resolves when cache is invalidated
  */
-export async function revalidateShopping(householdId: string): Promise<boolean> {
-  if (!householdId || householdId === 'demo') return true
+export async function revalidateShopping(householdId: string): Promise<void> {
+  if (!householdId || householdId === 'demo') return
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), REVALIDATE_TIMEOUT_MS)
 
   try {
     const response = await fetch('/api/revalidate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ householdId, type: 'shopping' }),
+      signal: controller.signal,
     })
     if (!response.ok) {
       console.warn(`[revalidate] Shopping cache revalidation failed with status ${response.status}`)
-      return false
     }
-    return true
   } catch (err) {
-    console.warn('[revalidate] Failed to revalidate shopping cache:', err)
-    return false
+    if (err instanceof Error && err.name === 'AbortError') {
+      console.warn('[revalidate] Shopping cache revalidation timed out')
+    } else {
+      console.warn('[revalidate] Failed to revalidate shopping cache:', err)
+    }
+  } finally {
+    clearTimeout(timeoutId)
   }
 }
 
 /**
  * Revalidate cached settings data
  * Use after settings mutations
- * @returns Promise that resolves when cache is invalidated (for optional awaiting)
+ * @returns Promise that resolves when cache is invalidated
  */
-export async function revalidateSettings(householdId: string): Promise<boolean> {
-  if (!householdId || householdId === 'demo') return true
+export async function revalidateSettings(householdId: string): Promise<void> {
+  if (!householdId || householdId === 'demo') return
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), REVALIDATE_TIMEOUT_MS)
 
   try {
     const response = await fetch('/api/revalidate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ householdId, type: 'settings' }),
+      signal: controller.signal,
     })
     if (!response.ok) {
       console.warn(`[revalidate] Settings cache revalidation failed with status ${response.status}`)
-      return false
     }
-    return true
   } catch (err) {
-    console.warn('[revalidate] Failed to revalidate settings cache:', err)
-    return false
+    if (err instanceof Error && err.name === 'AbortError') {
+      console.warn('[revalidate] Settings cache revalidation timed out')
+    } else {
+      console.warn('[revalidate] Failed to revalidate settings cache:', err)
+    }
+  } finally {
+    clearTimeout(timeoutId)
   }
 }
 
 /**
  * Revalidate cached feed data
  * Use after feed-related mutations
- * @returns Promise that resolves when cache is invalidated (for optional awaiting)
+ * @returns Promise that resolves when cache is invalidated
  */
-export async function revalidateFeed(householdId: string): Promise<boolean> {
-  if (!householdId || householdId === 'demo') return true
+export async function revalidateFeed(householdId: string): Promise<void> {
+  if (!householdId || householdId === 'demo') return
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), REVALIDATE_TIMEOUT_MS)
 
   try {
     const response = await fetch('/api/revalidate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ householdId, type: 'feed' }),
+      signal: controller.signal,
     })
     if (!response.ok) {
       console.warn(`[revalidate] Feed cache revalidation failed with status ${response.status}`)
-      return false
     }
-    return true
   } catch (err) {
-    console.warn('[revalidate] Failed to revalidate feed cache:', err)
-    return false
+    if (err instanceof Error && err.name === 'AbortError') {
+      console.warn('[revalidate] Feed cache revalidation timed out')
+    } else {
+      console.warn('[revalidate] Failed to revalidate feed cache:', err)
+    }
+  } finally {
+    clearTimeout(timeoutId)
   }
 }
 
 /**
  * Revalidate cached home control (styring) data
  * Use after device state changes
- * @returns Promise that resolves when cache is invalidated (for optional awaiting)
+ * @returns Promise that resolves when cache is invalidated
  */
-export async function revalidateStyring(householdId: string): Promise<boolean> {
-  if (!householdId || householdId === 'demo') return true
+export async function revalidateStyring(householdId: string): Promise<void> {
+  if (!householdId || householdId === 'demo') return
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), REVALIDATE_TIMEOUT_MS)
 
   try {
     const response = await fetch('/api/revalidate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ householdId, type: 'styring' }),
+      signal: controller.signal,
     })
     if (!response.ok) {
       console.warn(`[revalidate] Styring cache revalidation failed with status ${response.status}`)
-      return false
     }
-    return true
   } catch (err) {
-    console.warn('[revalidate] Failed to revalidate styring cache:', err)
-    return false
+    if (err instanceof Error && err.name === 'AbortError') {
+      console.warn('[revalidate] Styring cache revalidation timed out')
+    } else {
+      console.warn('[revalidate] Failed to revalidate styring cache:', err)
+    }
+  } finally {
+    clearTimeout(timeoutId)
   }
 }
 
 /**
  * Revalidate admin cache
  * Use after admin mutations (admin only)
- * @returns Promise that resolves when cache is invalidated (for optional awaiting)
+ * @returns Promise that resolves when cache is invalidated
  */
-export async function revalidateAdmin(): Promise<boolean> {
+export async function revalidateAdmin(): Promise<void> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), REVALIDATE_TIMEOUT_MS)
+
   try {
     const response = await fetch('/api/revalidate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'admin' }),
+      signal: controller.signal,
     })
     if (!response.ok) {
       console.warn(`[revalidate] Admin cache revalidation failed with status ${response.status}`)
-      return false
     }
-    return true
   } catch (err) {
-    console.warn('[revalidate] Failed to revalidate admin cache:', err)
-    return false
+    if (err instanceof Error && err.name === 'AbortError') {
+      console.warn('[revalidate] Admin cache revalidation timed out')
+    } else {
+      console.warn('[revalidate] Failed to revalidate admin cache:', err)
+    }
+  } finally {
+    clearTimeout(timeoutId)
   }
 }

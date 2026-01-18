@@ -10,6 +10,7 @@ import { prefetchWeekData, prefetchShoppingData, prefetchRecipesData } from '@/l
 import { useBackgroundSync } from '@/hooks/useBackgroundSync'
 import { useSessionValidator } from '@/hooks/useSessionValidator'
 import { requestRefresh } from '@/lib/refresh-coordinator'
+import { revalidateHousehold } from '@/lib/revalidate'
 
 // Minimum time hidden before refreshing data (1 minute)
 const VISIBILITY_REFRESH_THRESHOLD_MS = 60 * 1000
@@ -48,13 +49,17 @@ export function RealtimeWrapper({ children }: RealtimeWrapperProps) {
     if (pathname === '/login') return
     if (typeof window !== 'undefined' && window.location.search.includes('demo=true')) return
 
-    const handleVisibilityChange = () => {
+    const handleVisibilityChange = async () => {
       if (document.visibilityState === 'visible') {
         const hiddenDuration = Date.now() - lastVisibleRef.current
 
         // Only refresh if hidden for more than threshold and refresh coordinator allows
         if (hiddenDuration > VISIBILITY_REFRESH_THRESHOLD_MS && requestRefresh()) {
           console.log('[RealtimeWrapper] App returned after', Math.round(hiddenDuration / 1000), 's - refreshing')
+          // Revalidate server cache first, then refresh to get fresh data
+          if (householdId) {
+            await revalidateHousehold(householdId)
+          }
           router.refresh()
         }
 
@@ -67,7 +72,7 @@ export function RealtimeWrapper({ children }: RealtimeWrapperProps) {
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
-  }, [pathname, router])
+  }, [pathname, router, householdId])
 
   // Prefetch critical data after householdId is known
   useEffect(() => {
