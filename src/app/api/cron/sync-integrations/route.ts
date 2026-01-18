@@ -16,6 +16,7 @@ import { verifyCronRequest } from '@/lib/cron-auth'
 import { getModel } from '@/lib/ai-models'
 import { truncate, sanitizeString, sanitizeTime } from '@/lib/sanitize'
 import { ApiErrors, handleApiError } from '@/lib/api-errors'
+import { revalidateFeedCache } from '@/lib/data/server'
 
 type AnySupabaseClient = SupabaseClient<any, any, any>
 
@@ -529,6 +530,13 @@ export async function GET(request: Request) {
       }
     }
     console.log(`[Cron] Deduplication total: ${deduplicationAutoMerged} auto-merged, ${deduplicationSuggestionsCreated} suggestions`)
+
+    // Revalidate feed cache for all affected households
+    const affectedHouseholdIds = new Set(results.map(r => r.householdId))
+    for (const householdId of affectedHouseholdIds) {
+      revalidateFeedCache(householdId)
+    }
+    console.log(`[Cron] Revalidated feed cache for ${affectedHouseholdIds.size} households`)
 
     // Summary
     const successCount = results.filter((r) => r.success).length

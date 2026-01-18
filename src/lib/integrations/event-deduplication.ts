@@ -1,10 +1,10 @@
 /**
  * Event Deduplication Service
  *
- * Detects and handles duplicate events across different sources using AI.
- * - High confidence (>0.9): Auto-merge (hide duplicate, keep one)
- * - Medium confidence (0.6-0.9): Create suggestion for user review
- * - Low confidence (<0.6): No action
+ * Detects potential duplicate events across different sources using AI.
+ * All potential duplicates are shown as suggestions for user review - no auto-merge.
+ * - Confidence >= 0.6: Create suggestion for user review
+ * - Confidence < 0.6: No action (not similar enough)
  */
 
 import { SupabaseClient } from '@supabase/supabase-js'
@@ -12,8 +12,9 @@ import { formatDateISO } from '@/lib/utils'
 import { getModel } from '@/lib/ai-models'
 
 // Confidence thresholds
-// 0.95 is more conservative for auto-merge to avoid merging unrelated events
-const HIGH_CONFIDENCE_THRESHOLD = 0.95
+// Auto-merge is DISABLED - all potential duplicates go to user review
+// This prevents incorrect automatic merging of events with similar dates but different meanings
+const HIGH_CONFIDENCE_THRESHOLD = 1.1 // Effectively disabled (no confidence can exceed 1.0)
 const MEDIUM_CONFIDENCE_THRESHOLD = 0.6
 
 /**

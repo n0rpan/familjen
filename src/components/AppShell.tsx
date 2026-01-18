@@ -3,6 +3,8 @@
 import { useRouter, usePathname } from 'next/navigation'
 import { useCallback, useState, useRef, useEffect } from 'react'
 import { setTransitionDirection, clearTransitionDirection } from './TransitionLink'
+import { deleteCache } from '@/lib/cache'
+import { CACHE_KEYS } from '@/lib/cache-constants'
 
 interface AppShellProps {
   children: React.ReactNode
@@ -80,11 +82,35 @@ export function AppShell({ children }: AppShellProps) {
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true)
+
+    // Clear IndexedDB cache for current page to force fresh data
+    try {
+      const householdId = localStorage.getItem('familjen-household-id')
+      if (householdId) {
+        // Map pathname to cache key
+        const cacheKeyMap: Record<string, (id: string) => string> = {
+          '/': CACHE_KEYS.home,
+          '/feed': CACHE_KEYS.feed,
+          '/uke': (id) => CACHE_KEYS.week(id, ''), // Will clear all week caches starting with this prefix
+          '/handleliste': CACHE_KEYS.shopping,
+          '/oppskrifter': CACHE_KEYS.recipes,
+          '/innstillinger': CACHE_KEYS.settings,
+          '/styring': CACHE_KEYS.styring,
+        }
+        const getCacheKey = cacheKeyMap[pathname]
+        if (getCacheKey) {
+          await deleteCache(getCacheKey(householdId))
+        }
+      }
+    } catch {
+      // Cache clear failed - continue with refresh anyway
+    }
+
     router.refresh()
     // Wait a bit for the refresh to complete
     await new Promise(resolve => setTimeout(resolve, 500))
     setIsRefreshing(false)
-  }, [router])
+  }, [router, pathname])
 
   useEffect(() => {
     // Only enable pull-to-refresh in PWA mode
