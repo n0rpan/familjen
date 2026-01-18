@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useLanguage } from '@/lib/i18n/context'
 import { getLocale } from '@/lib/utils'
 
@@ -305,7 +305,9 @@ interface NotificationListProps {
   syncing?: boolean
 }
 
-const COLLAPSE_THRESHOLD = 5
+// Show only 2 notifications by default, collapse the rest
+// This keeps the feed cleaner - users can expand to see more
+const COLLAPSE_THRESHOLD = 2
 /** Animation duration in milliseconds for fade-out transitions */
 const ANIMATION_DURATION_MS = 300
 
@@ -323,9 +325,14 @@ export function EventChangeNotificationList({
   const { t } = useLanguage()
 
   // Track which notifications are visible (not yet animated out)
-  const visibleNotifications = notifications.filter(
-    (n) =>
-      (n.status === 'unread' || n.status === 'read') && !animatingOutIds.has(n.id)
+  // Memoized to prevent re-filtering on every render
+  const visibleNotifications = useMemo(
+    () =>
+      notifications.filter(
+        (n) =>
+          (n.status === 'unread' || n.status === 'read') && !animatingOutIds.has(n.id)
+      ),
+    [notifications, animatingOutIds]
   )
 
   const pendingCount = visibleNotifications.length
