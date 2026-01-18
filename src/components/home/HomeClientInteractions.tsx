@@ -52,10 +52,11 @@ export function HomeClientInteractions({ householdId, isDemo }: HomeClientIntera
     enabled: !isDemo,
   })
 
-  // Debounce timer for realtime events - prevents flooding when many events arrive at once
-  // (e.g., syncing multiple pickups or meals simultaneously)
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const DEBOUNCE_MS = 500 // Wait 500ms after last event before refreshing
+  // Throttle state for realtime events - prevents flooding while keeping first update instant
+  // Throttle (not debounce): first event fires immediately, then limits rate for subsequent events
+  const lastRefreshRef = useRef<number>(0)
+  const pendingRefreshRef = useRef<NodeJS.Timeout | null>(null)
+  const THROTTLE_MS = 500 // Minimum time between refreshes
 
   // Realtime subscriptions for the current week
   useEffect(() => {
@@ -68,19 +69,29 @@ export function HomeClientInteractions({ householdId, isDemo }: HomeClientIntera
     const weekEndStr = formatDateISO(weekEnd)
     const homeCacheKey = CACHE_KEYS.home(householdId)
 
-    // Debounced refresh - coalesces rapid events into one refresh
+    // Throttled refresh - first event is INSTANT, subsequent events are rate-limited
+    // This ensures spouse-to-spouse updates are immediate while preventing flood during bulk sync
     const scheduleRefresh = () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current)
+      const now = Date.now()
+      const timeSinceLastRefresh = now - lastRefreshRef.current
+
+      if (timeSinceLastRefresh >= THROTTLE_MS) {
+        // Enough time has passed - refresh immediately
+        lastRefreshRef.current = now
+        revalidateWeek(householdId, weekStartStr).then(() => router.refresh())
+      } else if (!pendingRefreshRef.current) {
+        // Schedule a refresh for when throttle window expires
+        const delay = THROTTLE_MS - timeSinceLastRefresh
+        pendingRefreshRef.current = setTimeout(() => {
+          lastRefreshRef.current = Date.now()
+          pendingRefreshRef.current = null
+          revalidateWeek(householdId, weekStartStr).then(() => router.refresh())
+        }, delay)
       }
-      debounceTimerRef.current = setTimeout(async () => {
-        await revalidateWeek(householdId, weekStartStr)
-        router.refresh()
-        debounceTimerRef.current = null
-      }, DEBOUNCE_MS)
+      // If there's already a pending refresh, do nothing (it will pick up all changes)
     }
 
-    // Update IndexedDB cache with realtime change, then schedule debounced refresh
+    // Update IndexedDB cache with realtime change, then schedule throttled refresh
     // This keeps cache fresh for next cold start AND updates current view
     const handleRealtimeChange = (
       table: string,
@@ -94,7 +105,7 @@ export function HomeClientInteractions({ householdId, isDemo }: HomeClientIntera
         updateCacheWithRealtimeChange(homeCacheKey, table, eventType, data as Record<string, unknown>)
       }
 
-      // Schedule debounced refresh (coalesces multiple rapid events)
+      // Schedule throttled refresh (first is instant, subsequent are rate-limited)
       scheduleRefresh()
     }
 
@@ -174,9 +185,9 @@ export function HomeClientInteractions({ householdId, isDemo }: HomeClientIntera
 
     // Cleanup: clear pending timer and remove channel
     return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current)
-        debounceTimerRef.current = null
+      if (pendingRefreshRef.current) {
+        clearTimeout(pendingRefreshRef.current)
+        pendingRefreshRef.current = null
       }
       supabase.removeChannel(channel)
     }

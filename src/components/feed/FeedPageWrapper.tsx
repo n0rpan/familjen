@@ -236,24 +236,36 @@ export function FeedPageWrapper({
     }
   }
 
-  // Debounce ref for realtime updates - prevents flooding when many events arrive at once
-  // (e.g., syncing 50 messages would otherwise trigger 50 separate refreshFeed calls)
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const DEBOUNCE_MS = 500 // Wait 500ms after last event before refreshing
+  // Throttle state for realtime events - prevents flooding while keeping first update instant
+  // Throttle (not debounce): first event fires immediately, then limits rate for subsequent events
+  const lastRefreshRef = useRef<number>(0)
+  const pendingRefreshRef = useRef<NodeJS.Timeout | null>(null)
+  const THROTTLE_MS = 500 // Minimum time between refreshes
 
   // Realtime subscriptions for feed updates (production only)
   useEffect(() => {
     if (isDemo || !supabase) return
 
-    // Debounced refresh handler - coalesces rapid events into one refresh
-    const debouncedRefresh = () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current)
+    // Throttled refresh - first event is INSTANT, subsequent events are rate-limited
+    // This ensures spouse-to-spouse updates are immediate while preventing flood during bulk sync
+    const throttledRefresh = () => {
+      const now = Date.now()
+      const timeSinceLastRefresh = now - lastRefreshRef.current
+
+      if (timeSinceLastRefresh >= THROTTLE_MS) {
+        // Enough time has passed - refresh immediately
+        lastRefreshRef.current = now
+        refreshFeed()
+      } else if (!pendingRefreshRef.current) {
+        // Schedule a refresh for when throttle window expires
+        const delay = THROTTLE_MS - timeSinceLastRefresh
+        pendingRefreshRef.current = setTimeout(() => {
+          lastRefreshRef.current = Date.now()
+          pendingRefreshRef.current = null
+          refreshFeed()
+        }, delay)
       }
-      debounceTimerRef.current = setTimeout(async () => {
-        await refreshFeed()
-        debounceTimerRef.current = null
-      }, DEBOUNCE_MS)
+      // If there's already a pending refresh, do nothing (it will pick up all changes)
     }
 
     const channel = supabase
@@ -265,7 +277,7 @@ export function FeedPageWrapper({
           schema: 'public',
           table: 'external_messages',
         },
-        debouncedRefresh
+        throttledRefresh
       )
       .on(
         'postgres_changes',
@@ -274,7 +286,7 @@ export function FeedPageWrapper({
           schema: 'public',
           table: 'external_photos',
         },
-        debouncedRefresh
+        throttledRefresh
       )
       .on(
         'postgres_changes',
@@ -283,15 +295,15 @@ export function FeedPageWrapper({
           schema: 'public',
           table: 'ai_suggestions',
         },
-        debouncedRefresh
+        throttledRefresh
       )
       .subscribe()
 
     // Cleanup: clear pending timer and remove channel
     return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current)
-        debounceTimerRef.current = null
+      if (pendingRefreshRef.current) {
+        clearTimeout(pendingRefreshRef.current)
+        pendingRefreshRef.current = null
       }
       supabase.removeChannel(channel)
     }
