@@ -75,8 +75,10 @@ export interface DemoData extends HomePageData {
   isDemo: true
 }
 
-// Cache TTL: 1 year (realtime subscriptions handle live updates)
-const CACHE_TTL = 365 * 24 * 60 * 60 // 1 year in seconds
+// Cache TTL: 5 minutes as safety net
+// Primary invalidation is via revalidateTag(), but short TTL ensures
+// stale data self-heals even if revalidation fails
+const CACHE_TTL = 5 * 60 // 5 minutes in seconds
 
 /**
  * Core data fetcher - uses admin client to bypass RLS
@@ -214,7 +216,7 @@ async function fetchHomeDataCore(
  * Shared between all household members for efficiency
  *
  * Tags allow targeted revalidation after mutations:
- * - revalidateTag(`household-${householdId}`) invalidates all data for that household
+ * - revalidateTag(`household-${householdId}`, 'default') invalidates all data for that household
  */
 function getCachedHomeData(
   householdId: string,
