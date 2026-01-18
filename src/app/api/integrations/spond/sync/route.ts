@@ -386,6 +386,12 @@ async function syncIntegration(
           if (messageDate < lastSync) continue
 
           const mapped = SpondClient.mapMessageToDb(message, chat.id, groupId)
+
+          // For personal chats without sender info, use chat name as sender
+          // Also store chat metadata for UI to distinguish personal vs group messages
+          const isPersonalChat = chat.type === 'personal' || (!groupId && chat.name)
+          const senderName = mapped.senderName || (isPersonalChat ? chat.name : null)
+
           messagesToUpsert.push({
             integration_id: integration.id,
             child_id: mapping?.childId || null,
@@ -393,11 +399,17 @@ async function syncIntegration(
             external_id: mapped.externalId,
             external_group_id: mapped.externalGroupId,
             chat_id: mapped.chatId,
-            sender_name: mapped.senderName,
+            sender_name: senderName,
             title: mapped.title,
             body: mapped.body,
             message_date: mapped.messageDate,
-            raw_data: mapped.rawData,
+            raw_data: {
+              ...mapped.rawData,
+              // Add chat metadata for UI display
+              _chatName: chat.name,
+              _chatType: chat.type || (isPersonalChat ? 'personal' : 'group'),
+              _isPersonalChat: isPersonalChat,
+            },
           })
         }
       }
