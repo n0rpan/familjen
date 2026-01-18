@@ -247,6 +247,7 @@ export function HomePageContent({
         members={members}
         children={children}
         householdId={householdId}
+        isDemo={isDemo}
       />
 
       {/* AI Heads Up - Week lookahead */}
@@ -282,6 +283,7 @@ export function HomePageContent({
           weekStart={weekStart}
           householdId={householdId}
           showFromToday={true}
+          isDemo={isDemo}
         />
       </div>
     </div>

@@ -15,12 +15,14 @@ interface TodaySectionProps {
   members: HouseholdMember[]
   children: Child[]
   householdId: string
+  isDemo?: boolean  // Demo mode - mutations are blocked
 }
 
-export function TodaySection({ summary, holidays = [], members, children, householdId }: TodaySectionProps) {
+export function TodaySection({ summary, holidays = [], members, children, householdId, isDemo = false }: TodaySectionProps) {
   const { t } = useLanguage()
   const { refreshWeek } = useRefreshWithRevalidate(householdId)
-  const supabase = useMemo(() => createClient(), [])
+  // Only create Supabase client when not in demo mode
+  const supabase = useMemo(() => (isDemo ? null : createClient()), [isDemo])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
@@ -33,6 +35,12 @@ export function TodaySection({ summary, holidays = [], members, children, househ
     setError(message)
     setTimeout(() => setError(null), 5000)
   }, [])
+
+  // Show info message for demo mode (not an error, just informational)
+  const showDemoMessage = useCallback(() => {
+    setError(t.common.viewOnly)
+    setTimeout(() => setError(null), 3000)
+  }, [t.common.viewOnly])
 
   // Member event modal state
   const [showMemberEventModal, setShowMemberEventModal] = useState(false)
@@ -118,6 +126,7 @@ export function TodaySection({ summary, holidays = [], members, children, househ
 
   const saveMemberEvent = useCallback(async () => {
     if (!memberEventForm.member_id || !memberEventForm.title || !memberEventForm.date) return
+    if (isDemo || !supabase) { showDemoMessage(); return }
 
     setSaving(true)
     try {
@@ -142,10 +151,11 @@ export function TodaySection({ summary, holidays = [], members, children, househ
     } finally {
       setSaving(false)
     }
-  }, [editingMemberEvent, memberEventForm, supabase, closeMemberEventModal, refreshWeek, showError, t.errors.couldNotSaveEvent])
+  }, [editingMemberEvent, memberEventForm, supabase, closeMemberEventModal, refreshWeek, showError, t.errors.couldNotSaveEvent, isDemo, showDemoMessage])
 
   const deleteMemberEvent = useCallback(async () => {
     if (!editingMemberEvent) return
+    if (isDemo || !supabase) { showDemoMessage(); return }
 
     setSaving(true)
     try {
@@ -163,7 +173,7 @@ export function TodaySection({ summary, holidays = [], members, children, househ
     } finally {
       setSaving(false)
     }
-  }, [editingMemberEvent, supabase, closeMemberEventModal, refreshWeek, showError, t.errors.deleteFailed])
+  }, [editingMemberEvent, supabase, closeMemberEventModal, refreshWeek, showError, t.errors.deleteFailed, isDemo, showDemoMessage])
 
   // Household event handlers
   const handleHouseholdEventClick = useCallback((event: HouseholdEvent) => {
@@ -197,6 +207,7 @@ export function TodaySection({ summary, holidays = [], members, children, househ
     if (editingHouseholdEvent?.source === 'ics_calendar') {
       return
     }
+    if (isDemo || !supabase) { showDemoMessage(); return }
 
     setSaving(true)
     try {
@@ -221,7 +232,7 @@ export function TodaySection({ summary, holidays = [], members, children, househ
     } finally {
       setSaving(false)
     }
-  }, [editingHouseholdEvent, householdEventForm, supabase, closeHouseholdEventModal, refreshWeek, showError, t.errors.couldNotSaveEvent])
+  }, [editingHouseholdEvent, householdEventForm, supabase, closeHouseholdEventModal, refreshWeek, showError, t.errors.couldNotSaveEvent, isDemo, showDemoMessage])
 
   const deleteHouseholdEvent = useCallback(async () => {
     if (!editingHouseholdEvent) return
@@ -230,6 +241,7 @@ export function TodaySection({ summary, holidays = [], members, children, househ
     if (editingHouseholdEvent.source === 'ics_calendar') {
       return
     }
+    if (isDemo || !supabase) { showDemoMessage(); return }
 
     setSaving(true)
     try {
@@ -247,7 +259,7 @@ export function TodaySection({ summary, holidays = [], members, children, househ
     } finally {
       setSaving(false)
     }
-  }, [editingHouseholdEvent, supabase, closeHouseholdEventModal, refreshWeek, showError, t.errors.deleteFailed])
+  }, [editingHouseholdEvent, supabase, closeHouseholdEventModal, refreshWeek, showError, t.errors.deleteFailed, isDemo, showDemoMessage])
 
   // External event handlers
   const handleExternalEventClick = useCallback((event: ExternalEvent) => {
@@ -266,6 +278,7 @@ export function TodaySection({ summary, holidays = [], members, children, househ
     is_hidden: boolean
   }) => {
     if (!editingExternalEvent) return
+    if (isDemo || !supabase) { showDemoMessage(); return }
 
     setSaving(true)
     try {
@@ -287,7 +300,7 @@ export function TodaySection({ summary, holidays = [], members, children, househ
     } finally {
       setSaving(false)
     }
-  }, [editingExternalEvent, supabase, closeExternalEventModal, refreshWeek, showError, t.errors.couldNotSaveEvent])
+  }, [editingExternalEvent, supabase, closeExternalEventModal, refreshWeek, showError, t.errors.couldNotSaveEvent, isDemo, showDemoMessage])
 
   // Task handlers
   const handleTaskClick = useCallback((task: ChildTask) => {
@@ -318,6 +331,7 @@ export function TodaySection({ summary, holidays = [], members, children, househ
 
   const saveTask = useCallback(async () => {
     if (!taskForm.child_id || !taskForm.title || !taskForm.date) return
+    if (isDemo || !supabase) { showDemoMessage(); return }
 
     setSaving(true)
     try {
@@ -343,10 +357,11 @@ export function TodaySection({ summary, holidays = [], members, children, househ
     } finally {
       setSaving(false)
     }
-  }, [editingTask, taskForm, supabase, closeTaskModal, refreshWeek, showError, t.errors.couldNotSaveTask])
+  }, [editingTask, taskForm, supabase, closeTaskModal, refreshWeek, showError, t.errors.couldNotSaveTask, isDemo, showDemoMessage])
 
   const deleteTask = useCallback(async () => {
     if (!editingTask) return
+    if (isDemo || !supabase) { showDemoMessage(); return }
 
     setSaving(true)
     try {
@@ -364,10 +379,11 @@ export function TodaySection({ summary, holidays = [], members, children, househ
     } finally {
       setSaving(false)
     }
-  }, [editingTask, supabase, closeTaskModal, refreshWeek, showError, t.errors.deleteFailed])
+  }, [editingTask, supabase, closeTaskModal, refreshWeek, showError, t.errors.deleteFailed, isDemo, showDemoMessage])
 
   const toggleTaskStatus = useCallback(async () => {
     if (!editingTask) return
+    if (isDemo || !supabase) { showDemoMessage(); return }
     setSaving(true)
     try {
       const newStatus = editingTask.status === 'done' ? 'open' : 'done'
@@ -384,7 +400,7 @@ export function TodaySection({ summary, holidays = [], members, children, househ
     } finally {
       setSaving(false)
     }
-  }, [editingTask, supabase, closeTaskModal, refreshWeek, showError, t.errors.couldNotSaveTask])
+  }, [editingTask, supabase, closeTaskModal, refreshWeek, showError, t.errors.couldNotSaveTask, isDemo, showDemoMessage])
 
   return (
     <>
