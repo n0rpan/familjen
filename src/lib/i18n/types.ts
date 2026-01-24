@@ -393,6 +393,7 @@ export interface TranslationStrings {
     emptyList: string
     emptyListDesc: string
     clearChecked: string
+    confirmClearMany: string
     clearAll: string
     clearAllConfirm: string
     quantity: string // Short "Qty"

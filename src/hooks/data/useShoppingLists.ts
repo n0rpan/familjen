@@ -11,7 +11,7 @@
  * - isFetching: actively fetching data
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useDataSource } from './useDataSource'
 import { useHousehold } from './useHousehold'
 import { useRealtimeSubscription, createHouseholdFilter } from '@/hooks/useRealtimeSubscription'
@@ -58,6 +58,7 @@ export function useShoppingLists(): UseShoppingListsReturn {
   const [initialFetchDone, setInitialFetchDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const cacheCheckedRef = useRef(false)
+  const realtimeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const fetchData = useCallback(async () => {
     if (isDemo || !supabase || !household?.id) return
@@ -148,13 +149,36 @@ export function useShoppingLists(): UseShoppingListsReturn {
     })
   }, [isDemo, household?.id, initialFetchDone, fetchData])
 
+  // Debounced fetch for realtime updates - prevents API flooding on bulk operations
+  // (e.g., clearing 10 bought items would otherwise trigger 10+ API calls)
+  const debouncedFetch = useMemo(() => {
+    return () => {
+      if (realtimeDebounceRef.current) {
+        clearTimeout(realtimeDebounceRef.current)
+      }
+      realtimeDebounceRef.current = setTimeout(() => {
+        realtimeDebounceRef.current = null
+        fetchData()
+      }, 300)
+    }
+  }, [fetchData])
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (realtimeDebounceRef.current) {
+        clearTimeout(realtimeDebounceRef.current)
+      }
+    }
+  }, [])
+
   // Subscribe to realtime changes for instant sync between family members
   // Subscribe to both shopping_lists and shopping_list_items tables
   useRealtimeSubscription<ShoppingList>({
     table: 'shopping_lists',
     filter: household?.id ? createHouseholdFilter(household.id) : undefined,
     enabled: !isDemo && !!household?.id,
-    onAny: fetchData,
+    onAny: debouncedFetch,
   })
 
   useRealtimeSubscription<ShoppingListItem>({
@@ -162,7 +186,7 @@ export function useShoppingLists(): UseShoppingListsReturn {
     // Note: shopping_list_items don't have household_id directly, so we refetch all
     // The filter by list_id happens in fetchData()
     enabled: !isDemo && !!household?.id,
-    onAny: fetchData,
+    onAny: debouncedFetch,
   })
 
   // Add list mutation

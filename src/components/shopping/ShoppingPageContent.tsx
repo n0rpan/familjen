@@ -34,6 +34,9 @@ interface ListWithItems extends ShoppingList {
   items: ShoppingListItem[]
 }
 
+// Generate collision-resistant temp IDs
+const generateTempId = () => `temp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+
 interface ShoppingPageContentProps {
   initialData?: ShoppingPageData
   isDemo?: boolean
@@ -63,8 +66,20 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
   const [lists, setLists] = useState<ListWithItems[]>(initialData?.lists || [])
   const [newItemText, setNewItemText] = useState<Record<string, string>>({})
   const [newItemQuantity, setNewItemQuantity] = useState<Record<string, string>>({})
-  const [viewMode, setViewMode] = useState<ShoppingViewMode>('newest')
-  const [activeFilter, setActiveFilter] = useState<ShoppingFilter>('all')
+  const [isSubmitting, setIsSubmitting] = useState<Record<string, boolean>>({})
+  // Persist filter/view preferences in localStorage for better UX
+  const [viewMode, setViewMode] = useState<ShoppingViewMode>(() => {
+    if (typeof window === 'undefined') return 'newest'
+    const saved = localStorage.getItem('shopping-view-mode')
+    return (saved === 'category' || saved === 'newest') ? saved : 'newest'
+  })
+  const [activeFilter, setActiveFilter] = useState<ShoppingFilter>(() => {
+    if (typeof window === 'undefined') return 'all'
+    const saved = localStorage.getItem('shopping-filter')
+    return (['all', 'dagligvarer', 'hjem', 'annet'] as ShoppingFilter[]).includes(saved as ShoppingFilter)
+      ? saved as ShoppingFilter
+      : 'all'
+  })
   const [duplicateWarning, setDuplicateWarning] = useState<{
     listId: string
     matches: Array<{ id: string; name: string; quantity: string | null; matchType?: string; reason?: string }>
@@ -78,6 +93,23 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
   const householdRef = useRef(household)
   useEffect(() => { tRef.current = t }, [t])
   useEffect(() => { householdRef.current = household }, [household])
+
+  // Persist filter/view preferences to localStorage
+  useEffect(() => {
+    localStorage.setItem('shopping-view-mode', viewMode)
+  }, [viewMode])
+  useEffect(() => {
+    localStorage.setItem('shopping-filter', activeFilter)
+  }, [activeFilter])
+
+  // Cleanup duplicate check timer on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (duplicateCheckTimer.current) {
+        clearTimeout(duplicateCheckTimer.current)
+      }
+    }
+  }, [])
 
   // Micro-feedback for recently changed items
   const { markChanged, isRecentlyChanged } = useMicroFeedback(800)
@@ -484,11 +516,26 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
       return
     }
 
-    setLists(prev => prev.map(list =>
-      list.id === record.list_id
-        ? { ...list, items: [record, ...list.items] }
-        : list
-    ))
+    // Race condition fix: Check if we have a temp item with the same name in this list.
+    // This happens when realtime fires before our insert returns - we already have the
+    // optimistic item, so skip adding a duplicate. Our insert will replace the temp ID.
+    setLists(prev => {
+      const targetList = prev.find(l => l.id === record.list_id)
+      if (targetList) {
+        const hasTempDuplicate = targetList.items.some(
+          item => item.id.startsWith('temp-') && item.name === record.name
+        )
+        if (hasTempDuplicate) {
+          // We're already showing this item optimistically, skip the realtime insert
+          return prev
+        }
+      }
+      return prev.map(list =>
+        list.id === record.list_id
+          ? { ...list, items: [record, ...list.items] }
+          : list
+      )
+    })
 
     const updatedBy = (record as unknown as { updated_by?: string }).updated_by
     if (realtime && !realtime.isOwnChange(updatedBy)) {
@@ -566,6 +613,10 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     const text = newItemText[listId]?.trim()
     if (!text) return
 
+    // Prevent double-submit while request is in flight
+    if (isSubmitting[listId]) return
+    setIsSubmitting(prev => ({ ...prev, [listId]: true }))
+
     const quantity = newItemQuantity[listId]?.trim() || null
 
     // Clear input first
@@ -573,102 +624,106 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     setNewItemQuantity(prev => ({ ...prev, [listId]: '' }))
     setDuplicateWarning(null)
 
-    if (isDemo) {
-      // Use demo hook mutation
-      await demoHook.addItem(listId, {
-        name: text,
-        quantity,
-        category: 'other',
-        is_bought: false,
-        source_recipe_id: null,
-      })
-      return
-    }
+    try {
+      if (isDemo) {
+        // Use demo hook mutation
+        await demoHook.addItem(listId, {
+          name: text,
+          quantity,
+          category: 'other',
+          is_bought: false,
+          source_recipe_id: null,
+        })
+        return
+      }
 
-    // Production mode with AI categorization
-    const cachedCategory = getCachedCategory(text)
-    const initialCategory: ShoppingCategory = cachedCategory ?? 'other'
+      // Production mode with AI categorization
+      const cachedCategory = getCachedCategory(text)
+      const initialCategory: ShoppingCategory = cachedCategory ?? 'other'
 
-    const tempId = `temp-${Date.now()}`
-    const newItem: ShoppingListItem = {
-      id: tempId,
-      list_id: listId,
-      name: text,
-      quantity,
-      is_bought: false,
-      category: initialCategory,
-      source_recipe_id: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
-
-    setLists(prev => prev.map(list =>
-      list.id === listId
-        ? { ...list, items: [newItem, ...list.items] }
-        : list
-    ))
-
-    const { data, error } = await supabase
-      .from('shopping_list_items')
-      .insert({
+      const tempId = generateTempId()
+      const newItem: ShoppingListItem = {
+        id: tempId,
         list_id: listId,
         name: text,
         quantity,
+        is_bought: false,
         category: initialCategory,
-      })
-      .select()
-      .single()
+        source_recipe_id: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
 
-    // Check for explicit error OR RLS blocking (no data returned)
-    if (error || !data) {
-      console.error('Failed to add item:', error?.message || 'RLS blocked insert (session expired?)')
       setLists(prev => prev.map(list =>
         list.id === listId
-          ? { ...list, items: list.items.filter(item => item.id !== tempId) }
+          ? { ...list, items: [newItem, ...list.items] }
           : list
       ))
-      return
-    }
 
-    // Success - update with real ID, then clear pending (realtime can handle future updates)
-    pendingChanges.current.add(data.id)
-    setLists(prev => prev.map(list =>
-      list.id === listId
-        ? { ...list, items: list.items.map(item => item.id === tempId ? data : item) }
-        : list
-    ))
-    pendingChanges.current.delete(data.id)
-
-    // Background categorization
-    if (!cachedCategory) {
-      fetch('/api/openrouter/categorize-item', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ itemName: text }),
-      })
-        .then(res => res.ok ? res.json() : null)
-        .then(catData => {
-          if (catData?.category && catData.category !== initialCategory) {
-            setCachedCategory(text, catData.category)
-            supabase
-              .from('shopping_list_items')
-              .update({ category: catData.category })
-              .eq('id', data.id)
-              .then(() => {
-                setLists(prev => prev.map(list =>
-                  list.id === listId
-                    ? {
-                        ...list,
-                        items: list.items.map(item =>
-                          item.id === data.id ? { ...item, category: catData.category } : item
-                        ),
-                      }
-                    : list
-                ))
-              })
-          }
+      const { data, error } = await supabase
+        .from('shopping_list_items')
+        .insert({
+          list_id: listId,
+          name: text,
+          quantity,
+          category: initialCategory,
         })
-        .catch(() => {})
+        .select()
+        .single()
+
+      // Check for explicit error OR RLS blocking (no data returned)
+      if (error || !data) {
+        console.error('Failed to add item:', error?.message || 'RLS blocked insert (session expired?)')
+        setLists(prev => prev.map(list =>
+          list.id === listId
+            ? { ...list, items: list.items.filter(item => item.id !== tempId) }
+            : list
+        ))
+        return
+      }
+
+      // Success - update with real ID, then clear pending (realtime can handle future updates)
+      pendingChanges.current.add(data.id)
+      setLists(prev => prev.map(list =>
+        list.id === listId
+          ? { ...list, items: list.items.map(item => item.id === tempId ? data : item) }
+          : list
+      ))
+      pendingChanges.current.delete(data.id)
+
+      // Background categorization
+      if (!cachedCategory) {
+        fetch('/api/openrouter/categorize-item', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ itemName: text }),
+        })
+          .then(res => res.ok ? res.json() : null)
+          .then(catData => {
+            if (catData?.category && catData.category !== initialCategory) {
+              setCachedCategory(text, catData.category)
+              supabase
+                .from('shopping_list_items')
+                .update({ category: catData.category })
+                .eq('id', data.id)
+                .then(() => {
+                  setLists(prev => prev.map(list =>
+                    list.id === listId
+                      ? {
+                          ...list,
+                          items: list.items.map(item =>
+                            item.id === data.id ? { ...item, category: catData.category } : item
+                          ),
+                        }
+                      : list
+                  ))
+                })
+            }
+          })
+          .catch(() => {})
+      }
+    } finally {
+      setIsSubmitting(prev => ({ ...prev, [listId]: false }))
     }
   }
 
@@ -757,8 +812,18 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     const list = finalLists.find(l => l.id === listId)
     if (!list) return
 
-    const boughtIds = list.items.filter(i => i.is_bought).map(i => i.id)
+    const boughtItems = list.items.filter(i => i.is_bought)
+    const boughtIds = boughtItems.map(i => i.id)
     if (boughtIds.length === 0) return
+
+    // Confirm before clearing many items to prevent accidental data loss
+    if (boughtIds.length > 3) {
+      const confirmed = window.confirm(
+        t.shopping.confirmClearMany?.replace('{count}', String(boughtIds.length)) ||
+        `Fjerne ${boughtIds.length} varer?`
+      )
+      if (!confirmed) return
+    }
 
     if (isDemo) {
       // Use demo hook mutations
@@ -769,7 +834,6 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     }
 
     // Production mode - optimistic update with rollback on failure
-    const boughtItems = list.items.filter(i => i.is_bought)
     boughtIds.forEach(id => pendingChanges.current.add(id))
 
     // Optimistic update
@@ -811,7 +875,7 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     const mainList = lists[0]
     if (!mainList) return
 
-    const tempId = `temp-${Date.now()}`
+    const tempId = generateTempId()
     const newItem: ShoppingListItem = {
       id: tempId,
       list_id: mainList.id,
@@ -1004,14 +1068,21 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
                   />
                   <button
                     onClick={() => addItem(list.id)}
-                    disabled={!newItemText[list.id]?.trim()}
+                    disabled={!newItemText[list.id]?.trim() || isSubmitting[list.id]}
                     className="btn btn-primary"
                     style={{ flex: '0 0 auto', padding: '0 12px' }}
                   >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <line x1="12" y1="5" x2="12" y2="19"/>
-                      <line x1="5" y1="12" x2="19" y2="12"/>
-                    </svg>
+                    {isSubmitting[list.id] ? (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="animate-spin">
+                        <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+                        <path d="M12 2a10 10 0 0 1 10 10" />
+                      </svg>
+                    ) : (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <line x1="12" y1="5" x2="12" y2="19"/>
+                        <line x1="5" y1="12" x2="19" y2="12"/>
+                      </svg>
+                    )}
                   </button>
                 </div>
 

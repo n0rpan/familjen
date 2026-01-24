@@ -385,6 +385,7 @@ export const sv: TranslationStrings = {
     emptyList: 'Inköpslistan är tom',
     emptyListDesc: 'Lägg till varor eller använd recept för att fylla listan.',
     clearChecked: 'Ta bort köpta',
+    confirmClearMany: 'Ta bort {count} varor?',
     clearAll: 'Rensa listan',
     clearAllConfirm: 'Radera alla varor från inköpslistan?',
     quantity: 'Ant.',

@@ -385,6 +385,7 @@ export const en: TranslationStrings = {
     emptyList: 'Shopping list is empty',
     emptyListDesc: 'Add items or use recipes to fill the list.',
     clearChecked: 'Remove checked',
+    confirmClearMany: 'Remove {count} items?',
     clearAll: 'Clear list',
     clearAllConfirm: 'Delete all items from the shopping list?',
     quantity: 'Qty',
