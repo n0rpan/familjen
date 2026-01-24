@@ -67,24 +67,17 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
   const [newItemText, setNewItemText] = useState<Record<string, string>>({})
   const [newItemQuantity, setNewItemQuantity] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState<Record<string, boolean>>({})
-  // Persist filter/view preferences in localStorage for better UX
-  const [viewMode, setViewMode] = useState<ShoppingViewMode>(() => {
-    if (typeof window === 'undefined') return 'newest'
-    const saved = localStorage.getItem('shopping-view-mode')
-    return (saved === 'category' || saved === 'newest') ? saved : 'newest'
-  })
-  const [activeFilter, setActiveFilter] = useState<ShoppingFilter>(() => {
-    if (typeof window === 'undefined') return 'all'
-    const saved = localStorage.getItem('shopping-filter')
-    return (['all', 'dagligvarer', 'hjem', 'annet'] as ShoppingFilter[]).includes(saved as ShoppingFilter)
-      ? saved as ShoppingFilter
-      : 'all'
-  })
+  // View mode and filter state - initialized with defaults, then hydrated from localStorage
+  const [viewMode, setViewMode] = useState<ShoppingViewMode>('newest')
+  const [activeFilter, setActiveFilter] = useState<ShoppingFilter>('all')
+  const [prefsHydrated, setPrefsHydrated] = useState(false)
   const [duplicateWarning, setDuplicateWarning] = useState<{
     listId: string
     matches: Array<{ id: string; name: string; quantity: string | null; matchType?: string; reason?: string }>
     suggestion?: string | null
   } | null>(null)
+  // Confirmation dialog state for batch clear
+  const [clearConfirm, setClearConfirm] = useState<{ listId: string; count: number } | null>(null)
   const duplicateCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasInitialized = useRef(false)
 
@@ -94,13 +87,28 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
   useEffect(() => { tRef.current = t }, [t])
   useEffect(() => { householdRef.current = household }, [household])
 
-  // Persist filter/view preferences to localStorage
+  // Hydrate filter/view preferences from localStorage on mount (SSR-safe)
   useEffect(() => {
+    const savedViewMode = localStorage.getItem('shopping-view-mode')
+    if (savedViewMode === 'category' || savedViewMode === 'newest') {
+      setViewMode(savedViewMode)
+    }
+    const savedFilter = localStorage.getItem('shopping-filter')
+    if (['all', 'dagligvarer', 'hjem', 'annet'].includes(savedFilter || '')) {
+      setActiveFilter(savedFilter as ShoppingFilter)
+    }
+    setPrefsHydrated(true)
+  }, [])
+
+  // Persist filter/view preferences to localStorage (only after hydration)
+  useEffect(() => {
+    if (!prefsHydrated) return
     localStorage.setItem('shopping-view-mode', viewMode)
-  }, [viewMode])
+  }, [viewMode, prefsHydrated])
   useEffect(() => {
+    if (!prefsHydrated) return
     localStorage.setItem('shopping-filter', activeFilter)
-  }, [activeFilter])
+  }, [activeFilter, prefsHydrated])
 
   // Cleanup duplicate check timer on unmount to prevent memory leaks
   useEffect(() => {
@@ -679,6 +687,8 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
             ? { ...list, items: list.items.filter(item => item.id !== tempId) }
             : list
         ))
+        // Show error feedback to user
+        realtime?.showToast(t.errors.saveFailed, 'error')
         return
       }
 
@@ -766,6 +776,8 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
           ),
         }))
       )
+      // Show error feedback to user
+      realtime?.showToast(t.errors.saveFailed, 'error')
     }
 
     // Clear pending change tracking
@@ -808,22 +820,32 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     }
   }, [isDemo, demoHook, undoStack])
 
-  const clearBoughtItems = async (listId: string) => {
+  // Request confirmation before clearing many items
+  const requestClearBoughtItems = useCallback((listId: string) => {
+    const list = finalLists.find(l => l.id === listId)
+    if (!list) return
+
+    const boughtCount = list.items.filter(i => i.is_bought).length
+    if (boughtCount === 0) return
+
+    // Show confirmation dialog for many items, otherwise clear directly
+    if (boughtCount > 3) {
+      setClearConfirm({ listId, count: boughtCount })
+    } else {
+      executeClearBoughtItems(listId)
+    }
+  }, [finalLists])
+
+  // Execute the actual clear operation
+  const executeClearBoughtItems = async (listId: string) => {
+    setClearConfirm(null) // Close confirmation dialog
+
     const list = finalLists.find(l => l.id === listId)
     if (!list) return
 
     const boughtItems = list.items.filter(i => i.is_bought)
     const boughtIds = boughtItems.map(i => i.id)
     if (boughtIds.length === 0) return
-
-    // Confirm before clearing many items to prevent accidental data loss
-    if (boughtIds.length > 3) {
-      const confirmed = window.confirm(
-        t.shopping.confirmClearMany?.replace('{count}', String(boughtIds.length)) ||
-        `Fjerne ${boughtIds.length} varer?`
-      )
-      if (!confirmed) return
-    }
 
     if (isDemo) {
       // Use demo hook mutations
@@ -855,6 +877,8 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
           ? { ...l, items: [...boughtItems, ...l.items] }
           : l
       ))
+      // Show error feedback to user
+      realtime?.showToast(t.errors.saveFailed, 'error')
     }
 
     // Clear pending change tracking
@@ -913,6 +937,8 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
           ? { ...list, items: list.items.filter(item => item.id !== tempId) }
           : list
       ))
+      // Show error feedback to user
+      realtime?.showToast(t.errors.saveFailed, 'error')
       return
     }
 
@@ -924,7 +950,7 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
         : list
     ))
     pendingChanges.current.delete(data.id)
-  }, [lists, supabase, household])
+  }, [lists, supabase, realtime, t])
 
   // Get final loading/error values for conditional rendering
   // Same logic as finalLists: PPR uses local state, client-only demo uses hooks
@@ -1037,7 +1063,7 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
                 </div>
                 {boughtItems.length > 0 && (
                   <button
-                    onClick={() => clearBoughtItems(list.id)}
+                    onClick={() => requestClearBoughtItems(list.id)}
                     className="text-xs font-medium px-3 py-2.5 min-h-[44px] rounded-lg transition-colors hover:bg-[var(--sand)] touch-feedback"
                     style={{ color: 'var(--foreground)', opacity: 0.8 }}
                   >
@@ -1074,8 +1100,8 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
                   >
                     {isSubmitting[list.id] ? (
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="animate-spin">
-                        <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-                        <path d="M12 2a10 10 0 0 1 10 10" />
+                        <circle cx="12" cy="12" r="9" strokeOpacity="0.25" />
+                        <circle cx="12" cy="12" r="9" strokeDasharray="28.27 28.27" strokeLinecap="round" />
                       </svg>
                     ) : (
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -1253,6 +1279,59 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
           failedActions={undoStack.failedActions}
           onDismissFailed={undoStack.dismissFailed}
         />
+      )}
+
+      {/* Confirmation dialog for batch clear */}
+      {clearConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0, 0, 0, 0.5)' }}
+          onClick={() => setClearConfirm(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl p-6 shadow-xl animate-fade-in"
+            style={{ background: 'var(--card)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center"
+                style={{ background: 'rgba(214, 180, 112, 0.2)' }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="12" y1="8" x2="12" y2="12"/>
+                  <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold" style={{ color: 'var(--foreground)' }}>
+                {t.shopping.confirmClearMany.replace('{count}', String(clearConfirm.count))}
+              </h3>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setClearConfirm(null)}
+                className="flex-1 btn"
+                style={{
+                  background: 'var(--sand)',
+                  color: 'var(--foreground)',
+                }}
+              >
+                {t.common.cancel}
+              </button>
+              <button
+                onClick={() => executeClearBoughtItems(clearConfirm.listId)}
+                className="flex-1 btn"
+                style={{
+                  background: 'var(--color-coral)',
+                  color: 'white',
+                }}
+              >
+                {t.shopping.clearChecked}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
