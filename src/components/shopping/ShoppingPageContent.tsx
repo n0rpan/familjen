@@ -27,7 +27,6 @@ import {
 import { setCache } from '@/lib/cache'
 import { setCacheSync } from '@/lib/cache-sync'
 import { CACHE_VERSION, CACHE_KEYS } from '@/lib/cache-constants'
-import type { ShoppingCacheData } from '@/lib/types'
 import type { ShoppingPageData } from '@/lib/data/server'
 
 interface ListWithItems extends ShoppingList {
@@ -80,6 +79,7 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
   const [clearConfirm, setClearConfirm] = useState<{ listId: string; count: number } | null>(null)
   const duplicateCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasInitialized = useRef(false)
+  const isMountedRef = useRef(true)
 
   // Refs to avoid stale closures in async callbacks
   const tRef = useRef(t)
@@ -110,9 +110,11 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     localStorage.setItem('shopping-filter', activeFilter)
   }, [activeFilter, prefsHydrated])
 
-  // Cleanup duplicate check timer on unmount to prevent memory leaks
+  // Cleanup duplicate check timer on unmount and track mounted state
   useEffect(() => {
+    isMountedRef.current = true
     return () => {
+      isMountedRef.current = false
       if (duplicateCheckTimer.current) {
         clearTimeout(duplicateCheckTimer.current)
       }
@@ -701,7 +703,7 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
       ))
       pendingChanges.current.delete(data.id)
 
-      // Background categorization
+      // Background categorization (with mounted check to avoid React warnings)
       if (!cachedCategory) {
         fetch('/api/openrouter/categorize-item', {
           method: 'POST',
@@ -710,6 +712,7 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
         })
           .then(res => res.ok ? res.json() : null)
           .then(catData => {
+            if (!isMountedRef.current) return
             if (catData?.category && catData.category !== initialCategory) {
               setCachedCategory(text, catData.category)
               supabase
@@ -717,6 +720,7 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
                 .update({ category: catData.category })
                 .eq('id', data.id)
                 .then(() => {
+                  if (!isMountedRef.current) return
                   setLists(prev => prev.map(list =>
                     list.id === listId
                       ? {
@@ -820,24 +824,8 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     }
   }, [isDemo, demoHook, undoStack])
 
-  // Request confirmation before clearing many items
-  const requestClearBoughtItems = useCallback((listId: string) => {
-    const list = finalLists.find(l => l.id === listId)
-    if (!list) return
-
-    const boughtCount = list.items.filter(i => i.is_bought).length
-    if (boughtCount === 0) return
-
-    // Show confirmation dialog for many items, otherwise clear directly
-    if (boughtCount > 3) {
-      setClearConfirm({ listId, count: boughtCount })
-    } else {
-      executeClearBoughtItems(listId)
-    }
-  }, [finalLists])
-
   // Execute the actual clear operation
-  const executeClearBoughtItems = async (listId: string) => {
+  const executeClearBoughtItems = useCallback(async (listId: string) => {
     setClearConfirm(null) // Close confirmation dialog
 
     const list = finalLists.find(l => l.id === listId)
@@ -886,7 +874,37 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
 
     // Refresh from server in background to sync cache with reality
     refreshData()
-  }
+  }, [finalLists, isDemo, demoHook, supabase, realtime, t, refreshData])
+
+  // Request confirmation before clearing many items
+  const requestClearBoughtItems = useCallback((listId: string) => {
+    const list = finalLists.find(l => l.id === listId)
+    if (!list) return
+
+    const boughtCount = list.items.filter(i => i.is_bought).length
+    if (boughtCount === 0) return
+
+    // Show confirmation dialog for many items, otherwise clear directly
+    if (boughtCount > 3) {
+      setClearConfirm({ listId, count: boughtCount })
+    } else {
+      executeClearBoughtItems(listId)
+    }
+  }, [finalLists, executeClearBoughtItems])
+
+  // Handle Escape key to close confirmation modal
+  useEffect(() => {
+    if (!clearConfirm) return
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setClearConfirm(null)
+      }
+    }
+
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [clearConfirm])
 
   const handleKeyDown = (e: React.KeyboardEvent, listId: string) => {
     if (e.key === 'Enter') {
