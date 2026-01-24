@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { HouseholdMember } from '@/lib/types'
 
 // Toast types
-export type ToastType = 'info' | 'success' | 'warning'
+export type ToastType = 'info' | 'success' | 'warning' | 'error'
 
 export interface RealtimeToast {
   id: string

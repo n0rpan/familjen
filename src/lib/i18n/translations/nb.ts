@@ -385,6 +385,7 @@ export const nb: TranslationStrings = {
     emptyList: 'Handlelisten er tom',
     emptyListDesc: 'Legg til varer eller bruk oppskrifter for å fylle listen.',
     clearChecked: 'Fjern kjøpte',
+    confirmClearMany: 'Fjerne {count} varer?',
     clearAll: 'Tøm listen',
     clearAllConfirm: 'Slette alle varer fra handlelisten?',
     quantity: 'Ant.',

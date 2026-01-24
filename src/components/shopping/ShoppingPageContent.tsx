@@ -27,12 +27,14 @@ import {
 import { setCache } from '@/lib/cache'
 import { setCacheSync } from '@/lib/cache-sync'
 import { CACHE_VERSION, CACHE_KEYS } from '@/lib/cache-constants'
-import type { ShoppingCacheData } from '@/lib/types'
 import type { ShoppingPageData } from '@/lib/data/server'
 
 interface ListWithItems extends ShoppingList {
   items: ShoppingListItem[]
 }
+
+// Generate collision-resistant temp IDs
+const generateTempId = () => `temp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 
 interface ShoppingPageContentProps {
   initialData?: ShoppingPageData
@@ -63,21 +65,61 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
   const [lists, setLists] = useState<ListWithItems[]>(initialData?.lists || [])
   const [newItemText, setNewItemText] = useState<Record<string, string>>({})
   const [newItemQuantity, setNewItemQuantity] = useState<Record<string, string>>({})
+  const [isSubmitting, setIsSubmitting] = useState<Record<string, boolean>>({})
+  // View mode and filter state - initialized with defaults, then hydrated from localStorage
   const [viewMode, setViewMode] = useState<ShoppingViewMode>('newest')
   const [activeFilter, setActiveFilter] = useState<ShoppingFilter>('all')
+  const [prefsHydrated, setPrefsHydrated] = useState(false)
   const [duplicateWarning, setDuplicateWarning] = useState<{
     listId: string
     matches: Array<{ id: string; name: string; quantity: string | null; matchType?: string; reason?: string }>
     suggestion?: string | null
   } | null>(null)
+  // Confirmation dialog state for batch clear
+  const [clearConfirm, setClearConfirm] = useState<{ listId: string; count: number } | null>(null)
   const duplicateCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasInitialized = useRef(false)
+  const isMountedRef = useRef(true)
 
   // Refs to avoid stale closures in async callbacks
   const tRef = useRef(t)
   const householdRef = useRef(household)
   useEffect(() => { tRef.current = t }, [t])
   useEffect(() => { householdRef.current = household }, [household])
+
+  // Hydrate filter/view preferences from localStorage on mount (SSR-safe)
+  useEffect(() => {
+    const savedViewMode = localStorage.getItem('shopping-view-mode')
+    if (savedViewMode === 'category' || savedViewMode === 'newest') {
+      setViewMode(savedViewMode)
+    }
+    const savedFilter = localStorage.getItem('shopping-filter')
+    if (['all', 'dagligvarer', 'hjem', 'annet'].includes(savedFilter || '')) {
+      setActiveFilter(savedFilter as ShoppingFilter)
+    }
+    setPrefsHydrated(true)
+  }, [])
+
+  // Persist filter/view preferences to localStorage (only after hydration)
+  useEffect(() => {
+    if (!prefsHydrated) return
+    localStorage.setItem('shopping-view-mode', viewMode)
+  }, [viewMode, prefsHydrated])
+  useEffect(() => {
+    if (!prefsHydrated) return
+    localStorage.setItem('shopping-filter', activeFilter)
+  }, [activeFilter, prefsHydrated])
+
+  // Cleanup duplicate check timer on unmount and track mounted state
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+      if (duplicateCheckTimer.current) {
+        clearTimeout(duplicateCheckTimer.current)
+      }
+    }
+  }, [])
 
   // Micro-feedback for recently changed items
   const { markChanged, isRecentlyChanged } = useMicroFeedback(800)
@@ -484,11 +526,26 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
       return
     }
 
-    setLists(prev => prev.map(list =>
-      list.id === record.list_id
-        ? { ...list, items: [record, ...list.items] }
-        : list
-    ))
+    // Race condition fix: Check if we have a temp item with the same name in this list.
+    // This happens when realtime fires before our insert returns - we already have the
+    // optimistic item, so skip adding a duplicate. Our insert will replace the temp ID.
+    setLists(prev => {
+      const targetList = prev.find(l => l.id === record.list_id)
+      if (targetList) {
+        const hasTempDuplicate = targetList.items.some(
+          item => item.id.startsWith('temp-') && item.name === record.name
+        )
+        if (hasTempDuplicate) {
+          // We're already showing this item optimistically, skip the realtime insert
+          return prev
+        }
+      }
+      return prev.map(list =>
+        list.id === record.list_id
+          ? { ...list, items: [record, ...list.items] }
+          : list
+      )
+    })
 
     const updatedBy = (record as unknown as { updated_by?: string }).updated_by
     if (realtime && !realtime.isOwnChange(updatedBy)) {
@@ -566,6 +623,10 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     const text = newItemText[listId]?.trim()
     if (!text) return
 
+    // Prevent double-submit while request is in flight
+    if (isSubmitting[listId]) return
+    setIsSubmitting(prev => ({ ...prev, [listId]: true }))
+
     const quantity = newItemQuantity[listId]?.trim() || null
 
     // Clear input first
@@ -573,102 +634,110 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     setNewItemQuantity(prev => ({ ...prev, [listId]: '' }))
     setDuplicateWarning(null)
 
-    if (isDemo) {
-      // Use demo hook mutation
-      await demoHook.addItem(listId, {
-        name: text,
-        quantity,
-        category: 'other',
-        is_bought: false,
-        source_recipe_id: null,
-      })
-      return
-    }
+    try {
+      if (isDemo) {
+        // Use demo hook mutation
+        await demoHook.addItem(listId, {
+          name: text,
+          quantity,
+          category: 'other',
+          is_bought: false,
+          source_recipe_id: null,
+        })
+        return
+      }
 
-    // Production mode with AI categorization
-    const cachedCategory = getCachedCategory(text)
-    const initialCategory: ShoppingCategory = cachedCategory ?? 'other'
+      // Production mode with AI categorization
+      const cachedCategory = getCachedCategory(text)
+      const initialCategory: ShoppingCategory = cachedCategory ?? 'other'
 
-    const tempId = `temp-${Date.now()}`
-    const newItem: ShoppingListItem = {
-      id: tempId,
-      list_id: listId,
-      name: text,
-      quantity,
-      is_bought: false,
-      category: initialCategory,
-      source_recipe_id: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
-
-    setLists(prev => prev.map(list =>
-      list.id === listId
-        ? { ...list, items: [newItem, ...list.items] }
-        : list
-    ))
-
-    const { data, error } = await supabase
-      .from('shopping_list_items')
-      .insert({
+      const tempId = generateTempId()
+      const newItem: ShoppingListItem = {
+        id: tempId,
         list_id: listId,
         name: text,
         quantity,
+        is_bought: false,
         category: initialCategory,
-      })
-      .select()
-      .single()
+        source_recipe_id: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
 
-    // Check for explicit error OR RLS blocking (no data returned)
-    if (error || !data) {
-      console.error('Failed to add item:', error?.message || 'RLS blocked insert (session expired?)')
       setLists(prev => prev.map(list =>
         list.id === listId
-          ? { ...list, items: list.items.filter(item => item.id !== tempId) }
+          ? { ...list, items: [newItem, ...list.items] }
           : list
       ))
-      return
-    }
 
-    // Success - update with real ID, then clear pending (realtime can handle future updates)
-    pendingChanges.current.add(data.id)
-    setLists(prev => prev.map(list =>
-      list.id === listId
-        ? { ...list, items: list.items.map(item => item.id === tempId ? data : item) }
-        : list
-    ))
-    pendingChanges.current.delete(data.id)
-
-    // Background categorization
-    if (!cachedCategory) {
-      fetch('/api/openrouter/categorize-item', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ itemName: text }),
-      })
-        .then(res => res.ok ? res.json() : null)
-        .then(catData => {
-          if (catData?.category && catData.category !== initialCategory) {
-            setCachedCategory(text, catData.category)
-            supabase
-              .from('shopping_list_items')
-              .update({ category: catData.category })
-              .eq('id', data.id)
-              .then(() => {
-                setLists(prev => prev.map(list =>
-                  list.id === listId
-                    ? {
-                        ...list,
-                        items: list.items.map(item =>
-                          item.id === data.id ? { ...item, category: catData.category } : item
-                        ),
-                      }
-                    : list
-                ))
-              })
-          }
+      const { data, error } = await supabase
+        .from('shopping_list_items')
+        .insert({
+          list_id: listId,
+          name: text,
+          quantity,
+          category: initialCategory,
         })
-        .catch(() => {})
+        .select()
+        .single()
+
+      // Check for explicit error OR RLS blocking (no data returned)
+      if (error || !data) {
+        console.error('Failed to add item:', error?.message || 'RLS blocked insert (session expired?)')
+        setLists(prev => prev.map(list =>
+          list.id === listId
+            ? { ...list, items: list.items.filter(item => item.id !== tempId) }
+            : list
+        ))
+        // Show error feedback to user
+        realtime?.showToast(t.errors.saveFailed, 'error')
+        return
+      }
+
+      // Success - update with real ID, then clear pending (realtime can handle future updates)
+      pendingChanges.current.add(data.id)
+      setLists(prev => prev.map(list =>
+        list.id === listId
+          ? { ...list, items: list.items.map(item => item.id === tempId ? data : item) }
+          : list
+      ))
+      pendingChanges.current.delete(data.id)
+
+      // Background categorization (with mounted check to avoid React warnings)
+      if (!cachedCategory) {
+        fetch('/api/openrouter/categorize-item', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ itemName: text }),
+        })
+          .then(res => res.ok ? res.json() : null)
+          .then(catData => {
+            if (!isMountedRef.current) return
+            if (catData?.category && catData.category !== initialCategory) {
+              setCachedCategory(text, catData.category)
+              supabase
+                .from('shopping_list_items')
+                .update({ category: catData.category })
+                .eq('id', data.id)
+                .then(() => {
+                  if (!isMountedRef.current) return
+                  setLists(prev => prev.map(list =>
+                    list.id === listId
+                      ? {
+                          ...list,
+                          items: list.items.map(item =>
+                            item.id === data.id ? { ...item, category: catData.category } : item
+                          ),
+                        }
+                      : list
+                  ))
+                })
+            }
+          })
+          .catch(() => {})
+      }
+    } finally {
+      setIsSubmitting(prev => ({ ...prev, [listId]: false }))
     }
   }
 
@@ -711,6 +780,8 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
           ),
         }))
       )
+      // Show error feedback to user
+      realtime?.showToast(t.errors.saveFailed, 'error')
     }
 
     // Clear pending change tracking
@@ -753,11 +824,15 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     }
   }, [isDemo, demoHook, undoStack])
 
-  const clearBoughtItems = async (listId: string) => {
+  // Execute the actual clear operation
+  const executeClearBoughtItems = useCallback(async (listId: string) => {
+    setClearConfirm(null) // Close confirmation dialog
+
     const list = finalLists.find(l => l.id === listId)
     if (!list) return
 
-    const boughtIds = list.items.filter(i => i.is_bought).map(i => i.id)
+    const boughtItems = list.items.filter(i => i.is_bought)
+    const boughtIds = boughtItems.map(i => i.id)
     if (boughtIds.length === 0) return
 
     if (isDemo) {
@@ -769,7 +844,6 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     }
 
     // Production mode - optimistic update with rollback on failure
-    const boughtItems = list.items.filter(i => i.is_bought)
     boughtIds.forEach(id => pendingChanges.current.add(id))
 
     // Optimistic update
@@ -791,6 +865,8 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
           ? { ...l, items: [...boughtItems, ...l.items] }
           : l
       ))
+      // Show error feedback to user
+      realtime?.showToast(t.errors.saveFailed, 'error')
     }
 
     // Clear pending change tracking
@@ -798,7 +874,37 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
 
     // Refresh from server in background to sync cache with reality
     refreshData()
-  }
+  }, [finalLists, isDemo, demoHook, supabase, realtime, t, refreshData])
+
+  // Request confirmation before clearing many items
+  const requestClearBoughtItems = useCallback((listId: string) => {
+    const list = finalLists.find(l => l.id === listId)
+    if (!list) return
+
+    const boughtCount = list.items.filter(i => i.is_bought).length
+    if (boughtCount === 0) return
+
+    // Show confirmation dialog for many items, otherwise clear directly
+    if (boughtCount > 3) {
+      setClearConfirm({ listId, count: boughtCount })
+    } else {
+      executeClearBoughtItems(listId)
+    }
+  }, [finalLists, executeClearBoughtItems])
+
+  // Handle Escape key to close confirmation modal
+  useEffect(() => {
+    if (!clearConfirm) return
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setClearConfirm(null)
+      }
+    }
+
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [clearConfirm])
 
   const handleKeyDown = (e: React.KeyboardEvent, listId: string) => {
     if (e.key === 'Enter') {
@@ -811,7 +917,7 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
     const mainList = lists[0]
     if (!mainList) return
 
-    const tempId = `temp-${Date.now()}`
+    const tempId = generateTempId()
     const newItem: ShoppingListItem = {
       id: tempId,
       list_id: mainList.id,
@@ -849,6 +955,8 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
           ? { ...list, items: list.items.filter(item => item.id !== tempId) }
           : list
       ))
+      // Show error feedback to user
+      realtime?.showToast(t.errors.saveFailed, 'error')
       return
     }
 
@@ -860,7 +968,7 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
         : list
     ))
     pendingChanges.current.delete(data.id)
-  }, [lists, supabase, household])
+  }, [lists, supabase, realtime, t])
 
   // Get final loading/error values for conditional rendering
   // Same logic as finalLists: PPR uses local state, client-only demo uses hooks
@@ -973,7 +1081,7 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
                 </div>
                 {boughtItems.length > 0 && (
                   <button
-                    onClick={() => clearBoughtItems(list.id)}
+                    onClick={() => requestClearBoughtItems(list.id)}
                     className="text-xs font-medium px-3 py-2.5 min-h-[44px] rounded-lg transition-colors hover:bg-[var(--sand)] touch-feedback"
                     style={{ color: 'var(--foreground)', opacity: 0.8 }}
                   >
@@ -1004,14 +1112,21 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
                   />
                   <button
                     onClick={() => addItem(list.id)}
-                    disabled={!newItemText[list.id]?.trim()}
+                    disabled={!newItemText[list.id]?.trim() || isSubmitting[list.id]}
                     className="btn btn-primary"
                     style={{ flex: '0 0 auto', padding: '0 12px' }}
                   >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <line x1="12" y1="5" x2="12" y2="19"/>
-                      <line x1="5" y1="12" x2="19" y2="12"/>
-                    </svg>
+                    {isSubmitting[list.id] ? (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="animate-spin">
+                        <circle cx="12" cy="12" r="9" strokeOpacity="0.25" />
+                        <circle cx="12" cy="12" r="9" strokeDasharray="28.27 28.27" strokeLinecap="round" />
+                      </svg>
+                    ) : (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <line x1="12" y1="5" x2="12" y2="19"/>
+                        <line x1="5" y1="12" x2="19" y2="12"/>
+                      </svg>
+                    )}
                   </button>
                 </div>
 
@@ -1182,6 +1297,59 @@ export function ShoppingPageContent({ initialData, isDemo: propIsDemo }: Shoppin
           failedActions={undoStack.failedActions}
           onDismissFailed={undoStack.dismissFailed}
         />
+      )}
+
+      {/* Confirmation dialog for batch clear */}
+      {clearConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0, 0, 0, 0.5)' }}
+          onClick={() => setClearConfirm(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl p-6 shadow-xl animate-fade-in"
+            style={{ background: 'var(--card)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center"
+                style={{ background: 'rgba(214, 180, 112, 0.2)' }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-honey)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="12" y1="8" x2="12" y2="12"/>
+                  <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold" style={{ color: 'var(--foreground)' }}>
+                {t.shopping.confirmClearMany.replace('{count}', String(clearConfirm.count))}
+              </h3>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setClearConfirm(null)}
+                className="flex-1 btn"
+                style={{
+                  background: 'var(--sand)',
+                  color: 'var(--foreground)',
+                }}
+              >
+                {t.common.cancel}
+              </button>
+              <button
+                onClick={() => executeClearBoughtItems(clearConfirm.listId)}
+                className="flex-1 btn"
+                style={{
+                  background: 'var(--color-coral)',
+                  color: 'white',
+                }}
+              >
+                {t.shopping.clearChecked}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
