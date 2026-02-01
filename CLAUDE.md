@@ -3144,6 +3144,17 @@ Per-key rate limits (defined in `src/lib/rate-limit.ts`):
 
 Rate limiting is per API key (not per household) to isolate abuse between keys.
 
+### Design Decisions
+
+**Error messages are in English:** The Family API is designed for external AI assistants and developers. Error messages are intentionally in English (not Norwegian) since API consumers are typically technical integrations, not end users. The UI translates errors when displaying them.
+
+**Audit logging is fire-and-forget:** API access logging (`logApiAccess()`) is non-blocking - failures don't affect the API response. This prioritizes API performance over guaranteed logging. Log failures are caught and ignored to prevent audit issues from breaking the API.
+
+```typescript
+// Fire-and-forget pattern used in all API routes
+logApiAccess({ keyId, operation, endpoint, ... }).catch(() => {})
+```
+
 ### Realtime Updates
 
 When API keys make changes, the UI shows the API key name in realtime toasts:
@@ -3156,10 +3167,10 @@ const getChangerName = useCallback((
 ): string => {
   if (apiKeyId) {
     const apiKey = apiKeyNames.find(k => k.id === apiKeyId)
-    return apiKey?.name || 'AI Assistant'
+    return apiKey?.name || t.common.aiAssistant  // Translated fallback
   }
   return getMemberName(updatedBy)
-}, [apiKeyNames, getMemberName])
+}, [apiKeyNames, getMemberName, t.common.aiAssistant])
 ```
 
 The `apiKeyNames` are fetched on mount from `household_api_keys` where `revoked_at IS NULL`.

@@ -158,10 +158,12 @@ BEGIN
     delivered_at = EXCLUDED.delivered_at,
     attempts = webhook_deliveries.attempts + 1;
 
-  -- Get current failure count for accurate check
+  -- Get current failure count with row lock to prevent race conditions
+  -- FOR UPDATE ensures only one transaction can modify this webhook at a time
   SELECT failure_count INTO v_current_failure_count
   FROM household_webhooks
-  WHERE id = p_webhook_id;
+  WHERE id = p_webhook_id
+  FOR UPDATE;
 
   -- Update webhook stats
   UPDATE household_webhooks
