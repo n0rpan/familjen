@@ -138,6 +138,7 @@ export interface Pickup extends AuditFields {
   calendar_event_id: string | null
   sync_to_work_calendar: boolean  // Send invite to picker's work email
   work_calendar_event_id: string | null  // Google Calendar event ID
+  updated_via_api_key_id?: string | null  // API key that made the change (for realtime attribution)
 }
 
 export interface Recipe extends AuditFields {

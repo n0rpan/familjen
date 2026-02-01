@@ -210,13 +210,14 @@ export async function POST(request: NextRequest) {
       (p: ApiPickup) => p.child.id === body.child_id && p.date === body.date
     )
 
-    // Upsert pickup
+    // Upsert pickup with API key attribution
     const { data, error } = await supabase.rpc('api_upsert_pickup', {
       p_household_id: auth.householdId,
       p_child_id: body.child_id,
       p_date: body.date,
       p_picker_id: body.picker_id ?? null,
       p_notes: body.notes ?? null,
+      p_api_key_id: auth.keyId,  // Track which API key made the change
     })
 
     if (error) {

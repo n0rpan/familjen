@@ -14,15 +14,23 @@ export interface RealtimeToast {
   timestamp: number
 }
 
+// API key name cache entry
+interface ApiKeyName {
+  id: string
+  name: string
+}
+
 // Context value
 interface RealtimeContextValue {
   householdId: string | null
   currentUserId: string | null
   members: HouseholdMember[]
+  apiKeyNames: ApiKeyName[]
   toasts: RealtimeToast[]
   showToast: (message: string, type?: ToastType) => void
   dismissToast: (id: string) => void
   getMemberName: (memberId: string | null | undefined) => string
+  getChangerName: (updatedBy: string | null | undefined, apiKeyId: string | null | undefined) => string
   isOwnChange: (updatedBy: string | null | undefined) => boolean
 }
 
@@ -46,6 +54,7 @@ export function RealtimeProvider({
 }: RealtimeProviderProps) {
   const [toasts, setToasts] = useState<RealtimeToast[]>([])
   const [members, setMembers] = useState<HouseholdMember[]>(initialMembers)
+  const [apiKeyNames, setApiKeyNames] = useState<ApiKeyName[]>([])
   const toastIdRef = useRef(0)
   const supabase = useMemo(() => createClient(), [])
 
@@ -66,6 +75,25 @@ export function RealtimeProvider({
 
     fetchMembers()
   }, [householdId, initialMembers.length, supabase])
+
+  // Fetch API key names for the household (for realtime attribution)
+  useEffect(() => {
+    if (!householdId) return
+
+    const fetchApiKeyNames = async () => {
+      const { data } = await supabase
+        .from('family_api_keys')
+        .select('id, name')
+        .eq('household_id', householdId)
+        .eq('is_active', true)
+
+      if (data) {
+        setApiKeyNames(data)
+      }
+    }
+
+    fetchApiKeyNames()
+  }, [householdId, supabase])
 
   // Generate unique toast ID
   const generateToastId = useCallback(() => {
@@ -106,6 +134,20 @@ export function RealtimeProvider({
     return member?.short_name || member?.name || 'Someone'
   }, [members])
 
+  // Get the name of who made a change (supports both members and API keys)
+  const getChangerName = useCallback((
+    updatedBy: string | null | undefined,
+    apiKeyId: string | null | undefined
+  ): string => {
+    // If change was made via API key, show API key name
+    if (apiKeyId) {
+      const apiKey = apiKeyNames.find(k => k.id === apiKeyId)
+      return apiKey?.name || 'AI Assistant'
+    }
+    // Otherwise fall back to member name
+    return getMemberName(updatedBy)
+  }, [apiKeyNames, getMemberName])
+
   // Check if a change was made by the current user
   const isOwnChange = useCallback((updatedBy: string | null | undefined): boolean => {
     if (!currentUserId || !updatedBy) return false
@@ -118,10 +160,12 @@ export function RealtimeProvider({
     householdId,
     currentUserId,
     members,
+    apiKeyNames,
     toasts,
     showToast,
     dismissToast,
     getMemberName,
+    getChangerName,
     isOwnChange,
   }
 
