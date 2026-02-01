@@ -244,9 +244,10 @@ BEGIN
   v_hash := encode(extensions.digest(v_key_to_hash, 'sha256'), 'hex');
 
   -- Always perform the database lookup (timing consistency)
+  -- Note: Use public. prefix because SET search_path = '' clears default schema
   SELECT ak.household_id, ak.id as key_id, ak.scopes, ak.last_used_at
   INTO v_record
-  FROM household_api_keys ak
+  FROM public.household_api_keys ak
   WHERE ak.key_hash = v_hash
     AND ak.revoked_at IS NULL;
 
@@ -258,7 +259,7 @@ BEGIN
   -- Update last_used_at only if >1 minute has passed (throttle writes)
   -- This prevents write amplification on high-traffic API keys
   IF v_record.last_used_at IS NULL OR v_record.last_used_at < NOW() - INTERVAL '1 minute' THEN
-    UPDATE household_api_keys
+    UPDATE public.household_api_keys
     SET last_used_at = NOW()
     WHERE id = v_record.key_id;
   END IF;
@@ -308,7 +309,8 @@ BEGIN
   v_key_data := generate_api_key();
 
   -- Insert key record
-  INSERT INTO household_api_keys (
+  -- Note: Use public. prefix because SET search_path = '' clears default schema
+  INSERT INTO public.household_api_keys (
     household_id, key_hash, key_prefix, name, scopes, created_by
   )
   VALUES (
@@ -346,7 +348,7 @@ BEGIN
 
   v_household_id := get_user_household_id();
 
-  UPDATE household_api_keys
+  UPDATE public.household_api_keys
   SET revoked_at = NOW()
   WHERE id = p_key_id
     AND household_id = v_household_id
@@ -392,7 +394,8 @@ BEGIN
   -- Generate secret (32 random bytes, hex encoded = 64 chars)
   v_secret := encode(extensions.gen_random_bytes(32), 'hex');
 
-  INSERT INTO household_webhooks (
+  -- Note: Use public. prefix because SET search_path = '' clears default schema
+  INSERT INTO public.household_webhooks (
     household_id, url, secret_encrypted, events, name, created_by
   )
   VALUES (
@@ -419,10 +422,11 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 GRANT EXECUTE ON FUNCTION create_webhook(TEXT, TEXT[], TEXT) TO authenticated;
 
 -- Get webhook secret (decrypted) for system use
+-- Note: Uses public. prefix because SET search_path = '' clears the default schema
 CREATE OR REPLACE FUNCTION get_webhook_secret(p_webhook_id UUID)
 RETURNS TEXT AS $$
   SELECT decrypt_token(secret_encrypted)
-  FROM household_webhooks
+  FROM public.household_webhooks
   WHERE id = p_webhook_id;
 $$ LANGUAGE SQL SECURITY DEFINER SET search_path = '';
 
@@ -442,12 +446,13 @@ RETURNS TABLE (
   secret TEXT
 ) AS $$
 BEGIN
+  -- Note: Use public. prefix because SET search_path = '' clears default schema
   RETURN QUERY
   SELECT
     w.id,
     w.url,
     decrypt_token(w.secret_encrypted) as secret
-  FROM household_webhooks w
+  FROM public.household_webhooks w
   WHERE w.household_id = p_household_id
     AND w.disabled_at IS NULL
     AND (
@@ -480,7 +485,8 @@ RETURNS UUID AS $$
 DECLARE
   v_delivery_id UUID;
 BEGIN
-  INSERT INTO webhook_deliveries (
+  -- Note: Use public. prefix because SET search_path = '' clears default schema
+  INSERT INTO public.webhook_deliveries (
     webhook_id, event_type, payload, status, error,
     delivered_at
   )
@@ -491,7 +497,7 @@ BEGIN
   RETURNING id INTO v_delivery_id;
 
   -- Update webhook stats
-  UPDATE household_webhooks
+  UPDATE public.household_webhooks
   SET
     last_triggered_at = NOW(),
     last_status = p_status,
@@ -520,6 +526,7 @@ REVOKE EXECUTE ON FUNCTION record_webhook_delivery(UUID, TEXT, JSONB, INTEGER, T
 -- ============================================
 
 -- Get pickups for API (bypasses RLS, uses API key validation)
+-- Note: Use public. prefix because SET search_path = '' clears default schema
 CREATE OR REPLACE FUNCTION api_get_pickups(
   p_household_id UUID,
   p_from_date DATE,
@@ -550,9 +557,9 @@ BEGIN
       )
       ORDER BY p.date, c.sort_order, c.name
     )
-    FROM pickups p
-    JOIN children c ON c.id = p.child_id
-    LEFT JOIN household_members m ON m.id = p.picker_id
+    FROM public.pickups p
+    JOIN public.children c ON c.id = p.child_id
+    LEFT JOIN public.household_members m ON m.id = p.picker_id
     WHERE p.household_id = p_household_id
       AND p.date >= p_from_date
       AND p.date <= p_to_date
@@ -567,6 +574,7 @@ REVOKE EXECUTE ON FUNCTION api_get_pickups(UUID, DATE, DATE) FROM anon;
 REVOKE EXECUTE ON FUNCTION api_get_pickups(UUID, DATE, DATE) FROM authenticated;
 
 -- Get children for API
+-- Note: Use public. prefix because SET search_path = '' clears default schema
 CREATE OR REPLACE FUNCTION api_get_children(p_household_id UUID)
 RETURNS JSONB AS $$
 BEGIN
@@ -582,7 +590,7 @@ BEGIN
       )
       ORDER BY c.sort_order, c.name
     )
-    FROM children c
+    FROM public.children c
     WHERE c.household_id = p_household_id
   );
 END;
@@ -594,6 +602,7 @@ REVOKE EXECUTE ON FUNCTION api_get_children(UUID) FROM anon;
 REVOKE EXECUTE ON FUNCTION api_get_children(UUID) FROM authenticated;
 
 -- Get household members for API
+-- Note: Use public. prefix because SET search_path = '' clears default schema
 CREATE OR REPLACE FUNCTION api_get_members(p_household_id UUID)
 RETURNS JSONB AS $$
 BEGIN
@@ -607,7 +616,7 @@ BEGIN
       )
       ORDER BY m.name
     )
-    FROM household_members m
+    FROM public.household_members m
     WHERE m.household_id = p_household_id
   );
 END;
@@ -619,6 +628,7 @@ REVOKE EXECUTE ON FUNCTION api_get_members(UUID) FROM anon;
 REVOKE EXECUTE ON FUNCTION api_get_members(UUID) FROM authenticated;
 
 -- Upsert pickup via API
+-- Note: Use public. prefix because SET search_path = '' clears default schema
 CREATE OR REPLACE FUNCTION api_upsert_pickup(
   p_household_id UUID,
   p_child_id UUID,
@@ -633,7 +643,7 @@ DECLARE
 BEGIN
   -- Verify child belongs to household
   IF NOT EXISTS (
-    SELECT 1 FROM children
+    SELECT 1 FROM public.children
     WHERE id = p_child_id AND household_id = p_household_id
   ) THEN
     RAISE EXCEPTION 'Child not found in household';
@@ -641,7 +651,7 @@ BEGIN
 
   -- Verify picker belongs to household (if provided)
   IF p_picker_id IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM household_members
+    SELECT 1 FROM public.household_members
     WHERE id = p_picker_id AND household_id = p_household_id
   ) THEN
     RAISE EXCEPTION 'Picker not found in household';
@@ -649,7 +659,7 @@ BEGIN
 
   -- Check if pickup exists
   SELECT id INTO v_pickup_id
-  FROM pickups
+  FROM public.pickups
   WHERE household_id = p_household_id
     AND child_id = p_child_id
     AND date = p_date;
@@ -657,7 +667,7 @@ BEGIN
   v_is_insert := v_pickup_id IS NULL;
 
   -- Upsert
-  INSERT INTO pickups (household_id, child_id, date, picker_id, notes)
+  INSERT INTO public.pickups (household_id, child_id, date, picker_id, notes)
   VALUES (p_household_id, p_child_id, p_date, p_picker_id, p_notes)
   ON CONFLICT (household_id, child_id, date)
   DO UPDATE SET
@@ -679,13 +689,14 @@ REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT) FROM 
 REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT) FROM authenticated;
 
 -- Delete pickup via API
+-- Note: Use public. prefix because SET search_path = '' clears default schema
 CREATE OR REPLACE FUNCTION api_delete_pickup(
   p_household_id UUID,
   p_pickup_id UUID
 )
 RETURNS BOOLEAN AS $$
 BEGIN
-  DELETE FROM pickups
+  DELETE FROM public.pickups
   WHERE id = p_pickup_id
     AND household_id = p_household_id;
 
@@ -703,14 +714,14 @@ REVOKE EXECUTE ON FUNCTION api_delete_pickup(UUID, UUID) FROM authenticated;
 -- ============================================
 
 -- Keep deliveries for 30 days
+-- Note: Use public. prefix because SET search_path = '' clears default schema
 CREATE OR REPLACE FUNCTION cleanup_old_webhook_deliveries()
 RETURNS INTEGER AS $$
 DECLARE
   v_deleted INTEGER;
 BEGIN
-  DELETE FROM webhook_deliveries
-  WHERE created_at < NOW() - INTERVAL '30 days'
-  RETURNING 1 INTO v_deleted;
+  DELETE FROM public.webhook_deliveries
+  WHERE created_at < NOW() - INTERVAL '30 days';
 
   GET DIAGNOSTICS v_deleted = ROW_COUNT;
   RETURN v_deleted;
