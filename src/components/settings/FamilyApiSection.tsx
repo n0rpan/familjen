@@ -46,15 +46,12 @@ const AVAILABLE_SCOPES: ApiKeyScope[] = [
   'events:write',
 ]
 
+// Currently implemented webhook events (pickup-only for now)
+// Future: meal.*, task.*, event.* will be added when those features dispatch webhooks
 const AVAILABLE_EVENTS = [
-  '*',
-  'pickup.*',
   'pickup.created',
   'pickup.updated',
   'pickup.deleted',
-  'meal.*',
-  'task.*',
-  'event.*',
 ]
 
 // Helper to get translated scope label
@@ -77,14 +74,9 @@ function getScopeLabel(scope: ApiKeyScope, t: ReturnType<typeof useLanguage>['t'
 // Helper to get translated event label
 function getEventLabel(event: string, t: ReturnType<typeof useLanguage>['t']): string {
   const labels: Record<string, string> = {
-    '*': t.familyApi?.eventAll || 'All events',
-    'pickup.*': 'Pickup *',
     'pickup.created': t.familyApi?.eventPickupCreated || 'Pickup created',
     'pickup.updated': t.familyApi?.eventPickupUpdated || 'Pickup updated',
     'pickup.deleted': t.familyApi?.eventPickupDeleted || 'Pickup deleted',
-    'meal.*': 'Meal *',
-    'task.*': 'Task *',
-    'event.*': 'Event *',
   }
   return labels[event] || event
 }
@@ -300,26 +292,48 @@ curl -X POST -H "Authorization: Bearer fam_xxxxx" \\
             </pre>
           </div>
 
-          {/* Webhook signature */}
+          {/* Webhook details */}
           <div>
             <h4 className="text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
-              {t.familyApi?.webhookSignature || 'Webhook Signature'}
+              {t.familyApi?.webhookSignature || 'Webhook Verification'}
             </h4>
-            <div className="p-3 rounded-lg text-sm" style={{ background: 'var(--card-alt)' }}>
-              <p style={{ color: 'var(--foreground)' }}>
-                {t.familyApi?.webhookSignatureDesc || 'Verify webhooks using the X-Familjen-Signature header:'}
-              </p>
-              <pre className="mt-2 text-xs font-mono" style={{ color: 'var(--muted)' }}>
+            <div className="p-3 rounded-lg text-sm space-y-3" style={{ background: 'var(--card-alt)' }}>
+              <div>
+                <p className="font-medium text-xs mb-1" style={{ color: 'var(--foreground)' }}>Headers</p>
+                <ul className="text-xs space-y-1" style={{ color: 'var(--muted)' }}>
+                  <li><code>X-Familjen-Signature</code> - HMAC signature (sha256=...)</li>
+                  <li><code>X-Familjen-Timestamp</code> - Unix timestamp (seconds)</li>
+                  <li><code>X-Familjen-Event</code> - Event type</li>
+                  <li><code>X-Familjen-Delivery</code> - UUID for idempotency</li>
+                  <li><code>X-Familjen-Retry</code> - Retry count (0 = first attempt)</li>
+                </ul>
+              </div>
+              <div>
+                <p className="font-medium text-xs mb-1" style={{ color: 'var(--foreground)' }}>Signature verification</p>
+                <pre className="text-xs font-mono overflow-x-auto" style={{ color: 'var(--muted)' }}>
 {`const crypto = require('crypto')
 const timestamp = req.headers['x-familjen-timestamp']
-const payload = JSON.stringify(req.body)
-const signature = crypto
+const rawBody = req.body  // Raw string, not parsed
+
+// Reject old timestamps (replay protection)
+if (Math.abs(Date.now() / 1000 - timestamp) > 300) {
+  return res.status(401).send('Timestamp too old')
+}
+
+const expected = crypto
   .createHmac('sha256', webhookSecret)
-  .update(\`\${timestamp}.\${payload}\`)
+  .update(\`\${timestamp}.\${rawBody}\`)
   .digest('hex')
-const expected = \`sha256=\${signature}\`
-// Compare with X-Familjen-Signature header`}
-              </pre>
+const isValid = req.headers['x-familjen-signature'] === \`sha256=\${expected}\``}
+                </pre>
+              </div>
+              <div>
+                <p className="font-medium text-xs mb-1" style={{ color: 'var(--foreground)' }}>Retry behavior</p>
+                <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                  Failed deliveries retry up to 3 times with exponential backoff (1s, 2s, 4s).
+                  5xx and 429 errors trigger retries. 4xx errors (except 429) do not retry.
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -347,7 +361,7 @@ export function FamilyApiSection({ householdId, isDemo, onMessage }: FamilyApiSe
   const [showNewWebhookForm, setShowNewWebhookForm] = useState(false)
   const [newWebhookUrl, setNewWebhookUrl] = useState('')
   const [newWebhookName, setNewWebhookName] = useState('')
-  const [newWebhookEvents, setNewWebhookEvents] = useState<string[]>(['*'])
+  const [newWebhookEvents, setNewWebhookEvents] = useState<string[]>(['pickup.created', 'pickup.updated', 'pickup.deleted'])
   const [creatingWebhook, setCreatingWebhook] = useState(false)
   const [newlyCreatedSecret, setNewlyCreatedSecret] = useState<string | null>(null)
 
@@ -861,7 +875,7 @@ export function FamilyApiSection({ householdId, isDemo, onMessage }: FamilyApiSe
                     setShowNewWebhookForm(false)
                     setNewWebhookUrl('')
                     setNewWebhookName('')
-                    setNewWebhookEvents(['*'])
+                    setNewWebhookEvents(['pickup.created', 'pickup.updated', 'pickup.deleted'])
                   }}
                   className="btn btn-secondary"
                 >

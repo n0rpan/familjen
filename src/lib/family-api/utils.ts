@@ -404,3 +404,138 @@ export function validateName(name: string | undefined, fieldName = 'name'): stri
   }
   return null
 }
+
+// ============================================================================
+// Webhook Event Type Validation
+// ============================================================================
+
+/**
+ * Valid webhook event types
+ * Currently only pickup events are implemented.
+ * Meal, task, and event webhooks are defined for future use.
+ */
+export const VALID_WEBHOOK_EVENTS = new Set([
+  // Currently implemented
+  'pickup.created',
+  'pickup.updated',
+  'pickup.deleted',
+  // Defined for future use (endpoints not yet implemented)
+  'meal.planned',
+  'meal.updated',
+  'meal.deleted',
+  'task.created',
+  'task.completed',
+  'task.deleted',
+  'event.created',
+  'event.updated',
+  'event.deleted',
+])
+
+/**
+ * Webhook events that are currently dispatched (have working endpoints)
+ */
+export const IMPLEMENTED_WEBHOOK_EVENTS = new Set([
+  'pickup.created',
+  'pickup.updated',
+  'pickup.deleted',
+])
+
+/**
+ * Validate webhook event types
+ * Returns error message if invalid, null if valid
+ */
+export function validateWebhookEvents(events: string[]): string | null {
+  if (!events || !Array.isArray(events) || events.length === 0) {
+    return 'events array is required and must not be empty'
+  }
+
+  const invalidEvents = events.filter(e => !VALID_WEBHOOK_EVENTS.has(e))
+  if (invalidEvents.length > 0) {
+    return `Invalid event types: ${invalidEvents.join(', ')}. Valid types: ${Array.from(VALID_WEBHOOK_EVENTS).join(', ')}`
+  }
+
+  return null
+}
+
+// ============================================================================
+// API Key Scope Validation
+// ============================================================================
+
+/**
+ * Valid API key scopes
+ */
+export const VALID_API_SCOPES = new Set([
+  'pickups:read',
+  'pickups:write',
+  'meals:read',
+  'meals:write',
+  'tasks:read',
+  'tasks:write',
+  'events:read',
+  'events:write',
+  'children:read',
+  'members:read',
+])
+
+/**
+ * Validate API key scopes
+ * Returns error message if invalid, null if valid
+ */
+export function validateApiScopes(scopes: string[]): string | null {
+  if (!scopes || !Array.isArray(scopes) || scopes.length === 0) {
+    return 'At least one scope is required'
+  }
+
+  const invalidScopes = scopes.filter(s => !VALID_API_SCOPES.has(s))
+  if (invalidScopes.length > 0) {
+    return `Invalid scopes: ${invalidScopes.join(', ')}. Valid scopes: ${Array.from(VALID_API_SCOPES).join(', ')}`
+  }
+
+  return null
+}
+
+// ============================================================================
+// UUID Validation
+// ============================================================================
+
+/** UUID v4 regex pattern */
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+/**
+ * Validate a UUID format
+ * Returns true if valid UUID, false otherwise
+ */
+export function isValidUUID(uuid: string): boolean {
+  return UUID_REGEX.test(uuid)
+}
+
+/**
+ * Validate UUID and return error message if invalid
+ */
+export function validateUUID(uuid: string | null | undefined, fieldName = 'id'): string | null {
+  if (!uuid) {
+    return `${fieldName} is required`
+  }
+  if (!isValidUUID(uuid)) {
+    return `${fieldName} must be a valid UUID`
+  }
+  return null
+}
+
+// ============================================================================
+// Notes Field Validation
+// ============================================================================
+
+/** Maximum length for notes fields */
+export const MAX_NOTES_LENGTH = 1000
+
+/**
+ * Validate notes field length
+ * Returns error message if too long, null if valid
+ */
+export function validateNotes(notes: string | null | undefined): string | null {
+  if (notes && notes.length > MAX_NOTES_LENGTH) {
+    return `notes must be ${MAX_NOTES_LENGTH} characters or less`
+  }
+  return null
+}

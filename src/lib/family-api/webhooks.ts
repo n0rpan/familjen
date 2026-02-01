@@ -3,10 +3,18 @@
  *
  * Dispatches events to registered webhooks with HMAC signatures
  * for authentication on the receiving end.
+ *
+ * Security features:
+ * - HMAC-SHA256 signatures for payload verification
+ * - DNS rebinding protection (resolves hostname before request)
+ * - Redirect blocking (prevents SSRF via 3xx responses)
+ * - Timeout protection (5 second max)
+ * - Private IP blocking (validated at webhook creation time)
  */
 
 import { createHmac, randomUUID } from 'crypto'
 import { createClient } from '@supabase/supabase-js'
+import { lookup } from 'dns/promises'
 import type { WebhookEventType, WebhookPayload } from '@/lib/types'
 
 // Webhook delivery timeout
@@ -14,6 +22,94 @@ const WEBHOOK_TIMEOUT_MS = 5000
 
 // Minimum secret length (security validation)
 const MIN_SECRET_LENGTH = 32
+
+// DNS resolution timeout (must be less than WEBHOOK_TIMEOUT_MS)
+const DNS_TIMEOUT_MS = 2000
+
+// Retry configuration
+const MAX_RETRIES = 3
+const INITIAL_RETRY_DELAY_MS = 1000  // 1 second
+const MAX_RETRY_DELAY_MS = 8000      // 8 seconds
+
+/**
+ * Calculate exponential backoff delay
+ */
+function getRetryDelay(attempt: number): number {
+  const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt)
+  return Math.min(delay, MAX_RETRY_DELAY_MS)
+}
+
+/**
+ * Sleep for a given number of milliseconds
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+/**
+ * Check if an IP address is private/internal
+ * This protects against DNS rebinding attacks where an attacker's
+ * DNS server returns a private IP after initial validation
+ */
+function isPrivateIP(ip: string): boolean {
+  // IPv4 private ranges
+  if (ip.startsWith('10.') ||
+      ip.startsWith('172.16.') || ip.startsWith('172.17.') || ip.startsWith('172.18.') ||
+      ip.startsWith('172.19.') || ip.startsWith('172.20.') || ip.startsWith('172.21.') ||
+      ip.startsWith('172.22.') || ip.startsWith('172.23.') || ip.startsWith('172.24.') ||
+      ip.startsWith('172.25.') || ip.startsWith('172.26.') || ip.startsWith('172.27.') ||
+      ip.startsWith('172.28.') || ip.startsWith('172.29.') || ip.startsWith('172.30.') ||
+      ip.startsWith('172.31.') ||
+      ip.startsWith('192.168.') ||
+      ip.startsWith('127.') ||
+      ip.startsWith('169.254.') ||  // Link-local
+      ip === '0.0.0.0') {
+    return true
+  }
+
+  // IPv6 private/special ranges
+  if (ip === '::1' ||                    // Loopback
+      ip.startsWith('fc') ||             // Unique local
+      ip.startsWith('fd') ||             // Unique local
+      ip.startsWith('fe80:') ||          // Link-local
+      ip.startsWith('::ffff:127.') ||    // IPv4-mapped loopback
+      ip.startsWith('::ffff:10.') ||     // IPv4-mapped private
+      ip.startsWith('::ffff:192.168.') || // IPv4-mapped private
+      ip.startsWith('::ffff:172.')) {    // IPv4-mapped private (partial check)
+    return true
+  }
+
+  return false
+}
+
+/**
+ * Resolve hostname and check for private IPs (DNS rebinding protection)
+ * Returns null if safe, error message if blocked
+ */
+async function checkDNSRebinding(hostname: string): Promise<string | null> {
+  try {
+    // Resolve with timeout
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('DNS timeout')), DNS_TIMEOUT_MS)
+    })
+
+    const lookupPromise = lookup(hostname, { all: true })
+    const addresses = await Promise.race([lookupPromise, timeoutPromise])
+
+    // Check all resolved addresses
+    for (const addr of addresses) {
+      if (isPrivateIP(addr.address)) {
+        return `DNS rebinding detected: ${hostname} resolves to private IP ${addr.address}`
+      }
+    }
+
+    return null // Safe
+  } catch (err) {
+    // DNS resolution failed - block the request to be safe
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    return `DNS resolution failed for ${hostname}: ${message}`
+  }
+}
 
 // Create a service role client for webhook operations
 function getServiceClient() {
@@ -92,50 +188,116 @@ async function deliverWebhook(
     }
   }
 
-  const timestamp = Math.floor(Date.now() / 1000)
-  const payloadJson = JSON.stringify(payload)
-  const signature = generateSignature(payloadJson, timestamp, secret)
-
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS)
-
+  // Security: DNS rebinding protection
+  // Resolve hostname and verify it doesn't point to private IPs
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Familjen-Signature': signature,
-        'X-Familjen-Timestamp': String(timestamp),
-        'X-Familjen-Event': eventType,
-        'X-Familjen-Delivery': deliveryId,  // Idempotency header
-        'User-Agent': 'Familjen-Webhook/1.0',
-      },
-      body: payloadJson,
-      signal: controller.signal,
-      redirect: 'error',  // SECURITY: Prevent SSRF via redirects to internal URLs
-    })
-
-    clearTimeout(timeoutId)
-
-    return {
-      webhookId,
-      deliveryId,
-      url,
-      status: response.status,
-      error: response.ok ? null : `HTTP ${response.status}`,
-      success: response.ok,
+    const parsedUrl = new URL(url)
+    const dnsError = await checkDNSRebinding(parsedUrl.hostname)
+    if (dnsError) {
+      console.error(`Webhook ${webhookId} blocked: ${dnsError}`)
+      return {
+        webhookId,
+        deliveryId,
+        url,
+        status: null,
+        error: 'Webhook URL blocked for security reasons',
+        success: false,
+      }
     }
   } catch (err) {
-    clearTimeout(timeoutId)
-    const error = err instanceof Error ? err.message : 'Unknown error'
+    console.error(`Webhook ${webhookId} URL parse error:`, err)
     return {
       webhookId,
       deliveryId,
       url,
       status: null,
-      error: error.includes('abort') ? 'Timeout' : error,
+      error: 'Invalid webhook URL',
       success: false,
     }
+  }
+
+  const timestamp = Math.floor(Date.now() / 1000)
+  const payloadJson = JSON.stringify(payload)
+  const signature = generateSignature(payloadJson, timestamp, secret)
+
+  // Retry loop with exponential backoff
+  let lastError: string = 'Unknown error'
+  let lastStatus: number | null = null
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    // Wait before retry (not on first attempt)
+    if (attempt > 0) {
+      const delay = getRetryDelay(attempt - 1)
+      await sleep(delay)
+    }
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS)
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Familjen-Signature': signature,
+          'X-Familjen-Timestamp': String(timestamp),
+          'X-Familjen-Event': eventType,
+          'X-Familjen-Delivery': deliveryId,  // Idempotency header
+          'X-Familjen-Retry': String(attempt),  // Retry count for debugging
+          'User-Agent': 'Familjen-Webhook/1.0',
+        },
+        body: payloadJson,
+        signal: controller.signal,
+        redirect: 'error',  // SECURITY: Prevent SSRF via redirects to internal URLs
+      })
+
+      clearTimeout(timeoutId)
+      lastStatus = response.status
+
+      // Success - return immediately
+      if (response.ok) {
+        return {
+          webhookId,
+          deliveryId,
+          url,
+          status: response.status,
+          error: null,
+          success: true,
+        }
+      }
+
+      // 4xx errors are client errors - don't retry (except 429)
+      if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+        return {
+          webhookId,
+          deliveryId,
+          url,
+          status: response.status,
+          error: `HTTP ${response.status}`,
+          success: false,
+        }
+      }
+
+      // 5xx or 429 - retry
+      lastError = `HTTP ${response.status}`
+    } catch (err) {
+      clearTimeout(timeoutId)
+      lastError = err instanceof Error ? err.message : 'Unknown error'
+      if (lastError.includes('abort')) {
+        lastError = 'Timeout'
+      }
+      // Network errors - retry
+    }
+  }
+
+  // All retries exhausted
+  return {
+    webhookId,
+    deliveryId,
+    url,
+    status: lastStatus,
+    error: `${lastError} (after ${MAX_RETRIES + 1} attempts)`,
+    success: false,
   }
 }
 

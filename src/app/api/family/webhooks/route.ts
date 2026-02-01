@@ -11,7 +11,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { validateWebhookUrl } from '@/lib/family-api'
+import { validateWebhookUrl, validateWebhookEvents, validateUUID } from '@/lib/family-api'
 import type { HouseholdWebhook } from '@/lib/types'
 
 /**
@@ -122,9 +122,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!body.events || body.events.length === 0) {
+    // Validate event types
+    const eventsError = validateWebhookEvents(body.events || [])
+    if (eventsError) {
       return NextResponse.json(
-        { error: 'events array is required and must not be empty' },
+        { error: eventsError },
         { status: 400 }
       )
     }
@@ -201,9 +203,10 @@ export async function PATCH(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const webhookId = searchParams.get('id')
 
-    if (!webhookId) {
+    const uuidError = validateUUID(webhookId, 'id')
+    if (uuidError) {
       return NextResponse.json(
-        { error: 'id query parameter is required' },
+        { error: uuidError },
         { status: 400 }
       )
     }
@@ -254,9 +257,10 @@ export async function PATCH(request: NextRequest) {
       updates.url = urlValidation.url.toString()
     }
     if (body.events !== undefined) {
-      if (body.events.length === 0) {
+      const eventsError = validateWebhookEvents(body.events)
+      if (eventsError) {
         return NextResponse.json(
-          { error: 'events array must not be empty' },
+          { error: eventsError },
           { status: 400 }
         )
       }
@@ -338,9 +342,10 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const webhookId = searchParams.get('id')
 
-    if (!webhookId) {
+    const uuidError = validateUUID(webhookId, 'id')
+    if (uuidError) {
       return NextResponse.json(
-        { error: 'id query parameter is required' },
+        { error: uuidError },
         { status: 400 }
       )
     }

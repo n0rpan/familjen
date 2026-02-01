@@ -3105,33 +3105,89 @@ The `/api/family/context` endpoint returns schema documentation optimized for AI
 
 ### Webhooks
 
-Webhooks notify external systems of changes with HMAC-SHA256 signatures:
+Webhooks notify external systems of changes with HMAC-SHA256 signatures.
 
-```typescript
-// Webhook payload
+**Implemented events (pickup-only for now):**
+- `pickup.created` - New pickup assignment
+- `pickup.updated` - Pickup modified (picker, notes)
+- `pickup.deleted` - Pickup removed
+
+**Future events (defined but not yet dispatched):**
+- `meal.planned`, `meal.updated`, `meal.deleted`
+- `task.created`, `task.completed`, `task.deleted`
+- `event.created`, `event.updated`, `event.deleted`
+
+**Webhook payload:**
+```json
 {
   "event": "pickup.updated",
   "timestamp": "2024-12-20T10:30:00Z",
+  "household_id": "...",
   "data": {
     "id": "...",
     "date": "2024-12-20",
     "child": { "id": "...", "name": "Emma" },
     "picker": { "id": "...", "name": "Pappa" }
-  }
+  },
+  "previous": { ... }  // Only for update events
 }
-
-// Signature verification
-const signature = crypto
-  .createHmac('sha256', webhookSecret)
-  .update(JSON.stringify(payload))
-  .digest('hex')
-// Compare with X-Familjen-Signature header
 ```
 
-**SSRF Protection:** Webhook URLs are validated against:
-- Private IP ranges (10.x, 172.16-31.x, 192.168.x, 127.x, ::1)
-- Localhost and internal hostnames
-- Non-HTTPS schemes
+**Webhook headers:**
+| Header | Description |
+|--------|-------------|
+| `X-Familjen-Signature` | `sha256=<hex>` - HMAC signature |
+| `X-Familjen-Timestamp` | Unix timestamp (seconds) |
+| `X-Familjen-Event` | Event type (e.g., `pickup.updated`) |
+| `X-Familjen-Delivery` | UUID for idempotency |
+| `X-Familjen-Retry` | Retry attempt (0 = first try) |
+
+**Signature verification (receivers should implement):**
+```typescript
+import { createHmac } from 'crypto'
+
+function verifyWebhook(
+  payload: string,
+  signature: string,
+  timestamp: string,
+  secret: string
+): boolean {
+  // Check timestamp is recent (within 5 minutes)
+  const ts = parseInt(timestamp, 10)
+  if (Math.abs(Date.now() / 1000 - ts) > 300) {
+    return false // Replay attack or clock drift
+  }
+
+  // Verify signature (signed data = timestamp.payload)
+  const expected = createHmac('sha256', secret)
+    .update(`${timestamp}.${payload}`)
+    .digest('hex')
+
+  return signature === `sha256=${expected}`
+}
+```
+
+**Retry logic:** Failed deliveries retry with exponential backoff:
+- Attempt 0: Immediate
+- Attempt 1: 1 second delay
+- Attempt 2: 2 seconds delay
+- Attempt 3: 4 seconds delay (max 8 seconds)
+- After 4 attempts: Marked as failed, recorded in `webhook_deliveries`
+
+**5xx and 429 errors** trigger retries. **4xx errors** (except 429) do not retry.
+
+**SSRF Protection (two layers):**
+
+1. **At webhook creation time:** URL validation rejects:
+   - Private IP ranges (10.x, 172.16-31.x, 192.168.x, 127.x, ::1)
+   - Localhost and internal hostnames
+   - Non-HTTPS schemes
+   - URLs longer than 2000 characters
+
+2. **At delivery time (DNS rebinding protection):** Hostname is resolved before each request:
+   - If DNS resolves to private IP → request blocked
+   - If DNS resolution fails → request blocked (fail-safe)
+   - 2-second DNS timeout to prevent hanging
 
 ### Rate Limiting
 
@@ -3143,6 +3199,58 @@ Per-key rate limits (defined in `src/lib/rate-limit.ts`):
 | Write endpoints | 60/minute | `familyApi:write:{keyId}` |
 
 Rate limiting is per API key (not per household) to isolate abuse between keys.
+
+### Input Validation
+
+All Family API inputs are validated before database calls.
+
+**UUID validation:** All ID fields are validated against RFC 4122 format:
+```typescript
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+```
+
+**Field constraints:**
+
+| Field | Max Length | Notes |
+|-------|------------|-------|
+| `notes` | 1000 chars | Pickup notes |
+| Webhook `url` | 2000 chars | HTTPS only |
+| Webhook `name` | 100 chars | Optional display name |
+| API key `name` | 100 chars | Required |
+
+**Webhook event types:**
+
+| Event | Status | Description |
+|-------|--------|-------------|
+| `pickup.created` | ✅ Implemented | New pickup assignment |
+| `pickup.updated` | ✅ Implemented | Pickup modified |
+| `pickup.deleted` | ✅ Implemented | Pickup removed |
+| `meal.planned` | 🔜 Future | Meal added to plan |
+| `meal.updated` | 🔜 Future | Meal changed |
+| `meal.deleted` | 🔜 Future | Meal removed |
+| `task.created` | 🔜 Future | Child task created |
+| `task.completed` | 🔜 Future | Task marked done |
+| `task.deleted` | 🔜 Future | Task removed |
+| `event.created` | 🔜 Future | Member event created |
+| `event.updated` | 🔜 Future | Event modified |
+| `event.deleted` | 🔜 Future | Event removed |
+
+**API key scopes:**
+
+| Scope | Permission |
+|-------|------------|
+| `pickups:read` | Read pickup assignments |
+| `pickups:write` | Create/update/delete pickups |
+| `meals:read` | Read meal plans (future) |
+| `meals:write` | Modify meal plans (future) |
+| `tasks:read` | Read child tasks (future) |
+| `tasks:write` | Modify child tasks (future) |
+| `events:read` | Read member events (future) |
+| `events:write` | Modify member events (future) |
+| `children:read` | Read children list |
+| `members:read` | Read household members |
+
+At least one scope is required when creating an API key.
 
 ### Design Decisions
 

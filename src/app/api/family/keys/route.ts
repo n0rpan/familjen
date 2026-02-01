@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { validateApiScopes, validateUUID } from '@/lib/family-api'
 import type { HouseholdApiKey, ApiKeyScope } from '@/lib/types'
 
 /**
@@ -109,10 +110,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate scopes - at least one required
-    if (!body.scopes || !Array.isArray(body.scopes) || body.scopes.length === 0) {
+    // Validate scopes - at least one required, all must be valid
+    const scopesError = validateApiScopes(body.scopes || [])
+    if (scopesError) {
       return NextResponse.json(
-        { error: 'At least one scope is required (e.g., "pickups:read")' },
+        { error: scopesError },
         { status: 400 }
       )
     }
@@ -182,9 +184,10 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const keyId = searchParams.get('id')
 
-    if (!keyId) {
+    const uuidError = validateUUID(keyId, 'id')
+    if (uuidError) {
       return NextResponse.json(
-        { error: 'id query parameter is required' },
+        { error: uuidError },
         { status: 400 }
       )
     }

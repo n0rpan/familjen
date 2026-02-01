@@ -19,6 +19,9 @@ import {
   getServiceClient,
   isValidDate,
   validateDateRange,
+  validateUUID,
+  validateNotes,
+  isValidUUID,
   logApiAccess,
   MAX_DATE_RANGE_DAYS,
 } from '@/lib/family-api'
@@ -190,11 +193,24 @@ export async function POST(request: NextRequest) {
     if (!body.child_id) {
       throw Errors.badRequest('child_id is required')
     }
+    if (!isValidUUID(body.child_id)) {
+      throw Errors.badRequest('child_id must be a valid UUID')
+    }
     if (!body.date) {
       throw Errors.badRequest('date is required')
     }
     if (!isValidDate(body.date)) {
       throw Errors.badRequest('Invalid date. Use YYYY-MM-DD with valid date values.')
+    }
+
+    // Validate optional fields
+    if (body.picker_id !== null && body.picker_id !== undefined && !isValidUUID(body.picker_id)) {
+      throw Errors.badRequest('picker_id must be a valid UUID')
+    }
+
+    const notesError = validateNotes(body.notes)
+    if (notesError) {
+      throw Errors.badRequest(notesError)
     }
 
     const supabase = getServiceClient()
@@ -311,8 +327,9 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const pickupId = searchParams.get('id')
 
-    if (!pickupId) {
-      throw Errors.badRequest('id query parameter is required')
+    const uuidError = validateUUID(pickupId, 'id')
+    if (uuidError) {
+      throw Errors.badRequest(uuidError)
     }
 
     const supabase = getServiceClient()
