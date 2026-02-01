@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { createHmac } from 'crypto'
+import { createHmac, randomUUID } from 'crypto'
 import { validateUUID } from '@/lib/family-api'
 
 const WEBHOOK_TIMEOUT_MS = 5000
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
     }
 
     const timestamp = Math.floor(Date.now() / 1000)
-    const deliveryId = `whd_test_${Date.now().toString(36)}`
+    const deliveryId = randomUUID()  // Match production format
     const payloadJson = JSON.stringify(testPayload)
     const signature = createHmac('sha256', secret)
       .update(`${timestamp}.${payloadJson}`)
@@ -136,7 +136,8 @@ export async function POST(request: NextRequest) {
           'X-Familjen-Signature': `sha256=${signature}`,
           'X-Familjen-Timestamp': String(timestamp),
           'X-Familjen-Event': 'test',
-          'X-Familjen-Delivery': deliveryId,  // Idempotency header
+          'X-Familjen-Delivery': deliveryId,
+          'X-Familjen-Retry': '0',  // Test is always first attempt
           'User-Agent': 'Familjen-Webhook/1.0',
         },
         body: payloadJson,

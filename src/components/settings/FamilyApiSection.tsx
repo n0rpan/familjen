@@ -531,7 +531,7 @@ export function FamilyApiSection({ householdId, isDemo, onMessage }: FamilyApiSe
       setShowNewWebhookForm(false)
       setNewWebhookUrl('')
       setNewWebhookName('')
-      setNewWebhookEvents(['*'])
+      setNewWebhookEvents(['pickup.created', 'pickup.updated', 'pickup.deleted'])
       onMessage('success', t.familyApi?.webhookCreated || 'Webhook created')
     } catch (error) {
       onMessage('error', error instanceof Error ? error.message : 'Failed to create webhook')

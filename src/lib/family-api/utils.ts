@@ -232,13 +232,13 @@ export function validateWebhookUrl(urlString: string): UrlValidationResult {
     }
   }
 
-  // Explicit whitelist of allowed ports for clarity and security
-  const ALLOWED_PORTS = new Set([80, 443, 3000, 8000, 8080, 8443])
+  // Explicit whitelist of allowed ports (HTTPS only, so no port 80)
+  const ALLOWED_PORTS = new Set([443, 3000, 8000, 8080, 8443])
   const port = url.port ? parseInt(url.port, 10) : 443 // HTTPS default
   if (!ALLOWED_PORTS.has(port)) {
     return {
       valid: false,
-      error: `Port ${port} is not allowed. Allowed ports: 80, 443, 3000, 8000, 8080, 8443`
+      error: `Port ${port} is not allowed. Allowed ports: 443, 3000, 8000, 8080, 8443`
     }
   }
 

@@ -74,8 +74,8 @@ export async function GET() {
  * POST /api/family/keys
  *
  * Body:
- * - name: User-friendly name for the key (required)
- * - scopes: Array of scopes (optional, empty = full access)
+ * - name: User-friendly name for the key (required, max 100 chars)
+ * - scopes: Array of scopes (required, at least one scope)
  *
  * Returns: Created API key (key shown only once!)
  */
