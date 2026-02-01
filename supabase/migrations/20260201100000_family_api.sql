@@ -401,7 +401,7 @@ BEGIN
   VALUES (
     v_household_id,
     p_url,
-    encrypt_token(v_secret),
+    public.encrypt_token(v_secret),
     p_events,
     p_name,
     v_user_id
@@ -425,7 +425,7 @@ GRANT EXECUTE ON FUNCTION create_webhook(TEXT, TEXT[], TEXT) TO authenticated;
 -- Note: Uses public. prefix because SET search_path = '' clears the default schema
 CREATE OR REPLACE FUNCTION get_webhook_secret(p_webhook_id UUID)
 RETURNS TEXT AS $$
-  SELECT decrypt_token(secret_encrypted)
+  SELECT public.decrypt_token(secret_encrypted)
   FROM public.household_webhooks
   WHERE id = p_webhook_id;
 $$ LANGUAGE SQL SECURITY DEFINER SET search_path = '';
@@ -451,7 +451,7 @@ BEGIN
   SELECT
     w.id,
     w.url,
-    decrypt_token(w.secret_encrypted) as secret
+    public.decrypt_token(w.secret_encrypted) as secret
   FROM public.household_webhooks w
   WHERE w.household_id = p_household_id
     AND w.disabled_at IS NULL
