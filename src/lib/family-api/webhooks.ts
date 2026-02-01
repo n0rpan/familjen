@@ -6,10 +6,19 @@
  *
  * Security features:
  * - HMAC-SHA256 signatures for payload verification
- * - DNS rebinding protection (resolves hostname before request)
+ * - DNS rebinding protection at DELIVERY TIME:
+ *   - Hostname is resolved BEFORE EACH delivery attempt (including retries)
+ *   - If DNS resolves to private IP, request is blocked immediately
+ *   - This mitigates DNS rebinding attacks where attacker changes DNS between retries
+ *   - See checkDNSRebinding() and its call inside the retry loop
  * - Redirect blocking (prevents SSRF via 3xx responses)
- * - Timeout protection (5 second max)
- * - Private IP blocking (validated at webhook creation time)
+ * - Timeout protection (5 second max per attempt)
+ * - Private IP blocking (also validated at webhook creation time for fast-fail)
+ *
+ * SSRF Protection Summary:
+ * 1. Creation time: URL validated for private IPs (src/components/settings/FamilyApiSection.tsx)
+ * 2. Delivery time: DNS re-resolved before EACH attempt to catch DNS rebinding
+ * 3. Fetch time: redirect='error' prevents 3xx redirects to internal URLs
  */
 
 import { createHmac, randomUUID } from 'crypto'
@@ -331,11 +340,17 @@ async function deliverWebhook(
  * Finds all webhooks that match the event type and delivers to each.
  * Records delivery attempts in the database.
  *
+ * IMPORTANT: This function is designed to be called fire-and-forget:
+ *   dispatchWebhooks(...).catch((err) => console.error(err))
+ *
+ * The function never throws - all errors are caught and logged internally.
+ * This ensures that webhook failures never affect the main request flow.
+ *
  * @param householdId - The household that owns the data
  * @param eventType - The type of event (e.g., 'pickup.updated')
  * @param data - The event data
  * @param previous - Previous state for update events
- * @returns Array of delivery results
+ * @returns Array of delivery results (empty array on any error)
  */
 export async function dispatchWebhooks<T>(
   householdId: string,
@@ -343,73 +358,82 @@ export async function dispatchWebhooks<T>(
   data: T,
   previous?: Partial<T>
 ): Promise<WebhookResult[]> {
-  const supabase = getServiceClient()
+  // SAFETY: Wrap entire function in try-catch to ensure fire-and-forget safety
+  // Even if getServiceClient() throws (missing env vars), we return empty array
+  try {
+    const supabase = getServiceClient()
 
-  // Get matching webhooks
-  const { data: webhooks, error: fetchError } = await supabase.rpc(
-    'get_matching_webhooks',
-    {
-      p_household_id: householdId,
-      p_event_type: eventType,
-    }
-  )
-
-  if (fetchError) {
-    console.error('Failed to fetch webhooks:', fetchError)
-    return []
-  }
-
-  if (!webhooks || webhooks.length === 0) {
-    return []
-  }
-
-  // Build payload
-  const payload: WebhookPayload<T> = {
-    event: eventType,
-    timestamp: new Date().toISOString(),
-    household_id: householdId,
-    data,
-    ...(previous && { previous }),
-  }
-
-  // Deliver to all webhooks in parallel
-  const results = await Promise.all(
-    webhooks.map(async (webhook: { id: string; url: string; secret: string }) => {
-      // Generate delivery ID for idempotency
-      const deliveryId = generateDeliveryId()
-
-      // Normalize secret to lowercase (defense-in-depth)
-      // PostgreSQL encode(..., 'hex') produces lowercase, but we normalize as safety measure
-      const normalizedSecret = webhook.secret?.toLowerCase() ?? ''
-
-      const result = await deliverWebhook(
-        webhook.id,
-        webhook.url,
-        normalizedSecret,
-        eventType,
-        payload,
-        deliveryId
-      )
-
-      // Record delivery in database with delivery ID for idempotency
-      try {
-        await supabase.rpc('record_webhook_delivery', {
-          p_webhook_id: webhook.id,
-          p_event_type: eventType,
-          p_payload: payload,
-          p_status: result.status,
-          p_error: result.error,
-          p_delivery_id: deliveryId,
-        })
-      } catch (err) {
-        console.error('Failed to record webhook delivery:', err)
+    // Get matching webhooks
+    const { data: webhooks, error: fetchError } = await supabase.rpc(
+      'get_matching_webhooks',
+      {
+        p_household_id: householdId,
+        p_event_type: eventType,
       }
+    )
 
-      return result
-    })
-  )
+    if (fetchError) {
+      console.error('Failed to fetch webhooks:', fetchError)
+      return []
+    }
 
-  return results
+    if (!webhooks || webhooks.length === 0) {
+      return []
+    }
+
+    // Build payload
+    const payload: WebhookPayload<T> = {
+      event: eventType,
+      timestamp: new Date().toISOString(),
+      household_id: householdId,
+      data,
+      ...(previous && { previous }),
+    }
+
+    // Deliver to all webhooks in parallel
+    const results = await Promise.all(
+      webhooks.map(async (webhook: { id: string; url: string; secret: string }) => {
+        // Generate delivery ID for idempotency
+        const deliveryId = generateDeliveryId()
+
+        // Normalize secret to lowercase (defense-in-depth)
+        // PostgreSQL encode(..., 'hex') produces lowercase, but we normalize as safety measure
+        const normalizedSecret = webhook.secret?.toLowerCase() ?? ''
+
+        const result = await deliverWebhook(
+          webhook.id,
+          webhook.url,
+          normalizedSecret,
+          eventType,
+          payload,
+          deliveryId
+        )
+
+        // Record delivery in database with delivery ID for idempotency
+        try {
+          await supabase.rpc('record_webhook_delivery', {
+            p_webhook_id: webhook.id,
+            p_event_type: eventType,
+            p_payload: payload,
+            p_status: result.status,
+            p_error: result.error,
+            p_delivery_id: deliveryId,
+          })
+        } catch (err) {
+          console.error('Failed to record webhook delivery:', err)
+        }
+
+        return result
+      })
+    )
+
+    return results
+  } catch (err) {
+    // SAFETY: Catch any unexpected error (e.g., missing env vars, network issues)
+    // Log the error but don't throw - webhook failures must not affect main flow
+    console.error('Webhook dispatch error (non-fatal):', err)
+    return []
+  }
 }
 
 /**

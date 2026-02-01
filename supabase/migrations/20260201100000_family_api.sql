@@ -166,6 +166,21 @@ CREATE POLICY "Household members can view webhook deliveries"
 
 -- Generate a secure random API key
 -- Returns: { key: 'fam_xxxxx...', hash: 'sha256hash', prefix: 'fam_xxxx' }
+--
+-- ENTROPY NOTE: gen_random_bytes() uses the OS's cryptographic random source:
+-- - Linux: /dev/urandom (CSPRNG, kernel entropy pool)
+-- - Supabase: Uses the underlying cloud VM's entropy source
+-- - Docker: Should have access to host entropy (check docker run --privileged)
+--
+-- If entropy is a concern (e.g., fresh VM with no I/O), consider:
+-- - Using external key generation (Node.js crypto.randomBytes)
+-- - Adding entropy sources (haveged, rng-tools)
+-- - Monitoring /proc/sys/kernel/random/entropy_avail
+--
+-- For Supabase cloud, entropy is generally sufficient due to:
+-- - Constant network I/O feeding entropy pool
+-- - Multiple customers generating activity
+-- - AWS/GCP VMs have virtio-rng for hardware entropy
 CREATE OR REPLACE FUNCTION generate_api_key()
 RETURNS JSONB AS $$
 DECLARE
@@ -175,6 +190,7 @@ DECLARE
   v_prefix TEXT;
 BEGIN
   -- Generate 24 random bytes (will be 32 chars in base64)
+  -- Uses pgcrypto's gen_random_bytes which reads from OS CSPRNG
   v_random_bytes := extensions.gen_random_bytes(24);
   v_key := 'fam_' || encode(v_random_bytes, 'base64');
   -- Replace URL-unsafe characters
@@ -199,6 +215,11 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 -- Validate an API key and return household_id if valid
 -- Updates last_used_at on successful validation (throttled to once per minute)
 -- PERFORMANCE: Throttling prevents write contention on high-traffic API keys
+--
+-- SECURITY: This function is designed to be constant-time regardless of key format.
+-- We always compute the hash and perform the database lookup to prevent timing
+-- attacks that could reveal whether a key format is valid. For truly invalid keys,
+-- we hash a dummy value so the timing is consistent.
 CREATE OR REPLACE FUNCTION validate_api_key(p_key TEXT)
 RETURNS TABLE (
   household_id UUID,
@@ -208,19 +229,28 @@ RETURNS TABLE (
 DECLARE
   v_hash TEXT;
   v_record RECORD;
+  v_key_to_hash TEXT;
 BEGIN
+  -- SECURITY: Always compute a hash to ensure constant-time execution
+  -- Invalid formats get a dummy hash that won't match any real key
   IF p_key IS NULL OR NOT p_key LIKE 'fam_%' THEN
-    RETURN;
+    -- Hash a constant dummy value to maintain timing consistency
+    -- This prevents attackers from distinguishing valid vs invalid key formats
+    v_key_to_hash := 'invalid_key_format_placeholder';
+  ELSE
+    v_key_to_hash := p_key;
   END IF;
 
-  v_hash := encode(extensions.digest(p_key, 'sha256'), 'hex');
+  v_hash := encode(extensions.digest(v_key_to_hash, 'sha256'), 'hex');
 
+  -- Always perform the database lookup (timing consistency)
   SELECT ak.household_id, ak.id as key_id, ak.scopes, ak.last_used_at
   INTO v_record
   FROM household_api_keys ak
   WHERE ak.key_hash = v_hash
     AND ak.revoked_at IS NULL;
 
+  -- Invalid format keys will never match (dummy hash doesn't exist in DB)
   IF NOT FOUND THEN
     RETURN;
   END IF;

@@ -44,18 +44,26 @@ export type ApiKeyResult = ApiKeyValidation | ApiKeyInvalid
 
 /**
  * Extract API key from Authorization header
+ *
+ * SECURITY: Only accepts standard Bearer token format.
+ * Bare keys (without "Bearer " prefix) are rejected to:
+ * - Prevent accidental key leakage in URL query strings
+ * - Ensure consistent logging format
+ * - Follow OAuth 2.0 Bearer Token specification (RFC 6750)
  */
 function extractApiKey(request: Request): string | null {
   const authHeader = request.headers.get('Authorization')
   if (!authHeader) return null
 
-  // Support both "Bearer fam_xxx" and just "fam_xxx"
+  // SECURITY: Only accept "Bearer fam_xxx" format (RFC 6750 compliant)
+  // Reject bare keys to prevent accidental leakage in logs/URLs
   const parts = authHeader.split(' ')
   if (parts.length === 2 && parts[0].toLowerCase() === 'bearer') {
-    return parts[1]
-  }
-  if (parts.length === 1 && parts[0].startsWith('fam_')) {
-    return parts[0]
+    const key = parts[1]
+    // Validate it's actually a Familjen API key
+    if (key.startsWith('fam_')) {
+      return key
+    }
   }
 
   return null

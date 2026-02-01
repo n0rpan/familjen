@@ -231,6 +231,24 @@ GRANT EXECUTE ON FUNCTION create_api_key(TEXT, TEXT[]) TO authenticated;
 -- ============================================
 -- 5. Cleanup function for audit logs
 -- ============================================
+-- IMPORTANT: This function must be scheduled to run automatically.
+-- Without scheduling, audit logs will grow unbounded.
+--
+-- Option 1: Supabase pg_cron (recommended for Supabase projects)
+--   SELECT cron.schedule(
+--     'cleanup-api-audit-logs',
+--     '0 3 * * *',  -- Daily at 3 AM UTC
+--     'SELECT cleanup_old_audit_logs();'
+--   );
+--
+-- Option 2: External cron (e.g., GitHub Actions, Vercel cron)
+--   Call: POST /api/admin/cleanup-audit-logs (create this endpoint if needed)
+--
+-- Option 3: Manual cleanup (not recommended for production)
+--   SELECT cleanup_old_audit_logs();
+--
+-- Data retention: 90 days (compliance/debugging), then deleted.
+-- ============================================
 CREATE OR REPLACE FUNCTION cleanup_old_audit_logs()
 RETURNS INTEGER AS $$
 DECLARE
