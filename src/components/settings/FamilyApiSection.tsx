@@ -89,6 +89,243 @@ function getEventLabel(event: string, t: ReturnType<typeof useLanguage>['t']): s
   return labels[event] || event
 }
 
+// API Documentation component
+function ApiDocumentation({ baseUrl, onCopy }: { baseUrl: string; onCopy: (text: string) => void }) {
+  const [showDocs, setShowDocs] = useState(false)
+  const { t } = useLanguage()
+
+  const endpoints = [
+    {
+      method: 'GET',
+      path: '/api/family/context',
+      description: t.familyApi?.docsContextDesc || 'Get API documentation and household context for AI assistants',
+      scope: null,
+    },
+    {
+      method: 'GET',
+      path: '/api/family/children',
+      description: t.familyApi?.docsChildrenDesc || 'List all children in the household',
+      scope: 'children:read',
+    },
+    {
+      method: 'GET',
+      path: '/api/family/members',
+      description: t.familyApi?.docsMembersDesc || 'List all household members',
+      scope: 'members:read',
+    },
+    {
+      method: 'GET',
+      path: '/api/family/pickups',
+      description: t.familyApi?.docsPickupsGetDesc || 'Get pickups for a date range',
+      scope: 'pickups:read',
+      params: '?from=YYYY-MM-DD&to=YYYY-MM-DD',
+    },
+    {
+      method: 'POST',
+      path: '/api/family/pickups',
+      description: t.familyApi?.docsPickupsPostDesc || 'Create or update a pickup assignment',
+      scope: 'pickups:write',
+    },
+    {
+      method: 'DELETE',
+      path: '/api/family/pickups',
+      description: t.familyApi?.docsPickupsDeleteDesc || 'Delete a pickup',
+      scope: 'pickups:write',
+      params: '?id=UUID',
+    },
+  ]
+
+  const exampleCode = `# Get API context (for AI assistants)
+curl -H "Authorization: Bearer fam_xxxxx" \\
+  "${baseUrl}/api/family/context"
+
+# Get children
+curl -H "Authorization: Bearer fam_xxxxx" \\
+  "${baseUrl}/api/family/children"
+
+# Get this week's pickups
+curl -H "Authorization: Bearer fam_xxxxx" \\
+  "${baseUrl}/api/family/pickups?from=2024-01-15&to=2024-01-21"
+
+# Assign a pickup
+curl -X POST -H "Authorization: Bearer fam_xxxxx" \\
+  -H "Content-Type: application/json" \\
+  -d '{"child_id": "uuid", "date": "2024-01-15", "picker_id": "uuid"}' \\
+  "${baseUrl}/api/family/pickups"`
+
+  return (
+    <div className="pt-6" style={{ borderTop: '1px solid var(--border)' }}>
+      <button
+        onClick={() => setShowDocs(!showDocs)}
+        className="flex items-center justify-between w-full"
+      >
+        <div className="text-left">
+          <h3 className="text-lg font-medium" style={{ color: 'var(--foreground)' }}>
+            {t.familyApi?.apiDocs || 'API Documentation'}
+          </h3>
+          <p className="text-sm" style={{ color: 'var(--muted)' }}>
+            {t.familyApi?.apiDocsDescription || 'Endpoints and examples for integrating with the API'}
+          </p>
+        </div>
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="var(--muted)"
+          strokeWidth="2"
+          style={{
+            transform: showDocs ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: 'transform 0.2s',
+          }}
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      {showDocs && (
+        <div className="mt-4 space-y-6">
+          {/* Base URL */}
+          <div>
+            <h4 className="text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
+              {t.familyApi?.baseUrl || 'Base URL'}
+            </h4>
+            <div className="flex items-center gap-2">
+              <code
+                className="flex-1 px-3 py-2 rounded-lg text-sm font-mono"
+                style={{ background: 'var(--card-alt)', color: 'var(--foreground)' }}
+              >
+                {baseUrl}
+              </code>
+              <button onClick={() => onCopy(baseUrl)} className="btn btn-secondary text-sm">
+                {t.familyApi?.copyKey || 'Copy'}
+              </button>
+            </div>
+          </div>
+
+          {/* Authentication */}
+          <div>
+            <h4 className="text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
+              {t.familyApi?.authentication || 'Authentication'}
+            </h4>
+            <div className="p-3 rounded-lg text-sm" style={{ background: 'var(--card-alt)' }}>
+              <p style={{ color: 'var(--foreground)' }}>
+                {t.familyApi?.authDescription || 'Include your API key in the Authorization header:'}
+              </p>
+              <code className="block mt-2 font-mono text-xs" style={{ color: 'var(--muted)' }}>
+                Authorization: Bearer fam_xxxxx
+              </code>
+            </div>
+          </div>
+
+          {/* Endpoints */}
+          <div>
+            <h4 className="text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
+              {t.familyApi?.endpoints || 'Endpoints'}
+            </h4>
+            <div className="space-y-2">
+              {endpoints.map((ep, idx) => (
+                <div
+                  key={idx}
+                  className="p-3 rounded-lg"
+                  style={{ background: 'var(--card-alt)' }}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span
+                      className="px-2 py-0.5 rounded text-xs font-medium"
+                      style={{
+                        background: ep.method === 'GET' ? 'var(--color-sage)' :
+                                   ep.method === 'POST' ? 'var(--color-sky)' :
+                                   'var(--color-coral)',
+                        color: 'white',
+                      }}
+                    >
+                      {ep.method}
+                    </span>
+                    <code className="text-sm font-mono" style={{ color: 'var(--foreground)' }}>
+                      {ep.path}{ep.params || ''}
+                    </code>
+                  </div>
+                  <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                    {ep.description}
+                  </p>
+                  {ep.scope && (
+                    <span
+                      className="inline-block mt-1 px-2 py-0.5 rounded text-xs"
+                      style={{ background: 'var(--background)', color: 'var(--muted)' }}
+                    >
+                      {t.familyApi?.requiresScope || 'Requires'}: {ep.scope}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Examples */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                {t.familyApi?.examples || 'Examples'}
+              </h4>
+              <button onClick={() => onCopy(exampleCode)} className="btn btn-secondary text-xs">
+                {t.familyApi?.copyAll || 'Copy All'}
+              </button>
+            </div>
+            <pre
+              className="p-3 rounded-lg overflow-x-auto text-xs font-mono"
+              style={{ background: 'var(--card-alt)', color: 'var(--muted)' }}
+            >
+              {exampleCode}
+            </pre>
+          </div>
+
+          {/* Response format */}
+          <div>
+            <h4 className="text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
+              {t.familyApi?.responseFormat || 'Response Format'}
+            </h4>
+            <pre
+              className="p-3 rounded-lg overflow-x-auto text-xs font-mono"
+              style={{ background: 'var(--card-alt)', color: 'var(--muted)' }}
+            >
+{`{
+  "data": { ... },  // Response data
+  "meta": {         // Optional metadata
+    "count": 5,
+    "from": "2024-01-15",
+    "to": "2024-01-21"
+  }
+}`}
+            </pre>
+          </div>
+
+          {/* Webhook signature */}
+          <div>
+            <h4 className="text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
+              {t.familyApi?.webhookSignature || 'Webhook Signature'}
+            </h4>
+            <div className="p-3 rounded-lg text-sm" style={{ background: 'var(--card-alt)' }}>
+              <p style={{ color: 'var(--foreground)' }}>
+                {t.familyApi?.webhookSignatureDesc || 'Verify webhooks using the X-Familjen-Signature header:'}
+              </p>
+              <pre className="mt-2 text-xs font-mono" style={{ color: 'var(--muted)' }}>
+{`const crypto = require('crypto')
+const signature = crypto
+  .createHmac('sha256', webhookSecret)
+  .update(JSON.stringify(payload))
+  .digest('hex')
+const expected = \`sha256=\${signature}\`
+// Compare with X-Familjen-Signature header`}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function FamilyApiSection({ householdId, isDemo, onMessage }: FamilyApiSectionProps) {
   const { t, language } = useLanguage()
   const supabase = useMemo(() => createClient(), [])
@@ -761,12 +998,11 @@ export function FamilyApiSection({ householdId, isDemo, onMessage }: FamilyApiSe
         )}
       </div>
 
-      {/* API Documentation Link */}
-      <div className="pt-4 text-center">
-        <p className="text-sm" style={{ color: 'var(--muted)' }}>
-          {t.familyApi?.docsDescription || 'Need help? Check the API documentation.'}
-        </p>
-      </div>
+      {/* API Documentation */}
+      <ApiDocumentation
+        baseUrl={typeof window !== 'undefined' ? window.location.origin : 'https://familjen.eu'}
+        onCopy={copyToClipboard}
+      />
     </div>
   )
 }

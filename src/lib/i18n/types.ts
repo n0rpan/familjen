@@ -1419,5 +1419,24 @@ export interface TranslationStrings {
     docsTitle: string
     docsDescription: string
     viewDocs: string
+    // API Documentation (inline docs)
+    apiDocs: string
+    apiDocsDescription: string
+    baseUrl: string
+    authentication: string
+    authDescription: string
+    endpoints: string
+    requiresScope: string
+    examples: string
+    copyAll: string
+    responseFormat: string
+    webhookSignature: string
+    webhookSignatureDesc: string
+    docsContextDesc: string
+    docsChildrenDesc: string
+    docsMembersDesc: string
+    docsPickupsGetDesc: string
+    docsPickupsPostDesc: string
+    docsPickupsDeleteDesc: string
   }
 }
