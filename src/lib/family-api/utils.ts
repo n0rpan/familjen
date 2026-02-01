@@ -211,9 +211,9 @@ export function validateWebhookUrl(urlString: string): UrlValidationResult {
     return { valid: false, error: 'Invalid URL format' }
   }
 
-  // Only allow HTTP(S)
-  if (!['http:', 'https:'].includes(url.protocol)) {
-    return { valid: false, error: 'URL must use http:// or https://' }
+  // Only allow HTTPS (HTTP would expose webhook secrets in transit)
+  if (url.protocol !== 'https:') {
+    return { valid: false, error: 'Webhook URLs must use https:// to protect signing secrets' }
   }
 
   // Check for private/internal hosts
@@ -232,16 +232,13 @@ export function validateWebhookUrl(urlString: string): UrlValidationResult {
     }
   }
 
-  // Block non-standard ports that might be internal services
-  // Allow 80, 443, and high ports (8000-9999 often used for web services)
-  const port = url.port ? parseInt(url.port, 10) : (url.protocol === 'https:' ? 443 : 80)
-  if (port < 80 || (port > 443 && port < 8000) || port > 9999) {
-    // Allow common webhook ports
-    if (![80, 443, 8080, 8443, 3000].includes(port)) {
-      return {
-        valid: false,
-        error: `Port ${port} is not allowed for webhook URLs`
-      }
+  // Explicit whitelist of allowed ports for clarity and security
+  const ALLOWED_PORTS = new Set([80, 443, 3000, 8000, 8080, 8443])
+  const port = url.port ? parseInt(url.port, 10) : 443 // HTTPS default
+  if (!ALLOWED_PORTS.has(port)) {
+    return {
+      valid: false,
+      error: `Port ${port} is not allowed. Allowed ports: 80, 443, 3000, 8000, 8080, 8443`
     }
   }
 
@@ -442,6 +439,7 @@ export const IMPLEMENTED_WEBHOOK_EVENTS = new Set([
 
 /**
  * Validate webhook event types
+ * Only accepts currently implemented events to avoid confusion
  * Returns error message if invalid, null if valid
  */
 export function validateWebhookEvents(events: string[]): string | null {
@@ -449,9 +447,10 @@ export function validateWebhookEvents(events: string[]): string | null {
     return 'events array is required and must not be empty'
   }
 
-  const invalidEvents = events.filter(e => !VALID_WEBHOOK_EVENTS.has(e))
+  // Only allow events that are actually implemented
+  const invalidEvents = events.filter(e => !IMPLEMENTED_WEBHOOK_EVENTS.has(e))
   if (invalidEvents.length > 0) {
-    return `Invalid event types: ${invalidEvents.join(', ')}. Valid types: ${Array.from(VALID_WEBHOOK_EVENTS).join(', ')}`
+    return `Invalid or unimplemented event types: ${invalidEvents.join(', ')}. Currently available: ${Array.from(IMPLEMENTED_WEBHOOK_EVENTS).join(', ')}`
   }
 
   return null

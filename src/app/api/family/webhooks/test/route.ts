@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createHmac } from 'crypto'
+import { validateUUID } from '@/lib/family-api'
 
 const WEBHOOK_TIMEOUT_MS = 5000
 
@@ -38,9 +39,11 @@ export async function POST(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const webhookId = searchParams.get('id')
 
-    if (!webhookId) {
+    // Validate webhook ID
+    const uuidError = validateUUID(webhookId, 'id')
+    if (uuidError) {
       return NextResponse.json(
-        { error: 'id query parameter is required' },
+        { error: uuidError },
         { status: 400 }
       )
     }
@@ -56,6 +59,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'No household found' },
         { status: 404 }
+      )
+    }
+
+    // Only household admins can test webhooks
+    if (!membership.is_household_admin) {
+      return NextResponse.json(
+        { error: 'Only household admins can test webhooks' },
+        { status: 403 }
       )
     }
 
