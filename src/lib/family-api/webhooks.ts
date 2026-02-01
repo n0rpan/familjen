@@ -34,10 +34,10 @@ function getServiceClient() {
 
 /**
  * Generate a unique delivery ID for idempotency
- * Format: whd_{timestamp}_{uuid} for easy debugging
+ * Uses a proper UUID format for database compatibility
  */
 function generateDeliveryId(): string {
-  return `whd_${Date.now().toString(36)}_${randomUUID().substring(0, 8)}`
+  return randomUUID()
 }
 
 export interface WebhookResult {

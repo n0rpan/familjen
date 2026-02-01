@@ -109,6 +109,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Validate scopes - at least one required
+    if (!body.scopes || !Array.isArray(body.scopes) || body.scopes.length === 0) {
+      return NextResponse.json(
+        { error: 'At least one scope is required (e.g., "pickups:read")' },
+        { status: 400 }
+      )
+    }
+
     // Create API key via RPC (handles admin check internally)
     const { data, error } = await supabase.rpc('create_api_key', {
       p_name: body.name.trim(),
