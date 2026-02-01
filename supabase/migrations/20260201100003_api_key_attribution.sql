@@ -7,7 +7,7 @@
 
 -- Add column to track API key that made the change
 ALTER TABLE pickups
-  ADD COLUMN IF NOT EXISTS updated_via_api_key_id UUID REFERENCES family_api_keys(id) ON DELETE SET NULL;
+  ADD COLUMN IF NOT EXISTS updated_via_api_key_id UUID REFERENCES household_api_keys(id) ON DELETE SET NULL;
 
 -- Index for looking up changes by API key
 CREATE INDEX IF NOT EXISTS pickups_api_key_idx ON pickups(updated_via_api_key_id)
@@ -79,7 +79,7 @@ CREATE OR REPLACE FUNCTION get_api_key_name(p_api_key_id UUID)
 RETURNS TEXT AS $$
 BEGIN
   RETURN (
-    SELECT name FROM family_api_keys WHERE id = p_api_key_id
+    SELECT name FROM household_api_keys WHERE id = p_api_key_id
   );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;

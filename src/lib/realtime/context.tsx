@@ -82,10 +82,10 @@ export function RealtimeProvider({
 
     const fetchApiKeyNames = async () => {
       const { data } = await supabase
-        .from('family_api_keys')
+        .from('household_api_keys')
         .select('id, name')
         .eq('household_id', householdId)
-        .eq('is_active', true)
+        .is('revoked_at', null)  // Active keys have null revoked_at
 
       if (data) {
         setApiKeyNames(data)
