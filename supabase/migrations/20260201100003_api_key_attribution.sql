@@ -13,7 +13,10 @@ ALTER TABLE pickups
 CREATE INDEX IF NOT EXISTS pickups_api_key_idx ON pickups(updated_via_api_key_id)
   WHERE updated_via_api_key_id IS NOT NULL;
 
--- Update api_upsert_pickup to accept API key ID
+-- Drop old function first (adding a parameter creates a new overload, not a replacement)
+DROP FUNCTION IF EXISTS api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT);
+
+-- Recreate api_upsert_pickup with API key ID parameter
 CREATE OR REPLACE FUNCTION api_upsert_pickup(
   p_household_id UUID,
   p_child_id UUID,
