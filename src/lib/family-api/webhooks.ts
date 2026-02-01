@@ -175,12 +175,12 @@ async function deliverWebhook(
   payload: WebhookPayload,
   deliveryId: string
 ): Promise<WebhookResult> {
-  // Security: Validate secret is valid hex and correct length
-  // Webhook secrets are 32 bytes hex-encoded = 64 characters
-  // Must be valid hex to prevent injection of non-hex characters
-  const HEX_64_REGEX = /^[0-9a-f]{64}$/i
+  // Security: Validate secret is valid lowercase hex and correct length
+  // Webhook secrets are 32 bytes hex-encoded = 64 lowercase hex characters
+  // Only accept lowercase to match database output (encode(..., 'hex') produces lowercase)
+  const HEX_64_REGEX = /^[0-9a-f]{64}$/
   if (!secret || !HEX_64_REGEX.test(secret)) {
-    console.error(`Webhook ${webhookId} has invalid secret (length: ${secret?.length || 0}, expected 64 hex chars)`)
+    console.error(`Webhook ${webhookId} has invalid secret (length: ${secret?.length || 0}, expected 64 lowercase hex chars)`)
     return {
       webhookId,
       deliveryId,

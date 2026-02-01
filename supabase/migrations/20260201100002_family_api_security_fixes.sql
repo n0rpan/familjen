@@ -124,13 +124,14 @@ BEGIN
   WHERE id = p_webhook_id
   FOR UPDATE;
 
-  -- Update webhook stats
+  -- Update webhook stats using the locked failure count to prevent race conditions
   UPDATE household_webhooks
   SET
     last_triggered_at = NOW(),
     last_status = p_status,
+    -- Use v_current_failure_count + 1 (not failure_count + 1) to prevent lost updates
     failure_count = CASE
-      WHEN p_status IS NULL OR p_status >= 400 THEN failure_count + 1
+      WHEN p_status IS NULL OR p_status >= 400 THEN v_current_failure_count + 1
       ELSE 0  -- Reset on success
     END,
     -- Auto-disable after 10 consecutive failures
