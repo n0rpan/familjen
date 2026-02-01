@@ -378,10 +378,14 @@ export async function dispatchWebhooks<T>(
       // Generate delivery ID for idempotency
       const deliveryId = generateDeliveryId()
 
+      // Normalize secret to lowercase (defense-in-depth)
+      // PostgreSQL encode(..., 'hex') produces lowercase, but we normalize as safety measure
+      const normalizedSecret = webhook.secret?.toLowerCase() ?? ''
+
       const result = await deliverWebhook(
         webhook.id,
         webhook.url,
-        webhook.secret,
+        normalizedSecret,
         eventType,
         payload,
         deliveryId

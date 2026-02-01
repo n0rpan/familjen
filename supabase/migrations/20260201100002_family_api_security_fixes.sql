@@ -87,6 +87,12 @@ REVOKE EXECUTE ON FUNCTION log_api_access(UUID, UUID, TEXT, TEXT, TEXT, TEXT, TE
 -- ============================================
 -- 3. Fix webhook failure count logic (off-by-one fix)
 -- ============================================
+-- BUG FIX: The original migration (20260201100000) had `failure_count >= 9`
+-- which would disable at the 9th failure (only allowing 8 failures).
+-- This fix changes to `(v_current_failure_count + 1) >= 10` which:
+-- - Reads the LOCKED failure_count value (prevents race conditions)
+-- - Checks if the NEW count (after this failure) will reach 10
+-- - Correctly allows 9 failures before disabling at the 10th
 CREATE OR REPLACE FUNCTION record_webhook_delivery(
   p_webhook_id UUID,
   p_event_type TEXT,

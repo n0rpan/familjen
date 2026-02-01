@@ -49,6 +49,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
+-- Re-apply REVOKE (CREATE OR REPLACE preserves grants, but explicit is safer)
+REVOKE EXECUTE ON FUNCTION api_get_pickups(UUID, DATE, DATE) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION api_get_pickups(UUID, DATE, DATE) FROM anon;
+REVOKE EXECUTE ON FUNCTION api_get_pickups(UUID, DATE, DATE) FROM authenticated;
+
 -- Fix api_get_children to return empty array
 CREATE OR REPLACE FUNCTION api_get_children(p_household_id UUID)
 RETURNS JSONB AS $$
@@ -74,6 +79,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
+-- Re-apply REVOKE
+REVOKE EXECUTE ON FUNCTION api_get_children(UUID) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION api_get_children(UUID) FROM anon;
+REVOKE EXECUTE ON FUNCTION api_get_children(UUID) FROM authenticated;
+
 -- Fix api_get_members to return empty array
 CREATE OR REPLACE FUNCTION api_get_members(p_household_id UUID)
 RETURNS JSONB AS $$
@@ -96,3 +106,8 @@ BEGIN
   );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
+
+-- Re-apply REVOKE
+REVOKE EXECUTE ON FUNCTION api_get_members(UUID) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION api_get_members(UUID) FROM anon;
+REVOKE EXECUTE ON FUNCTION api_get_members(UUID) FROM authenticated;

@@ -2,6 +2,18 @@
 -- Family API: API Keys & Webhooks
 -- Enables external AI assistants to read/write family data
 -- ============================================
+--
+-- DEPENDENCIES:
+-- 1. pgcrypto extension (for gen_random_bytes, digest)
+--    - Typically pre-installed in Supabase projects
+--    - Functions accessed via 'extensions.' schema prefix
+--
+-- 2. encrypt_token / decrypt_token functions
+--    - Defined in external integrations migration (20251229100000)
+--    - Used for webhook secret encryption
+--    - If missing, run that migration first
+--
+-- ============================================
 
 -- ============================================
 -- 1. API Keys Table (Pull API)
@@ -185,7 +197,8 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 -- Validate an API key and return household_id if valid
--- Updates last_used_at on successful validation
+-- Updates last_used_at on successful validation (throttled to once per minute)
+-- PERFORMANCE: Throttling prevents write contention on high-traffic API keys
 CREATE OR REPLACE FUNCTION validate_api_key(p_key TEXT)
 RETURNS TABLE (
   household_id UUID,
@@ -202,7 +215,7 @@ BEGIN
 
   v_hash := encode(extensions.digest(p_key, 'sha256'), 'hex');
 
-  SELECT ak.household_id, ak.id as key_id, ak.scopes
+  SELECT ak.household_id, ak.id as key_id, ak.scopes, ak.last_used_at
   INTO v_record
   FROM household_api_keys ak
   WHERE ak.key_hash = v_hash
@@ -212,10 +225,13 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Update last_used_at
-  UPDATE household_api_keys
-  SET last_used_at = NOW()
-  WHERE id = v_record.key_id;
+  -- Update last_used_at only if >1 minute has passed (throttle writes)
+  -- This prevents write amplification on high-traffic API keys
+  IF v_record.last_used_at IS NULL OR v_record.last_used_at < NOW() - INTERVAL '1 minute' THEN
+    UPDATE household_api_keys
+    SET last_used_at = NOW()
+    WHERE id = v_record.key_id;
+  END IF;
 
   RETURN QUERY SELECT v_record.household_id, v_record.key_id, v_record.scopes;
 END;

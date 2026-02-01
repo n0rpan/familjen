@@ -90,15 +90,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Decrypt secret
-    const { data: secret } = await serviceClient.rpc('decrypt_token', {
+    // Decrypt secret and normalize to lowercase (defense-in-depth)
+    const { data: rawSecret } = await serviceClient.rpc('decrypt_token', {
       ciphertext: webhookData.secret_encrypted,
     })
+    // Normalize to lowercase in case decrypt_token ever returns uppercase
+    const secret = typeof rawSecret === 'string' ? rawSecret.toLowerCase() : rawSecret
 
     // Security: Validate secret is valid lowercase hex and correct length
     // Webhook secrets are 32 bytes hex-encoded = 64 lowercase hex characters
-    // Only accept lowercase to match database output (encode(..., 'hex') produces lowercase)
-    // This ensures HMAC consistency between test and production
+    // PostgreSQL encode(..., 'hex') produces lowercase, but we normalize above as defense-in-depth
     const HEX_64_REGEX = /^[0-9a-f]{64}$/
     if (!secret || typeof secret !== 'string' || !HEX_64_REGEX.test(secret)) {
       console.error(`Webhook ${webhookId} has invalid secret (length: ${secret?.length || 0}, expected 64 lowercase hex chars)`)
