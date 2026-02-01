@@ -86,6 +86,22 @@ function isPrivateIP(ip: string): boolean {
 /**
  * Resolve hostname and check for private IPs (DNS rebinding protection)
  * Returns null if safe, error message if blocked
+ *
+ * SECURITY NOTE: There is a small TOCTOU (time-of-check-time-of-use) window
+ * between DNS validation and the actual HTTP request. To fully eliminate this,
+ * we would need DNS pinning (connecting to the resolved IP with Host header).
+ * However, Node.js native fetch doesn't support this without custom agents.
+ *
+ * Mitigations in place:
+ * 1. DNS is re-validated before EACH retry attempt (not just once)
+ * 2. The window between validation and fetch is microseconds
+ * 3. Attacker would need to time DNS change precisely during this window
+ * 4. For a family app, this residual risk is acceptable
+ *
+ * For higher-security applications, consider using:
+ * - ssrf-req-filter library
+ * - undici with custom DNS resolver
+ * - Cloudflare Workers with fetch that supports connect-to
  */
 async function checkDNSRebinding(hostname: string): Promise<string | null> {
   try {

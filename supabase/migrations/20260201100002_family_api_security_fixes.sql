@@ -130,12 +130,14 @@ BEGIN
     last_triggered_at = NOW(),
     last_status = p_status,
     -- Use v_current_failure_count + 1 (not failure_count + 1) to prevent lost updates
+    -- This ensures we use the locked value from the SELECT FOR UPDATE
     failure_count = CASE
       WHEN p_status IS NULL OR p_status >= 400 THEN v_current_failure_count + 1
       ELSE 0  -- Reset on success
     END,
-    -- Auto-disable after 10 consecutive failures
-    -- Check if NEW count (after increment) will be >= 10
+    -- Auto-disable webhook at the 10th consecutive failure
+    -- When v_current_failure_count=9, the next failure makes it 10, so we disable
+    -- This means: failures 1-9 are allowed, failure 10 triggers disable
     disabled_at = CASE
       WHEN (v_current_failure_count + 1) >= 10 AND (p_status IS NULL OR p_status >= 400) THEN NOW()
       ELSE disabled_at

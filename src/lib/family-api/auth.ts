@@ -3,6 +3,13 @@
  *
  * Validates API keys from the Authorization header and returns
  * the associated household_id and scopes.
+ *
+ * PERFORMANCE NOTE: The validate_api_key database function updates
+ * last_used_at on every successful validation. For a family app with
+ * low traffic, this is fine. For high-traffic APIs, consider:
+ * - Batching updates (e.g., only update if >1 minute since last update)
+ * - Using a separate async job for tracking
+ * - Caching validation results with short TTL
  */
 
 import { createClient } from '@supabase/supabase-js'

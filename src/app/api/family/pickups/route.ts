@@ -7,6 +7,14 @@
  *
  * Authentication: API Key via Authorization header
  * Authorization: Bearer fam_xxxxx
+ *
+ * WEBHOOK BEHAVIOR: Webhook dispatch is fire-and-forget. The API response
+ * is returned immediately after database update, regardless of webhook
+ * delivery status. This means:
+ * - API latency is not affected by webhook endpoint speed
+ * - Webhook failures are logged but not reported to the client
+ * - Check webhook_deliveries table or Settings UI to monitor delivery
+ * - Failed webhooks retry with exponential backoff (up to 3 retries)
  */
 
 import { NextRequest, NextResponse } from 'next/server'
