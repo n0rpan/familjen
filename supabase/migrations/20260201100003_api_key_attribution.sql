@@ -27,9 +27,11 @@ DECLARE
   v_pickup_id UUID;
   v_is_insert BOOLEAN;
 BEGIN
+  -- Note: Use public. prefix because SET search_path = '' clears default schema
+
   -- Verify child belongs to household
   IF NOT EXISTS (
-    SELECT 1 FROM children
+    SELECT 1 FROM public.children
     WHERE id = p_child_id AND household_id = p_household_id
   ) THEN
     RAISE EXCEPTION 'Child not found in household';
@@ -37,7 +39,7 @@ BEGIN
 
   -- Verify picker belongs to household (if provided)
   IF p_picker_id IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM household_members
+    SELECT 1 FROM public.household_members
     WHERE id = p_picker_id AND household_id = p_household_id
   ) THEN
     RAISE EXCEPTION 'Picker not found in household';
@@ -45,7 +47,7 @@ BEGIN
 
   -- Check if pickup exists
   SELECT id INTO v_pickup_id
-  FROM pickups
+  FROM public.pickups
   WHERE household_id = p_household_id
     AND child_id = p_child_id
     AND date = p_date;
@@ -53,7 +55,7 @@ BEGIN
   v_is_insert := v_pickup_id IS NULL;
 
   -- Upsert with API key attribution
-  INSERT INTO pickups (household_id, child_id, date, picker_id, notes, updated_via_api_key_id)
+  INSERT INTO public.pickups (household_id, child_id, date, picker_id, notes, updated_via_api_key_id)
   VALUES (p_household_id, p_child_id, p_date, p_picker_id, p_notes, p_api_key_id)
   ON CONFLICT (household_id, child_id, date)
   DO UPDATE SET
@@ -76,11 +78,12 @@ REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT, UUID)
 REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT, UUID) FROM authenticated;
 
 -- Function to get API key name for realtime display
+-- Note: Use public. prefix because SET search_path = '' clears default schema
 CREATE OR REPLACE FUNCTION get_api_key_name(p_api_key_id UUID)
 RETURNS TEXT AS $$
 BEGIN
   RETURN (
-    SELECT name FROM household_api_keys WHERE id = p_api_key_id
+    SELECT name FROM public.household_api_keys WHERE id = p_api_key_id
   );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
@@ -149,12 +152,13 @@ BEGIN
       'unassign_pickup', 'POST /api/family/pickups with picker_id: null',
       'add_note', 'POST /api/family/pickups with notes field'
     ),
+    -- Note: Use public. prefix because SET search_path = '' clears default schema
     'household_summary', (
       SELECT jsonb_build_object(
-        'children_count', (SELECT COUNT(*) FROM children WHERE household_id = p_household_id),
-        'members_count', (SELECT COUNT(*) FROM household_members WHERE household_id = p_household_id),
-        'children_names', (SELECT jsonb_agg(name ORDER BY sort_order, name) FROM children WHERE household_id = p_household_id),
-        'member_names', (SELECT jsonb_agg(short_name ORDER BY name) FROM household_members WHERE household_id = p_household_id)
+        'children_count', (SELECT COUNT(*) FROM public.children WHERE household_id = p_household_id),
+        'members_count', (SELECT COUNT(*) FROM public.household_members WHERE household_id = p_household_id),
+        'children_names', (SELECT jsonb_agg(name ORDER BY sort_order, name) FROM public.children WHERE household_id = p_household_id),
+        'member_names', (SELECT jsonb_agg(short_name ORDER BY name) FROM public.household_members WHERE household_id = p_household_id)
       )
     )
   );

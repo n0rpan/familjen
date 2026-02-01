@@ -63,7 +63,8 @@ RETURNS UUID AS $$
 DECLARE
   v_log_id UUID;
 BEGIN
-  INSERT INTO api_audit_log (
+  -- Note: Use public. prefix because SET search_path = '' clears default schema
+  INSERT INTO public.api_audit_log (
     key_id, household_id, operation, endpoint, method,
     ip_address, user_agent, request_id
   ) VALUES (
@@ -109,7 +110,8 @@ BEGIN
   -- Use provided ID or generate new one
   v_delivery_id := COALESCE(p_delivery_id, gen_random_uuid());
 
-  INSERT INTO webhook_deliveries (
+  -- Note: Use public. prefix because SET search_path = '' clears default schema
+  INSERT INTO public.webhook_deliveries (
     id, webhook_id, event_type, payload, status, error,
     delivered_at
   )
@@ -121,17 +123,17 @@ BEGIN
     status = EXCLUDED.status,
     error = EXCLUDED.error,
     delivered_at = EXCLUDED.delivered_at,
-    attempts = webhook_deliveries.attempts + 1;
+    attempts = public.webhook_deliveries.attempts + 1;
 
   -- Get current failure count with row lock to prevent race conditions
   -- FOR UPDATE ensures only one transaction can modify this webhook at a time
   SELECT failure_count INTO v_current_failure_count
-  FROM household_webhooks
+  FROM public.household_webhooks
   WHERE id = p_webhook_id
   FOR UPDATE;
 
   -- Update webhook stats using the locked failure count to prevent race conditions
-  UPDATE household_webhooks
+  UPDATE public.household_webhooks
   SET
     last_triggered_at = NOW(),
     last_status = p_status,
@@ -202,7 +204,8 @@ BEGIN
   v_key_data := generate_api_key();
 
   -- Insert key record
-  INSERT INTO household_api_keys (
+  -- Note: Use public. prefix because SET search_path = '' clears default schema
+  INSERT INTO public.household_api_keys (
     household_id, key_hash, key_prefix, name, scopes, created_by
   )
   VALUES (
@@ -254,7 +257,8 @@ RETURNS INTEGER AS $$
 DECLARE
   v_deleted INTEGER;
 BEGIN
-  DELETE FROM api_audit_log
+  -- Note: Use public. prefix because SET search_path = '' clears default schema
+  DELETE FROM public.api_audit_log
   WHERE created_at < NOW() - INTERVAL '90 days';
 
   GET DIAGNOSTICS v_deleted = ROW_COUNT;

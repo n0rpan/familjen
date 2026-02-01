@@ -6,6 +6,7 @@
 -- ============================================
 
 -- Fix api_get_pickups to return empty array
+-- Note: Use public. prefix because SET search_path = '' clears default schema
 CREATE OR REPLACE FUNCTION api_get_pickups(
   p_household_id UUID,
   p_from_date DATE,
@@ -37,9 +38,9 @@ BEGIN
         )
         ORDER BY p.date, c.sort_order, c.name
       )
-      FROM pickups p
-      JOIN children c ON c.id = p.child_id
-      LEFT JOIN household_members m ON m.id = p.picker_id
+      FROM public.pickups p
+      JOIN public.children c ON c.id = p.child_id
+      LEFT JOIN public.household_members m ON m.id = p.picker_id
       WHERE p.household_id = p_household_id
         AND p.date >= p_from_date
         AND p.date <= p_to_date
@@ -55,6 +56,7 @@ REVOKE EXECUTE ON FUNCTION api_get_pickups(UUID, DATE, DATE) FROM anon;
 REVOKE EXECUTE ON FUNCTION api_get_pickups(UUID, DATE, DATE) FROM authenticated;
 
 -- Fix api_get_children to return empty array
+-- Note: Use public. prefix because SET search_path = '' clears default schema
 CREATE OR REPLACE FUNCTION api_get_children(p_household_id UUID)
 RETURNS JSONB AS $$
 BEGIN
@@ -71,7 +73,7 @@ BEGIN
         )
         ORDER BY c.sort_order, c.name
       )
-      FROM children c
+      FROM public.children c
       WHERE c.household_id = p_household_id
     ),
     '[]'::jsonb
@@ -85,6 +87,7 @@ REVOKE EXECUTE ON FUNCTION api_get_children(UUID) FROM anon;
 REVOKE EXECUTE ON FUNCTION api_get_children(UUID) FROM authenticated;
 
 -- Fix api_get_members to return empty array
+-- Note: Use public. prefix because SET search_path = '' clears default schema
 CREATE OR REPLACE FUNCTION api_get_members(p_household_id UUID)
 RETURNS JSONB AS $$
 BEGIN
@@ -99,7 +102,7 @@ BEGIN
         )
         ORDER BY m.name
       )
-      FROM household_members m
+      FROM public.household_members m
       WHERE m.household_id = p_household_id
     ),
     '[]'::jsonb
