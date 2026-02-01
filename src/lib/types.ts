@@ -587,7 +587,6 @@ export interface WebhookPayload<T = unknown> {
 export interface ApiPickup {
   id: string
   date: string
-  notes: string | null
   child: {
     id: string
     name: string

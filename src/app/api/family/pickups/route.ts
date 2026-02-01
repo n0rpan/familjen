@@ -28,7 +28,6 @@ import {
   isValidDate,
   validateDateRange,
   validateUUID,
-  validateNotes,
   isValidUUID,
   logApiAccess,
   MAX_DATE_RANGE_DAYS,
@@ -144,7 +143,6 @@ export async function GET(request: NextRequest) {
  * - child_id: UUID of the child (required)
  * - date: Date in YYYY-MM-DD format (required)
  * - picker_id: UUID of the picker (optional, null to unassign)
- * - notes: Optional notes
  *
  * Returns: Created/updated pickup info
  */
@@ -188,7 +186,6 @@ export async function POST(request: NextRequest) {
       child_id?: string
       date?: string
       picker_id?: string | null
-      notes?: string | null
     }
 
     try {
@@ -216,11 +213,6 @@ export async function POST(request: NextRequest) {
       throw Errors.badRequest('picker_id must be a valid UUID')
     }
 
-    const notesError = validateNotes(body.notes)
-    if (notesError) {
-      throw Errors.badRequest(notesError)
-    }
-
     const supabase = getServiceClient()
 
     // Get existing pickup for comparison (for webhook)
@@ -240,7 +232,6 @@ export async function POST(request: NextRequest) {
       p_child_id: body.child_id,
       p_date: body.date,
       p_picker_id: body.picker_id ?? null,
-      p_notes: body.notes ?? null,
       p_api_key_id: auth.keyId,  // Track which API key made the change
     })
 
@@ -346,7 +337,7 @@ export async function DELETE(request: NextRequest) {
     const { data: pickupData } = await supabase
       .from('pickups')
       .select(`
-        id, date, notes,
+        id, date,
         child:children(id, name, color),
         picker:household_members(id, name, short_name)
       `)

@@ -30,7 +30,6 @@ export {
   validateApiScopes,
   isValidUUID,
   validateUUID,
-  validateNotes,
   logApiAccess,
   generateRequestId,
   VALID_WEBHOOK_EVENTS,
