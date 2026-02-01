@@ -296,17 +296,18 @@ BEGIN
   END IF;
 
   -- Check household admin
-  IF NOT is_household_admin() THEN
+  -- Note: Use public. prefix because SET search_path = '' clears default schema
+  IF NOT public.is_household_admin() THEN
     RAISE EXCEPTION 'Must be household admin to create API keys';
   END IF;
 
-  v_household_id := get_user_household_id();
+  v_household_id := public.get_user_household_id();
   IF v_household_id IS NULL THEN
     RAISE EXCEPTION 'No household found';
   END IF;
 
   -- Generate key
-  v_key_data := generate_api_key();
+  v_key_data := public.generate_api_key();
 
   -- Insert key record
   -- Note: Use public. prefix because SET search_path = '' clears default schema
@@ -342,11 +343,12 @@ RETURNS BOOLEAN AS $$
 DECLARE
   v_household_id UUID;
 BEGIN
-  IF NOT is_household_admin() THEN
+  -- Note: Use public. prefix because SET search_path = '' clears default schema
+  IF NOT public.is_household_admin() THEN
     RAISE EXCEPTION 'Must be household admin to revoke API keys';
   END IF;
 
-  v_household_id := get_user_household_id();
+  v_household_id := public.get_user_household_id();
 
   UPDATE public.household_api_keys
   SET revoked_at = NOW()
@@ -382,11 +384,12 @@ BEGIN
     RAISE EXCEPTION 'Not authenticated';
   END IF;
 
-  IF NOT is_household_admin() THEN
+  -- Note: Use public. prefix because SET search_path = '' clears default schema
+  IF NOT public.is_household_admin() THEN
     RAISE EXCEPTION 'Must be household admin to create webhooks';
   END IF;
 
-  v_household_id := get_user_household_id();
+  v_household_id := public.get_user_household_id();
   IF v_household_id IS NULL THEN
     RAISE EXCEPTION 'No household found';
   END IF;
@@ -401,7 +404,7 @@ BEGIN
   VALUES (
     v_household_id,
     p_url,
-    encrypt_token(v_secret),
+    public.encrypt_token(v_secret),
     p_events,
     p_name,
     v_user_id
@@ -425,7 +428,7 @@ GRANT EXECUTE ON FUNCTION create_webhook(TEXT, TEXT[], TEXT) TO authenticated;
 -- Note: Uses public. prefix because SET search_path = '' clears the default schema
 CREATE OR REPLACE FUNCTION get_webhook_secret(p_webhook_id UUID)
 RETURNS TEXT AS $$
-  SELECT decrypt_token(secret_encrypted)
+  SELECT public.decrypt_token(secret_encrypted)
   FROM public.household_webhooks
   WHERE id = p_webhook_id;
 $$ LANGUAGE SQL SECURITY DEFINER SET search_path = '';
@@ -451,7 +454,7 @@ BEGIN
   SELECT
     w.id,
     w.url,
-    decrypt_token(w.secret_encrypted) as secret
+    public.decrypt_token(w.secret_encrypted) as secret
   FROM public.household_webhooks w
   WHERE w.household_id = p_household_id
     AND w.disabled_at IS NULL

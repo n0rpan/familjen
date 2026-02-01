@@ -181,11 +181,12 @@ BEGIN
   END IF;
 
   -- Check household admin
-  IF NOT is_household_admin() THEN
+  -- Note: Use public. prefix because SET search_path = '' clears default schema
+  IF NOT public.is_household_admin() THEN
     RAISE EXCEPTION 'Must be household admin to create API keys';
   END IF;
 
-  v_household_id := get_user_household_id();
+  v_household_id := public.get_user_household_id();
   IF v_household_id IS NULL THEN
     RAISE EXCEPTION 'No household found';
   END IF;
@@ -201,7 +202,7 @@ BEGIN
   END IF;
 
   -- Generate key
-  v_key_data := generate_api_key();
+  v_key_data := public.generate_api_key();
 
   -- Insert key record
   -- Note: Use public. prefix because SET search_path = '' clears default schema
