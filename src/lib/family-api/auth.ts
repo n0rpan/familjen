@@ -24,6 +24,7 @@ function getServiceClient() {
 export interface ApiKeyValidation {
   valid: true
   householdId: string
+  keyId: string           // For per-key rate limiting
   scopes: ApiKeyScope[]
 }
 
@@ -104,6 +105,7 @@ export async function validateApiKey(request: Request): Promise<ApiKeyResult> {
     return {
       valid: true,
       householdId: result.household_id,
+      keyId: result.key_id,
       scopes: result.scopes as ApiKeyScope[],
     }
   } catch (err) {

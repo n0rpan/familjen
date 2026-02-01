@@ -84,9 +84,12 @@ export async function POST(request: NextRequest) {
       ciphertext: webhookData.secret_encrypted,
     })
 
-    if (!secret) {
+    // Security: Validate secret is not empty or too short
+    // Empty string would pass truthiness check but create insecure HMAC
+    if (!secret || typeof secret !== 'string' || secret.length < 32) {
+      console.error(`Webhook ${webhookId} has invalid secret (length: ${secret?.length || 0})`)
       return NextResponse.json(
-        { error: 'Failed to decrypt webhook secret' },
+        { error: 'Webhook secret is invalid - please delete and recreate the webhook' },
         { status: 500 }
       )
     }
@@ -104,6 +107,7 @@ export async function POST(request: NextRequest) {
     }
 
     const timestamp = Math.floor(Date.now() / 1000)
+    const deliveryId = `whd_test_${Date.now().toString(36)}`
     const payloadJson = JSON.stringify(testPayload)
     const signature = createHmac('sha256', secret)
       .update(`${timestamp}.${payloadJson}`)
@@ -121,6 +125,7 @@ export async function POST(request: NextRequest) {
           'X-Familjen-Signature': `sha256=${signature}`,
           'X-Familjen-Timestamp': String(timestamp),
           'X-Familjen-Event': 'test',
+          'X-Familjen-Delivery': deliveryId,  // Idempotency header
           'User-Agent': 'Familjen-Webhook/1.0',
         },
         body: payloadJson,
@@ -129,23 +134,14 @@ export async function POST(request: NextRequest) {
 
       clearTimeout(timeoutId)
 
-      // Try to read response body
-      let responseBody: string | null = null
-      try {
-        responseBody = await response.text()
-        if (responseBody.length > 500) {
-          responseBody = responseBody.substring(0, 500) + '...'
-        }
-      } catch {
-        // Ignore body read errors
-      }
-
+      // Security: Don't return response body - could leak internal data
+      // if user misconfigured the webhook URL
       return NextResponse.json({
         data: {
           success: response.ok,
           status: response.status,
           statusText: response.statusText,
-          responseBody,
+          // Note: Response body intentionally not included for security
         },
       })
     } catch (err) {

@@ -15,6 +15,7 @@ import {
   Errors,
   withErrorHandling,
   getServiceClient,
+  logApiAccess,
 } from '@/lib/family-api'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import type { ApiMember } from '@/lib/types'
@@ -32,9 +33,9 @@ export async function GET(request: NextRequest) {
       throw Errors.unauthorized(auth.error)
     }
 
-    // Rate limit by API key
+    // Rate limit by API key ID (not household - isolates abuse per key)
     const rateLimit = await checkRateLimit(
-      `familyApi:read:${auth.householdId}`,
+      `familyApi:read:${auth.keyId}`,
       RATE_LIMITS.familyApiRead
     )
     if (rateLimit.limited) {
@@ -48,6 +49,16 @@ export async function GET(request: NextRequest) {
     if (!hasScope(auth, 'members:read')) {
       throw Errors.missingScope('members:read')
     }
+
+    // Audit log (fire and forget)
+    logApiAccess({
+      keyId: auth.keyId,
+      householdId: auth.householdId,
+      operation: 'read',
+      endpoint: '/api/family/members',
+      method: 'GET',
+      request,
+    }).catch(() => {})
 
     const supabase = getServiceClient()
 

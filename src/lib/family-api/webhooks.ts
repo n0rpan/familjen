@@ -5,12 +5,15 @@
  * for authentication on the receiving end.
  */
 
-import { createHmac } from 'crypto'
+import { createHmac, randomUUID } from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 import type { WebhookEventType, WebhookPayload } from '@/lib/types'
 
 // Webhook delivery timeout
 const WEBHOOK_TIMEOUT_MS = 5000
+
+// Minimum secret length (security validation)
+const MIN_SECRET_LENGTH = 32
 
 // Create a service role client for webhook operations
 function getServiceClient() {
@@ -21,11 +24,25 @@ function getServiceClient() {
     throw new Error('Missing Supabase configuration for webhook dispatch')
   }
 
-  return createClient(supabaseUrl, serviceRoleKey)
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  })
+}
+
+/**
+ * Generate a unique delivery ID for idempotency
+ * Format: whd_{timestamp}_{uuid} for easy debugging
+ */
+function generateDeliveryId(): string {
+  return `whd_${Date.now().toString(36)}_${randomUUID().substring(0, 8)}`
 }
 
 export interface WebhookResult {
   webhookId: string
+  deliveryId: string
   url: string
   status: number | null
   error: string | null
@@ -58,8 +75,23 @@ async function deliverWebhook(
   url: string,
   secret: string,
   eventType: WebhookEventType,
-  payload: WebhookPayload
+  payload: WebhookPayload,
+  deliveryId: string
 ): Promise<WebhookResult> {
+  // Security: Validate secret is not empty or too short
+  // This catches decryption failures or corrupted secrets
+  if (!secret || secret.length < MIN_SECRET_LENGTH) {
+    console.error(`Webhook ${webhookId} has invalid secret (length: ${secret?.length || 0})`)
+    return {
+      webhookId,
+      deliveryId,
+      url,
+      status: null,
+      error: 'Invalid webhook secret - please regenerate webhook',
+      success: false,
+    }
+  }
+
   const timestamp = Math.floor(Date.now() / 1000)
   const payloadJson = JSON.stringify(payload)
   const signature = generateSignature(payloadJson, timestamp, secret)
@@ -75,6 +107,7 @@ async function deliverWebhook(
         'X-Familjen-Signature': signature,
         'X-Familjen-Timestamp': String(timestamp),
         'X-Familjen-Event': eventType,
+        'X-Familjen-Delivery': deliveryId,  // Idempotency header
         'User-Agent': 'Familjen-Webhook/1.0',
       },
       body: payloadJson,
@@ -85,6 +118,7 @@ async function deliverWebhook(
 
     return {
       webhookId,
+      deliveryId,
       url,
       status: response.status,
       error: response.ok ? null : `HTTP ${response.status}`,
@@ -95,6 +129,7 @@ async function deliverWebhook(
     const error = err instanceof Error ? err.message : 'Unknown error'
     return {
       webhookId,
+      deliveryId,
       url,
       status: null,
       error: error.includes('abort') ? 'Timeout' : error,
@@ -153,15 +188,19 @@ export async function dispatchWebhooks<T>(
   // Deliver to all webhooks in parallel
   const results = await Promise.all(
     webhooks.map(async (webhook: { id: string; url: string; secret: string }) => {
+      // Generate delivery ID for idempotency
+      const deliveryId = generateDeliveryId()
+
       const result = await deliverWebhook(
         webhook.id,
         webhook.url,
         webhook.secret,
         eventType,
-        payload
+        payload,
+        deliveryId
       )
 
-      // Record delivery in database
+      // Record delivery in database with delivery ID for idempotency
       try {
         await supabase.rpc('record_webhook_delivery', {
           p_webhook_id: webhook.id,
@@ -169,6 +208,7 @@ export async function dispatchWebhooks<T>(
           p_payload: payload,
           p_status: result.status,
           p_error: result.error,
+          p_delivery_id: deliveryId,
         })
       } catch (err) {
         console.error('Failed to record webhook delivery:', err)

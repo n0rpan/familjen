@@ -18,6 +18,9 @@ import {
   withErrorHandling,
   getServiceClient,
   isValidDate,
+  validateDateRange,
+  logApiAccess,
+  MAX_DATE_RANGE_DAYS,
 } from '@/lib/family-api'
 import { dispatchWebhooks } from '@/lib/family-api/webhooks'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
@@ -40,9 +43,9 @@ export async function GET(request: NextRequest) {
       throw Errors.unauthorized(auth.error)
     }
 
-    // Rate limit by API key (using householdId as key)
+    // Rate limit by API key ID (not household - isolates abuse per key)
     const rateLimit = await checkRateLimit(
-      `familyApi:read:${auth.householdId}`,
+      `familyApi:read:${auth.keyId}`,
       RATE_LIMITS.familyApiRead
     )
     if (rateLimit.limited) {
@@ -56,6 +59,16 @@ export async function GET(request: NextRequest) {
     if (!hasScope(auth, 'pickups:read')) {
       throw Errors.missingScope('pickups:read')
     }
+
+    // Audit log (fire and forget)
+    logApiAccess({
+      keyId: auth.keyId,
+      householdId: auth.householdId,
+      operation: 'read',
+      endpoint: '/api/family/pickups',
+      method: 'GET',
+      request,
+    }).catch(() => {})
 
     // Parse query params
     const { searchParams } = new URL(request.url)
@@ -80,6 +93,12 @@ export async function GET(request: NextRequest) {
     }
     if (!isValidDate(toDate)) {
       throw Errors.badRequest('Invalid to date. Use YYYY-MM-DD with valid date values.')
+    }
+
+    // Validate date range (max 90 days to prevent data dumps)
+    const rangeError = validateDateRange(fromDate, toDate)
+    if (rangeError) {
+      throw Errors.badRequest(`${rangeError}. Max: ${MAX_DATE_RANGE_DAYS} days.`)
     }
 
     const supabase = getServiceClient()
@@ -126,9 +145,9 @@ export async function POST(request: NextRequest) {
       throw Errors.unauthorized(auth.error)
     }
 
-    // Rate limit by API key (using householdId as key)
+    // Rate limit by API key ID (not household - isolates abuse per key)
     const rateLimit = await checkRateLimit(
-      `familyApi:write:${auth.householdId}`,
+      `familyApi:write:${auth.keyId}`,
       RATE_LIMITS.familyApiWrite
     )
     if (rateLimit.limited) {
@@ -142,6 +161,16 @@ export async function POST(request: NextRequest) {
     if (!hasScope(auth, 'pickups:write')) {
       throw Errors.missingScope('pickups:write')
     }
+
+    // Audit log (fire and forget)
+    logApiAccess({
+      keyId: auth.keyId,
+      householdId: auth.householdId,
+      operation: 'write',
+      endpoint: '/api/family/pickups',
+      method: 'POST',
+      request,
+    }).catch(() => {})
 
     // Parse body
     let body: {
@@ -192,8 +221,12 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error('Failed to upsert pickup:', error)
-      if (error.message.includes('not found')) {
-        throw Errors.badRequest(error.message)
+      // Sanitize error messages - don't leak database internals
+      if (error.message.includes('Child not found')) {
+        throw Errors.badRequest('Child not found in household')
+      }
+      if (error.message.includes('Picker not found')) {
+        throw Errors.badRequest('Picker not found in household')
       }
       throw Errors.internal('Failed to save pickup')
     }
@@ -246,9 +279,9 @@ export async function DELETE(request: NextRequest) {
       throw Errors.unauthorized(auth.error)
     }
 
-    // Rate limit by API key (using householdId as key)
+    // Rate limit by API key ID (not household - isolates abuse per key)
     const rateLimit = await checkRateLimit(
-      `familyApi:write:${auth.householdId}`,
+      `familyApi:write:${auth.keyId}`,
       RATE_LIMITS.familyApiWrite
     )
     if (rateLimit.limited) {
@@ -262,6 +295,16 @@ export async function DELETE(request: NextRequest) {
     if (!hasScope(auth, 'pickups:write')) {
       throw Errors.missingScope('pickups:write')
     }
+
+    // Audit log (fire and forget)
+    logApiAccess({
+      keyId: auth.keyId,
+      householdId: auth.householdId,
+      operation: 'write',
+      endpoint: '/api/family/pickups',
+      method: 'DELETE',
+      request,
+    }).catch(() => {})
 
     // Get pickup ID from query
     const { searchParams } = new URL(request.url)
