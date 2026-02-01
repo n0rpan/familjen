@@ -79,6 +79,11 @@ export const sv: TranslationStrings = {
     minutesAgo: '{count} min sedan',
     hoursAgo: '{count} t sedan',
     daysAgo: '{count} d sedan',
+    // Realtime attribution
+    someone: 'Någon',
+    aiAssistant: 'AI-assistent',
+    pickupChangedBy: '{name} ändrade hämtningen för {child}',
+    pickupRemovedBy: '{name} tog bort hämtningen för {child}',
   },
 
   // Date/Time

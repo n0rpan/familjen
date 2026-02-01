@@ -79,6 +79,11 @@ export const en: TranslationStrings = {
     minutesAgo: '{count}m ago',
     hoursAgo: '{count}h ago',
     daysAgo: '{count}d ago',
+    // Realtime attribution
+    someone: 'Someone',
+    aiAssistant: 'AI assistant',
+    pickupChangedBy: '{name} changed pickup for {child}',
+    pickupRemovedBy: '{name} removed pickup for {child}',
   },
 
   // Date/Time

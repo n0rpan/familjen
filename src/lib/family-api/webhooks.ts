@@ -112,6 +112,7 @@ async function deliverWebhook(
       },
       body: payloadJson,
       signal: controller.signal,
+      redirect: 'error',  // SECURITY: Prevent SSRF via redirects to internal URLs
     })
 
     clearTimeout(timeoutId)

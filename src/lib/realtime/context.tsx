@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { HouseholdMember } from '@/lib/types'
+import { useLanguage } from '@/lib/i18n/context'
 
 // Toast types
 export type ToastType = 'info' | 'success' | 'warning' | 'error'
@@ -57,6 +58,7 @@ export function RealtimeProvider({
   const [apiKeyNames, setApiKeyNames] = useState<ApiKeyName[]>([])
   const toastIdRef = useRef(0)
   const supabase = useMemo(() => createClient(), [])
+  const { t } = useLanguage()
 
   // Fetch members if not provided and householdId exists
   useEffect(() => {
@@ -129,10 +131,10 @@ export function RealtimeProvider({
 
   // Get member name by ID
   const getMemberName = useCallback((memberId: string | null | undefined): string => {
-    if (!memberId) return 'Someone'
+    if (!memberId) return t.common.someone
     const member = members.find(m => m.id === memberId)
-    return member?.short_name || member?.name || 'Someone'
-  }, [members])
+    return member?.short_name || member?.name || t.common.someone
+  }, [members, t.common.someone])
 
   // Get the name of who made a change (supports both members and API keys)
   const getChangerName = useCallback((
@@ -142,11 +144,11 @@ export function RealtimeProvider({
     // If change was made via API key, show API key name
     if (apiKeyId) {
       const apiKey = apiKeyNames.find(k => k.id === apiKeyId)
-      return apiKey?.name || 'AI Assistant'
+      return apiKey?.name || t.common.aiAssistant
     }
     // Otherwise fall back to member name
     return getMemberName(updatedBy)
-  }, [apiKeyNames, getMemberName])
+  }, [apiKeyNames, getMemberName, t.common.aiAssistant])
 
   // Check if a change was made by the current user
   const isOwnChange = useCallback((updatedBy: string | null | undefined): boolean => {

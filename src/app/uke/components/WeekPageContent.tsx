@@ -404,11 +404,17 @@ export function WeekPageContent({
 
     // Show appropriate toast based on event type
     if (eventType === 'INSERT' || eventType === 'UPDATE') {
-      realtime.showToast(`${changerName} endret hentingen for ${childName}`, 'info')
+      const message = t.common.pickupChangedBy
+        .replace('{name}', changerName)
+        .replace('{child}', childName)
+      realtime.showToast(message, 'info')
     } else if (eventType === 'DELETE') {
-      realtime.showToast(`${changerName} fjernet hentingen for ${childName}`, 'info')
+      const message = t.common.pickupRemovedBy
+        .replace('{name}', changerName)
+        .replace('{child}', childName)
+      realtime.showToast(message, 'info')
     }
-  }, [refreshWeek, weekStartStr, realtime, children])
+  }, [refreshWeek, weekStartStr, realtime, children, t])
 
   const handleMealRealtime = useCallback(() => {
     refreshWeek(weekStartStr)

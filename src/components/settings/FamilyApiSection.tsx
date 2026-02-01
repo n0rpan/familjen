@@ -311,9 +311,11 @@ curl -X POST -H "Authorization: Bearer fam_xxxxx" \\
               </p>
               <pre className="mt-2 text-xs font-mono" style={{ color: 'var(--muted)' }}>
 {`const crypto = require('crypto')
+const timestamp = req.headers['x-familjen-timestamp']
+const payload = JSON.stringify(req.body)
 const signature = crypto
   .createHmac('sha256', webhookSecret)
-  .update(JSON.stringify(payload))
+  .update(\`\${timestamp}.\${payload}\`)
   .digest('hex')
 const expected = \`sha256=\${signature}\`
 // Compare with X-Familjen-Signature header`}

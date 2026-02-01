@@ -81,6 +81,11 @@ export interface TranslationStrings {
     viewOnly: string
     external: string
     all: string
+    someone: string        // Fallback for unknown member
+    aiAssistant: string    // Fallback for unknown API key
+    // Realtime attribution toasts
+    pickupChangedBy: string   // "{name} endret hentingen for {child}"
+    pickupRemovedBy: string   // "{name} fjernet hentingen for {child}"
     // Relative time
     lastUpdated: string
     justNow: string
