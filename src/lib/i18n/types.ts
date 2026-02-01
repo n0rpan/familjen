@@ -1335,4 +1335,89 @@ export interface TranslationStrings {
     iskoleTitle: string
     iskoleDescription: string
   }
+
+  // Family API (API keys and webhooks)
+  familyApi: {
+    title: string
+    description: string
+    // API Keys
+    apiKeys: string
+    apiKeysDescription: string
+    createKey: string
+    keyName: string
+    keyNamePlaceholder: string
+    scopes: string
+    scopesDescription: string
+    allScopes: string
+    noKeys: string
+    noKeysDescription: string
+    keyCreated: string
+    keyCreatedWarning: string
+    copyKey: string
+    keyCopied: string
+    revokeKey: string
+    revokeKeyConfirm: string
+    keyRevoked: string
+    lastUsed: string
+    neverUsed: string
+    revoked: string
+    active: string
+    // Scopes
+    scopePickupsRead: string
+    scopePickupsWrite: string
+    scopeMealsRead: string
+    scopeMealsWrite: string
+    scopeTasksRead: string
+    scopeTasksWrite: string
+    scopeEventsRead: string
+    scopeEventsWrite: string
+    scopeChildrenRead: string
+    scopeMembersRead: string
+    // Webhooks
+    webhooks: string
+    webhooksDescription: string
+    createWebhook: string
+    webhookUrl: string
+    webhookUrlPlaceholder: string
+    webhookEvents: string
+    webhookName: string
+    webhookNamePlaceholder: string
+    noWebhooks: string
+    noWebhooksDescription: string
+    webhookCreated: string
+    webhookCreatedWarning: string
+    copySecret: string
+    secretCopied: string
+    deleteWebhook: string
+    deleteWebhookConfirm: string
+    webhookDeleted: string
+    testWebhook: string
+    testingWebhook: string
+    testSuccess: string
+    testFailed: string
+    lastTriggered: string
+    neverTriggered: string
+    disabled: string
+    enableWebhook: string
+    disableWebhook: string
+    failureCount: string
+    // Event types
+    eventPickupCreated: string
+    eventPickupUpdated: string
+    eventPickupDeleted: string
+    eventMealPlanned: string
+    eventMealUpdated: string
+    eventMealDeleted: string
+    eventTaskCreated: string
+    eventTaskCompleted: string
+    eventTaskDeleted: string
+    eventEventCreated: string
+    eventEventUpdated: string
+    eventEventDeleted: string
+    eventAll: string
+    // Documentation
+    docsTitle: string
+    docsDescription: string
+    viewDocs: string
+  }
 }

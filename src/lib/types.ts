@@ -499,3 +499,120 @@ export interface UnmatchedCalendarInvite {
   receivedAt: string  // When the invite was received
   expiresAt: string  // When this unmatched invite expires (7 days)
 }
+
+// ============================================
+// Family API Types
+// ============================================
+
+// API Key scopes
+export type ApiKeyScope =
+  | 'pickups:read'
+  | 'pickups:write'
+  | 'meals:read'
+  | 'meals:write'
+  | 'tasks:read'
+  | 'tasks:write'
+  | 'events:read'
+  | 'events:write'
+  | 'children:read'
+  | 'members:read'
+
+// API Key (stored in database)
+export interface HouseholdApiKey {
+  id: string
+  household_id: string
+  key_prefix: string  // First 8 chars for display (e.g., "fam_abc1")
+  name: string
+  scopes: ApiKeyScope[]
+  created_by: string | null
+  created_at: string
+  last_used_at: string | null
+  revoked_at: string | null
+}
+
+// Webhook event types
+export type WebhookEventType =
+  | 'pickup.created'
+  | 'pickup.updated'
+  | 'pickup.deleted'
+  | 'meal.planned'
+  | 'meal.updated'
+  | 'meal.deleted'
+  | 'task.created'
+  | 'task.completed'
+  | 'task.deleted'
+  | 'event.created'
+  | 'event.updated'
+  | 'event.deleted'
+
+// Webhook (stored in database)
+export interface HouseholdWebhook {
+  id: string
+  household_id: string
+  url: string
+  events: string[]  // Can include wildcards like 'pickup.*' or '*'
+  name: string | null
+  created_by: string | null
+  created_at: string
+  last_triggered_at: string | null
+  last_status: number | null
+  failure_count: number
+  disabled_at: string | null
+}
+
+// Webhook delivery log
+export interface WebhookDelivery {
+  id: string
+  webhook_id: string
+  event_type: string
+  payload: Record<string, unknown>
+  status: number | null
+  error: string | null
+  attempts: number
+  created_at: string
+  delivered_at: string | null
+}
+
+// Webhook payload sent to external systems
+export interface WebhookPayload<T = unknown> {
+  event: WebhookEventType
+  timestamp: string  // ISO 8601
+  household_id: string
+  data: T
+  previous?: Partial<T>  // For update events
+}
+
+// API response types for family endpoints
+export interface ApiPickup {
+  id: string
+  date: string
+  notes: string | null
+  child: {
+    id: string
+    name: string
+    color: ChildColor
+  }
+  picker: {
+    id: string
+    name: string
+    short_name: string | null
+  } | null
+  created_at: string
+  updated_at: string | null
+}
+
+export interface ApiChild {
+  id: string
+  name: string
+  color: ChildColor
+  location_name: string | null
+  location_type: 'school' | 'kindergarten' | null
+  birth_date: string | null
+}
+
+export interface ApiMember {
+  id: string
+  name: string
+  short_name: string | null
+  is_parent: boolean
+}
