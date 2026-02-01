@@ -3109,7 +3109,7 @@ Webhooks notify external systems of changes with HMAC-SHA256 signatures.
 
 **Implemented events (pickup-only for now):**
 - `pickup.created` - New pickup assignment
-- `pickup.updated` - Pickup modified (picker, notes)
+- `pickup.updated` - Pickup modified (picker changed)
 - `pickup.deleted` - Pickup removed
 
 **Future events (defined but not yet dispatched):**
@@ -3213,7 +3213,6 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-
 
 | Field | Max Length | Notes |
 |-------|------------|-------|
-| `notes` | 1000 chars | Pickup notes |
 | Webhook `url` | 2000 chars | HTTPS only |
 | Webhook `name` | 100 chars | Optional display name |
 | API key `name` | 100 chars | Required |

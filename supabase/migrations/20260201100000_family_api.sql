@@ -542,7 +542,6 @@ BEGIN
       jsonb_build_object(
         'id', p.id,
         'date', p.date,
-        'notes', p.notes,
         'child', jsonb_build_object(
           'id', c.id,
           'name', c.name,
@@ -636,8 +635,7 @@ CREATE OR REPLACE FUNCTION api_upsert_pickup(
   p_household_id UUID,
   p_child_id UUID,
   p_date DATE,
-  p_picker_id UUID DEFAULT NULL,
-  p_notes TEXT DEFAULT NULL
+  p_picker_id UUID DEFAULT NULL
 )
 RETURNS JSONB AS $$
 DECLARE
@@ -670,12 +668,11 @@ BEGIN
   v_is_insert := v_pickup_id IS NULL;
 
   -- Upsert
-  INSERT INTO public.pickups (household_id, child_id, date, picker_id, notes)
-  VALUES (p_household_id, p_child_id, p_date, p_picker_id, p_notes)
+  INSERT INTO public.pickups (household_id, child_id, date, picker_id)
+  VALUES (p_household_id, p_child_id, p_date, p_picker_id)
   ON CONFLICT (household_id, child_id, date)
   DO UPDATE SET
     picker_id = EXCLUDED.picker_id,
-    notes = EXCLUDED.notes,
     updated_at = NOW()
   RETURNING id INTO v_pickup_id;
 
@@ -687,9 +684,9 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 -- Only service role uses this function
-REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT) FROM anon;
-REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT) FROM authenticated;
+REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID) FROM anon;
+REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID) FROM authenticated;
 
 -- Delete pickup via API
 -- Note: Use public. prefix because SET search_path = '' clears default schema

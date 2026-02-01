@@ -532,20 +532,3 @@ export function validateUUID(uuid: string | null | undefined, fieldName = 'id'):
   return null
 }
 
-// ============================================================================
-// Notes Field Validation
-// ============================================================================
-
-/** Maximum length for notes fields */
-export const MAX_NOTES_LENGTH = 1000
-
-/**
- * Validate notes field length
- * Returns error message if too long, null if valid
- */
-export function validateNotes(notes: string | null | undefined): string | null {
-  if (notes && notes.length > MAX_NOTES_LENGTH) {
-    return `notes must be ${MAX_NOTES_LENGTH} characters or less`
-  }
-  return null
-}

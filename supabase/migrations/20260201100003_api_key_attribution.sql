@@ -14,7 +14,7 @@ CREATE INDEX IF NOT EXISTS pickups_api_key_idx ON pickups(updated_via_api_key_id
   WHERE updated_via_api_key_id IS NOT NULL;
 
 -- Drop old function first (adding a parameter creates a new overload, not a replacement)
-DROP FUNCTION IF EXISTS api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT);
+DROP FUNCTION IF EXISTS api_upsert_pickup(UUID, UUID, DATE, UUID);
 
 -- Recreate api_upsert_pickup with API key ID parameter
 CREATE OR REPLACE FUNCTION api_upsert_pickup(
@@ -22,7 +22,6 @@ CREATE OR REPLACE FUNCTION api_upsert_pickup(
   p_child_id UUID,
   p_date DATE,
   p_picker_id UUID DEFAULT NULL,
-  p_notes TEXT DEFAULT NULL,
   p_api_key_id UUID DEFAULT NULL  -- NEW: Track which API key made the change
 )
 RETURNS JSONB AS $$
@@ -58,12 +57,11 @@ BEGIN
   v_is_insert := v_pickup_id IS NULL;
 
   -- Upsert with API key attribution
-  INSERT INTO public.pickups (household_id, child_id, date, picker_id, notes, updated_via_api_key_id)
-  VALUES (p_household_id, p_child_id, p_date, p_picker_id, p_notes, p_api_key_id)
+  INSERT INTO public.pickups (household_id, child_id, date, picker_id, updated_via_api_key_id)
+  VALUES (p_household_id, p_child_id, p_date, p_picker_id, p_api_key_id)
   ON CONFLICT (household_id, child_id, date)
   DO UPDATE SET
     picker_id = EXCLUDED.picker_id,
-    notes = EXCLUDED.notes,
     updated_at = NOW(),
     updated_via_api_key_id = EXCLUDED.updated_via_api_key_id
   RETURNING id INTO v_pickup_id;
@@ -76,9 +74,9 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 -- Only service role uses this function (API routes validate API key first)
-REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT, UUID) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT, UUID) FROM anon;
-REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT, UUID) FROM authenticated;
+REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, UUID) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, UUID) FROM anon;
+REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, UUID) FROM authenticated;
 
 -- Function to get API key name for realtime display
 -- Note: Use public. prefix because SET search_path = '' clears default schema
@@ -132,8 +130,7 @@ BEGIN
           'id', 'Unique identifier (UUID)',
           'date', 'Date of pickup (YYYY-MM-DD)',
           'child', 'The child being picked up',
-          'picker', 'The member assigned to pick up (null = unassigned)',
-          'notes', 'Optional notes about the pickup'
+          'picker', 'The member assigned to pick up (null = unassigned)'
         ),
         'constraints', jsonb_build_array(
           'One pickup per child per date',
@@ -146,14 +143,12 @@ BEGIN
       'Use GET /api/family/children to get the list of children with their IDs',
       'Use GET /api/family/members to get the list of household members who can be pickers',
       'When creating a pickup, you need child_id and optionally picker_id from these lists',
-      'Setting picker_id to null means the pickup is "unassigned" - useful when asking "who can pick up?"',
-      'Notes can include context like "dentist appointment at 14:00" or "grandma will meet at school"'
+      'Setting picker_id to null means the pickup is "unassigned" - useful when asking "who can pick up?"'
     ),
     'common_scenarios', jsonb_build_object(
       'assign_pickup', 'POST /api/family/pickups with child_id, date, and picker_id',
       'check_schedule', 'GET /api/family/pickups?from=YYYY-MM-DD&to=YYYY-MM-DD',
-      'unassign_pickup', 'POST /api/family/pickups with picker_id: null',
-      'add_note', 'POST /api/family/pickups with notes field'
+      'unassign_pickup', 'POST /api/family/pickups with picker_id: null'
     ),
     -- Note: Use public. prefix because SET search_path = '' clears default schema
     'household_summary', (
