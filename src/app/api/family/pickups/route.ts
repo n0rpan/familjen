@@ -1,36 +1,27 @@
 /**
  * Family API: Pickups
  *
- * GET  /api/family/pickups - List pickups for a date range
- * POST /api/family/pickups - Create or update a pickup
+ * GET    /api/family/pickups - List pickups for a date range
+ * POST   /api/family/pickups - Create or update a pickup
+ * DELETE /api/family/pickups - Delete a pickup
  *
  * Authentication: API Key via Authorization header
  * Authorization: Bearer fam_xxxxx
  */
 
-import { NextRequest } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { NextRequest, NextResponse } from 'next/server'
 import {
   validateApiKey,
   hasScope,
   createApiResponse,
   Errors,
   withErrorHandling,
+  getServiceClient,
+  isValidDate,
 } from '@/lib/family-api'
 import { dispatchWebhooks } from '@/lib/family-api/webhooks'
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import type { ApiPickup } from '@/lib/types'
-
-// Service client for database operations
-function getServiceClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error('Missing Supabase configuration')
-  }
-
-  return createClient(supabaseUrl, serviceRoleKey)
-}
 
 /**
  * GET /api/family/pickups
@@ -47,6 +38,18 @@ export async function GET(request: NextRequest) {
     const auth = await validateApiKey(request)
     if (!auth.valid) {
       throw Errors.unauthorized(auth.error)
+    }
+
+    // Rate limit by API key (using householdId as key)
+    const rateLimit = await checkRateLimit(
+      `familyApi:read:${auth.householdId}`,
+      RATE_LIMITS.familyApiRead
+    )
+    if (rateLimit.limited) {
+      return NextResponse.json(
+        { error: `Rate limit exceeded. Retry after ${rateLimit.retryAfter} seconds.` },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
+      )
     }
 
     // Check scope
@@ -71,12 +74,12 @@ export async function GET(request: NextRequest) {
       toDate = from.toISOString().split('T')[0]
     }
 
-    // Validate dates
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate)) {
-      throw Errors.badRequest('Invalid from date format. Use YYYY-MM-DD')
+    // Validate dates (with proper date validation, not just regex)
+    if (!isValidDate(fromDate)) {
+      throw Errors.badRequest('Invalid from date. Use YYYY-MM-DD with valid date values.')
     }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(toDate)) {
-      throw Errors.badRequest('Invalid to date format. Use YYYY-MM-DD')
+    if (!isValidDate(toDate)) {
+      throw Errors.badRequest('Invalid to date. Use YYYY-MM-DD with valid date values.')
     }
 
     const supabase = getServiceClient()
@@ -93,6 +96,7 @@ export async function GET(request: NextRequest) {
       throw Errors.internal('Failed to fetch pickups')
     }
 
+    // Ensure we always return an array (even if DB returns null)
     const pickups: ApiPickup[] = data || []
 
     return createApiResponse(pickups, {
@@ -122,6 +126,18 @@ export async function POST(request: NextRequest) {
       throw Errors.unauthorized(auth.error)
     }
 
+    // Rate limit by API key (using householdId as key)
+    const rateLimit = await checkRateLimit(
+      `familyApi:write:${auth.householdId}`,
+      RATE_LIMITS.familyApiWrite
+    )
+    if (rateLimit.limited) {
+      return NextResponse.json(
+        { error: `Rate limit exceeded. Retry after ${rateLimit.retryAfter} seconds.` },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
+      )
+    }
+
     // Check scope
     if (!hasScope(auth, 'pickups:write')) {
       throw Errors.missingScope('pickups:write')
@@ -148,8 +164,8 @@ export async function POST(request: NextRequest) {
     if (!body.date) {
       throw Errors.badRequest('date is required')
     }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(body.date)) {
-      throw Errors.badRequest('Invalid date format. Use YYYY-MM-DD')
+    if (!isValidDate(body.date)) {
+      throw Errors.badRequest('Invalid date. Use YYYY-MM-DD with valid date values.')
     }
 
     const supabase = getServiceClient()
@@ -193,20 +209,22 @@ export async function POST(request: NextRequest) {
       (p: ApiPickup) => p.child.id === body.child_id && p.date === body.date
     )
 
-    // Dispatch webhook
-    const isNew = data.operation === 'created'
-    const eventType = isNew ? 'pickup.created' : 'pickup.updated'
+    // Dispatch webhook only if we have the pickup data
+    if (updatedPickup) {
+      const isNew = data.operation === 'created'
+      const eventType = isNew ? 'pickup.created' : 'pickup.updated'
 
-    // Fire and forget - don't wait for webhook delivery
-    dispatchWebhooks(
-      auth.householdId,
-      eventType,
-      updatedPickup,
-      isNew ? undefined : existingPickup
-    ).catch((err) => console.error('Webhook dispatch failed:', err))
+      // Fire and forget - don't wait for webhook delivery
+      dispatchWebhooks(
+        auth.householdId,
+        eventType,
+        updatedPickup,
+        isNew ? undefined : existingPickup
+      ).catch((err) => console.error('Webhook dispatch failed:', err))
+    }
 
     return createApiResponse({
-      pickup: updatedPickup,
+      pickup: updatedPickup ?? null,
       operation: data.operation,
     })
   })
@@ -226,6 +244,18 @@ export async function DELETE(request: NextRequest) {
     const auth = await validateApiKey(request)
     if (!auth.valid) {
       throw Errors.unauthorized(auth.error)
+    }
+
+    // Rate limit by API key (using householdId as key)
+    const rateLimit = await checkRateLimit(
+      `familyApi:write:${auth.householdId}`,
+      RATE_LIMITS.familyApiWrite
+    )
+    if (rateLimit.limited) {
+      return NextResponse.json(
+        { error: `Rate limit exceeded. Retry after ${rateLimit.retryAfter} seconds.` },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
+      )
     }
 
     // Check scope

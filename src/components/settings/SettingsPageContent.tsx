@@ -22,6 +22,7 @@ import { ISkoleIntegration } from '@/components/integrations/ISkoleIntegration'
 import { MyKidIntegration } from '@/components/integrations/MyKidIntegration'
 import { ManualSourceUrls } from '@/components/integrations/ManualSourceUrls'
 import { HomeControlSettings } from '@/components/integrations/HomeControlSettings'
+import { FamilyApiSection } from '@/components/settings/FamilyApiSection'
 import { useHousehold, useMembers, useChildren } from '@/hooks/data'
 import {
   ChildrenSection,
@@ -1538,6 +1539,26 @@ export function SettingsPageContent({ initialData, isDemo: propIsDemo }: Setting
           onSaveAiContext={saveAiContext}
         />
       </CollapsibleSection>
+
+      {/* Developer API (admin only) */}
+      {myProfile?.is_household_admin && household?.id && (
+        <CollapsibleSection
+          icon={
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+            </svg>
+          }
+          title={t.familyApi?.title || 'API-tilgang'}
+          description={t.familyApi?.description || 'La AI-assistenter lese og skrive familiedata'}
+          color="var(--color-sky)"
+        >
+          <FamilyApiSection
+            householdId={household.id}
+            isDemo={isDemo}
+            onMessage={showMessage}
+          />
+        </CollapsibleSection>
+      )}
 
       {/* ============================================================ */}
       {/* GROUP 5: ACCOUNT (Dangerous actions at bottom)               */}

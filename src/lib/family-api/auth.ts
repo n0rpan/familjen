@@ -118,6 +118,9 @@ export async function validateApiKey(request: Request): Promise<ApiKeyResult> {
 /**
  * Check if the validated API key has a specific scope
  *
+ * SECURITY: Empty scopes array means NO access (fail-closed).
+ * API keys must explicitly specify their allowed scopes.
+ *
  * @param validation - The validation result from validateApiKey
  * @param scope - The scope to check for
  * @returns true if the key has the scope
@@ -126,9 +129,9 @@ export function hasScope(
   validation: ApiKeyValidation,
   scope: ApiKeyScope
 ): boolean {
-  // Empty scopes array means full access (for backwards compatibility)
-  if (validation.scopes.length === 0) {
-    return true
+  // SECURITY: Empty scopes = no access (fail-closed, not fail-open)
+  if (!validation.scopes || validation.scopes.length === 0) {
+    return false
   }
 
   return validation.scopes.includes(scope)

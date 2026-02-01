@@ -103,15 +103,17 @@ export function createErrorResponse(
 /**
  * Wrap an async handler with error handling
  */
-export function withErrorHandling<T>(
-  handler: () => Promise<NextResponse<T>>
-): Promise<NextResponse<T | ApiErrorResponse>> {
-  return handler().catch((err) => {
+export async function withErrorHandling(
+  handler: () => Promise<NextResponse>
+): Promise<NextResponse> {
+  try {
+    return await handler()
+  } catch (err) {
     if (err instanceof ApiError) {
       return err.toResponse()
     }
 
     console.error('Unhandled API error:', err)
     return Errors.internal().toResponse()
-  })
+  }
 }

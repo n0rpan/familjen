@@ -7,28 +7,17 @@
  * Authorization: Bearer fam_xxxxx
  */
 
-import { NextRequest } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { NextRequest, NextResponse } from 'next/server'
 import {
   validateApiKey,
   hasScope,
   createApiResponse,
   Errors,
   withErrorHandling,
+  getServiceClient,
 } from '@/lib/family-api'
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import type { ApiMember } from '@/lib/types'
-
-// Service client for database operations
-function getServiceClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error('Missing Supabase configuration')
-  }
-
-  return createClient(supabaseUrl, serviceRoleKey)
-}
 
 /**
  * GET /api/family/members
@@ -41,6 +30,18 @@ export async function GET(request: NextRequest) {
     const auth = await validateApiKey(request)
     if (!auth.valid) {
       throw Errors.unauthorized(auth.error)
+    }
+
+    // Rate limit by API key
+    const rateLimit = await checkRateLimit(
+      `familyApi:read:${auth.householdId}`,
+      RATE_LIMITS.familyApiRead
+    )
+    if (rateLimit.limited) {
+      return NextResponse.json(
+        { error: `Rate limit exceeded. Retry after ${rateLimit.retryAfter} seconds.` },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
+      )
     }
 
     // Check scope
@@ -60,6 +61,7 @@ export async function GET(request: NextRequest) {
       throw Errors.internal('Failed to fetch members')
     }
 
+    // Ensure we always return an array
     const members: ApiMember[] = data || []
 
     return createApiResponse(members, {

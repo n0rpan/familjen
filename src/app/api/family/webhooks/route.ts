@@ -11,6 +11,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { validateWebhookUrl } from '@/lib/family-api'
 import type { HouseholdWebhook } from '@/lib/types'
 
 /**
@@ -112,15 +113,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate URL format
-    try {
-      const url = new URL(body.url)
-      if (!['http:', 'https:'].includes(url.protocol)) {
-        throw new Error('Invalid protocol')
-      }
-    } catch {
+    // Validate URL format (with SSRF protection)
+    const urlValidation = validateWebhookUrl(body.url)
+    if (!urlValidation.valid) {
       return NextResponse.json(
-        { error: 'Invalid URL format. Must be http:// or https://' },
+        { error: urlValidation.error },
         { status: 400 }
       )
     }
@@ -246,19 +243,15 @@ export async function PATCH(request: NextRequest) {
     // Build update object
     const updates: Record<string, unknown> = {}
     if (body.url !== undefined) {
-      // Validate URL format
-      try {
-        const url = new URL(body.url)
-        if (!['http:', 'https:'].includes(url.protocol)) {
-          throw new Error('Invalid protocol')
-        }
-        updates.url = body.url.trim()
-      } catch {
+      // Validate URL format (with SSRF protection)
+      const urlValidation = validateWebhookUrl(body.url)
+      if (!urlValidation.valid) {
         return NextResponse.json(
-          { error: 'Invalid URL format. Must be http:// or https://' },
+          { error: urlValidation.error },
           { status: 400 }
         )
       }
+      updates.url = urlValidation.url.toString()
     }
     if (body.events !== undefined) {
       if (body.events.length === 0) {
