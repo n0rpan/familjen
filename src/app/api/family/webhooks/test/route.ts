@@ -95,10 +95,11 @@ export async function POST(request: NextRequest) {
       ciphertext: webhookData.secret_encrypted,
     })
 
-    // Security: Validate secret is not empty or too short
+    // Security: Validate secret is not empty or wrong length
+    // Webhook secrets are 32 bytes hex-encoded = 64 characters
     // Empty string would pass truthiness check but create insecure HMAC
-    if (!secret || typeof secret !== 'string' || secret.length < 32) {
-      console.error(`Webhook ${webhookId} has invalid secret (length: ${secret?.length || 0})`)
+    if (!secret || typeof secret !== 'string' || secret.length !== 64) {
+      console.error(`Webhook ${webhookId} has invalid secret (length: ${secret?.length || 0}, expected 64)`)
       return NextResponse.json(
         { error: 'Webhook secret is invalid - please delete and recreate the webhook' },
         { status: 500 }

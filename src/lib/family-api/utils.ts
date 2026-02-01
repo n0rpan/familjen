@@ -151,9 +151,20 @@ function isPrivateHost(hostname: string): boolean {
   // Strip brackets from IPv6
   const cleanHost = lowerHost.replace(/^\[|\]$/g, '')
 
-  // Check IPv6 loopback and mapped addresses
-  if (cleanHost === '::1') return true
-  if (cleanHost === '::') return true
+  // Check IPv6 loopback and special addresses
+  if (cleanHost === '::1') return true   // Loopback
+  if (cleanHost === '::') return true    // Unspecified address
+
+  // fc00::/7 - Unique Local Addresses (ULA) - private IPv6
+  // Covers fc00::/8 and fd00::/8
+  if (cleanHost.startsWith('fc') || cleanHost.startsWith('fd')) return true
+
+  // fe80::/10 - Link-local addresses
+  if (cleanHost.startsWith('fe80:') || cleanHost.startsWith('fe80')) return true
+
+  // fec0::/10 - Site-local (deprecated but still private)
+  if (cleanHost.startsWith('fec') || cleanHost.startsWith('fed') ||
+      cleanHost.startsWith('fee') || cleanHost.startsWith('fef')) return true
 
   // IPv6 mapped IPv4 (::ffff:127.0.0.1 or ::ffff:7f00:1)
   if (cleanHost.startsWith('::ffff:')) {

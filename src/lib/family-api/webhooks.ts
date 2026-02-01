@@ -21,7 +21,8 @@ import type { WebhookEventType, WebhookPayload } from '@/lib/types'
 const WEBHOOK_TIMEOUT_MS = 5000
 
 // Minimum secret length (security validation)
-const MIN_SECRET_LENGTH = 32
+// Webhook secrets are 32 bytes hex-encoded = 64 characters
+const MIN_SECRET_LENGTH = 64
 
 // DNS resolution timeout (must be less than WEBHOOK_TIMEOUT_MS)
 const DNS_TIMEOUT_MS = 2000
@@ -188,22 +189,10 @@ async function deliverWebhook(
     }
   }
 
-  // Security: DNS rebinding protection
-  // Resolve hostname and verify it doesn't point to private IPs
+  // Parse URL once (URL validation was done at webhook creation time)
+  let parsedUrl: URL
   try {
-    const parsedUrl = new URL(url)
-    const dnsError = await checkDNSRebinding(parsedUrl.hostname)
-    if (dnsError) {
-      console.error(`Webhook ${webhookId} blocked: ${dnsError}`)
-      return {
-        webhookId,
-        deliveryId,
-        url,
-        status: null,
-        error: 'Webhook URL blocked for security reasons',
-        success: false,
-      }
-    }
+    parsedUrl = new URL(url)
   } catch (err) {
     console.error(`Webhook ${webhookId} URL parse error:`, err)
     return {
@@ -229,6 +218,23 @@ async function deliverWebhook(
     if (attempt > 0) {
       const delay = getRetryDelay(attempt - 1)
       await sleep(delay)
+    }
+
+    // SECURITY: DNS rebinding protection - check BEFORE EACH attempt
+    // An attacker could change DNS between retries (TOCTOU vulnerability)
+    // so we must re-resolve and re-validate on every delivery attempt
+    const dnsError = await checkDNSRebinding(parsedUrl.hostname)
+    if (dnsError) {
+      console.error(`Webhook ${webhookId} blocked on attempt ${attempt}: ${dnsError}`)
+      // Don't retry DNS rebinding - it's likely malicious
+      return {
+        webhookId,
+        deliveryId,
+        url,
+        status: null,
+        error: 'Webhook URL blocked for security reasons',
+        success: false,
+      }
     }
 
     const controller = new AbortController()

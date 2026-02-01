@@ -510,9 +510,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
--- Grant to anon for API access (validation happens in API route)
-GRANT EXECUTE ON FUNCTION api_get_pickups(UUID, DATE, DATE) TO anon;
-GRANT EXECUTE ON FUNCTION api_get_pickups(UUID, DATE, DATE) TO authenticated;
+-- Only service role uses these functions (after API key validation in route)
+-- No grant to anon/authenticated - prevents direct Supabase client abuse
+REVOKE EXECUTE ON FUNCTION api_get_pickups(UUID, DATE, DATE) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION api_get_pickups(UUID, DATE, DATE) FROM anon;
+REVOKE EXECUTE ON FUNCTION api_get_pickups(UUID, DATE, DATE) FROM authenticated;
 
 -- Get children for API
 CREATE OR REPLACE FUNCTION api_get_children(p_household_id UUID)
@@ -536,8 +538,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
-GRANT EXECUTE ON FUNCTION api_get_children(UUID) TO anon;
-GRANT EXECUTE ON FUNCTION api_get_children(UUID) TO authenticated;
+-- Only service role uses this function
+REVOKE EXECUTE ON FUNCTION api_get_children(UUID) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION api_get_children(UUID) FROM anon;
+REVOKE EXECUTE ON FUNCTION api_get_children(UUID) FROM authenticated;
 
 -- Get household members for API
 CREATE OR REPLACE FUNCTION api_get_members(p_household_id UUID)
@@ -559,8 +563,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
-GRANT EXECUTE ON FUNCTION api_get_members(UUID) TO anon;
-GRANT EXECUTE ON FUNCTION api_get_members(UUID) TO authenticated;
+-- Only service role uses this function
+REVOKE EXECUTE ON FUNCTION api_get_members(UUID) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION api_get_members(UUID) FROM anon;
+REVOKE EXECUTE ON FUNCTION api_get_members(UUID) FROM authenticated;
 
 -- Upsert pickup via API
 CREATE OR REPLACE FUNCTION api_upsert_pickup(
@@ -617,8 +623,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
-GRANT EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT) TO anon;
-GRANT EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT) TO authenticated;
+-- Only service role uses this function
+REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT) FROM anon;
+REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT) FROM authenticated;
 
 -- Delete pickup via API
 CREATE OR REPLACE FUNCTION api_delete_pickup(
@@ -635,8 +643,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
-GRANT EXECUTE ON FUNCTION api_delete_pickup(UUID, UUID) TO anon;
-GRANT EXECUTE ON FUNCTION api_delete_pickup(UUID, UUID) TO authenticated;
+-- Only service role uses this function
+REVOKE EXECUTE ON FUNCTION api_delete_pickup(UUID, UUID) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION api_delete_pickup(UUID, UUID) FROM anon;
+REVOKE EXECUTE ON FUNCTION api_delete_pickup(UUID, UUID) FROM authenticated;
 
 -- ============================================
 -- 7. Cleanup: Auto-delete old webhook deliveries
