@@ -165,9 +165,11 @@ REVOKE EXECUTE ON FUNCTION record_webhook_delivery(UUID, TEXT, JSONB, INTEGER, T
 -- ============================================
 -- 4. Fix create_api_key to require at least one scope
 -- ============================================
+-- Note: Must keep DEFAULT '{}' to match original signature (can't remove defaults with CREATE OR REPLACE)
+-- The validation in the function body catches empty scopes at runtime
 CREATE OR REPLACE FUNCTION create_api_key(
   p_name TEXT,
-  p_scopes TEXT[]
+  p_scopes TEXT[] DEFAULT '{}'
 )
 RETURNS JSONB AS $$
 DECLARE
