@@ -35,8 +35,9 @@ CREATE TABLE IF NOT EXISTS api_audit_log (
 CREATE INDEX idx_api_audit_key ON api_audit_log(key_id, created_at DESC);
 CREATE INDEX idx_api_audit_household ON api_audit_log(household_id, created_at DESC);
 
--- Auto-cleanup: keep logs for 90 days
-CREATE INDEX idx_api_audit_cleanup ON api_audit_log(created_at) WHERE created_at < NOW() - INTERVAL '90 days';
+-- Index for cleanup queries (cleanup_old_audit_logs function)
+-- Note: Can't use partial index with NOW() as it's not immutable
+CREATE INDEX idx_api_audit_created ON api_audit_log(created_at);
 
 -- RLS - only admins can view audit logs
 ALTER TABLE api_audit_log ENABLE ROW LEVEL SECURITY;
