@@ -3,51 +3,10 @@
 -- Addresses code review findings
 -- ============================================
 
--- ============================================
--- 1. Fix validate_api_key to return key_id for per-key rate limiting
--- ============================================
-DROP FUNCTION IF EXISTS validate_api_key(TEXT);
-
-CREATE OR REPLACE FUNCTION validate_api_key(p_key TEXT)
-RETURNS TABLE (
-  household_id UUID,
-  key_id UUID,
-  scopes TEXT[]
-) AS $$
-DECLARE
-  v_hash TEXT;
-  v_record RECORD;
-BEGIN
-  IF p_key IS NULL OR NOT p_key LIKE 'fam_%' THEN
-    RETURN;
-  END IF;
-
-  v_hash := encode(extensions.digest(p_key, 'sha256'), 'hex');
-
-  SELECT ak.household_id, ak.id as key_id, ak.scopes
-  INTO v_record
-  FROM household_api_keys ak
-  WHERE ak.key_hash = v_hash
-    AND ak.revoked_at IS NULL;
-
-  IF NOT FOUND THEN
-    RETURN;
-  END IF;
-
-  -- Update last_used_at
-  UPDATE household_api_keys
-  SET last_used_at = NOW()
-  WHERE id = v_record.key_id;
-
-  RETURN QUERY SELECT v_record.household_id, v_record.key_id, v_record.scopes;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
-
-GRANT EXECUTE ON FUNCTION validate_api_key(TEXT) TO anon;
-GRANT EXECUTE ON FUNCTION validate_api_key(TEXT) TO authenticated;
+-- Note: validate_api_key already includes key_id in base migration
 
 -- ============================================
--- 2. Add input length constraints
+-- 1. Add input length constraints
 -- ============================================
 ALTER TABLE household_api_keys
   ADD CONSTRAINT api_key_name_length CHECK (length(name) <= 100);
@@ -57,7 +16,7 @@ ALTER TABLE household_webhooks
   ADD CONSTRAINT webhook_url_length CHECK (length(url) <= 2000);
 
 -- ============================================
--- 3. Add API audit log table
+-- 2. Add API audit log table
 -- ============================================
 CREATE TABLE IF NOT EXISTS api_audit_log (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -126,7 +85,7 @@ REVOKE EXECUTE ON FUNCTION log_api_access(UUID, UUID, TEXT, TEXT, TEXT, TEXT, TE
 REVOKE EXECUTE ON FUNCTION log_api_access(UUID, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT) FROM authenticated;
 
 -- ============================================
--- 4. Fix webhook failure count logic (off-by-one fix)
+-- 3. Fix webhook failure count logic (off-by-one fix)
 -- ============================================
 CREATE OR REPLACE FUNCTION record_webhook_delivery(
   p_webhook_id UUID,
@@ -191,7 +150,7 @@ REVOKE EXECUTE ON FUNCTION record_webhook_delivery(UUID, TEXT, JSONB, INTEGER, T
 REVOKE EXECUTE ON FUNCTION record_webhook_delivery(UUID, TEXT, JSONB, INTEGER, TEXT, UUID) FROM authenticated;
 
 -- ============================================
--- 5. Fix create_api_key to require at least one scope
+-- 4. Fix create_api_key to require at least one scope
 -- ============================================
 CREATE OR REPLACE FUNCTION create_api_key(
   p_name TEXT,
@@ -260,7 +219,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 GRANT EXECUTE ON FUNCTION create_api_key(TEXT, TEXT[]) TO authenticated;
 
 -- ============================================
--- 6. Cleanup function for audit logs
+-- 5. Cleanup function for audit logs
 -- ============================================
 CREATE OR REPLACE FUNCTION cleanup_old_audit_logs()
 RETURNS INTEGER AS $$

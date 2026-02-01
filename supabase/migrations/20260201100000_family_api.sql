@@ -189,6 +189,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 CREATE OR REPLACE FUNCTION validate_api_key(p_key TEXT)
 RETURNS TABLE (
   household_id UUID,
+  key_id UUID,
   scopes TEXT[]
 ) AS $$
 DECLARE
@@ -201,7 +202,7 @@ BEGIN
 
   v_hash := encode(extensions.digest(p_key, 'sha256'), 'hex');
 
-  SELECT ak.household_id, ak.scopes, ak.id
+  SELECT ak.household_id, ak.id as key_id, ak.scopes
   INTO v_record
   FROM household_api_keys ak
   WHERE ak.key_hash = v_hash
@@ -214,9 +215,9 @@ BEGIN
   -- Update last_used_at
   UPDATE household_api_keys
   SET last_used_at = NOW()
-  WHERE id = v_record.id;
+  WHERE id = v_record.key_id;
 
-  RETURN QUERY SELECT v_record.household_id, v_record.scopes;
+  RETURN QUERY SELECT v_record.household_id, v_record.key_id, v_record.scopes;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 

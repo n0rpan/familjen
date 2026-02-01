@@ -110,6 +110,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Validate name length (must be ≤100 chars)
+    if (body.name.trim().length > 100) {
+      return NextResponse.json(
+        { error: 'name must be 100 characters or less' },
+        { status: 400 }
+      )
+    }
+
     // Validate scopes - at least one required, all must be valid
     const scopesError = validateApiScopes(body.scopes || [])
     if (scopesError) {
