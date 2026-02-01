@@ -77,7 +77,7 @@ BEGIN
 
   RETURN v_log_id;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 -- Only service role should use this
 REVOKE EXECUTE ON FUNCTION log_api_access(UUID, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT) FROM PUBLIC;
@@ -133,16 +133,17 @@ BEGIN
       WHEN p_status IS NULL OR p_status >= 400 THEN failure_count + 1
       ELSE 0  -- Reset on success
     END,
-    -- Auto-disable after 10 consecutive failures (fixed: check AFTER increment)
+    -- Auto-disable after 10 consecutive failures
+    -- Check if NEW count (after increment) will be >= 10
     disabled_at = CASE
-      WHEN v_current_failure_count >= 9 AND (p_status IS NULL OR p_status >= 400) THEN NOW()
+      WHEN (v_current_failure_count + 1) >= 10 AND (p_status IS NULL OR p_status >= 400) THEN NOW()
       ELSE disabled_at
     END
   WHERE id = p_webhook_id;
 
   RETURN v_delivery_id;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 -- Only service role should use this
 REVOKE EXECUTE ON FUNCTION record_webhook_delivery(UUID, TEXT, JSONB, INTEGER, TEXT, UUID) FROM PUBLIC;
@@ -214,7 +215,7 @@ BEGIN
     'scopes', p_scopes
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 GRANT EXECUTE ON FUNCTION create_api_key(TEXT, TEXT[]) TO authenticated;
 
@@ -232,4 +233,4 @@ BEGIN
   GET DIAGNOSTICS v_deleted = ROW_COUNT;
   RETURN v_deleted;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';

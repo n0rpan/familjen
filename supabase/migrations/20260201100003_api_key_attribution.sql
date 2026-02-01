@@ -68,11 +68,12 @@ BEGIN
     'operation', CASE WHEN v_is_insert THEN 'created' ELSE 'updated' END
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
--- Grant execute (need to re-grant after recreating function)
-GRANT EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT, UUID) TO anon;
-GRANT EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT, UUID) TO authenticated;
+-- Only service role uses this function (API routes validate API key first)
+REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT, UUID) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT, UUID) FROM anon;
+REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT, UUID) FROM authenticated;
 
 -- Function to get API key name for realtime display
 CREATE OR REPLACE FUNCTION get_api_key_name(p_api_key_id UUID)
@@ -82,7 +83,7 @@ BEGIN
     SELECT name FROM household_api_keys WHERE id = p_api_key_id
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 GRANT EXECUTE ON FUNCTION get_api_key_name(UUID) TO authenticated;
 
@@ -158,9 +159,11 @@ BEGIN
     )
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
-GRANT EXECUTE ON FUNCTION api_get_context(UUID) TO anon;
-GRANT EXECUTE ON FUNCTION api_get_context(UUID) TO authenticated;
+-- Only service role uses this function (API routes validate API key first)
+REVOKE EXECUTE ON FUNCTION api_get_context(UUID) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION api_get_context(UUID) FROM anon;
+REVOKE EXECUTE ON FUNCTION api_get_context(UUID) FROM authenticated;
 
 COMMENT ON FUNCTION api_get_context IS 'Returns contextual information about the household and API schema for AI assistants';

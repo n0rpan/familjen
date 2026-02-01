@@ -175,10 +175,12 @@ async function deliverWebhook(
   payload: WebhookPayload,
   deliveryId: string
 ): Promise<WebhookResult> {
-  // Security: Validate secret is not empty or too short
-  // This catches decryption failures or corrupted secrets
-  if (!secret || secret.length < MIN_SECRET_LENGTH) {
-    console.error(`Webhook ${webhookId} has invalid secret (length: ${secret?.length || 0})`)
+  // Security: Validate secret is valid hex and correct length
+  // Webhook secrets are 32 bytes hex-encoded = 64 characters
+  // Must be valid hex to prevent injection of non-hex characters
+  const HEX_64_REGEX = /^[0-9a-f]{64}$/i
+  if (!secret || !HEX_64_REGEX.test(secret)) {
+    console.error(`Webhook ${webhookId} has invalid secret (length: ${secret?.length || 0}, expected 64 hex chars)`)
     return {
       webhookId,
       deliveryId,

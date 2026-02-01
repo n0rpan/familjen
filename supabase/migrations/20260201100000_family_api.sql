@@ -182,7 +182,7 @@ BEGIN
     'prefix', v_prefix
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 -- Validate an API key and return household_id if valid
 -- Updates last_used_at on successful validation
@@ -219,11 +219,15 @@ BEGIN
 
   RETURN QUERY SELECT v_record.household_id, v_record.key_id, v_record.scopes;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
--- Grant execute to anon for API key validation (used before auth)
-GRANT EXECUTE ON FUNCTION validate_api_key(TEXT) TO anon;
-GRANT EXECUTE ON FUNCTION validate_api_key(TEXT) TO authenticated;
+-- SECURITY: Only service role can validate API keys (prevents brute-force)
+-- The Next.js API routes use service role client to call this
+REVOKE EXECUTE ON FUNCTION validate_api_key(TEXT) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION validate_api_key(TEXT) FROM anon;
+REVOKE EXECUTE ON FUNCTION validate_api_key(TEXT) FROM authenticated;
+
+-- generate_api_key is used by create_api_key which requires authenticated admin
 GRANT EXECUTE ON FUNCTION generate_api_key() TO authenticated;
 
 -- Create API key with automatic key generation
@@ -280,7 +284,7 @@ BEGIN
     'scopes', p_scopes
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 GRANT EXECUTE ON FUNCTION create_api_key(TEXT, TEXT[]) TO authenticated;
 
@@ -304,7 +308,7 @@ BEGIN
 
   RETURN FOUND;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 GRANT EXECUTE ON FUNCTION revoke_api_key(UUID) TO authenticated;
 
@@ -364,7 +368,7 @@ BEGIN
     'name', p_name
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 GRANT EXECUTE ON FUNCTION create_webhook(TEXT, TEXT[], TEXT) TO authenticated;
 
@@ -374,7 +378,7 @@ RETURNS TEXT AS $$
   SELECT decrypt_token(secret_encrypted)
   FROM household_webhooks
   WHERE id = p_webhook_id;
-$$ LANGUAGE SQL SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE SQL SECURITY DEFINER SET search_path = '';
 
 -- Only service role should use this (not exposed to clients)
 REVOKE EXECUTE ON FUNCTION get_webhook_secret(UUID) FROM PUBLIC;
@@ -411,7 +415,7 @@ BEGIN
       )
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 -- Only service role should use this
 REVOKE EXECUTE ON FUNCTION get_matching_webhooks(UUID, TEXT) FROM PUBLIC;
@@ -458,7 +462,7 @@ BEGIN
 
   RETURN v_delivery_id;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 -- Only service role should use this
 REVOKE EXECUTE ON FUNCTION record_webhook_delivery(UUID, TEXT, JSONB, INTEGER, TEXT) FROM PUBLIC;
@@ -508,7 +512,7 @@ BEGIN
       AND p.date <= p_to_date
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 -- Only service role uses these functions (after API key validation in route)
 -- No grant to anon/authenticated - prevents direct Supabase client abuse
@@ -536,7 +540,7 @@ BEGIN
     WHERE c.household_id = p_household_id
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 -- Only service role uses this function
 REVOKE EXECUTE ON FUNCTION api_get_children(UUID) FROM PUBLIC;
@@ -561,7 +565,7 @@ BEGIN
     WHERE m.household_id = p_household_id
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 -- Only service role uses this function
 REVOKE EXECUTE ON FUNCTION api_get_members(UUID) FROM PUBLIC;
@@ -621,7 +625,7 @@ BEGIN
     'operation', CASE WHEN v_is_insert THEN 'created' ELSE 'updated' END
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 -- Only service role uses this function
 REVOKE EXECUTE ON FUNCTION api_upsert_pickup(UUID, UUID, DATE, UUID, TEXT) FROM PUBLIC;
@@ -641,7 +645,7 @@ BEGIN
 
   RETURN FOUND;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 -- Only service role uses this function
 REVOKE EXECUTE ON FUNCTION api_delete_pickup(UUID, UUID) FROM PUBLIC;
@@ -665,4 +669,4 @@ BEGIN
   GET DIAGNOSTICS v_deleted = ROW_COUNT;
   RETURN v_deleted;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';

@@ -47,7 +47,7 @@ BEGIN
     '[]'::jsonb
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 -- Fix api_get_children to return empty array
 CREATE OR REPLACE FUNCTION api_get_children(p_household_id UUID)
@@ -72,7 +72,7 @@ BEGIN
     '[]'::jsonb
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 -- Fix api_get_members to return empty array
 CREATE OR REPLACE FUNCTION api_get_members(p_household_id UUID)
@@ -95,4 +95,4 @@ BEGIN
     '[]'::jsonb
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
