@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { HouseholdMember } from '@/lib/types'
+import { useLanguage } from '@/lib/i18n/context'
 
 // Toast types
 export type ToastType = 'info' | 'success' | 'warning' | 'error'
@@ -14,15 +15,23 @@ export interface RealtimeToast {
   timestamp: number
 }
 
+// API key name cache entry
+interface ApiKeyName {
+  id: string
+  name: string
+}
+
 // Context value
 interface RealtimeContextValue {
   householdId: string | null
   currentUserId: string | null
   members: HouseholdMember[]
+  apiKeyNames: ApiKeyName[]
   toasts: RealtimeToast[]
   showToast: (message: string, type?: ToastType) => void
   dismissToast: (id: string) => void
   getMemberName: (memberId: string | null | undefined) => string
+  getChangerName: (updatedBy: string | null | undefined, apiKeyId: string | null | undefined) => string
   isOwnChange: (updatedBy: string | null | undefined) => boolean
 }
 
@@ -46,8 +55,10 @@ export function RealtimeProvider({
 }: RealtimeProviderProps) {
   const [toasts, setToasts] = useState<RealtimeToast[]>([])
   const [members, setMembers] = useState<HouseholdMember[]>(initialMembers)
+  const [apiKeyNames, setApiKeyNames] = useState<ApiKeyName[]>([])
   const toastIdRef = useRef(0)
   const supabase = useMemo(() => createClient(), [])
+  const { t } = useLanguage()
 
   // Fetch members if not provided and householdId exists
   useEffect(() => {
@@ -66,6 +77,25 @@ export function RealtimeProvider({
 
     fetchMembers()
   }, [householdId, initialMembers.length, supabase])
+
+  // Fetch API key names for the household (for realtime attribution)
+  useEffect(() => {
+    if (!householdId) return
+
+    const fetchApiKeyNames = async () => {
+      const { data } = await supabase
+        .from('household_api_keys')
+        .select('id, name')
+        .eq('household_id', householdId)
+        .is('revoked_at', null)  // Active keys have null revoked_at
+
+      if (data) {
+        setApiKeyNames(data)
+      }
+    }
+
+    fetchApiKeyNames()
+  }, [householdId, supabase])
 
   // Generate unique toast ID
   const generateToastId = useCallback(() => {
@@ -101,10 +131,24 @@ export function RealtimeProvider({
 
   // Get member name by ID
   const getMemberName = useCallback((memberId: string | null | undefined): string => {
-    if (!memberId) return 'Someone'
+    if (!memberId) return t.common.someone
     const member = members.find(m => m.id === memberId)
-    return member?.short_name || member?.name || 'Someone'
-  }, [members])
+    return member?.short_name || member?.name || t.common.someone
+  }, [members, t.common.someone])
+
+  // Get the name of who made a change (supports both members and API keys)
+  const getChangerName = useCallback((
+    updatedBy: string | null | undefined,
+    apiKeyId: string | null | undefined
+  ): string => {
+    // If change was made via API key, show API key name
+    if (apiKeyId) {
+      const apiKey = apiKeyNames.find(k => k.id === apiKeyId)
+      return apiKey?.name || t.common.aiAssistant
+    }
+    // Otherwise fall back to member name
+    return getMemberName(updatedBy)
+  }, [apiKeyNames, getMemberName, t.common.aiAssistant])
 
   // Check if a change was made by the current user
   const isOwnChange = useCallback((updatedBy: string | null | undefined): boolean => {
@@ -118,10 +162,12 @@ export function RealtimeProvider({
     householdId,
     currentUserId,
     members,
+    apiKeyNames,
     toasts,
     showToast,
     dismissToast,
     getMemberName,
+    getChangerName,
     isOwnChange,
   }
 

@@ -2931,3 +2931,364 @@ function isDemoRequest(request: Request): boolean {
   return request.headers.get('x-demo-mode') === 'true'
 }
 ```
+
+## Family API (External Access)
+
+The Family API allows external AI assistants (like ChatGPT, Claude, etc.) to manage pickup schedules programmatically.
+
+### Architecture
+
+```
+src/app/api/family/
+├── route.ts              # Health check endpoint
+├── children/route.ts     # GET children list
+├── members/route.ts      # GET household members
+├── pickups/route.ts      # GET/POST/DELETE pickup assignments
+├── context/route.ts      # GET schema documentation for AI
+├── keys/route.ts         # API key management (session-based)
+├── webhooks/route.ts     # Webhook management (GET/POST/PATCH/DELETE)
+└── webhooks/test/route.ts # POST webhook test delivery
+
+src/lib/family-api/
+├── index.ts              # Central exports
+├── auth.ts               # API key validation
+├── response.ts           # Standardized error responses
+├── utils.ts              # SSRF protection, date validation, audit logging
+└── webhooks.ts           # Webhook dispatch
+
+supabase/migrations/
+├── 20260201100000_family_api.sql              # Base tables + RPC functions
+├── 20260201100001_fix_family_api_null_arrays.sql  # Fix empty array returns
+├── 20260201100002_family_api_security_fixes.sql   # Audit logging, input constraints
+└── 20260201100003_api_key_attribution.sql     # API key attribution + context
+```
+
+### Database Tables
+
+```sql
+household_api_keys (
+  id UUID PRIMARY KEY,
+  household_id UUID REFERENCES households(id),
+  name TEXT NOT NULL,           -- "Data Sprite", "Kitchen Assistant"
+  key_hash TEXT NOT NULL,       -- SHA-256 hash of API key
+  key_prefix TEXT NOT NULL,     -- "fam_" + first 8 chars for display
+  scopes TEXT[] NOT NULL DEFAULT '{}',  -- Granular: 'pickups:read', 'pickups:write', etc.
+  created_by UUID REFERENCES auth.users(id),
+  created_at, last_used_at,
+  revoked_at TIMESTAMPTZ        -- NULL = active, set = revoked
+)
+
+household_webhooks (
+  id UUID PRIMARY KEY,
+  household_id UUID REFERENCES households(id),
+  name TEXT,                    -- Optional display name
+  url TEXT NOT NULL,            -- HTTPS webhook endpoint (max 2000 chars)
+  secret_encrypted TEXT NOT NULL,  -- Encrypted HMAC signing secret
+  events TEXT[],                -- ['pickup.created', 'pickup.updated', 'pickup.*']
+  disabled_at TIMESTAMPTZ,      -- NULL = active, set = disabled
+  failure_count INTEGER DEFAULT 0,  -- Auto-disables after 10 consecutive failures
+  last_status INTEGER,          -- Last HTTP status code
+  last_triggered_at, created_at,
+  created_by UUID REFERENCES auth.users(id)
+)
+
+api_audit_log (
+  id UUID PRIMARY KEY,
+  key_id UUID REFERENCES household_api_keys(id) ON DELETE SET NULL,
+  household_id UUID REFERENCES households(id) ON DELETE CASCADE,
+  operation TEXT NOT NULL,      -- 'read', 'write'
+  endpoint TEXT NOT NULL,
+  method TEXT NOT NULL,
+  ip_address TEXT,
+  user_agent TEXT,              -- Truncated to 500 chars
+  request_id TEXT,              -- For correlation
+  created_at TIMESTAMPTZ
+)
+```
+
+### API Key Attribution
+
+When an API key makes changes, the `updated_via_api_key_id` column tracks which key made the change:
+
+```sql
+-- pickups table has attribution column
+ALTER TABLE pickups ADD COLUMN updated_via_api_key_id UUID
+  REFERENCES household_api_keys(id) ON DELETE SET NULL;
+
+-- api_upsert_pickup accepts API key ID
+SELECT api_upsert_pickup(
+  p_household_id := '...',
+  p_child_id := '...',
+  p_date := '2024-12-20',
+  p_picker_id := '...',
+  p_api_key_id := '...'  -- Tracks attribution
+);
+```
+
+This enables the UI to show "Data Sprite endret hentingen" instead of "Someone" in realtime toasts.
+
+### Authentication
+
+API keys use Bearer token authentication:
+
+```bash
+curl -H "Authorization: Bearer fam_abc123..." \
+  https://familjen.eu/api/family/children
+```
+
+**Key format:** `fam_` prefix + 32 hex characters (e.g., `fam_a1b2c3d4...`)
+
+**Validation flow:**
+1. Extract Bearer token from Authorization header
+2. Hash token with SHA-256
+3. Look up `household_api_keys` by `key_hash`
+4. Check key is not revoked (`revoked_at IS NULL`)
+5. Check scope permissions
+6. Update `last_used_at`
+7. Log to `api_audit_log`
+
+### Endpoints
+
+**API Key authenticated (Bearer token):**
+
+| Method | Endpoint | Scope | Description |
+|--------|----------|-------|-------------|
+| GET | `/api/family` | - | Health check (no auth required) |
+| GET | `/api/family/context` | any | Schema docs for AI assistants |
+| GET | `/api/family/children` | `children:read` | List children |
+| GET | `/api/family/members` | `members:read` | List household members |
+| GET | `/api/family/pickups` | `pickups:read` | Get pickups (with date filters) |
+| POST | `/api/family/pickups` | `pickups:write` | Create/update pickup |
+| DELETE | `/api/family/pickups` | `pickups:write` | Delete pickup (`?id=UUID`) |
+
+**Session authenticated (logged-in user, household admin only):**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/family/keys` | List API keys |
+| POST | `/api/family/keys` | Create API key |
+| DELETE | `/api/family/keys` | Revoke API key (`?id=UUID`) |
+| GET | `/api/family/webhooks` | List webhooks |
+| POST | `/api/family/webhooks` | Create webhook |
+| PATCH | `/api/family/webhooks` | Update webhook |
+| DELETE | `/api/family/webhooks` | Delete webhook (`?id=UUID`) |
+| POST | `/api/family/webhooks/test` | Test webhook delivery |
+
+### Context Endpoint
+
+The `/api/family/context` endpoint returns schema documentation optimized for AI assistants:
+
+```json
+{
+  "app_name": "Familjen",
+  "description": "Norwegian family planning app...",
+  "language": "Norwegian (Bokmål)",
+  "timezone": "Europe/Oslo",
+  "entities": {
+    "children": { "description": "...", "fields": {...} },
+    "members": { "description": "...", "fields": {...} },
+    "pickups": { "description": "...", "fields": {...}, "constraints": [...] }
+  },
+  "tips": ["Use GET /api/family/children to get IDs...", ...],
+  "common_scenarios": {
+    "assign_pickup": "POST /api/family/pickups with child_id, date, and picker_id",
+    ...
+  },
+  "household_summary": {
+    "children_count": 2,
+    "members_count": 4,
+    "children_names": ["Emma", "Noah"],
+    "member_names": ["Mamma", "Pappa", "Bestemor", "Bestefar"]
+  }
+}
+```
+
+### Webhooks
+
+Webhooks notify external systems of changes with HMAC-SHA256 signatures.
+
+**Implemented events (pickup-only for now):**
+- `pickup.created` - New pickup assignment
+- `pickup.updated` - Pickup modified (picker, notes)
+- `pickup.deleted` - Pickup removed
+
+**Future events (defined but not yet dispatched):**
+- `meal.planned`, `meal.updated`, `meal.deleted`
+- `task.created`, `task.completed`, `task.deleted`
+- `event.created`, `event.updated`, `event.deleted`
+
+**Webhook payload:**
+```json
+{
+  "event": "pickup.updated",
+  "timestamp": "2024-12-20T10:30:00Z",
+  "household_id": "...",
+  "data": {
+    "id": "...",
+    "date": "2024-12-20",
+    "child": { "id": "...", "name": "Emma" },
+    "picker": { "id": "...", "name": "Pappa" }
+  },
+  "previous": { ... }  // Only for update events
+}
+```
+
+**Webhook headers:**
+| Header | Description |
+|--------|-------------|
+| `X-Familjen-Signature` | `sha256=<hex>` - HMAC signature |
+| `X-Familjen-Timestamp` | Unix timestamp (seconds) |
+| `X-Familjen-Event` | Event type (e.g., `pickup.updated`) |
+| `X-Familjen-Delivery` | UUID for idempotency |
+| `X-Familjen-Retry` | Retry attempt (0 = first try) |
+
+**Signature verification (receivers should implement):**
+```typescript
+import { createHmac } from 'crypto'
+
+function verifyWebhook(
+  payload: string,
+  signature: string,
+  timestamp: string,
+  secret: string
+): boolean {
+  // Check timestamp is recent (within 5 minutes)
+  const ts = parseInt(timestamp, 10)
+  if (Math.abs(Date.now() / 1000 - ts) > 300) {
+    return false // Replay attack or clock drift
+  }
+
+  // Verify signature (signed data = timestamp.payload)
+  const expected = createHmac('sha256', secret)
+    .update(`${timestamp}.${payload}`)
+    .digest('hex')
+
+  return signature === `sha256=${expected}`
+}
+```
+
+**Retry logic:** Failed deliveries retry with exponential backoff:
+- Attempt 0: Immediate
+- Attempt 1: 1 second delay
+- Attempt 2: 2 seconds delay
+- Attempt 3: 4 seconds delay (max 8 seconds)
+- After 4 attempts: Marked as failed, recorded in `webhook_deliveries`
+
+**5xx and 429 errors** trigger retries. **4xx errors** (except 429) do not retry.
+
+**SSRF Protection (two layers):**
+
+1. **At webhook creation time:** URL validation rejects:
+   - Private IP ranges (10.x, 172.16-31.x, 192.168.x, 127.x, ::1)
+   - Localhost and internal hostnames
+   - Non-HTTPS schemes
+   - URLs longer than 2000 characters
+
+2. **At delivery time (DNS rebinding protection):** Hostname is resolved before each request:
+   - If DNS resolves to private IP → request blocked
+   - If DNS resolution fails → request blocked (fail-safe)
+   - 2-second DNS timeout to prevent hanging
+
+### Rate Limiting
+
+Per-key rate limits (defined in `src/lib/rate-limit.ts`):
+
+| Operation | Limit | Key Format |
+|-----------|-------|------------|
+| Read endpoints | 120/minute | `familyApi:read:{keyId}` |
+| Write endpoints | 60/minute | `familyApi:write:{keyId}` |
+
+Rate limiting is per API key (not per household) to isolate abuse between keys.
+
+### Input Validation
+
+All Family API inputs are validated before database calls.
+
+**UUID validation:** All ID fields are validated against RFC 4122 format:
+```typescript
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+```
+
+**Field constraints:**
+
+| Field | Max Length | Notes |
+|-------|------------|-------|
+| `notes` | 1000 chars | Pickup notes |
+| Webhook `url` | 2000 chars | HTTPS only |
+| Webhook `name` | 100 chars | Optional display name |
+| API key `name` | 100 chars | Required |
+
+**Webhook event types:**
+
+| Event | Status | Description |
+|-------|--------|-------------|
+| `pickup.created` | ✅ Implemented | New pickup assignment |
+| `pickup.updated` | ✅ Implemented | Pickup modified |
+| `pickup.deleted` | ✅ Implemented | Pickup removed |
+| `meal.planned` | 🔜 Future | Meal added to plan |
+| `meal.updated` | 🔜 Future | Meal changed |
+| `meal.deleted` | 🔜 Future | Meal removed |
+| `task.created` | 🔜 Future | Child task created |
+| `task.completed` | 🔜 Future | Task marked done |
+| `task.deleted` | 🔜 Future | Task removed |
+| `event.created` | 🔜 Future | Member event created |
+| `event.updated` | 🔜 Future | Event modified |
+| `event.deleted` | 🔜 Future | Event removed |
+
+**API key scopes:**
+
+| Scope | Permission |
+|-------|------------|
+| `pickups:read` | Read pickup assignments |
+| `pickups:write` | Create/update/delete pickups |
+| `meals:read` | Read meal plans (future) |
+| `meals:write` | Modify meal plans (future) |
+| `tasks:read` | Read child tasks (future) |
+| `tasks:write` | Modify child tasks (future) |
+| `events:read` | Read member events (future) |
+| `events:write` | Modify member events (future) |
+| `children:read` | Read children list |
+| `members:read` | Read household members |
+
+At least one scope is required when creating an API key.
+
+### Design Decisions
+
+**Error messages are in English:** The Family API is designed for external AI assistants and developers. Error messages are intentionally in English (not Norwegian) since API consumers are typically technical integrations, not end users. The UI translates errors when displaying them.
+
+**Audit logging is fire-and-forget:** API access logging (`logApiAccess()`) is non-blocking - failures don't affect the API response. This prioritizes API performance over guaranteed logging. Log failures are caught and ignored to prevent audit issues from breaking the API.
+
+```typescript
+// Fire-and-forget pattern used in all API routes
+logApiAccess({ keyId, operation, endpoint, ... }).catch(() => {})
+```
+
+### Realtime Updates
+
+When API keys make changes, the UI shows the API key name in realtime toasts:
+
+```typescript
+// src/lib/realtime/context.tsx
+const getChangerName = useCallback((
+  updatedBy: string | null,
+  apiKeyId: string | null
+): string => {
+  if (apiKeyId) {
+    const apiKey = apiKeyNames.find(k => k.id === apiKeyId)
+    return apiKey?.name || t.common.aiAssistant  // Translated fallback
+  }
+  return getMemberName(updatedBy)
+}, [apiKeyNames, getMemberName, t.common.aiAssistant])
+```
+
+The `apiKeyNames` are fetched on mount from `household_api_keys` where `revoked_at IS NULL`.
+
+### Settings UI
+
+API key management is in Settings → Family API:
+- Create/revoke API keys
+- View inline API documentation (collapsible section)
+- Manage webhooks with test delivery
+
+Key file:
+- `src/components/settings/FamilyApiSection.tsx` - Main UI component (includes `ApiDocumentation` as internal sub-component)

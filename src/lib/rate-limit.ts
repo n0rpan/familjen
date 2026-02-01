@@ -49,6 +49,13 @@ export const RATE_LIMITS = {
   ciWebhook: { limit: 60, windowMs: 60 * 1000 },
   // Shopping duplicate check - higher limit as it's called on keystroke with debounce
   shoppingDuplicateCheck: { limit: 30, windowMs: 60 * 1000 },
+
+  // Family API - external API access (per API key)
+  // Read operations - higher limits
+  familyApiRead: { limit: 120, windowMs: 60 * 1000 },   // 120/minute per key
+  // Write operations - lower limits to prevent abuse
+  familyApiWrite: { limit: 60, windowMs: 60 * 1000 },   // 60/minute per key
+  // Webhook dispatch is fire-and-forget, no limit needed on the API side
 } as const
 
 // Demo mode rate limits - stricter to prevent abuse

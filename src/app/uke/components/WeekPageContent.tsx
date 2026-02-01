@@ -389,7 +389,32 @@ export function WeekPageContent({
     oldRecord: Pickup | null
   ) => {
     refreshWeek(weekStartStr)
-  }, [refreshWeek, weekStartStr])
+
+    // Show attribution toast for changes made by others (including API keys)
+    const record = newRecord || oldRecord
+    if (!record || !realtime) return
+
+    const updatedBy = record.updated_by
+    // Skip toast if this is our own change
+    if (realtime.isOwnChange(updatedBy)) return
+
+    // Get the name of who made the change (supports API key attribution)
+    const changerName = realtime.getChangerName(updatedBy, record.updated_via_api_key_id)
+    const childName = children.find(c => c.id === record.child_id)?.name || ''
+
+    // Show appropriate toast based on event type
+    if (eventType === 'INSERT' || eventType === 'UPDATE') {
+      const message = t.common.pickupChangedBy
+        .replace('{name}', changerName)
+        .replace('{child}', childName)
+      realtime.showToast(message, 'info')
+    } else if (eventType === 'DELETE') {
+      const message = t.common.pickupRemovedBy
+        .replace('{name}', changerName)
+        .replace('{child}', childName)
+      realtime.showToast(message, 'info')
+    }
+  }, [refreshWeek, weekStartStr, realtime, children, t])
 
   const handleMealRealtime = useCallback(() => {
     refreshWeek(weekStartStr)
