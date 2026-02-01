@@ -1396,5 +1396,10 @@ export const nb: TranslationStrings = {
     docsPickupsGetDesc: 'Hent hentinger for en datoperiode',
     docsPickupsPostDesc: 'Opprett eller oppdater en henting',
     docsPickupsDeleteDesc: 'Slett en henting',
+    // Validation messages
+    nameRequired: 'Navn er påkrevd',
+    scopeRequired: 'Minst ett område er påkrevd',
+    urlRequired: 'URL er påkrevd',
+    eventRequired: 'Minst én hendelse er påkrevd',
   },
 }

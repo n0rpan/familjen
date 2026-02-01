@@ -396,11 +396,11 @@ export function FamilyApiSection({ householdId, isDemo, onMessage }: FamilyApiSe
       return
     }
     if (!newKeyName.trim()) {
-      onMessage('error', 'Name is required')
+      onMessage('error', t.familyApi?.nameRequired || 'Name is required')
       return
     }
     if (newKeyScopes.length === 0) {
-      onMessage('error', 'At least one scope is required')
+      onMessage('error', t.familyApi?.scopeRequired || 'At least one scope is required')
       return
     }
 
@@ -474,11 +474,11 @@ export function FamilyApiSection({ householdId, isDemo, onMessage }: FamilyApiSe
       return
     }
     if (!newWebhookUrl.trim()) {
-      onMessage('error', 'URL is required')
+      onMessage('error', t.familyApi?.urlRequired || 'URL is required')
       return
     }
     if (newWebhookEvents.length === 0) {
-      onMessage('error', 'At least one event is required')
+      onMessage('error', t.familyApi?.eventRequired || 'At least one event is required')
       return
     }
 

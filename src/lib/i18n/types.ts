@@ -1438,5 +1438,10 @@ export interface TranslationStrings {
     docsPickupsGetDesc: string
     docsPickupsPostDesc: string
     docsPickupsDeleteDesc: string
+    // Validation messages
+    nameRequired: string
+    scopeRequired: string
+    urlRequired: string
+    eventRequired: string
   }
 }

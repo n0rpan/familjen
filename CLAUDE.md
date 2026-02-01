@@ -2943,20 +2943,24 @@ src/app/api/family/
 ├── route.ts              # Health check endpoint
 ├── children/route.ts     # GET children list
 ├── members/route.ts      # GET household members
-├── pickups/route.ts      # GET/POST pickup assignments
+├── pickups/route.ts      # GET/POST/DELETE pickup assignments
 ├── context/route.ts      # GET schema documentation for AI
-└── webhooks/route.ts     # Webhook management (CRUD)
+├── keys/route.ts         # API key management (session-based)
+├── webhooks/route.ts     # Webhook management (GET/POST/PATCH/DELETE)
+└── webhooks/test/route.ts # POST webhook test delivery
 
 src/lib/family-api/
-├── auth.ts               # API key validation + rate limiting
-├── errors.ts             # Standardized error responses
-├── ssrf.ts               # SSRF protection for webhooks
-└── audit.ts              # Audit logging
+├── index.ts              # Central exports
+├── auth.ts               # API key validation
+├── response.ts           # Standardized error responses
+├── utils.ts              # SSRF protection, date validation, audit logging
+└── webhooks.ts           # Webhook dispatch
 
 supabase/migrations/
-├── 20260131...family_api.sql           # Base tables + RPC functions
-├── 20260131...family_api_security.sql  # RLS policies + rate limiting
-└── 20260201...api_key_attribution.sql  # API key attribution + context
+├── 20260201100000_family_api.sql              # Base tables + RPC functions
+├── 20260201100001_fix_family_api_null_arrays.sql  # Fix empty array returns
+├── 20260201100002_family_api_security_fixes.sql   # Audit logging, input constraints
+└── 20260201100003_api_key_attribution.sql     # API key attribution + context
 ```
 
 ### Database Tables
@@ -2968,7 +2972,8 @@ household_api_keys (
   name TEXT NOT NULL,           -- "Data Sprite", "Kitchen Assistant"
   key_hash TEXT NOT NULL,       -- SHA-256 hash of API key
   key_prefix TEXT NOT NULL,     -- "fam_" + first 8 chars for display
-  scopes TEXT[] DEFAULT '{read}',  -- 'read', 'write', 'admin'
+  scopes TEXT[] NOT NULL DEFAULT '{}',  -- Granular: 'pickups:read', 'pickups:write', etc.
+  created_by UUID REFERENCES auth.users(id),
   created_at, last_used_at,
   revoked_at TIMESTAMPTZ        -- NULL = active, set = revoked
 )
@@ -2976,21 +2981,27 @@ household_api_keys (
 household_webhooks (
   id UUID PRIMARY KEY,
   household_id UUID REFERENCES households(id),
-  url TEXT NOT NULL,            -- HTTPS webhook endpoint
-  secret TEXT NOT NULL,         -- HMAC signing secret
-  events TEXT[],                -- ['pickup.created', 'pickup.updated']
-  is_active BOOLEAN DEFAULT true,
-  created_at, last_triggered_at
+  name TEXT,                    -- Optional display name
+  url TEXT NOT NULL,            -- HTTPS webhook endpoint (max 2000 chars)
+  secret_encrypted TEXT NOT NULL,  -- Encrypted HMAC signing secret
+  events TEXT[],                -- ['pickup.created', 'pickup.updated', 'pickup.*']
+  disabled_at TIMESTAMPTZ,      -- NULL = active, set = disabled
+  failure_count INTEGER DEFAULT 0,  -- Auto-disables after 10 consecutive failures
+  last_status INTEGER,          -- Last HTTP status code
+  last_triggered_at, created_at,
+  created_by UUID REFERENCES auth.users(id)
 )
 
 api_audit_log (
   id UUID PRIMARY KEY,
-  api_key_id UUID REFERENCES household_api_keys(id),
+  key_id UUID REFERENCES household_api_keys(id) ON DELETE SET NULL,
+  household_id UUID REFERENCES households(id) ON DELETE CASCADE,
+  operation TEXT NOT NULL,      -- 'read', 'write'
   endpoint TEXT NOT NULL,
   method TEXT NOT NULL,
-  status_code INTEGER,
-  request_summary JSONB,        -- Sanitized request data
-  response_summary JSONB,
+  ip_address TEXT,
+  user_agent TEXT,              -- Truncated to 500 chars
+  request_id TEXT,              -- For correlation
   created_at TIMESTAMPTZ
 )
 ```
@@ -3038,17 +3049,30 @@ curl -H "Authorization: Bearer fam_abc123..." \
 
 ### Endpoints
 
+**API Key authenticated (Bearer token):**
+
 | Method | Endpoint | Scope | Description |
 |--------|----------|-------|-------------|
-| GET | `/api/family` | - | Health check |
-| GET | `/api/family/context` | read | Schema docs for AI assistants |
-| GET | `/api/family/children` | read | List children |
-| GET | `/api/family/members` | read | List household members |
-| GET | `/api/family/pickups` | read | Get pickups (with date filters) |
-| POST | `/api/family/pickups` | write | Create/update pickup |
-| GET | `/api/family/webhooks` | admin | List webhooks |
-| POST | `/api/family/webhooks` | admin | Create webhook |
-| DELETE | `/api/family/webhooks` | admin | Delete webhook |
+| GET | `/api/family` | - | Health check (no auth required) |
+| GET | `/api/family/context` | any | Schema docs for AI assistants |
+| GET | `/api/family/children` | `children:read` | List children |
+| GET | `/api/family/members` | `members:read` | List household members |
+| GET | `/api/family/pickups` | `pickups:read` | Get pickups (with date filters) |
+| POST | `/api/family/pickups` | `pickups:write` | Create/update pickup |
+| DELETE | `/api/family/pickups` | `pickups:write` | Delete pickup (`?id=UUID`) |
+
+**Session authenticated (logged-in user, household admin only):**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/family/keys` | List API keys |
+| POST | `/api/family/keys` | Create API key |
+| DELETE | `/api/family/keys` | Revoke API key (`?id=UUID`) |
+| GET | `/api/family/webhooks` | List webhooks |
+| POST | `/api/family/webhooks` | Create webhook |
+| PATCH | `/api/family/webhooks` | Update webhook |
+| DELETE | `/api/family/webhooks` | Delete webhook (`?id=UUID`) |
+| POST | `/api/family/webhooks/test` | Test webhook delivery |
 
 ### Context Endpoint
 
@@ -3111,13 +3135,14 @@ const signature = crypto
 
 ### Rate Limiting
 
-Per-key rate limits (configurable in `api_rate_limits` table):
+Per-key rate limits (defined in `src/lib/rate-limit.ts`):
 
-| Endpoint | Default Limit |
-|----------|---------------|
-| `family:read` | 100/minute |
-| `family:write` | 30/minute |
-| `family:webhook` | 10/minute |
+| Operation | Limit | Key Format |
+|-----------|-------|------------|
+| Read endpoints | 120/minute | `familyApi:read:{keyId}` |
+| Write endpoints | 60/minute | `familyApi:write:{keyId}` |
+
+Rate limiting is per API key (not per household) to isolate abuse between keys.
 
 ### Realtime Updates
 
@@ -3143,9 +3168,8 @@ The `apiKeyNames` are fetched on mount from `household_api_keys` where `revoked_
 
 API key management is in Settings → Family API:
 - Create/revoke API keys
-- View inline API documentation
-- Manage webhooks (coming soon)
+- View inline API documentation (collapsible section)
+- Manage webhooks with test delivery
 
-Key files:
-- `src/components/settings/FamilyApiSection.tsx` - Main UI component
-- `src/components/settings/ApiDocumentation.tsx` - Inline docs component
+Key file:
+- `src/components/settings/FamilyApiSection.tsx` - Main UI component (includes `ApiDocumentation` as internal sub-component)

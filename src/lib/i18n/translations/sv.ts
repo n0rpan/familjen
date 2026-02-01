@@ -1395,5 +1395,10 @@ export const sv: TranslationStrings = {
     docsPickupsGetDesc: 'Hämta hämtningar för en datumperiod',
     docsPickupsPostDesc: 'Skapa eller uppdatera en hämtning',
     docsPickupsDeleteDesc: 'Ta bort en hämtning',
+    // Validation messages
+    nameRequired: 'Namn krävs',
+    scopeRequired: 'Minst ett område krävs',
+    urlRequired: 'URL krävs',
+    eventRequired: 'Minst en händelse krävs',
   },
 }

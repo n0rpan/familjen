@@ -1399,5 +1399,10 @@ export const en: TranslationStrings = {
     docsPickupsGetDesc: 'Get pickups for a date range',
     docsPickupsPostDesc: 'Create or update a pickup assignment',
     docsPickupsDeleteDesc: 'Delete a pickup',
+    // Validation messages
+    nameRequired: 'Name is required',
+    scopeRequired: 'At least one scope is required',
+    urlRequired: 'URL is required',
+    eventRequired: 'At least one event is required',
   },
 }
