@@ -38,7 +38,6 @@ export {
   MAX_DATE_RANGE_DAYS,
   MAX_NAME_LENGTH,
   MAX_URL_LENGTH,
-  MAX_NOTES_LENGTH,
   type UrlValidationResult,
   type AuditLogParams,
 } from './utils'
