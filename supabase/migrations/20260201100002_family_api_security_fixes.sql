@@ -95,6 +95,10 @@ REVOKE EXECUTE ON FUNCTION log_api_access(UUID, UUID, TEXT, TEXT, TEXT, TEXT, TE
 -- - Reads the LOCKED failure_count value (prevents race conditions)
 -- - Checks if the NEW count (after this failure) will reach 10
 -- - Correctly allows 9 failures before disabling at the 10th
+
+-- Drop old function first (adding a parameter creates a new overload, not a replacement)
+DROP FUNCTION IF EXISTS record_webhook_delivery(UUID, TEXT, JSONB, INTEGER, TEXT);
+
 CREATE OR REPLACE FUNCTION record_webhook_delivery(
   p_webhook_id UUID,
   p_event_type TEXT,
