@@ -24,14 +24,11 @@ const modelsArg = process.argv.find(a => a.startsWith('--models='))?.split('=')[
   || (process.argv.indexOf('--models') >= 0 ? process.argv[process.argv.indexOf('--models') + 1] : null)
 
 const DEFAULT_MODELS = [
-  'google/gemini-3-flash-preview',
-  'google/gemini-2.5-flash-lite',
-  'openai/gpt-5.2',
-  'minimax/minimax-m2.5',
-  'moonshotai/kimi-k2.5',
-  'z-ai/glm-5',
-  'deepseek/deepseek-chat-v3-0324',
-  'x-ai/grok-4-fast',
+  'google/gemini-3-flash-preview',   // Recommended: 100% accuracy, ~2s, $0.002/run
+  'google/gemini-2.5-flash-lite',    // Budget: 75% accuracy, ~1.3s, $0.0002/run
+  'deepseek/deepseek-chat-v3-0324',  // Budget: 100% accuracy, ~5.5s, $0.0006/run
+  'x-ai/grok-4-fast',               // Alternative: 100% accuracy, ~5.4s, $0.001/run
+  'openai/gpt-5.2',                 // Premium: 100% accuracy, ~4.4s, $0.013/run
 ]
 
 const MODELS = modelsArg ? modelsArg.split(',').map(m => m.trim()) : DEFAULT_MODELS

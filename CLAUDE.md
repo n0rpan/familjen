@@ -1420,29 +1420,33 @@ OPENROUTER_VERDICT_MODEL=google/gemini-3-flash-preview  # Final verdict (fast + 
 OPENROUTER_TEST_MODEL=google/gemini-2.5-flash-lite      # Bulk analysis (cheapest)
 ```
 
-**Model Selection Guide (Feb 2026 - tested for quality, speed & cost):**
+**Model Selection Guide (Feb 2026 - benchmarked with real verdict scenarios):**
 
-| Role | Model | $/M in | $/M out | Context | Notes |
-|------|-------|--------|---------|---------|-------|
-| fast | gemini-3-flash-preview | $0.50 | $3.00 | 1M | Fast + thorough |
-| capable | claude-sonnet-4 | $3.00 | $15.00 | 1M | Best code review quality |
-| vision | gemini-3-flash-preview | $0.50 | $3.00 | 1M | Fast vision support |
-| verdict | gemini-3-flash-preview | $0.50 | $3.00 | 1M | Good judgment, very fast |
-| test | gemini-2.5-flash-lite | $0.10 | $0.40 | 1M | Cheapest, proven in app |
+| Role | Model | Speed | $/run | Accuracy | Notes |
+|------|-------|-------|-------|----------|-------|
+| fast | gemini-3-flash-preview | 1.2s | $0.0003 | Good | Fast + thorough |
+| capable | claude-sonnet-4 | 8.5s | ~$0.05 | Best | Only one that found all bugs |
+| vision | gemini-3-flash-preview | 1.5s | $0.0003 | Good | Fast vision + 1M context |
+| verdict | gemini-3-flash-preview | 2.0s | $0.002 | 4/4 (100%) | Best speed/accuracy ratio |
+| test | gemini-2.5-flash-lite | 1.3s | $0.0001 | 3/4 (75%) | Cheapest, good for bulk |
 
-**Budget-friendly alternatives:**
-- **fast**: `google/gemini-2.5-flash-lite` ($0.10/$0.40), `deepseek/deepseek-chat-v3-0324` ($0.19/$0.87)
-- **capable**: `minimax/minimax-m2.5` ($0.30/$1.20), `moonshotai/kimi-k2.5` ($0.23/$3.00)
-- **verdict**: `minimax/minimax-m2.5` ($0.30/$1.20), `z-ai/glm-5` ($0.30/$2.55)
+**Budget-friendly alternatives (benchmarked 4/4 accuracy on verdict):**
+- **verdict**: `deepseek/deepseek-chat-v3-0324` - $0.0006/run, ~5.5s (cheapest 100% model)
+- **verdict**: `x-ai/grok-4-fast` - $0.001/run, ~5.4s (good all-round)
+- **fast**: `google/gemini-2.5-flash-lite` - $0.00006/run (5x cheaper, good for bulk)
 
-**Premium alternatives:**
-- **capable**: `openai/gpt-5.2` ($1.75/$14.00), `anthropic/claude-sonnet-4.5` ($3.00/$15.00)
-- **verdict**: `openai/gpt-5.2` ($1.75/$14.00) — best reasoning but 28x more expensive
+**Not recommended for CI (benchmarked - too slow):**
+- `minimax/minimax-m2.5`: 100% accuracy but ~10.5s avg
+- `moonshotai/kimi-k2.5`: 100% accuracy but ~19.7s avg
+- `z-ai/glm-5`: accurate but ~28s avg
+
+**Premium (no accuracy gain over gemini-3-flash):**
+- `openai/gpt-5.2`: 100% but $0.013/run (6x more expensive), ~4.4s
 
 **Run benchmarks to compare models:**
 ```bash
 npx tsx scripts/benchmark-verdict-models.ts
-npx tsx scripts/benchmark-verdict-models.ts --models "openai/gpt-5.2,minimax/minimax-m2.5,z-ai/glm-5"
+npx tsx scripts/benchmark-verdict-models.ts --models "openai/gpt-5.2,deepseek/deepseek-chat-v3-0324"
 ```
 
 **Optional:**

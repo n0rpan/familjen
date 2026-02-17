@@ -14,14 +14,19 @@
  * | verdict | OPENROUTER_VERDICT_MODEL | google/gemini-3-flash-preview        | $0.50  | $3.00   | Good reasoning, very fast     |
  * | test    | OPENROUTER_TEST_MODEL    | google/gemini-2.5-flash-lite         | $0.10  | $0.40   | Cheapest, proven in app       |
  *
- * Budget-friendly alternatives (good quality, much cheaper):
- * - fast:    google/gemini-2.5-flash-lite ($0.10/$0.40), deepseek/deepseek-chat-v3-0324 ($0.19/$0.87)
- * - capable: minimax/minimax-m2.5 ($0.30/$1.20), moonshotai/kimi-k2.5 ($0.23/$3.00)
- * - verdict: minimax/minimax-m2.5 ($0.30/$1.20), z-ai/glm-5 ($0.30/$2.55)
+ * Budget-friendly alternatives (benchmarked Feb 2026):
+ * - verdict: deepseek/deepseek-chat-v3-0324 ($0.19/$0.87) - 100% accuracy, ~5.5s, cheapest
+ * - verdict: x-ai/grok-4-fast ($0.50/$10.00) - 100% accuracy, ~5.4s, good all-round
+ * - fast:    google/gemini-2.5-flash-lite ($0.10/$0.40) - 5x cheaper, slightly slower
+ * - fast:    deepseek/deepseek-chat-v3-0324 ($0.19/$0.87) - good quality, very cheap
  *
- * Premium alternatives (best quality, higher cost):
- * - capable: openai/gpt-5.2 ($1.75/$14.00), anthropic/claude-sonnet-4.5 ($3.00/$15.00)
- * - verdict: openai/gpt-5.2 ($1.75/$14.00) - best reasoning but 28x more expensive than gemini-3-flash
+ * NOT recommended (benchmarked - too slow for CI):
+ * - minimax/minimax-m2.5: 100% accuracy but ~10.5s avg
+ * - moonshotai/kimi-k2.5: 100% accuracy but ~19.7s avg
+ * - z-ai/glm-5: accurate but ~28s avg
+ *
+ * Premium alternatives (higher cost, no accuracy gain):
+ * - verdict: openai/gpt-5.2 ($1.75/$14.00) - 100% but 6x more expensive, 2x slower than gemini-3-flash
  *
  * ## Online Models (Web Search)
  *
