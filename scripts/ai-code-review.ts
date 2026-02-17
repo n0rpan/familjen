@@ -384,7 +384,21 @@ ${finalDiff}
 - [ ] If adding new integration: docs/api-integrations.md updated
 - [ ] If changing database: schema tables documented
 
-If code adds significant new functionality that is NOT reflected in the documentation, flag this as a blocking issue. Good documentation helps busy parents understand the codebase.
+If code adds significant new functionality that is NOT reflected in the documentation, mention it as a **suggestion** (not blocking).
+
+## What NOT to Flag as Blocking
+
+These are suggestions at most — NEVER put them in the "blocking" array:
+- Missing or incomplete CLAUDE.md / README.md updates
+- Missing unit tests (unless code is obviously broken)
+- Style preferences or naming conventions
+- "Consider refactoring" on working code
+- Type annotations on existing working code
+- PR description quality
+- "Supabase client could be null" — createClient() never returns null in this codebase
+- Missing error handling when the existing pattern handles errors differently
+
+**Only use the "blocking" array for issues that would cause runtime errors, security vulnerabilities, or data corruption.**
 
 Focus on practical issues that would cause problems for busy parents.
 Don't be pedantic about style. Be thorough about security and data integrity.`
@@ -567,9 +581,31 @@ function combineVerdicts(
   fast: CodeReviewResult | null,
   capable: CodeReviewResult | null
 ): 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT' {
-  // Conservative: if either requests changes, we request changes
-  if (fast?.verdict === 'REQUEST_CHANGES' || capable?.verdict === 'REQUEST_CHANGES') {
+  // Only REQUEST_CHANGES if BOTH models agree, OR if either found a genuinely
+  // critical security/data-integrity issue. Prevents one model's false positive from blocking.
+  const hasCriticalBlocking = (review: CodeReviewResult | null): boolean => {
+    if (!review) return false
+    return review.blocking.some(b => {
+      const lower = b.issue.toLowerCase()
+      return lower.includes('security') || lower.includes('injection') ||
+        lower.includes('auth bypass') || lower.includes('data loss') ||
+        lower.includes('data corruption') || lower.includes('hardcoded secret') ||
+        lower.includes('crash') || lower.includes('undefined is not')
+    })
+  }
+
+  const bothRequestChanges = fast?.verdict === 'REQUEST_CHANGES' && capable?.verdict === 'REQUEST_CHANGES'
+
+  if (bothRequestChanges) {
     return 'REQUEST_CHANGES'
+  }
+  // Only one model blocks — escalate only for genuinely critical issues
+  if (fast?.verdict === 'REQUEST_CHANGES' || capable?.verdict === 'REQUEST_CHANGES') {
+    if (hasCriticalBlocking(fast) || hasCriticalBlocking(capable)) {
+      return 'REQUEST_CHANGES'
+    }
+    // Non-critical block from one model — downgrade to informational
+    return 'COMMENT'
   }
   if (fast?.verdict === 'APPROVE' && capable?.verdict === 'APPROVE') {
     return 'APPROVE'

@@ -1414,26 +1414,36 @@ Core utilities shared across all AI scripts:
 ```bash
 OPENROUTER_API_KEY=sk-or-v1-...
 OPENROUTER_FAST_MODEL=google/gemini-3-flash-preview     # Fast checks, test selector
-OPENROUTER_CAPABLE_MODEL=anthropic/claude-sonnet-4.5   # Code review (best quality)
-OPENROUTER_VISION_MODEL=google/gemini-3-flash-preview  # Visual validation
-OPENROUTER_VERDICT_MODEL=openai/gpt-5.2                # Final verdict (fast reasoning)
-OPENROUTER_TEST_MODEL=google/gemini-2.5-flash-lite     # Bulk analysis (cheapest)
+OPENROUTER_CAPABLE_MODEL=anthropic/claude-sonnet-4      # Code review (best quality)
+OPENROUTER_VISION_MODEL=google/gemini-3-flash-preview   # Visual validation
+OPENROUTER_VERDICT_MODEL=google/gemini-3-flash-preview  # Final verdict (fast + good judgment)
+OPENROUTER_TEST_MODEL=google/gemini-2.5-flash-lite      # Bulk analysis (cheapest)
 ```
 
-**Model Selection Guide (Dec 2025 - tested for quality & speed):**
+**Model Selection Guide (Feb 2026 - tested for quality, speed & cost):**
 
-| Role | Model | Speed | Quality | Context | Notes |
-|------|-------|-------|---------|---------|-------|
-| fast | gemini-3-flash-preview | 1.5s | Good | 1M | Fast + thorough |
-| capable | claude-sonnet-4.5 | 8.5s | Best | 1M | Only one that found all bugs |
-| vision | gemini-3-flash-preview | 1.5s | Good | 1M | Fast vision support |
-| verdict | gpt-5.2 | 4.5s | Good | 400K | Fast reasoning, good decisions |
-| test | gemini-2.5-flash-lite | 1s | Good | 1M | Cheapest, proven in app |
+| Role | Model | $/M in | $/M out | Context | Notes |
+|------|-------|--------|---------|---------|-------|
+| fast | gemini-3-flash-preview | $0.50 | $3.00 | 1M | Fast + thorough |
+| capable | claude-sonnet-4 | $3.00 | $15.00 | 1M | Best code review quality |
+| vision | gemini-3-flash-preview | $0.50 | $3.00 | 1M | Fast vision support |
+| verdict | gemini-3-flash-preview | $0.50 | $3.00 | 1M | Good judgment, very fast |
+| test | gemini-2.5-flash-lite | $0.10 | $0.40 | 1M | Cheapest, proven in app |
 
-**Alternative options:**
-- **verdict**: `anthropic/claude-opus-4.5` (best reasoning), `google/gemini-3-pro-preview`
-- **capable**: `x-ai/grok-code-fast-1` (faster but less thorough)
-- **fast**: `google/gemini-2.5-flash-lite` (cheapest), `x-ai/grok-4.1-fast` (2M context)
+**Budget-friendly alternatives:**
+- **fast**: `google/gemini-2.5-flash-lite` ($0.10/$0.40), `deepseek/deepseek-chat-v3-0324` ($0.19/$0.87)
+- **capable**: `minimax/minimax-m2.5` ($0.30/$1.20), `moonshotai/kimi-k2.5` ($0.23/$3.00)
+- **verdict**: `minimax/minimax-m2.5` ($0.30/$1.20), `z-ai/glm-5` ($0.30/$2.55)
+
+**Premium alternatives:**
+- **capable**: `openai/gpt-5.2` ($1.75/$14.00), `anthropic/claude-sonnet-4.5` ($3.00/$15.00)
+- **verdict**: `openai/gpt-5.2` ($1.75/$14.00) — best reasoning but 28x more expensive
+
+**Run benchmarks to compare models:**
+```bash
+npx tsx scripts/benchmark-verdict-models.ts
+npx tsx scripts/benchmark-verdict-models.ts --models "openai/gpt-5.2,minimax/minimax-m2.5,z-ai/glm-5"
+```
 
 **Optional:**
 ```bash
