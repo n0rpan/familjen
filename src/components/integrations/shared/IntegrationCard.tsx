@@ -15,6 +15,7 @@ interface IntegrationCardProps {
   onFullSync: () => void
   onEdit: () => void
   onRemove: () => void
+  onReconnect?: () => void
   renderMappings?: (mappings: IntegrationMapping[]) => React.ReactNode
 }
 
@@ -69,6 +70,7 @@ export const IntegrationCard = memo(function IntegrationCard({
   onFullSync,
   onEdit,
   onRemove,
+  onReconnect,
   renderMappings,
 }: IntegrationCardProps) {
   const [showSyncMenu, setShowSyncMenu] = useState(false)
@@ -119,6 +121,19 @@ export const IntegrationCard = memo(function IntegrationCard({
           lastSyncAt={integration.lastSyncAt}
         />
       </div>
+
+      {integration.lastSyncStatus === 'auth_failed' && (
+        <div
+          className="mb-3 rounded-lg p-3 text-sm"
+          style={{ background: 'rgba(232, 120, 109, 0.12)', color: 'var(--color-coral)' }}
+        >
+          <p className="font-medium">Innloggingen er utløpt</p>
+          <p className="mt-1">Koble til på nytt med oppdatert passord for å fortsette synkronisering.</p>
+          {integration.lastSyncError && (
+            <p className="mt-1 text-xs opacity-80">Siste feil: {integration.lastSyncError}</p>
+          )}
+        </div>
+      )}
 
       {/* Mappings display */}
       {integrationMappings.length > 0 && (
@@ -232,6 +247,15 @@ export const IntegrationCard = memo(function IntegrationCard({
             </div>
           )}
         </div>
+
+        {integration.lastSyncStatus === 'auth_failed' && onReconnect && (
+          <button
+            onClick={onReconnect}
+            className="btn btn-primary text-sm"
+          >
+            Koble til på nytt
+          </button>
+        )}
 
         <button
           onClick={onEdit}

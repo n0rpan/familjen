@@ -12,6 +12,9 @@ interface ConnectionFormProps {
   onTest: (credentials: Record<string, string>) => void
   onSave: (credentials: Record<string, string>) => void
   onCancel: () => void
+  title?: string
+  saveLabel?: string
+  successText?: string
   children?: React.ReactNode // For mapping UI after connection tested
   canSave?: boolean // Whether save button should be enabled
 }
@@ -25,6 +28,9 @@ export const ConnectionForm = memo(function ConnectionForm({
   onTest,
   onSave,
   onCancel,
+  title,
+  saveLabel = 'Lagre',
+  successText = 'Tilkobling bekreftet',
   children,
   canSave = true,
 }: ConnectionFormProps) {
@@ -52,7 +58,7 @@ export const ConnectionForm = memo(function ConnectionForm({
       style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
     >
       <p className="font-medium" style={{ color: 'var(--foreground)' }}>
-        Koble til {serviceName}
+        {title || `Koble til ${serviceName}`}
       </p>
 
       {/* Credential inputs */}
@@ -111,7 +117,7 @@ export const ConnectionForm = memo(function ConnectionForm({
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="20 6 9 17 4 12"/>
           </svg>
-          <span className="text-sm font-medium">Tilkobling bekreftet</span>
+          <span className="text-sm font-medium">{successText}</span>
         </div>
       )}
 
@@ -126,7 +132,7 @@ export const ConnectionForm = memo(function ConnectionForm({
             disabled={connecting || !canSave}
             className="btn btn-primary"
           >
-            {connecting ? 'Lagrer...' : 'Lagre'}
+            {connecting ? 'Lagrer...' : saveLabel}
           </button>
         )}
         <button

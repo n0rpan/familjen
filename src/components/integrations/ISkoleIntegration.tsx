@@ -41,15 +41,18 @@ export function ISkoleIntegration({ householdId, children, onMessage }: Props) {
     showConnectForm,
     connectionTested,
     editingIntegrationId,
+    reconnectingIntegrationId,
     loadIntegrations,
     testConnection,
     saveIntegration,
     saveEditedMappings,
+    reconnectIntegration,
     syncNow,
     removeIntegration,
     resetForm,
     setShowConnectForm,
     setEditingIntegrationId,
+    setReconnectingIntegrationId,
   } = useIntegrationState({ config, householdId, onMessage })
 
   // iSkole-specific state
@@ -184,12 +187,28 @@ export function ISkoleIntegration({ householdId, children, onMessage }: Props) {
     }
   }
 
+  const handleSaveReconnect = async () => {
+    if (!reconnectingIntegrationId || !connectionTested) return
+
+    const success = await reconnectIntegration(reconnectingIntegrationId, credentials)
+    if (success) {
+      handleResetForm()
+    }
+  }
+
   const handleResetForm = () => {
     resetForm()
     setCredentials({ username: '', password: '' })
     setIskoleChildren([])
     setParentInfo(null)
     setChildMappings({})
+  }
+
+  const handleReconnect = (integrationId: string) => {
+    resetForm()
+    setCredentials({ username: '', password: '' })
+    setReconnectingIntegrationId(integrationId)
+    onMessage('error', 'Logg inn på nytt for å oppdatere integrasjonen')
   }
 
   const handleRemove = async (integrationId: string) => {
@@ -331,6 +350,7 @@ export function ISkoleIntegration({ householdId, children, onMessage }: Props) {
           onFullSync={() => syncNow(integration.id, true)}
           onEdit={() => loadDataForEdit(integration.id)}
           onRemove={() => handleRemove(integration.id)}
+          onReconnect={() => handleReconnect(integration.id)}
           renderMappings={renderMappings}
         />
       ))}
@@ -344,14 +364,14 @@ export function ISkoleIntegration({ householdId, children, onMessage }: Props) {
       )}
 
       {/* Custom connection form for iSkole (special SSN input) */}
-      {showConnectForm && (
+      {(showConnectForm || reconnectingIntegrationId) && (
         <div
           className="rounded-xl p-4 space-y-4"
           style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
         >
           <div className="flex items-center justify-between">
             <h4 className="font-medium" style={{ color: 'var(--foreground)' }}>
-              Koble til iSkole
+              {reconnectingIntegrationId ? 'Koble til iSkole på nytt' : 'Koble til iSkole'}
             </h4>
             <button onClick={handleResetForm} className="text-sm" style={{ color: 'var(--muted)' }}>
               Avbryt
@@ -399,6 +419,27 @@ export function ISkoleIntegration({ householdId, children, onMessage }: Props) {
                 {testingConnection ? 'Kobler til...' : 'Test tilkobling'}
               </button>
             </div>
+          ) : reconnectingIntegrationId ? (
+            <>
+              <div
+                className="p-3 rounded-lg"
+                style={{ background: 'rgba(131, 166, 151, 0.15)' }}
+              >
+                <p className="text-sm font-medium" style={{ color: 'var(--color-sage)' }}>
+                  Innlogging bekreftet
+                </p>
+                <p className="text-xs mt-1" style={{ color: 'var(--foreground)' }}>
+                  Oppdater lagret innlogging uten å endre barnekoblinger.
+                </p>
+              </div>
+              <button
+                onClick={handleSaveReconnect}
+                disabled={connecting}
+                className="btn btn-primary w-full"
+              >
+                {connecting ? 'Lagrer...' : 'Oppdater innlogging'}
+              </button>
+            </>
           ) : (
             renderChildMappingFormContent()
           )}
@@ -406,7 +447,7 @@ export function ISkoleIntegration({ householdId, children, onMessage }: Props) {
       )}
 
       {/* Sync all button */}
-      {integrations.length > 0 && !showConnectForm && !editingIntegrationId && (
+      {integrations.length > 0 && !showConnectForm && !reconnectingIntegrationId && !editingIntegrationId && (
         <button
           onClick={() => syncNow()}
           disabled={syncing}

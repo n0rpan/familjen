@@ -46,15 +46,18 @@ export function SpondIntegration({ householdId, children, members, onMessage }: 
     showConnectForm,
     connectionTested,
     editingIntegrationId,
+    reconnectingIntegrationId,
     loadIntegrations,
     testConnection,
     saveIntegration,
     saveEditedMappings,
+    reconnectIntegration,
     syncNow,
     removeIntegration,
     resetForm,
     setShowConnectForm,
     setEditingIntegrationId,
+    setReconnectingIntegrationId,
     supabase,
   } = useIntegrationState({ config, householdId, onMessage })
 
@@ -221,12 +224,28 @@ export function SpondIntegration({ householdId, children, members, onMessage }: 
     }
   }
 
+  const handleSaveReconnect = async () => {
+    if (!reconnectingIntegrationId || !connectionTested) return
+
+    const success = await reconnectIntegration(reconnectingIntegrationId, credentials)
+    if (success) {
+      handleResetForm()
+    }
+  }
+
   const handleResetForm = () => {
     resetForm()
     setCredentials({ email: '', password: '' })
     setAvailableGroups([])
     setSelectedChildGroups(new Map())
     setSelectedMemberGroups(new Map())
+  }
+
+  const handleReconnect = (integrationId: string) => {
+    resetForm()
+    setCredentials({ email: '', password: '' })
+    setReconnectingIntegrationId(integrationId)
+    onMessage('error', 'Logg inn på nytt for å oppdatere integrasjonen')
   }
 
   const handleRemove = async (integrationId: string) => {
@@ -468,6 +487,7 @@ export function SpondIntegration({ householdId, children, members, onMessage }: 
           onFullSync={() => syncNow(integration.id, true)}
           onEdit={() => loadGroupsForEdit(integration.id)}
           onRemove={() => handleRemove(integration.id)}
+          onReconnect={() => handleReconnect(integration.id)}
           renderMappings={renderMappings}
         />
       ))}
@@ -477,6 +497,23 @@ export function SpondIntegration({ householdId, children, members, onMessage }: 
         <EmptyState
           serviceName={config.displayName}
           onAdd={() => setShowConnectForm(true)}
+        />
+      )}
+
+      {/* Reconnect form */}
+      {reconnectingIntegrationId && (
+        <ConnectionForm
+          fields={config.credentialFields}
+          serviceName={config.displayName}
+          title={`Koble til ${config.displayName} på nytt`}
+          saveLabel="Oppdater innlogging"
+          successText="Innlogging bekreftet"
+          testing={testingConnection}
+          tested={connectionTested}
+          connecting={connecting}
+          onTest={handleTestConnection}
+          onSave={handleSaveReconnect}
+          onCancel={handleResetForm}
         />
       )}
 
