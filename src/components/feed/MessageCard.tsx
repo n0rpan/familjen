@@ -190,7 +190,7 @@ export function MessageCard({ message, integrationChildren = [] }: Props) {
       {isLong && (
         <button
           onClick={() => setExpanded(!expanded)}
-          className="text-sm mt-2 font-medium"
+          className="text-sm mt-1 -ml-1 px-1 min-h-[44px] inline-flex items-center font-medium"
           style={{ color: 'var(--accent)' }}
         >
           {expanded ? t.feed.showLess : t.feed.readMore}
@@ -202,7 +202,7 @@ export function MessageCard({ message, integrationChildren = [] }: Props) {
         <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
           <button
             onClick={() => setShowComments(!showComments)}
-            className="text-sm font-medium flex items-center gap-1"
+            className="text-sm font-medium flex items-center gap-1 min-h-[44px]"
             style={{ color: 'var(--muted)' }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

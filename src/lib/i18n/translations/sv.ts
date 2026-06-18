@@ -442,11 +442,17 @@ export const sv: TranslationStrings = {
     subtitle: 'Meddelanden, bilder och påminnelser från Spond, förskola och skola',
     filters: {
       all: 'Alla',
+      spond: 'Spond',
+      school: 'Skola',
+      kindergarten: 'Förskola',
       photos: 'Bilder',
       reminders: 'Påminnelser',
     },
     emptyState: 'Inga meddelanden ännu',
-    emptyStateDesc: 'Anslut Spond, förskola eller skola för att se meddelanden här',
+    emptyStateDesc: 'Anslut Spond, Kidplan eller iSkole i inställningarna för att se meddelanden här.',
+    emptyStateDemoDesc: 'Meddelanden från integrationer visas här',
+    recentPhotos: 'Senaste bilder',
+    seeAllPhotos: 'Se alla {count} bilder',
     syncButton: 'Synkronisera',
     syncing: 'Synkroniserar...',
     // Smart search

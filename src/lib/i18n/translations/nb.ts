@@ -442,11 +442,17 @@ export const nb: TranslationStrings = {
     subtitle: 'Meldinger, bilder og varsler fra Spond, barnehage og skole',
     filters: {
       all: 'Alt',
+      spond: 'Spond',
+      school: 'Skole',
+      kindergarten: 'Barnehage',
       photos: 'Bilder',
       reminders: 'Påminnelser',
     },
     emptyState: 'Ingen meldinger ennå',
-    emptyStateDesc: 'Koble til Spond, barnehage eller skole for å se meldinger her',
+    emptyStateDesc: 'Koble til Spond, Kidplan eller iSkole i innstillingene for å se meldinger her.',
+    emptyStateDemoDesc: 'Meldinger fra integrasjoner vil vises her',
+    recentPhotos: 'Siste bilder',
+    seeAllPhotos: 'Se alle {count} bilder',
     syncButton: 'Synkroniser',
     syncing: 'Synkroniserer...',
     // Smart search

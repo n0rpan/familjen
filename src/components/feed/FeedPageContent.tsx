@@ -425,12 +425,10 @@ export function FeedPageContent({
             </svg>
           </div>
           <h2 className="text-lg font-semibold mb-2" style={{ color: 'var(--foreground)' }}>
-            Ingen meldinger ennå
+            {t.feed.emptyState}
           </h2>
           <p style={{ color: 'var(--muted)' }}>
-            {isDemo
-              ? 'Meldinger fra integrasjoner vil vises her'
-              : 'Koble til Spond, Kidplan eller iSkole i innstillingene for å se meldinger her.'}
+            {isDemo ? t.feed.emptyStateDemoDesc : t.feed.emptyStateDesc}
           </p>
         </div>
       ) : (
@@ -440,17 +438,17 @@ export function FeedPageContent({
             <section>
               {activeFilter === 'all' && (
                 <h2 className="text-lg font-semibold mb-3" style={{ color: 'var(--foreground)' }}>
-                  Siste bilder
+                  {t.feed.recentPhotos}
                 </h2>
               )}
               <PhotoGallery photos={displayPhotos} />
               {activeFilter === 'all' && photos.length > 8 && (
                 <button
                   onClick={() => setActiveFilter('photos')}
-                  className="w-full mt-3 py-2 text-sm font-medium rounded-xl"
+                  className="w-full mt-3 min-h-[44px] text-sm font-medium rounded-xl"
                   style={{ color: 'var(--accent)', background: 'var(--background)' }}
                 >
-                  Se alle {photos.length} bilder
+                  {t.feed.seeAllPhotos.replace('{count}', String(photos.length))}
                 </button>
               )}
             </section>
@@ -461,7 +459,7 @@ export function FeedPageContent({
             <section>
               {activeFilter === 'all' && (
                 <h2 className="text-lg font-semibold mb-3" style={{ color: 'var(--foreground)' }}>
-                  Påminnelser
+                  {t.feed.filters.reminders}
                 </h2>
               )}
               <div className="space-y-2">
