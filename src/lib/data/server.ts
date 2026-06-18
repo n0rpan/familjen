@@ -552,14 +552,21 @@ async function fetchFeedDataCore(householdId: string): Promise<FeedPageData> {
   }
 
   // Parallel fetch all feed data
+  //
+  // NOTE: Duplicate suggestions and merged duplicates are intentionally NOT
+  // fetched here. They require joining event_duplicate_suggestions to
+  // external_events to produce the nested { eventA, eventB } shape that the
+  // UI components expect. That join/mapping lives in the
+  // /api/integrations/duplicates route, which FeedPageWrapper calls on mount.
+  // Fetching the raw rows here (select('*')) returned event_a_id/event_b_id
+  // instead of eventA/eventB, which crashed the feed for any household with a
+  // pending suggestion ("undefined is not an object (evaluating 'e.title')").
   const [
     integrationsResult,
     messagesResult,
     integrationChildrenResult,
     photosResult,
     notificationsResult,
-    duplicateSuggestionsResult,
-    mergedDuplicatesResult,
   ] = await Promise.all([
     supabase
       .from('external_integrations')
@@ -607,21 +614,6 @@ async function fetchFeedDataCore(householdId: string): Promise<FeedPageData> {
       .in('status', ['unread', 'read'])
       .order('created_at', { ascending: false })
       .limit(20),
-
-    supabase
-      .from('event_duplicate_suggestions')
-      .select('*')
-      .eq('household_id', householdId)
-      .eq('status', 'pending')
-      .order('created_at', { ascending: false }),
-
-    supabase
-      .from('event_duplicate_suggestions')
-      .select('*')
-      .eq('household_id', householdId)
-      .eq('status', 'merged')
-      .order('resolved_at', { ascending: false })
-      .limit(20),
   ])
 
   return {
@@ -631,8 +623,9 @@ async function fetchFeedDataCore(householdId: string): Promise<FeedPageData> {
     photos: photosResult.data || [],
     integrationChildren: integrationChildrenResult.data || [],
     notifications: notificationsResult.data || [],
-    duplicateSuggestions: duplicateSuggestionsResult.data || [],
-    mergedDuplicates: mergedDuplicatesResult.data || [],
+    // Populated client-side via /api/integrations/duplicates (see note above).
+    duplicateSuggestions: [],
+    mergedDuplicates: [],
     timestamp: Date.now(),
   }
 }

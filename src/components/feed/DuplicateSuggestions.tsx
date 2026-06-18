@@ -317,7 +317,13 @@ export function DuplicateSuggestionsList({ suggestions, onUpdate }: SuggestionsL
     }
   }, [onUpdate, t.feed.duplicates])
 
-  const visibleSuggestions = suggestions.filter((s) => !resolvedIds.has(s.id))
+  // Guard against malformed data: a suggestion must have both joined events
+  // ({ eventA, eventB }). Raw DB rows (event_a_id/event_b_id) would otherwise
+  // crash EventCard when it reads event.title. This also protects against
+  // stale caches written before duplicates were fetched via the API.
+  const visibleSuggestions = suggestions.filter(
+    (s) => !resolvedIds.has(s.id) && s.eventA?.title != null && s.eventB?.title != null
+  )
 
   if (visibleSuggestions.length === 0) {
     return null
