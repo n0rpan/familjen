@@ -25,21 +25,41 @@ interface UseIntegrationStateReturn {
   showConnectForm: boolean
   connectionTested: boolean
   editingIntegrationId: string | null
+  reconnectingIntegrationId: string | null
 
   // Actions
   loadIntegrations: () => Promise<void>
   testConnection: (credentials: Record<string, string>) => Promise<{ success: boolean; data?: unknown }>
   saveIntegration: (credentials: Record<string, string>, mappings: MappingInput[]) => Promise<boolean>
   saveEditedMappings: (integrationId: string, mappings: MappingInput[]) => Promise<boolean>
+  reconnectIntegration: (integrationId: string, credentials: Record<string, string>) => Promise<boolean>
   syncNow: (integrationId?: string, fullSync?: boolean) => Promise<void>
   removeIntegration: (integrationId: string) => Promise<boolean>
   resetForm: () => void
   setShowConnectForm: (show: boolean) => void
   setConnectionTested: (tested: boolean) => void
   setEditingIntegrationId: (id: string | null) => void
+  setReconnectingIntegrationId: (id: string | null) => void
 
   // Supabase client
   supabase: ReturnType<typeof createClient>
+}
+
+async function readJsonResponse<T = Record<string, unknown>>(response: Response): Promise<T> {
+  const text = await response.text()
+  if (!text) return {} as T
+
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    return { error: text } as T
+  }
+}
+
+function getIntegrationErrorMessage(response: Response, data: { error?: unknown }, fallback: string): string {
+  if (response.status === 401) return 'Økten din er utløpt. Logg inn på nytt og prøv igjen.'
+  if (response.status === 429) return typeof data.error === 'string' ? data.error : 'For mange forsøk. Vent litt og prøv igjen.'
+  return typeof data.error === 'string' ? data.error : fallback
 }
 
 interface MappingInput {
@@ -70,6 +90,7 @@ export function useIntegrationState({
   const [showConnectForm, setShowConnectForm] = useState(false)
   const [connectionTested, setConnectionTested] = useState(false)
   const [editingIntegrationId, setEditingIntegrationId] = useState<string | null>(null)
+  const [reconnectingIntegrationId, setReconnectingIntegrationId] = useState<string | null>(null)
 
   const loadIntegrations = useCallback(async () => {
     setLoading(true)
@@ -125,10 +146,10 @@ export function useIntegrationState({
           body: JSON.stringify(credentials),
         })
 
-        const data = await res.json()
+        const data = await readJsonResponse<{ error?: string }>(res)
 
         if (!res.ok) {
-          onMessage('error', data.error || `Kunne ikke koble til ${config.displayName}`)
+          onMessage('error', getIntegrationErrorMessage(res, data, `Kunne ikke koble til ${config.displayName}`))
           return { success: false }
         }
 
@@ -187,10 +208,10 @@ export function useIntegrationState({
           body: JSON.stringify({ integrationId, fullSync: fullSync === true }),
         })
 
-        const data = await res.json()
+        const data = await readJsonResponse<{ error?: string; summary?: { eventsTotal?: number; messagesTotal?: number; photosTotal?: number } }>(res)
 
         if (!res.ok) {
-          onMessage('error', data.error || 'Synkronisering feilet')
+          onMessage('error', getIntegrationErrorMessage(res, data, 'Synkronisering feilet'))
         } else {
           // Run AI extraction on new messages
           if (integrationId) {
@@ -198,14 +219,19 @@ export function useIntegrationState({
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ integrationId }),
-            }).catch(() => {}) // Non-blocking
+            }).catch((error) => {
+              console.error('AI extraction request failed:', error)
+            }) // Non-blocking
           }
 
-          const { summary } = data
+          const summary = data.summary
+          const eventsTotal = summary?.eventsTotal ?? 0
+          const messagesTotal = summary?.messagesTotal ?? 0
+          const photosTotal = summary?.photosTotal ?? 0
           const parts: string[] = []
-          if (summary?.eventsTotal > 0) parts.push(`${summary.eventsTotal} hendelser`)
-          if (summary?.messagesTotal > 0) parts.push(`${summary.messagesTotal} meldinger`)
-          if (summary?.photosTotal > 0) parts.push(`${summary.photosTotal} bilder`)
+          if (eventsTotal > 0) parts.push(`${eventsTotal} hendelser`)
+          if (messagesTotal > 0) parts.push(`${messagesTotal} meldinger`)
+          if (photosTotal > 0) parts.push(`${photosTotal} bilder`)
 
           const message = parts.length > 0
             ? `Synkronisert: ${parts.join(', ')}`
@@ -292,6 +318,57 @@ export function useIntegrationState({
     [onMessage, saveMappingsToDb, syncNow]
   )
 
+
+  const reconnectIntegration = useCallback(
+    async (integrationId: string, credentials: Record<string, string>): Promise<boolean> => {
+      const integration = integrations.find((item) => item.id === integrationId)
+      if (!integration) {
+        onMessage('error', 'Fant ikke integrasjonen som skulle oppdateres')
+        return false
+      }
+
+      setConnecting(true)
+      try {
+        const { data: savedIntegrationId, error: saveError } = await supabase.rpc(
+          'upsert_external_integration',
+          {
+            p_household_id: householdId,
+            p_service: config.service,
+            p_display_name: integration.displayName,
+            p_credentials: credentials,
+            p_account_email: credentials.email || credentials.phone || credentials.username || integration.accountEmail,
+          }
+        )
+
+        if (saveError) {
+          console.error('Reconnect integration error:', saveError)
+          if (saveError.message?.includes('not enabled')) {
+            onMessage('error', 'Integrasjoner er ikke aktivert for din husstand')
+          } else if (saveError.message?.includes('Access denied')) {
+            onMessage('error', 'Du har ikke tilgang til denne husstanden')
+          } else {
+            onMessage('error', `Kunne ikke oppdatere innlogging: ${saveError.message || 'Ukjent feil'}`)
+          }
+          return false
+        }
+
+        const targetIntegrationId = String(savedIntegrationId || integrationId)
+        onMessage('success', 'Innlogging oppdatert. Starter synkronisering...')
+        setReconnectingIntegrationId(null)
+        setConnectionTested(false)
+        await syncNow(targetIntegrationId)
+        return true
+      } catch (error) {
+        console.error('Reconnect integration error:', error)
+        onMessage('error', 'Kunne ikke oppdatere innlogging')
+        return false
+      } finally {
+        setConnecting(false)
+      }
+    },
+    [config.service, householdId, integrations, onMessage, supabase, syncNow]
+  )
+
   const removeIntegration = useCallback(
     async (integrationId: string): Promise<boolean> => {
       try {
@@ -329,6 +406,7 @@ export function useIntegrationState({
     setShowConnectForm(false)
     setConnectionTested(false)
     setEditingIntegrationId(null)
+    setReconnectingIntegrationId(null)
   }, [])
 
   return {
@@ -341,16 +419,19 @@ export function useIntegrationState({
     showConnectForm,
     connectionTested,
     editingIntegrationId,
+    reconnectingIntegrationId,
     loadIntegrations,
     testConnection,
     saveIntegration,
     saveEditedMappings,
+    reconnectIntegration,
     syncNow,
     removeIntegration,
     resetForm,
     setShowConnectForm,
     setConnectionTested,
     setEditingIntegrationId,
+    setReconnectingIntegrationId,
     supabase,
   }
 }
