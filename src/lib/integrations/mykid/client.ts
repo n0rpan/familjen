@@ -34,6 +34,7 @@ import {
   MyKidAuthError,
   MyKidCsrfError,
 } from './types'
+import { sanitizeDate } from '@/lib/sanitize'
 
 const BASE_URL = 'https://mykid.no'
 const DEFAULT_TIMEOUT = 30000 // 30 seconds
@@ -839,15 +840,23 @@ export class MyKidClient {
   /**
    * Map calendar event to database format.
    */
-  static mapCalendarEventToDb(event: MyKidCalendarEvent): MappedMyKidEvent {
+  static mapCalendarEventToDb(event: MyKidCalendarEvent): MappedMyKidEvent | null {
+    // Validate dates before storing. event_at is documented YYYY-MM-DD; if the API
+    // ever returns a datetime or non-ISO value, take the date portion and validate.
+    // Returning null (skip) is better than writing a wrong/invalid event_date -
+    // wrong data is worse than a missing event.
+    const eventDate = sanitizeDate(String(event.event_at).slice(0, 10))
+    if (!eventDate) return null
+    const endDate = event.event_until ? sanitizeDate(String(event.event_until).slice(0, 10)) : null
+
     return {
       externalId: event.id,
       externalGroupId: null,
       title: event.title,
       description: event.description,
-      eventDate: event.event_at,
+      eventDate,
       eventTime: null,
-      endDate: event.event_until,
+      endDate,
       endTime: null,
       eventType: event.class,
       rawData: event,
@@ -857,7 +866,13 @@ export class MyKidClient {
   /**
    * Map newsletter to database format.
    */
-  static mapNewsletterToDb(newsletter: MyKidNewsletter): MappedMyKidMessage {
+  static mapNewsletterToDb(newsletter: MyKidNewsletter): MappedMyKidMessage | null {
+    // Do NOT fall back to "now" when the date can't be parsed: that stamps the
+    // newsletter with the sync time, so it sorts to the top of the feed as if
+    // brand-new on every nightly sync. Skip it instead (message_date is NOT NULL).
+    const parsed = MyKidClient.parseNorwegianDate(newsletter.date)
+    if (!parsed) return null
+
     return {
       externalId: `newsletter_${newsletter.id}`,
       externalGroupId: null,
@@ -865,7 +880,7 @@ export class MyKidClient {
       senderName: null,
       title: newsletter.title,
       body: newsletter.content,
-      messageDate: MyKidClient.parseNorwegianDate(newsletter.date)?.toISOString() || new Date().toISOString(),
+      messageDate: parsed.toISOString(),
       sourceType: 'newsletter',
       rawData: newsletter,
     }

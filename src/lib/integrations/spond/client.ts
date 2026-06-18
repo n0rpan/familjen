@@ -27,6 +27,7 @@ import {
   SpondError,
   SpondAuthError,
 } from './types'
+import { formatInstantInAppTimezone } from '@/lib/utils'
 
 const API_BASE_URL = 'https://api.spond.com/core/v1/'
 const DEFAULT_TIMEOUT = 30000 // 30 seconds
@@ -287,19 +288,28 @@ export class SpondClient {
   /**
    * Map a Spond event to our database format.
    */
-  static mapEventToDb(event: SpondEvent, groupId: string): MappedSpondEvent {
-    const startDate = new Date(event.startTimestamp)
-    const endDate = event.endTimestamp ? new Date(event.endTimestamp) : null
+  static mapEventToDb(event: SpondEvent, groupId: string): MappedSpondEvent | null {
+    // Spond timestamps are absolute (UTC ISO). Format date AND time together in
+    // the app timezone (Europe/Oslo) so they agree on the calendar day and the
+    // wall-clock time is correct regardless of server timezone (UTC on Vercel).
+    // Previously this mixed toISOString() (UTC date) with toTimeString()
+    // (server-local time), shifting every event time by 1-2h.
+    const start = formatInstantInAppTimezone(event.startTimestamp)
+    // An unparseable start timestamp means we cannot trust the event date/time;
+    // skip it (return null) rather than write a wrong/empty date - wrong data is
+    // worse than a missing event.
+    if (!start) return null
+    const end = event.endTimestamp ? formatInstantInAppTimezone(event.endTimestamp) : null
 
     return {
       externalId: event.id,
       externalGroupId: groupId,
       title: event.heading,
       description: event.description || null,
-      eventDate: startDate.toISOString().split('T')[0],
-      eventTime: startDate.toTimeString().split(' ')[0],
-      endDate: endDate ? endDate.toISOString().split('T')[0] : null,
-      endTime: endDate ? endDate.toTimeString().split(' ')[0] : null,
+      eventDate: start.date,
+      eventTime: start.time,
+      endDate: end?.date ?? null,
+      endTime: end?.time ?? null,
       location: event.location?.address || event.location?.feature || null,
       eventType: event.type?.toLowerCase() || null,
       rawData: event,

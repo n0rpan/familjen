@@ -664,6 +664,7 @@ async function syncSpondIntegration(
       if (!childMapping && mappedGroupIds.size > 0) continue
 
       const mapped = SpondClient.mapEventToDb(event, groupId)
+      if (!mapped) continue // skip events with an unparseable timestamp
       eventsToUpsert.push({
         integration_id: integration.id,
         child_id: childMapping?.childId || null,
@@ -691,6 +692,11 @@ async function syncSpondIntegration(
 
       if (!eventsError) {
         result.eventsCount = eventsToUpsert.length
+      } else {
+        // Do NOT silently report success when the write failed (see end-of-sync
+        // status gating below) - users must know when a sync didn't store data.
+        console.error(`[Cron] Spond events upsert failed for ${integration.id}:`, eventsError)
+        result.error = eventsError.message
       }
     }
 
@@ -757,15 +763,24 @@ async function syncSpondIntegration(
 
         if (!messagesError) {
           result.messagesCount = messagesToUpsert.length
+        } else {
+          console.error(`[Cron] Spond messages upsert failed for ${integration.id}:`, messagesError)
+          result.error = messagesError.message
         }
       }
     } catch (chatError) {
       console.error(`[Cron] Chat sync error for ${integration.id}:`, chatError)
+      result.error = chatError instanceof Error ? chatError.message : 'Chat sync failed'
     }
 
-    // Update sync status
-    await updateSyncStatus(supabase, integration.id, 'ok', null)
-    result.success = true
+    // Update sync status. Gate on result.error so a failed write/fetch is NOT
+    // reported as a successful 'ok' sync (the feed would silently show stale data).
+    if (result.error) {
+      await updateSyncStatus(supabase, integration.id, 'error', result.error)
+    } else {
+      await updateSyncStatus(supabase, integration.id, 'ok', null)
+      result.success = true
+    }
 
     return result
   } catch (error) {
@@ -987,6 +1002,7 @@ async function syncKidplanIntegration(
       }
     } catch (convError) {
       console.error(`[Cron] Kidplan conversations error for ${integration.id}:`, convError)
+      result.error = convError instanceof Error ? convError.message : 'Conversation sync failed'
     }
 
     // Upsert messages
@@ -999,11 +1015,19 @@ async function syncKidplanIntegration(
 
       if (!messagesError) {
         result.messagesCount = messagesToUpsert.length
+      } else {
+        console.error(`[Cron] Kidplan messages upsert failed for ${integration.id}:`, messagesError)
+        result.error = messagesError.message
       }
     }
 
-    await updateSyncStatus(supabase, integration.id, 'ok', null)
-    result.success = true
+    // Gate final status on result.error so a failed write/fetch is not reported as 'ok'.
+    if (result.error) {
+      await updateSyncStatus(supabase, integration.id, 'error', result.error)
+    } else {
+      await updateSyncStatus(supabase, integration.id, 'ok', null)
+      result.success = true
+    }
     return result
   } catch (error) {
     console.error(`[Cron] Kidplan sync failed for ${integration.id}:`, error)
@@ -1121,6 +1145,7 @@ async function syncISkoleIntegration(
       }
     } catch (syncError) {
       console.error(`[Cron] iSkole sync error for ${integration.id}:`, syncError)
+      result.error = syncError instanceof Error ? syncError.message : 'iSkole sync failed'
     }
 
     // Upsert messages
@@ -1133,11 +1158,19 @@ async function syncISkoleIntegration(
 
       if (!messagesError) {
         result.messagesCount = messagesToUpsert.length
+      } else {
+        console.error(`[Cron] iSkole messages upsert failed for ${integration.id}:`, messagesError)
+        result.error = messagesError.message
       }
     }
 
-    await updateSyncStatus(supabase, integration.id, 'ok', null)
-    result.success = true
+    // Gate final status on result.error so a failed write/fetch is not reported as 'ok'.
+    if (result.error) {
+      await updateSyncStatus(supabase, integration.id, 'error', result.error)
+    } else {
+      await updateSyncStatus(supabase, integration.id, 'ok', null)
+      result.success = true
+    }
     return result
   } catch (error) {
     console.error(`[Cron] iSkole sync failed for ${integration.id}:`, error)
@@ -1223,6 +1256,7 @@ async function syncMyKidIntegration(
 
       for (const event of events) {
         const mapped = MyKidClient.mapCalendarEventToDb(event)
+        if (!mapped) continue // skip events with an invalid/unparseable date
         eventsToUpsert.push({
           integration_id: integration.id,
           child_id: null, // MyKid events are not child-specific
@@ -1250,6 +1284,9 @@ async function syncMyKidIntegration(
 
         if (!eventsError) {
           result.eventsCount = eventsToUpsert.length
+        } else {
+          console.error(`[Cron] MyKid events upsert failed for ${integration.id}:`, eventsError)
+          result.error = eventsError.message
         }
 
         // Detect deleted/changed events and notify parents
@@ -1277,6 +1314,7 @@ async function syncMyKidIntegration(
       }
     } catch (calendarError) {
       console.error(`[Cron] MyKid calendar error for ${integration.id}:`, calendarError)
+      result.error = calendarError instanceof Error ? calendarError.message : 'Calendar sync failed'
     }
 
     // Sync newsletters (HTML parsing)
@@ -1300,6 +1338,7 @@ async function syncMyKidIntegration(
           try {
             const full = await client.getNewsletterContent(summary.id)
             const mapped = MyKidClient.mapNewsletterToDb(full)
+            if (!mapped) continue // skip newsletters with an unparseable date
 
             messagesToUpsert.push({
               integration_id: integration.id,
@@ -1324,6 +1363,7 @@ async function syncMyKidIntegration(
       }
     } catch (newsletterError) {
       console.error(`[Cron] MyKid newsletter list error for ${integration.id}:`, newsletterError)
+      result.error = newsletterError instanceof Error ? newsletterError.message : 'Newsletter sync failed'
     }
 
     // Upsert messages
@@ -1336,11 +1376,19 @@ async function syncMyKidIntegration(
 
       if (!messagesError) {
         result.messagesCount = messagesToUpsert.length
+      } else {
+        console.error(`[Cron] MyKid messages upsert failed for ${integration.id}:`, messagesError)
+        result.error = messagesError.message
       }
     }
 
-    await updateSyncStatus(supabase, integration.id, 'ok', null)
-    result.success = true
+    // Gate final status on result.error so a failed write/fetch is not reported as 'ok'.
+    if (result.error) {
+      await updateSyncStatus(supabase, integration.id, 'error', result.error)
+    } else {
+      await updateSyncStatus(supabase, integration.id, 'ok', null)
+      result.success = true
+    }
     return result
   } catch (error) {
     console.error(`[Cron] MyKid sync failed for ${integration.id}:`, error)
