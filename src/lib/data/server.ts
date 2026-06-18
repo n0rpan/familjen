@@ -387,18 +387,24 @@ export function getTodaySummary(data: HomePageData): DaySummary {
  *
  * SECURITY: Server DB is always the source of truth. JWT is only a cache.
  */
-export async function getHouseholdIdFromSession(): Promise<string | null> {
+export const getHouseholdIdFromSession = cache(async (): Promise<string | null> => {
   try {
-    // Use local session (no network call) - middleware already validated
-    const user = await getSessionLocal()
-    if (!user) return null
+    // SECURITY: Verify the session with the auth server (getUser) before we
+    // derive the household scope, because the per-household data fetchers use the
+    // service-role admin client (RLS bypassed) and trust this household_id as the
+    // ONLY tenant boundary. getSession()/getSessionLocal() decode the JWT WITHOUT
+    // verifying its signature, so trusting it here would let a crafted token read
+    // another household's data on the middleware fast-path. getUser() validates the
+    // signature server-side; its app_metadata is therefore authoritative.
+    const supabase = await createClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) return null
 
-    // Fast path: JWT has household_id (>99% of established users)
+    // Fast path: verified JWT already carries household_id (>99% of established users)
     const jwtHouseholdId = user.app_metadata?.household_id as string | undefined
     if (jwtHouseholdId) return jwtHouseholdId
 
     // Slow path: DB fallback for stale JWTs (rare - new households or old tokens)
-    const supabase = await createClient()
     const { data: memberData, error: dbError } = await supabase
       .from('household_members')
       .select('household_id')
@@ -424,7 +430,7 @@ export async function getHouseholdIdFromSession(): Promise<string | null> {
     console.error('[getHouseholdIdFromSession] Unexpected error:', err)
     return null
   }
-}
+})
 
 /**
  * Check if user is authenticated (no network call)

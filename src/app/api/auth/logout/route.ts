@@ -22,5 +22,11 @@ export async function POST(request: Request) {
   await supabase.auth.signOut()
 
   const { origin } = new URL(request.url)
-  return NextResponse.redirect(`${origin}/login`)
+  const response = NextResponse.redirect(`${origin}/login`)
+  // Clear the httpOnly middleware fast-path validation cookie. supabase.auth.signOut()
+  // clears the sb-* auth cookies, but not this one, and the client cannot delete it
+  // (httpOnly), so it must be cleared here to avoid leaving a "recently validated"
+  // marker behind on a shared device after logout.
+  response.cookies.delete('familjen-auth-validated')
+  return response
 }

@@ -226,6 +226,13 @@ export function Header() {
       console.warn('[Header] Failed to clear caches on logout:', err)
     })
     await supabase.auth.signOut()
+    // Also hit the server logout endpoint so the httpOnly fast-path validation
+    // cookie (familjen-auth-validated) is cleared - the client cannot delete it.
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+    } catch (err) {
+      console.warn('[Header] Server logout call failed:', err)
+    }
     window.location.href = '/login'
   }, [supabase])
 

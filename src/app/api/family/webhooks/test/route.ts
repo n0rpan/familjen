@@ -10,7 +10,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createHmac, randomUUID } from 'crypto'
-import { validateUUID } from '@/lib/family-api'
+import { validateUUID, validateWebhookUrl } from '@/lib/family-api'
+import { checkDNSRebinding } from '@/lib/family-api/webhooks'
 
 const WEBHOOK_TIMEOUT_MS = 5000
 
@@ -128,6 +129,25 @@ export async function POST(request: NextRequest) {
       .update(`${timestamp}.${payloadJson}`)
       .digest('hex')
 
+    // SECURITY: Apply the SAME SSRF defenses as the production dispatcher
+    // (deliverWebhook). The stored URL must be re-validated and DNS re-resolved
+    // here, otherwise the test endpoint is a blind-SSRF bypass: a URL that passed
+    // creation-time validation can be flipped to a private IP via DNS rebinding,
+    // or 3xx-redirect to internal/cloud-metadata endpoints.
+    const urlValidation = validateWebhookUrl(webhookData.url)
+    if (!urlValidation.valid) {
+      return NextResponse.json({
+        data: { success: false, error: 'Webhook URL blocked for security reasons' },
+      })
+    }
+    const dnsError = await checkDNSRebinding(new URL(webhookData.url).hostname)
+    if (dnsError) {
+      console.error(`Webhook ${webhookId} test blocked: ${dnsError}`)
+      return NextResponse.json({
+        data: { success: false, error: 'Webhook URL blocked for security reasons' },
+      })
+    }
+
     // Send test webhook
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS)
@@ -146,6 +166,7 @@ export async function POST(request: NextRequest) {
         },
         body: payloadJson,
         signal: controller.signal,
+        redirect: 'error',  // SECURITY: prevent SSRF via 3xx redirects to internal URLs
       })
 
       clearTimeout(timeoutId)

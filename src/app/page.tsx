@@ -10,7 +10,7 @@
 
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
-import { createClient, getSessionLocal } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
 import { syncUserMetadata } from '@/lib/supabase/admin'
 import { getLanguageFromCookieOrBrowser } from '@/lib/i18n/cookie.server'
 import { getTranslations } from '@/lib/i18n/translations'
@@ -43,9 +43,13 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     )
   }
 
-  // Production mode - check auth and household
-  // Use local session (no network call) - middleware already validated
-  const user = await getSessionLocal()
+  // Production mode - check auth and household.
+  // SECURITY: Verify with the auth server (getUser) rather than the unverified
+  // local session, because HomeDataLoader fetches with the service-role admin
+  // client (RLS bypassed) scoped only by this household_id. getSession() does not
+  // verify the JWT signature; getUser() does, making app_metadata authoritative.
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
 
   // Not logged in
   if (!user) {
@@ -77,11 +81,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     )
   }
 
-  // Get household ID from JWT (fast, no extra query)
+  // Get household ID from the verified JWT (app_metadata is authoritative after getUser)
   let householdId = user.app_metadata?.household_id as string | undefined
-
-  // Create Supabase client once - reused for fallback check and children count
-  const supabase = await createClient()
 
   // Fallback: If JWT doesn't have household_id, check database
   // This handles cases where JWT wasn't refreshed after joining a household
