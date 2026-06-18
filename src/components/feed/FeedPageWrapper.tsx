@@ -185,6 +185,14 @@ export function FeedPageWrapper({
     }
   }, [isDemo])
 
+  // Fetch correctly-shaped duplicate data on mount.
+  // The server data layer does NOT include duplicate suggestions because the
+  // UI needs the nested { eventA, eventB } shape, which requires joining
+  // external_events. The /api/integrations/duplicates route does that mapping.
+  useEffect(() => {
+    fetchDuplicates()
+  }, [fetchDuplicates])
+
   // Determine initial filter from URL params
   const getInitialFilter = (): FeedFilter => {
     if (typeFilter === 'photos') return 'photos'

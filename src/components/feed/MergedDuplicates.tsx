@@ -164,7 +164,12 @@ export function MergedDuplicatesList({ mergedDuplicates, onUpdate }: MergedListP
     }
   }, [onUpdate, t.feed.duplicates])
 
-  const visibleMerged = mergedDuplicates.filter((m) => !restoredIds.has(m.id))
+  // Guard against malformed data (e.g. raw DB rows or stale caches written
+  // before merged duplicates were fetched via the API): require the title the
+  // card renders so we never crash on undefined fields.
+  const visibleMerged = mergedDuplicates.filter(
+    (m) => !restoredIds.has(m.id) && m.title != null
+  )
 
   if (visibleMerged.length === 0) {
     return null
