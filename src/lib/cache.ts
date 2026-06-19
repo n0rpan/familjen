@@ -405,6 +405,24 @@ export async function updateCacheWithRealtimeChange<T extends Record<string, unk
     }
     if (!Array.isArray(cacheData[arrayField])) return
 
+    // These tables are cached in a HYDRATED shape (with joined relations), e.g.
+    // pickups carry `.child`/`.picker`, meals carry `.recipe`, tasks carry
+    // `.child`, feed messages/photos carry a flattened `service`. A raw
+    // postgres_changes row has only the flat columns, so pushing/merging it would
+    // corrupt the cache: an INSERT adds a row with no relations (crashes the next
+    // cold-start render -> CacheErrorBoundary discards the whole page), and an
+    // UPDATE that changes a foreign key (e.g. picker_id) leaves the OLD relation
+    // object in place (wrong name shown). We cannot hydrate the row here, so we
+    // skip these mutations and rely on the router.refresh() that the caller fires
+    // on every realtime event to re-persist correctly-hydrated data via the
+    // DataCacher. DELETE is always safe (it only removes by id).
+    const HYDRATED_TABLES = new Set([
+      'pickups', 'meals', 'child_tasks', 'external_messages', 'external_photos',
+    ])
+    if (event !== 'DELETE' && HYDRATED_TABLES.has(table)) {
+      return
+    }
+
     const array = cacheData[arrayField] as Record<string, unknown>[]
     const id = data[idField]
 
@@ -430,8 +448,10 @@ export async function updateCacheWithRealtimeChange<T extends Record<string, unk
       }
     }
 
-    // Update the cache with modified data, preserving original timestamp
-    await setCacheWithTimestamp(key, cacheData, cached.timestamp)
+    // The data genuinely just changed, so bump the timestamp to now. Preserving
+    // the original (aging) timestamp made the FreshnessIndicator understate
+    // recency and could expire a just-patched cache moments later.
+    await setCacheWithTimestamp(key, cacheData, Date.now())
     console.log(`[Cache] Updated ${table} cache with ${event}`)
   } catch (error) {
     console.warn('[Cache] Failed to update cache with realtime change:', error)

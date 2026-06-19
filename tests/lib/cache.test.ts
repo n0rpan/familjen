@@ -87,8 +87,12 @@ describe('updateCacheWithRealtimeChange', () => {
   })
 
   describe('INSERT operations', () => {
-    it('adds new pickup to cache', async () => {
-      // Setup: cache with existing pickups
+    // Pickups, meals and child_tasks are cached HYDRATED (with .child/.picker/
+    // .recipe). A raw realtime row has only flat columns, so inserting it would
+    // corrupt the cache (the next cold-start render reads pickup.child.name on a
+    // row with no .child and crashes). For these tables the INSERT is intentionally
+    // skipped; the caller's router.refresh() re-persists correctly-hydrated data.
+    it('skips INSERT for hydrated pickups (would otherwise add an unhydrated row)', async () => {
       const cacheKey = 'home-household-123'
       const existingData = {
         pickups: [{ id: 'pickup-1', date: '2024-12-16', child_id: 'child-1' }],
@@ -97,17 +101,16 @@ describe('updateCacheWithRealtimeChange', () => {
       }
       mockStore.set(cacheKey, { key: cacheKey, data: existingData, timestamp: Date.now() })
 
-      // Act: insert new pickup
       const newPickup = { id: 'pickup-2', date: '2024-12-17', child_id: 'child-2' }
       await updateCacheWithRealtimeChange(cacheKey, 'pickups', 'INSERT', newPickup)
 
-      // Assert: cache should have both pickups
+      // Cache is left untouched (no unhydrated row added)
       const cached = mockStore.get(cacheKey) as { data: typeof existingData }
-      expect(cached.data.pickups).toHaveLength(2)
-      expect(cached.data.pickups).toContainEqual(newPickup)
+      expect(cached.data.pickups).toHaveLength(1)
+      expect(cached.data.pickups).not.toContainEqual(newPickup)
     })
 
-    it('adds new meal to cache', async () => {
+    it('skips INSERT for hydrated meals', async () => {
       const cacheKey = 'home-household-123'
       const existingData = {
         pickups: [],
@@ -120,11 +123,11 @@ describe('updateCacheWithRealtimeChange', () => {
       await updateCacheWithRealtimeChange(cacheKey, 'meals', 'INSERT', newMeal)
 
       const cached = mockStore.get(cacheKey) as { data: typeof existingData }
-      expect(cached.data.meals).toHaveLength(2)
-      expect(cached.data.meals).toContainEqual(newMeal)
+      expect(cached.data.meals).toHaveLength(1)
+      expect(cached.data.meals).not.toContainEqual(newMeal)
     })
 
-    it('adds new child_task to tasks array', async () => {
+    it('skips INSERT for hydrated child_tasks', async () => {
       const cacheKey = 'home-household-123'
       const existingData = {
         pickups: [],
@@ -137,8 +140,8 @@ describe('updateCacheWithRealtimeChange', () => {
       await updateCacheWithRealtimeChange(cacheKey, 'child_tasks', 'INSERT', newTask)
 
       const cached = mockStore.get(cacheKey) as { data: typeof existingData }
-      expect(cached.data.tasks).toHaveLength(2)
-      expect(cached.data.tasks).toContainEqual(newTask)
+      expect(cached.data.tasks).toHaveLength(1)
+      expect(cached.data.tasks).not.toContainEqual(newTask)
     })
 
     it('adds new member_event to memberEvents array', async () => {
@@ -178,7 +181,10 @@ describe('updateCacheWithRealtimeChange', () => {
   })
 
   describe('UPDATE operations', () => {
-    it('updates existing pickup in cache', async () => {
+    // UPDATE is also skipped for hydrated tables: merging a raw row leaves stale
+    // relation objects (e.g. picker_id changes but the old .picker stays, showing
+    // the wrong name). router.refresh() re-persists the correctly-hydrated row.
+    it('skips UPDATE for hydrated pickups (would leave a stale relation)', async () => {
       const cacheKey = 'home-household-123'
       const existingData = {
         pickups: [
@@ -190,18 +196,17 @@ describe('updateCacheWithRealtimeChange', () => {
       }
       mockStore.set(cacheKey, { key: cacheKey, data: existingData, timestamp: Date.now() })
 
-      // Update pickup-1 to have different picker
+      // Update pickup-1 to have a different picker - must NOT be applied locally
       const updatedPickup = { id: 'pickup-1', picker_id: 'member-2' }
       await updateCacheWithRealtimeChange(cacheKey, 'pickups', 'UPDATE', updatedPickup)
 
       const cached = mockStore.get(cacheKey) as { data: typeof existingData }
       expect(cached.data.pickups).toHaveLength(2)
       const updated = cached.data.pickups.find(p => p.id === 'pickup-1')
-      expect(updated?.picker_id).toBe('member-2')
-      expect(updated?.date).toBe('2024-12-16') // Original field preserved
+      expect(updated?.picker_id).toBe('member-1') // unchanged; refresh will update it
     })
 
-    it('merges update with existing data (partial update)', async () => {
+    it('skips UPDATE for hydrated meals', async () => {
       const cacheKey = 'home-household-123'
       const existingData = {
         pickups: [],
@@ -210,15 +215,12 @@ describe('updateCacheWithRealtimeChange', () => {
       }
       mockStore.set(cacheKey, { key: cacheKey, data: existingData, timestamp: Date.now() })
 
-      // Partial update - only changing notes
       const update = { id: 'meal-1', notes: 'updated notes' }
       await updateCacheWithRealtimeChange(cacheKey, 'meals', 'UPDATE', update)
 
       const cached = mockStore.get(cacheKey) as { data: typeof existingData }
       const meal = cached.data.meals[0]
-      expect(meal.notes).toBe('updated notes')
-      expect(meal.recipe_id).toBe('recipe-1') // Other fields preserved
-      expect(meal.date).toBe('2024-12-16')
+      expect(meal.notes).toBe('original') // unchanged; refresh will update it
     })
 
     it('does nothing if item not found for update', async () => {
@@ -416,34 +418,36 @@ describe('updateCacheWithRealtimeChange', () => {
   })
 
   describe('Table to field mapping', () => {
-    it('maps pickups table to pickups field', async () => {
+    // Hydrated tables skip INSERT/UPDATE, so the table->field mapping is exercised
+    // via the always-safe DELETE path instead.
+    it('maps pickups table to pickups field (via DELETE)', async () => {
       const cacheKey = 'test'
-      mockStore.set(cacheKey, { key: cacheKey, data: { pickups: [] }, timestamp: Date.now() })
+      mockStore.set(cacheKey, { key: cacheKey, data: { pickups: [{ id: '1' }] }, timestamp: Date.now() })
 
-      await updateCacheWithRealtimeChange(cacheKey, 'pickups', 'INSERT', { id: '1' })
+      await updateCacheWithRealtimeChange(cacheKey, 'pickups', 'DELETE', { id: '1' })
 
       const cached = mockStore.get(cacheKey) as { data: { pickups: unknown[] } }
-      expect(cached.data.pickups).toHaveLength(1)
+      expect(cached.data.pickups).toHaveLength(0)
     })
 
-    it('maps meals table to meals field', async () => {
+    it('maps meals table to meals field (via DELETE)', async () => {
       const cacheKey = 'test'
-      mockStore.set(cacheKey, { key: cacheKey, data: { meals: [] }, timestamp: Date.now() })
+      mockStore.set(cacheKey, { key: cacheKey, data: { meals: [{ id: '1' }] }, timestamp: Date.now() })
 
-      await updateCacheWithRealtimeChange(cacheKey, 'meals', 'INSERT', { id: '1' })
+      await updateCacheWithRealtimeChange(cacheKey, 'meals', 'DELETE', { id: '1' })
 
       const cached = mockStore.get(cacheKey) as { data: { meals: unknown[] } }
-      expect(cached.data.meals).toHaveLength(1)
+      expect(cached.data.meals).toHaveLength(0)
     })
 
-    it('maps child_tasks table to tasks field', async () => {
+    it('maps child_tasks table to tasks field (via DELETE)', async () => {
       const cacheKey = 'test'
-      mockStore.set(cacheKey, { key: cacheKey, data: { tasks: [] }, timestamp: Date.now() })
+      mockStore.set(cacheKey, { key: cacheKey, data: { tasks: [{ id: '1' }] }, timestamp: Date.now() })
 
-      await updateCacheWithRealtimeChange(cacheKey, 'child_tasks', 'INSERT', { id: '1' })
+      await updateCacheWithRealtimeChange(cacheKey, 'child_tasks', 'DELETE', { id: '1' })
 
       const cached = mockStore.get(cacheKey) as { data: { tasks: unknown[] } }
-      expect(cached.data.tasks).toHaveLength(1)
+      expect(cached.data.tasks).toHaveLength(0)
     })
 
     it('maps member_events table to memberEvents field', async () => {

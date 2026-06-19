@@ -77,6 +77,57 @@ export function formatDateISO(date: Date): string {
 }
 
 /**
+ * The app's canonical timezone. All synced external event dates/times are
+ * normalised to this zone so they render correctly regardless of where the
+ * server runs (e.g. UTC on Vercel).
+ */
+export const APP_TIMEZONE = 'Europe/Oslo'
+
+// Reuse a single formatter instance (constructing Intl.DateTimeFormat is costly).
+const osloDateTimeFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: APP_TIMEZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+})
+
+/**
+ * Format an absolute instant (Date or ISO timestamp) into the app timezone
+ * (Europe/Oslo), returning a wall-clock date and time that always agree on the
+ * same calendar day. Use this for external event timestamps instead of mixing
+ * toISOString() (UTC) with toTimeString() (server-local), which shifts times by
+ * the server's UTC offset and can disagree on the date near midnight.
+ *
+ * Returns null for invalid input.
+ */
+export function formatInstantInAppTimezone(
+  input: Date | string | number
+): { date: string; time: string } | null {
+  const d = input instanceof Date ? input : new Date(input)
+  if (isNaN(d.getTime())) return null
+
+  const parts = osloDateTimeFormatter.formatToParts(d)
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? ''
+  const year = get('year')
+  const month = get('month')
+  const day = get('day')
+  // en-CA renders 24h "00".."23"; guard against the "24:00" edge some engines emit.
+  const hour = get('hour') === '24' ? '00' : get('hour')
+  const minute = get('minute')
+  const second = get('second')
+  if (!year || !month || !day || !hour || !minute) return null
+
+  return {
+    date: `${year}-${month}-${day}`,
+    time: `${hour}:${minute}:${second || '00'}`,
+  }
+}
+
+/**
  * Get the weekday index (0 = Monday, 6 = Sunday) - ISO week style
  * Converts JavaScript's getDay() (0=Sun, 6=Sat) to ISO format (0=Mon, 6=Sun)
  */

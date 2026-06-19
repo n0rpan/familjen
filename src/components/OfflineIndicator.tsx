@@ -16,6 +16,7 @@ export function OfflineIndicator() {
   const pendingCountRef = useRef(0)
   const failureTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const conflictTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const bannerRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     // Set initial state
@@ -145,6 +146,28 @@ export function OfflineIndicator() {
     }
   }, [])
 
+  // Push the header + page content down by the banner's measured height so the
+  // banner never paints on top of the header (it previously rendered fixed at
+  // top-0 directly over the fixed/sticky header, hiding the logo + nav). Measured
+  // (not hardcoded) so it stays correct if the message wraps on small screens.
+  useEffect(() => {
+    const root = document.documentElement
+    if (!shouldShow) {
+      root.style.setProperty('--offline-banner-h', '0px')
+      return
+    }
+    const el = bannerRef.current
+    if (!el) return
+    const apply = () => root.style.setProperty('--offline-banner-h', `${el.offsetHeight}px`)
+    apply()
+    const observer = new ResizeObserver(apply)
+    observer.observe(el)
+    return () => {
+      observer.disconnect()
+      root.style.setProperty('--offline-banner-h', '0px')
+    }
+  }, [shouldShow, syncFailure, syncConflict, isOffline, pendingCount, isSyncing])
+
   if (!shouldShow) return null
 
   // Priority: failure (coral) > conflict (honey) > offline (sky) > syncing (honey) > online (sage)
@@ -160,7 +183,8 @@ export function OfflineIndicator() {
 
   return (
     <div
-      className="fixed top-0 left-0 right-0 z-50 flex items-center justify-center gap-2 py-2 px-4 text-sm font-medium animate-fade-in safe-area-top"
+      ref={bannerRef}
+      className="fixed top-0 left-0 right-0 z-[60] flex items-center justify-center gap-2 py-2 px-4 text-sm font-medium animate-fade-in safe-area-top"
       style={{
         background: getBackgroundColor(),
         color: 'white',

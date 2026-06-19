@@ -244,17 +244,31 @@ describe('SpondClient', () => {
       // Cast to any since we're providing a minimal mock
       const mapped = SpondClient.mapEventToDb(spondEvent as any, 'group-456')
 
-      expect(mapped.externalId).toBe('event-123')
-      expect(mapped.externalGroupId).toBe('group-456')
-      expect(mapped.title).toBe('Football Training')
-      expect(mapped.eventDate).toBe('2024-12-20')
-      // Time includes seconds from toTimeString format
-      expect(mapped.eventTime).toMatch(/^18:00/)
-      expect(mapped.endDate).toBe('2024-12-20')
-      expect(mapped.endTime).toMatch(/^20:00/)
+      expect(mapped).not.toBeNull()
+      expect(mapped!.externalId).toBe('event-123')
+      expect(mapped!.externalGroupId).toBe('group-456')
+      expect(mapped!.title).toBe('Football Training')
+      // Dates/times are normalised to Europe/Oslo (the app timezone) regardless of
+      // where the server/test runs. 18:00Z in December = 19:00 in Oslo (UTC+1).
+      // The previous implementation mixed UTC date with server-local time and only
+      // appeared correct when the runner's TZ happened to be UTC.
+      expect(mapped!.eventDate).toBe('2024-12-20')
+      expect(mapped!.eventTime).toBe('19:00:00')
+      expect(mapped!.endDate).toBe('2024-12-20')
+      expect(mapped!.endTime).toBe('21:00:00')
       // Address takes precedence over feature
-      expect(mapped.location).toBe('123 Main St')
-      expect(mapped.eventType).toBe('event')
+      expect(mapped!.location).toBe('123 Main St')
+      expect(mapped!.eventType).toBe('event')
+    })
+
+    it('returns null for an event with an unparseable timestamp', () => {
+      const badEvent = {
+        id: 'event-bad',
+        heading: 'Broken',
+        startTimestamp: 'not-a-date',
+        type: 'EVENT',
+      }
+      expect(SpondClient.mapEventToDb(badEvent as any, 'group-456')).toBeNull()
     })
   })
 

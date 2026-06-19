@@ -839,12 +839,37 @@ a, button, [role="button"], input, select, textarea {
   }
 }
 
-/* Mobile header spacing - accounts for fixed header + safe area + content spacing */
+/* Height of the OfflineIndicator banner when visible (set by the component via
+ * ResizeObserver). 0 when no banner is shown, so all the calc()s below collapse
+ * to their original values. This lets the banner push the header + content down
+ * instead of painting on top of the header. */
+:root {
+  --offline-banner-h: 0px;
+}
+
+/* Mobile fixed header sits just below the banner. The banner itself paints the
+ * safe-area inset, so the header only needs its own safe-area padding when there
+ * is no banner (max() collapses it to 0 once the banner covers that region). */
+.mobile-app-header {
+  top: var(--offline-banner-h);
+  padding-top: max(0px, calc(env(safe-area-inset-top, 0px) - var(--offline-banner-h)));
+}
+
+/* Mobile header spacing - accounts for fixed header + safe area + content spacing
+ * (+ the banner height when one is shown). */
 .pt-mobile-header {
-  padding-top: calc(4.5rem + env(safe-area-inset-top, 0px));
+  padding-top: calc(4.5rem + max(env(safe-area-inset-top, 0px), var(--offline-banner-h)));
 }
 
 @media (min-width: 1024px) {
+  /* Desktop sticky header sticks below the banner, and the whole flow shifts down
+   * by the banner height so the header's initial position clears it too. */
+  .desktop-app-header {
+    top: var(--offline-banner-h);
+  }
+  body.app-shell {
+    padding-top: var(--offline-banner-h);
+  }
   .pt-mobile-header {
     padding-top: 1.5rem;
   }

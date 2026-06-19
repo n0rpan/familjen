@@ -442,11 +442,17 @@ export const en: TranslationStrings = {
     subtitle: 'Messages, photos, and reminders from Spond, daycare, and school',
     filters: {
       all: 'All',
+      spond: 'Spond',
+      school: 'School',
+      kindergarten: 'Daycare',
       photos: 'Photos',
       reminders: 'Reminders',
     },
     emptyState: 'No messages yet',
-    emptyStateDesc: 'Connect Spond, daycare, or school to see messages here',
+    emptyStateDesc: 'Connect Spond, Kidplan or iSkole in settings to see messages here.',
+    emptyStateDemoDesc: 'Messages from integrations will appear here',
+    recentPhotos: 'Recent photos',
+    seeAllPhotos: 'See all {count} photos',
     syncButton: 'Sync',
     syncing: 'Syncing...',
     // Smart search

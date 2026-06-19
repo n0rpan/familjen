@@ -265,6 +265,7 @@ async function syncIntegration(
       if (!groupIdForDb) continue
 
       const mapped = SpondClient.mapEventToDb(event, groupIdForDb)
+      if (!mapped) continue // skip events with an unparseable timestamp
       eventsToUpsert.push({
         integration_id: integration.id,
         child_id: matchedMapping?.childId || null,

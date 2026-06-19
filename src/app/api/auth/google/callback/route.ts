@@ -32,7 +32,9 @@ export async function GET(request: NextRequest) {
 
   const cookieStore = await cookies()
   const storedState = cookieStore.get('oauth_state')?.value
-  const next = cookieStore.get('oauth_next')?.value ?? '/'
+  // Defense-in-depth: re-validate the stored next path is same-origin relative.
+  const rawNext = cookieStore.get('oauth_next')?.value ?? '/'
+  const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/'
 
   // Clear OAuth cookies immediately
   cookieStore.delete('oauth_state')

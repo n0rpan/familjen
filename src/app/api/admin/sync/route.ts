@@ -225,6 +225,7 @@ async function syncSpond(supabase: AnySupabase, integration: AnyIntegration, cre
     if (!groupId || !mappedGroupIds.has(groupId)) continue
 
     const mapped = SpondClient.mapEventToDb(event, groupId)
+    if (!mapped) continue // skip events with an unparseable timestamp
     const childId = childIdMap.get(groupId)
 
     await supabase.from('external_events').upsert({
@@ -481,6 +482,7 @@ async function syncMyKid(supabase: AnySupabase, integration: AnyIntegration, cre
 
     for (const event of events) {
       const mapped = MyKidClient.mapCalendarEventToDb(event)
+      if (!mapped) continue // skip events with an invalid/unparseable date
       await supabase.from('external_events').upsert({
         integration_id: integration.id,
         external_id: event.id,

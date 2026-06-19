@@ -226,6 +226,13 @@ export function Header() {
       console.warn('[Header] Failed to clear caches on logout:', err)
     })
     await supabase.auth.signOut()
+    // Also hit the server logout endpoint so the httpOnly fast-path validation
+    // cookie (familjen-auth-validated) is cleared - the client cannot delete it.
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+    } catch (err) {
+      console.warn('[Header] Server logout call failed:', err)
+    }
     window.location.href = '/login'
   }, [supabase])
 
@@ -238,7 +245,7 @@ export function Header() {
     <>
       {/* Desktop Header */}
       <header
-        className="hidden lg:block w-full sticky top-0 z-50 backdrop-blur-md"
+        className="desktop-app-header hidden lg:block w-full sticky top-0 z-50 backdrop-blur-md"
         style={{
           background: 'var(--header-bg)',
           borderBottom: '1px solid var(--border)',
@@ -403,11 +410,10 @@ export function Header() {
 
       {/* Mobile Top Header */}
       <header
-        className="lg:hidden w-full fixed top-0 left-0 right-0 z-40"
+        className="mobile-app-header lg:hidden w-full fixed left-0 right-0 z-40"
         style={{
           background: 'var(--background)',
           borderBottom: '1px solid var(--border)',
-          paddingTop: 'env(safe-area-inset-top, 0px)',
           viewTransitionName: 'mobile-header',
         }}
       >

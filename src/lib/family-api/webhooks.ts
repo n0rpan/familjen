@@ -112,7 +112,7 @@ function isPrivateIP(ip: string): boolean {
  * - undici with custom DNS resolver
  * - Cloudflare Workers with fetch that supports connect-to
  */
-async function checkDNSRebinding(hostname: string): Promise<string | null> {
+export async function checkDNSRebinding(hostname: string): Promise<string | null> {
   try {
     // Resolve with timeout
     const timeoutPromise = new Promise<never>((_, reject) => {

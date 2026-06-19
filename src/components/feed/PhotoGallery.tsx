@@ -27,7 +27,7 @@ interface Props {
 export function PhotoGallery({ photos, onPhotoClick }: Props) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const [mounted, setMounted] = useState(false)
-  const { language } = useLanguage()
+  const { language, t } = useLanguage()
 
   // For portal to work on client side
   useEffect(() => {
@@ -167,6 +167,7 @@ export function PhotoGallery({ photos, onPhotoClick }: Props) {
           {/* Close button */}
           <button
             onClick={handleClose}
+            aria-label={t.common.close}
             className="absolute top-4 right-4 p-2 text-white hover:bg-white/10 rounded-full z-10"
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -179,6 +180,7 @@ export function PhotoGallery({ photos, onPhotoClick }: Props) {
           {selectedIndex > 0 && (
             <button
               onClick={handlePrev}
+              aria-label={t.common.back}
               className="absolute left-4 top-1/2 -translate-y-1/2 p-2 text-white hover:bg-white/10 rounded-full z-10"
             >
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -189,6 +191,7 @@ export function PhotoGallery({ photos, onPhotoClick }: Props) {
           {selectedIndex < photos.length - 1 && (
             <button
               onClick={handleNext}
+              aria-label={t.common.next}
               className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-white hover:bg-white/10 rounded-full z-10"
             >
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

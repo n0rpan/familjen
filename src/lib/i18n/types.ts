@@ -450,11 +450,17 @@ export interface TranslationStrings {
     subtitle: string
     filters: {
       all: string
+      spond: string
+      school: string
+      kindergarten: string
       photos: string
       reminders: string
     }
     emptyState: string
     emptyStateDesc: string
+    emptyStateDemoDesc: string
+    recentPhotos: string
+    seeAllPhotos: string
     syncButton: string
     syncing: string
     // Smart search

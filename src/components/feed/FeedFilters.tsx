@@ -21,12 +21,12 @@ export function FeedFilters({ activeFilter, onFilterChange, counts }: Props) {
   const { t } = useLanguage()
 
   const filters: { id: FeedFilter; label: string; icon?: string }[] = [
-    { id: 'all', label: 'Alle' },
-    { id: 'spond', label: 'Spond' },
-    { id: 'school', label: 'Skole' },
-    { id: 'kindergarten', label: 'Barnehage' },
-    { id: 'photos', label: 'Bilder', icon: '📷' },
-    { id: 'reminders', label: 'Påminnelser', icon: '🔔' },
+    { id: 'all', label: t.feed.filters.all },
+    { id: 'spond', label: t.feed.filters.spond },
+    { id: 'school', label: t.feed.filters.school },
+    { id: 'kindergarten', label: t.feed.filters.kindergarten },
+    { id: 'photos', label: t.feed.filters.photos, icon: '📷' },
+    { id: 'reminders', label: t.feed.filters.reminders, icon: '🔔' },
   ]
 
   return (
@@ -40,7 +40,7 @@ export function FeedFilters({ activeFilter, onFilterChange, counts }: Props) {
           <button
             key={filter.id}
             onClick={() => onFilterChange(filter.id)}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${isLast ? 'mr-4' : ''}`}
+            className={`flex items-center gap-1.5 px-4 min-h-[44px] rounded-full text-sm font-medium whitespace-nowrap transition-all ${isLast ? 'mr-4' : ''}`}
             style={{
               background: isActive ? 'var(--accent)' : 'var(--background)',
               color: isActive ? 'white' : 'var(--foreground)',

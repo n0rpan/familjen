@@ -8,7 +8,10 @@ import { cookies } from 'next/headers'
  */
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
-  const next = searchParams.get('next') ?? '/'
+  // Only allow same-origin relative paths to prevent open-redirect / protocol-relative
+  // (`//evil.com`) abuse via the `next` parameter (stored in oauth_next, consumed on callback).
+  const rawNext = searchParams.get('next') ?? '/'
+  const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/'
 
   const clientId = process.env.GOOGLE_CLIENT_ID
   if (!clientId) {
