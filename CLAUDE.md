@@ -753,6 +753,16 @@ wishlist_share_tokens (
 
 ### Access Control
 
+> **Signup is OPEN by design.** Any successful Google sign-in is auto-enrolled
+> into `allowed_emails` with `can_create_household = true` (see
+> `src/app/auth/callback/route.ts` and `src/app/api/auth/google/callback/route.ts`).
+> The `allowed_emails` table is therefore NOT an access gate that restricts who
+> can sign in — it tracks roles (`is_admin`), the create-household permission,
+> and invite attribution. Authorization to actual data is enforced by RLS
+> (per-household) and verified session checks, not by this table. If you ever
+> need invite-only signup, change the auto-insert in the auth callbacks to reject
+> emails without an existing row.
+
 ```sql
 allowed_emails (
   email,
