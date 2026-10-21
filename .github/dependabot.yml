@@ -9,6 +9,20 @@ updates:
       # Batch non-breaking updates into one PR; majors and security fixes come separately
       minor-and-patch:
         update-types: [minor, patch]
+      # Packages that must move in lockstep (peer deps pin each other)
+      vitest:
+        patterns: ['vitest', '@vitest/*']
+      next:
+        patterns: ['next', 'eslint-config-next', '@next/*']
+      react:
+        patterns: ['react', 'react-dom', '@types/react', '@types/react-dom']
+    ignore:
+      # typescript-eslint (via eslint-config-next) lags TypeScript majors
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
+      # Keep @types/node on the Node major we run (see NODE_VERSION in ci.yml)
+      - dependency-name: '@types/node'
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: github-actions
     directory: /
