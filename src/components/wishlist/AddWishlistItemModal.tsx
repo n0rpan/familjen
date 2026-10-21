@@ -255,7 +255,7 @@ export const AddWishlistItemModal = memo(function AddWishlistItemModal({
       }
 
       // Build the item data
-      const personFilter = personType === 'child'
+      const personFilter: { child_id: string | null; member_id: string | null } = personType === 'child'
         ? { child_id: personId, member_id: null }
         : { member_id: personId, child_id: null }
 
