@@ -261,12 +261,6 @@ npm run lint       # TypeScript + ESLint check
 npm run test       # Run tests in watch mode
 npm run test:run   # Run tests once
 npm run test:e2e   # Run Playwright E2E tests
-
-# AI Review Scripts (for local testing)
-npm run ai:migration-review   # Review database migrations
-npm run ai:code-review        # Review code changes
-npm run ai:visual-review      # Compare screenshots (baseline-based)
-npm run ai:visual-validate    # AI validates screenshots (no baselines needed)
 ```
 
 ### Testing
@@ -330,118 +324,9 @@ Rate limiting protects expensive endpoints from abuse using Upstash Redis in pro
 
 Demo mode uses cost-effective models and bypasses database connections for efficiency. Rate limits use global keys to prevent abuse across all demo sessions.
 
-## AI-Powered CI/CD
+## CI/CD
 
-The project uses AI to enhance the CI/CD pipeline beyond traditional static analysis.
-
-### Pipeline Stages
-
-| Stage | Trigger | Purpose |
-|-------|---------|---------|
-| **Lint + Typecheck** | All pushes/PRs | Fast syntax and type validation |
-| **Unit Tests** | After lint | 250+ tests for utilities, hooks, integrations |
-| **Build** | After tests | Verify production build succeeds |
-| **AI Migration Review** | PRs with migrations | Checks RLS, naming, security, rollback safety |
-| **AI Code Review** | All PRs | Reviews diff for security, i18n, data integrity |
-| **AI Visual Validation** | All PRs | AI evaluates screenshots against design system |
-| **E2E Preview Tests** | PRs | Runs design system tests on Vercel preview |
-
-### AI Visual Validation (No Baselines Needed)
-
-The AI visual validation system is unique - it doesn't require baseline screenshots. Instead, AI evaluates each screenshot against the Familjen design system and expected content:
-
-- **Design System Compliance**: Checks colors, typography, spacing, touch targets
-- **Content Visibility**: Verifies expected elements are present (pickups, meals, children)
-- **Mobile Usability**: Evaluates if busy parents can use with one hand
-- **Norwegian Context**: Checks Norwegian characters render correctly
-
-**How it works:**
-1. Playwright captures screenshots using mock auth + AI-generated test data
-2. Works on fresh Vercel previews with no real database needed
-3. AI vision model evaluates each screenshot against expectations
-4. Results posted as PR comment with pass/warn/fail verdict
-
-**No real user required**: Tests use mock fixtures that generate realistic Norwegian family data (children names, pickups, meals) without needing a real database connection.
-
-### Final Verdict System
-
-All individual reviewers are **non-blocking** - they report findings but don't fail CI. A single "Final Verdict" AI aggregates all results:
-
-1. **Mechanical Aggregation**: If any reviewer fails → default BLOCK
-2. **AI Override**: AI can override BLOCK→PASS if issues are pre-existing/unrelated
-3. **Explicit Explanation**: PR comment clearly shows when AI overrides and why
-4. **Tools for Investigation**: Final verdict can fetch full docs, read files, run TypeScript checks
-
-### Smart Truncation
-
-To balance cost vs context:
-- **Code review**: Truncates large diffs (>100KB) and docs (>15KB)
-- **Context tools**: AI can request full documentation if needed
-- **Transparent**: Truncation is noted so AI knows what's missing
-
-### AI Review Features
-
-- **Structured Outputs**: Uses JSON schemas for guaranteed response format
-- **PR Comments**: Posts review summary directly to GitHub PRs with clear PASS/BLOCK status
-- **Test Severity**: Categorizes test failures as critical/warning/info
-- **PR Correlation**: Identifies which test failures are specific to PR changes
-- **Familjen-Aware**: AI understands Norwegian context, child safety, RLS patterns
-- **Configurable Models**: Set your preferred OpenRouter models via GitHub Secrets
-
-### PR Auto-Labeling
-
-PRs are automatically labeled based on AI analysis and deterministic rules:
-
-| Label Type | Method | Examples |
-|------------|--------|----------|
-| **Type** | AI semantic analysis | `enhancement`, `bug`, `breaking-change`, `refactor`, `docs`, `test`, `chore` |
-| **Size** | Deterministic (lines changed) | `size/xs` (<10), `size/s` (<50), `size/m` (<200), `size/l` (<500), `size/xl` (500+) |
-| **Area** | Deterministic (file paths) | `area/api`, `area/ui`, `area/db`, `area/tests`, `area/ci`, `area/i18n` |
-| **Priority** | AI analysis | `priority/critical`, `priority/high`, `priority/medium`, `priority/low` |
-
-### Cost Tracking & Admin Dashboard
-
-The CI pipeline tracks API costs per PR and provides real-time visibility in the admin dashboard:
-
-**What's tracked:**
-- Token usage per API call (prompt + completion)
-- Cost per model (OpenRouter pricing)
-- Total cost per PR
-- Trend data over time (accuracy, cost per PR)
-
-**Admin Dashboard (`/admin`):**
-- PRs reviewed count
-- Total cost and average cost per PR
-- AI review accuracy rate
-- Cost trend chart
-- Model usage breakdown
-- Recent CI activity feed
-
-**API Endpoints:**
-- `POST /api/ci/webhook` - Receives CI events from GitHub Actions
-- `GET /api/ci/trend` - Returns aggregated metrics for dashboard
-
-**Database Table:**
-```sql
-ci_events (
-  id, type, pr_number, pr_title, data JSONB, created_at
-)
-```
-
-Event types: `pr_opened`, `review_started`, `review_completed`, `verdict`, `labels_applied`
-
-### Setup
-
-1. Add these GitHub Secrets (all required for AI features):
-   - `OPENROUTER_API_KEY` - Your OpenRouter API key
-   - `OPENROUTER_FAST_MODEL` - Fast model for migrations (e.g., `google/gemini-2.0-flash-001`)
-   - `OPENROUTER_CAPABLE_MODEL` - Capable model for code review
-   - `OPENROUTER_VISION_MODEL` - Vision model for visual validation
-   - `OPENROUTER_TEST_MODEL` - Model for API integration tests
-
-2. Pipeline runs automatically on PRs
-
-See [CLAUDE.md](./CLAUDE.md) for detailed documentation.
+GitHub Actions runs deterministic checks only - no LLM calls and no secrets: lint, typecheck, production `npm audit`, unit tests, build + E2E (demo mode, local server) and migration validation. AI code review runs in the agent harness (Claude Code). Dependabot keeps npm packages and pinned actions up to date. See `CLAUDE.md` → CI/CD for details.
 
 ## Contributing
 

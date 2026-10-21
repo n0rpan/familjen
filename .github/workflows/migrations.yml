@@ -6,20 +6,35 @@ on:
     paths:
       - 'supabase/migrations/**'
 
+permissions:
+  contents: read
+
+# Never run two migration pushes against production at the same time
+concurrency:
+  group: supabase-migrations
+  cancel-in-progress: false
+
 jobs:
   migrate:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Add required reviewers to this environment in repo settings to gate prod DB pushes
+    environment: supabase-production
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
         with:
-          version: latest
+          version: 2.121.0
 
       - name: Push migrations to production
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           max_attempts=3
           attempt=1
@@ -28,7 +43,7 @@ jobs:
           while [ $attempt -le $max_attempts ]; do
             echo "Attempt $attempt of $max_attempts..."
 
-            if supabase db push --db-url "${{ secrets.SUPABASE_DB_URL }}"; then
+            if supabase db push --db-url "$SUPABASE_DB_URL"; then
               echo "Migration successful!"
               exit 0
             fi
