@@ -12,12 +12,7 @@
     "test:coverage": "vitest run --coverage",
     "test:api": "vitest run --config vitest.config.api.ts",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui",
-    "ai:migration-review": "tsx scripts/migration-ai-review.ts",
-    "ai:code-review": "tsx scripts/ai-code-review.ts",
-    "ai:visual-review": "tsx scripts/ai-visual-review.ts",
-    "ai:visual-validate": "tsx scripts/ai-visual-validation.ts",
-    "ai:final-verdict": "tsx scripts/ai-final-verdict.ts"
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",
@@ -25,13 +20,14 @@
     "@tailwindcss/postcss": "^4.1.18",
     "@upstash/ratelimit": "^2.0.7",
     "@upstash/redis": "^1.35.8",
-    "azure-iot-device": "^1.18.3",
-    "azure-iot-device-amqp": "^1.14.3",
+    "azure-iot-device": "^1.18.4",
+    "azure-iot-device-amqp": "^1.14.4",
     "googleapis": "^169.0.0",
-    "next": "^16.0.10",
-    "react": "^19.2.3",
+    "next": "^16.4.2",
+    "react": "^19.3.1",
     "react-day-picker": "^9.12.0",
-    "react-dom": "^19.2.3",
+    "react-dom": "^19.3.1",
+    "sharp": "^0.35.5",
     "web-push": "^3.6.7",
     "zod": "^4.2.1"
   },
@@ -49,14 +45,19 @@
     "autoprefixer": "^10.4.23",
     "dotenv": "^17.2.3",
     "eslint": "^9.39.2",
-    "eslint-config-next": "^16.1.1",
+    "eslint-config-next": "^16.4.2",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^27.3.0",
     "postcss": "^8.5.6",
-    "sharp": "^0.34.5",
     "tailwindcss": "^4.1.18",
     "tsx": "^4.19.2",
     "typescript": "5.9.3",
     "vitest": "^4.0.16"
+  },
+  "overrides": {
+    "bn.js": "4.12.5",
+    "sharp": "$sharp",
+    "ws@6": "6.2.6",
+    "uuid": "^11.1.1"
   }
 }

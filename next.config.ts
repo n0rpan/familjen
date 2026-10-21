@@ -64,6 +64,8 @@ const nextConfig: NextConfig = {
       "worker-src 'self'",
       // Manifest for PWA
       "manifest-src 'self'",
+      // No plugins (<object>/<embed>)
+      "object-src 'none'",
       // No iframes
       "frame-ancestors 'none'",
       // Form submissions only to self
