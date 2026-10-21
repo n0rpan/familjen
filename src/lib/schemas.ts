@@ -49,7 +49,8 @@ export type CreateChildTaskRequest = z.infer<typeof createChildTaskSchema>
 export const wishlistOccasionSchema = z.enum(WISHLIST_OCCASIONS)
 export const wishlistItemStatusSchema = z.enum(WISHLIST_ITEM_STATUSES)
 
-export const createWishlistItemSchema = z.object({
+// Base object without refinements - zod rejects .omit() on refined schemas
+const wishlistItemBaseSchema = z.object({
   child_id: z.string().uuid().optional().nullable(),
   member_id: z.string().uuid().optional().nullable(),
   name: z.string().min(1, 'Navn er påkrevd').max(200, 'Navn kan maks være 200 tegn'),
@@ -59,13 +60,15 @@ export const createWishlistItemSchema = z.object({
   image_path: z.string().optional().nullable(),
   occasion: wishlistOccasionSchema.optional().default('general'),
   priority: z.number().min(0).max(5).optional().default(0),
-}).refine(
+})
+
+export const createWishlistItemSchema = wishlistItemBaseSchema.refine(
   data => (data.child_id != null) !== (data.member_id != null),
   { message: 'Må sette enten child_id eller member_id (ikke begge)' }
 )
 export type CreateWishlistItemRequest = z.infer<typeof createWishlistItemSchema>
 
-export const updateWishlistItemSchema = createWishlistItemSchema
+export const updateWishlistItemSchema = wishlistItemBaseSchema
   .omit({ child_id: true, member_id: true })
   .partial()
   .extend({
