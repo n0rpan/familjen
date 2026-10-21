@@ -52,7 +52,7 @@
     "tailwindcss": "^4.1.18",
     "tsx": "^4.19.2",
     "typescript": "5.9.3",
-    "vitest": "^4.0.16"
+    "vitest": "^5.0.5"
   },
   "overrides": {
     "bn.js": "4.12.5",
