@@ -1,5 +1,7 @@
 # Familjen
 
+> **Decommissioned — 4 November 2026.** Familjen is retired and no longer maintained. This repository is archived for reference. The application and its integrations are no longer supported.
+
 Family planning app for managing daily pickups, meals, tasks, and more. Built for Norwegian, Swedish, and English-speaking families.
 
 ## Features
